@@ -3,7 +3,9 @@
 //   node tools/model-shot.cjs --kind unit --id knight --pose attack --out /tmp/knight.png
 //   node tools/model-shot.cjs --kind unit --id militia,footman,knight --out sheet.png
 //   node tools/model-shot.cjs --kind struct --id castleTower --ref 1 --out tower.png
-// Options mirror viewer.html's query string: kind, id, pose, t, lod, detail, view, ref, len.
+// Options mirror viewer.html's query string: kind, id, pose, t, lod, detail, view, ref, len, cam, water, ground, opts, bbox.
+//   --cam "35,17,0.5,0,1.4,0"   one free camera: azimuth, elevation (degrees), distance x fitted, optional target x,y,z
+//   --cam "0,10,0.4;90,10,0.4;180,10,0.4"   several, laid out in a grid
 // Extra: --width 1600 --height 1200 (image size).
 const http = require('http'), fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
@@ -24,7 +26,7 @@ const server = http.createServer((req, res) => {
 server.listen(0, async () => {
   const port = server.address().port;
   const qs = new URLSearchParams();
-  for (const k of ['kind', 'id', 'pose', 't', 'lod', 'detail', 'view', 'ref', 'len']) if (args[k] !== undefined) qs.set(k, args[k]);
+  for (const k of ['kind', 'id', 'pose', 't', 'lod', 'detail', 'view', 'ref', 'len', 'cam', 'water', 'ground', 'opts', 'bbox']) if (args[k] !== undefined) qs.set(k, args[k]);
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   let code = 0;
   try {

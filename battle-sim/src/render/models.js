@@ -467,11 +467,12 @@ export function animateUnit(model, t, moving, atk, dead, phase = 0, flying = fal
 }
 
 // ---------- structures ----------
-export function buildStructure(def, w, h) {
+// place = { x, y, side } says where the piece stands, so scenery can vary and banners can take a side colour
+export function buildStructure(def, w, h, place = null) {
   const custom = def.id && instantiateCustom(`struct:${def.id}`, Math.max(w, h), 'struct');
   if (custom) return custom;
   if (def.weapon) { const sg = buildWeapon(def.model, w, h, def); if (sg.userData.sculpted) return sg; }
-  else if (REG.STRUCT[def.model]) { const sm = guarded(`struct:${def.model}:${w}x${h}`, () => REG.STRUCT[def.model](def, w, h)); if (sm) return sm; }
+  else if (REG.STRUCT[def.model]) { const sm = guarded(`struct:${def.model}:${w}x${h}`, () => REG.STRUCT[def.model](def, w, h, place)); if (sm) return sm; }
   const g = new THREE.Group();
   const TEXKIND = { wall: 'stone', castleWall: 'stone', castleTower: 'stone', keep: 'stone', bastion: 'stone', gate: 'stone', pillar: 'stone', statue: 'stone', stairs: 'stone',
     palisade: 'bark', barricade: 'wood', tower: 'wood', deck: 'wood', crates: 'wood', hut: 'wood', castleGate: 'wood', house: 'plaster', tent: 'canvas', sandbags: 'canvas' };
@@ -679,6 +680,23 @@ export function buildWeapon(model, w = 1, h = 1, def = null) {
 }
 
 // ---------- landing craft ----------
+// A fort as the sea view shows it: the gun (or keep) seated on its footing, turret exposed for aiming.
+export function buildFortModel(def) {
+  const g = new THREE.Group();
+  const r = def.size;
+  const w = buildWeapon(def.model, def.model === 'seaFort' ? r * 0.9 : Math.max(1, r * 0.9), Math.max(1, r * 0.9));
+  if (!w.userData.sculpted) { // sculpted forts bring their own rock
+    const rock = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.05, r * 1.25, 1, 9), mat(0x7a756c));
+    rock.position.y = 0.1; g.add(rock);
+  }
+  if (def.model !== 'seaFort' && def.model !== 'battery') w.scale.setScalar(r * 0.9);
+  w.position.y = 0.6;
+  g.add(w);
+  g.userData.turret = w.userData.turret;
+  g.userData.top = (new THREE.Box3().setFromObject(w).max.y || 2) ;
+  return g;
+}
+
 export function buildCraft(color) {
   const sc = guarded('craft', () => REG.craft(color));
   if (sc) return sc;
@@ -809,8 +827,8 @@ export function animateCreature(g, t, phase) {
 }
 
 // Heap of broken stone and timber left where a structure fell
-export function buildRubble(w, h, color) {
-  const sr = guarded('rubble', () => REG.rubble(w, h, color));
+export function buildRubble(w, h, color, model = null) {
+  const sr = guarded('rubble', () => REG.rubble(w, h, color, model));
   if (sr) return sr;
   const g = new THREE.Group();
   const m = mat(color), d = mat(0x4a4540);

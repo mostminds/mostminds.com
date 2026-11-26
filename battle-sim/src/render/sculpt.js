@@ -397,7 +397,7 @@ function meshPrims(cs, res, aoStrength) {
       const d2 = evalD(cs, x + gx * 0.055, y + gy * 0.055, z + gz * 0.055);
       const d3 = evalD(cs, x + gx * 0.12, y + gy * 0.12, z + gz * 0.12);
       const occ = clamp01(((0.02 - d1) / 0.02) * 0.45 + ((0.055 - d2) / 0.055) * 0.35 + ((0.12 - d3) / 0.12) * 0.2);
-      ao = 1 - occ * aoStrength;
+      ao = 1 - occ * aoStrength * (1 - clamp01(_a[5])); // glowing surfaces light their own creases
     }
     C[i * 3] = _a[0] * ao; C[i * 3 + 1] = _a[1] * ao; C[i * 3 + 2] = _a[2] * ao;
     M[i * 3] = _a[3]; M[i * 3 + 1] = _a[4]; M[i * 3 + 2] = _a[5];
@@ -416,6 +416,7 @@ class Hard {
   constructor(geo) {
     this.geo = geo; this.m = new THREE.Matrix4();
     this.col = [0.6, 0.6, 0.6]; this.rough = 0.6; this.metal = 0; this.glowV = 0; this.maxLod = 99; this.fn = null;
+    this.minLod = 0; this.span = 0; // span: 1 = every level but the last, 2 = the last level only
   }
   at(x, y, z) { this.m.premultiply(_m.makeTranslation(x, y, z)); return this; }
   /** DEGREES about X, then Y, then Z */
@@ -426,7 +427,13 @@ class Hard {
   glow(v = 1) { this.glowV = v; return this; }
   /** keep this piece only on detail levels <= n (0 = closest). Use for rivets, stitching, small trim. */
   lod(n) { this.maxLod = n; return this; }
-  /** per-vertex colour: fn(x, y, z, nx, ny, nz) in the piece's own space -> hex | [r,g,b] | null (keep base) */
+  /** keep this piece only on detail levels >= n: a cheap stand-in that takes over when the detailed piece drops out */
+  from(n) { this.minLod = n; return this; }
+  /** keep on every sculpt level except the last one of the current preset (whatever the preset's level count) */
+  near() { this.span = 1; return this; }
+  /** keep only on the last sculpt level (and so in the merged far mesh): a stand-in for .near() pieces */
+  far() { this.span = 2; return this; }
+  /** per-vertex colour: fn(x, y, z, nx, ny, nz, i) in the piece's own space -> hex | [r,g,b] | null (keep base); i = vertex index */
   shade(fn) { this.fn = fn; return this; }
   clone() { const c = Object.assign(new Hard(this.geo), this); c.m = this.m.clone(); c.col = this.col.slice(); return c; }
   mirrorX() { const c = this.clone(); c.m.premultiply(_m.makeScale(-1, 1, 1)); return c; }
@@ -501,7 +508,7 @@ function bakeHard(hd, cs, aoStrength) {
   const p = g.attributes.position, nr = g.attributes.normal;
   for (let i = 0; i < n; i++) {
     let c = hd.col;
-    if (hd.fn) { const r = hd.fn(p.getX(i), p.getY(i), p.getZ(i), nr.getX(i), nr.getY(i), nr.getZ(i)); if (r != null) c = asRgb(r); }
+    if (hd.fn) { const r = hd.fn(p.getX(i), p.getY(i), p.getZ(i), nr.getX(i), nr.getY(i), nr.getZ(i), i); if (r != null) c = asRgb(r); }
     C[i * 3] = c[0]; C[i * 3 + 1] = c[1]; C[i * 3 + 2] = c[2];
     M[i * 3] = hd.rough; M[i * 3 + 1] = hd.metal; M[i * 3 + 2] = hd.glowV;
   }
@@ -511,13 +518,13 @@ function bakeHard(hd, cs, aoStrength) {
     const ix = g.index.array;
     for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; }
   }
-  if (cs && cs.length && aoStrength > 0) {
+  if (cs && cs.length && aoStrength > 0 && hd.glowV < 1) {
     // gear picks up contact shadow from the body it sits on
     const P = g.attributes.position, N = g.attributes.normal;
     for (let i = 0; i < n; i++) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i), nx = N.getX(i), ny = N.getY(i), nz = N.getZ(i);
       const d = evalD(cs, x + nx * 0.04, y + ny * 0.04, z + nz * 0.04);
-      const ao = 1 - clamp01((0.03 - d) / 0.06) * aoStrength * 0.8;
+      const ao = 1 - clamp01((0.03 - d) / 0.06) * aoStrength * 0.8 * (1 - clamp01(hd.glowV));
       C[i * 3] *= ao; C[i * 3 + 1] *= ao; C[i * 3 + 2] *= ao;
     }
   }
@@ -531,11 +538,13 @@ function bakeHard(hd, cs, aoStrength) {
 /**
  * Mesh one part. part = { prims: [...], hard: [...] } (nested arrays are fine).
  * opts: res = cells per model unit for the sculpt (default 96), lod = detail level being built
- * (hard pieces with .lod(n) < lod are dropped), ao = crease darkening 0..1 (default 0.75).
+ * (hard pieces with .lod(n) < lod or .from(n) > lod are dropped), levels = how many sculpt levels the
+ * preset has (lets .near() / .far() pieces know which level is the last), ao = crease darkening 0..1 (default 0.75).
  * Returns an indexed BufferGeometry with position, normal, color, aPbr; or null if the part is empty.
  */
 export function buildPartGeometry(part, opts = {}) {
   const res = opts.res ?? 96, lod = opts.lod ?? 0, ao = opts.ao ?? 0.75;
+  const last = opts.levels ? lod >= opts.levels - 1 : false;
   const cs = compile(part.prims || []);
   const list = [];
   if (cs.some((c) => c.op === 0)) {
@@ -543,8 +552,9 @@ export function buildPartGeometry(part, opts = {}) {
     if (g) { if (!(g.index.array instanceof Uint32Array)) g.setIndex(new THREE.BufferAttribute(Uint32Array.from(g.index.array), 1)); list.push(g); }
   }
   for (const hd of (part.hard || []).flat(Infinity)) {
-    if (!hd || hd.maxLod < lod) continue;
-    if (lod >= 2 && hd.maxLod === 99 && hardRadius(hd) < 0.011 * lod) continue; // too small to see from this far
+    if (!hd || hd.maxLod < lod || hd.minLod > lod) continue;
+    if (hd.span === 1 ? last : hd.span === 2 ? !last : false) continue;
+    if (lod >= 2 && hd.maxLod === 99 && !hd.span && !hd.minLod && hardRadius(hd) < 0.011 * lod) continue; // too small to see from this far
     list.push(bakeHard(hd, cs, ao));
   }
   if (!list.length) return null;
@@ -560,13 +570,20 @@ function hardRadius(hd) {
 
 /** signed distance of a prim list at a point: handy for placing gear on a body */
 export function distanceTo(prims, x, y, z) { return evalD(compile(prims), x, y, z); }
+/** the same, compiled once: returns (x, y, z) => distance. Use this when sampling many points. */
+export function distanceField(prims) { const cs = compile(prims); return (x, y, z) => evalD(cs, x, y, z); }
 
 let _mat = null;
 /** the one material every sculpted mesh shares: vertex colours with per-vertex roughness, metalness and glow */
 export function sculptMaterial() {
   if (_mat) return _mat;
-  _mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, side: THREE.DoubleSide, envMapIntensity: 0.75 });
-  _mat.onBeforeCompile = (sh) => {
+  _mat = patchPbr(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, side: THREE.DoubleSide, envMapIntensity: 0.75 }));
+  return _mat;
+}
+
+// per-vertex roughness, metalness and glow; clones keep the patch (three's Material.copy drops it)
+function patchPbr(m) {
+  m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec3 aPbr;\nvarying vec3 vPbr;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPbr = aPbr;');
@@ -576,8 +593,9 @@ export function sculptMaterial() {
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = clamp(vPbr.y, 0.0, 1.0);')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vPbr.z;');
   };
-  _mat.customProgramCacheKey = () => 'sculpt-pbr';
-  return _mat;
+  m.customProgramCacheKey = () => 'sculpt-pbr';
+  m.clone = function () { return patchPbr(THREE.MeshStandardMaterial.prototype.clone.call(this)); };
+  return m;
 }
 
 /** convenience for static props: one mesh from a part */

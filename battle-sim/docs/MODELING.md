@@ -172,3 +172,65 @@ The tool prints JSON: triangles per detail level, build time, and any errors (a 
 falls back to the old model and is listed under `errors`). **Open the PNG and look at it.** Check every
 pose, the far levels, and the whole family side by side. Iterate until it would hold up next to
 hand-made art.
+
+## Addenda (things learned while building the first families)
+
+### Kit additions
+
+- **Stand-ins by distance.** `.lod(n)` keeps a hard piece on levels ≤ n. Three more flags let a cheap
+  stand-in take over instead of hiding inside the detailed piece: `.from(n)` keeps it on levels ≥ n,
+  `.near()` keeps it on every sculpt level except the last one of the current preset, and `.far()`
+  keeps it only on the last level (and so in the merged far mesh). `.near()`/`.far()` work whatever
+  the preset's level count, so nobody needs to read `DETAIL`.
+- **Thin limbs.** A node may set `minRes` (cells per unit): the coarse levels never sample that node
+  more sparsely, so limbs thinner than about 0.05 stop vanishing at distance.
+- **Nodes that drop out.** A node with no sculpt prims whose hard pieces are all flagged away at some
+  level is simply not drawn there (and is left out of the far mesh). A node with sculpt prims that
+  come out empty at a coarse level borrows the level before it.
+- **Glow.** Baked crease shading no longer darkens glowing surfaces (it fades out as glow reaches 1).
+  Under the scene's tone mapping bright yellow glows wash to cream: push fire toward orange-red.
+- **Sampling a body many times.** `distanceField(prims)` compiles once and returns `(x, y, z) => d`.
+  `distanceTo` recompiles on every call.
+- **`.shade(fn)`** now also receives the vertex index: `fn(x, y, z, nx, ny, nz, i)`.
+- **Rig values.** Any plain string, number or boolean on the description (`hold`, `variant`, …) is
+  copied onto the rig, so animators can read `rig.hold` instead of encoding it in `kind`.
+- **Tinting.** Clones of the shared material keep its per-vertex roughness/metal/glow shader.
+
+### Humanoid details (as built)
+
+- Extra nodes: `hair` (under `head`), `handL`/`handR` at the wrists (rig list `hands`), `weaponR`
+  under `handR` (rig list `weapon`), `shieldL` under `foreL` (rig list `shield`), `wingL`/`wingR`,
+  `tail0..2`. Riding legs carry no `rig` tag.
+- Gear: `dress(ctx)` with `ctx = { def, o, P, pose: 'stand' | 'riding', nodes, add(name, { prims, hard }) }`.
+  `ctx.nodes[name].prims` is the bare body in that node's space. Pieces added to `foreL`/`foreR` that
+  sit below the wrist move to the hand node automatically. Gear is added before weapon and shield.
+- The body paints its own smallclothes and a plain shoe; scalp hair is skipped when `o.helm` or
+  `o.hood` is set; beards stay except under `helm === 'full'`. Ears, horns and tusks belong to the head.
+- Animator kinds are `humanoid.<hold>[.shield]`; `poseCarried(rig, c, base, hold, shield)` (exported
+  from `humanoid.js`) aims the wrist so spears thrust level and staffs stay upright. Mounts with
+  riders call it after `base.upperBody`.
+
+### Weapon frames (as built)
+
+- Grip at the origin, business end +Y, edge/front +Z, blade flats facing ±X.
+- Crossbow (hold `bow`): shoots along +Z, top +Y, prod across X. Longbow: limbs ±Y, back toward +Z.
+- Claws: hand at origin, fingers +Y, back of the hand +Z.
+- Extra options: `gem` (staff crystal), `color` (lance/spear tassel), shields `device`, `deviceColor`, `metal`, `size`.
+
+### Game hooks for props
+
+- `structures[def.model](def, w, h, place)`: `place = { x, y, side }` (tile position and owning side, or
+  `null` in previews). Use it to vary scenery and to colour banners.
+- `rubble(w, h, colorHex, model)`: `model` is the fallen structure's model id (may be `null`).
+- A gun model may set `userData.muzzle = [distance out along the barrel, height]` (unscaled); the
+  game puts the firing smoke there.
+- Forts in the sea view are built by `buildFortModel(def)` in `models.js`; sculpted guns bring their
+  own rock footing, seated with the model origin 0.6 above the water.
+- Landed and fallen fliers stand on the ground (y = 0); only airborne ones are lifted.
+
+### Preview options
+
+`tools/model-shot.cjs` also takes `--cam "az,el,dist[,tx,ty,tz][;…]"` (free cameras: degrees, distance
+as a multiple of the fitted distance, optional target), `--water <y>` (see-through sea surface instead
+of the ground), `--ground 0`, `--opts '<json>'` (options for `--kind weapon`) and `--bbox 1` (each
+model's bounds in the printed stats).

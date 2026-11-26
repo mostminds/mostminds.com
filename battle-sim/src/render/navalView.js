@@ -1,6 +1,6 @@
 // Renders naval battles from engine/naval.js. Engine (x, y) maps to world (x, 0, y).
 import * as THREE from 'three';
-import { buildShip, buildCreature, animateCreature, buildWeapon, setLod, mat } from './models.js';
+import { buildShip, buildCreature, animateCreature, buildFortModel, setLod, mat } from './models.js';
 import { makeBar, setBar } from './stage.js';
 import { SIDE_COLORS } from './landView.js';
 import { TICK_MS } from '../engine/combat.js';
@@ -52,7 +52,7 @@ export class NavalView {
     this.models = b.ents.map((e) => {
       const m = e.ship ? buildShip(e.def, SIDE_COLORS[e.side]) : e.fort ? buildFort(e.def) : buildCreature(e.def);
       const bar = makeBar(0x4fd36a);
-      bar.position.y = e.ship ? 2 + e.def.len * 0.35 : e.fort ? 2.4 + e.def.size * 0.5 : 1 + (e.def.size || 1) * 0.5;
+      bar.position.y = e.ship ? 2 + e.def.len * 0.35 : e.fort ? Math.max(2.4 + e.def.size * 0.5, (m.userData.top || 0) + 0.4) : Math.max(1 + (e.def.size || 1) * 0.5, (m.userData.rig?.height || 0) + 0.3);
       setBar(bar, 1, e.ship ? Math.min(3, e.def.len * 0.4) : 0.8 + (e.def.size || 1) * 0.3);
       m.add(bar);
       const ring = new THREE.Mesh(new THREE.RingGeometry(e.radius + 0.3, e.radius + 0.5, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.side], transparent: true, opacity: 0.6 }));
@@ -162,16 +162,4 @@ export class NavalView {
   }
 }
 
-// Fort on a rocky footing; the weapon turret aims at its target.
-function buildFort(def) {
-  const g = new THREE.Group();
-  const r = def.size;
-  const rock = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.05, r * 1.25, 1, 9), mat(0x7a756c));
-  rock.position.y = 0.1; g.add(rock);
-  const w = buildWeapon(def.model, def.model === 'seaFort' ? r * 0.9 : Math.max(1, r * 0.9), Math.max(1, r * 0.9));
-  if (def.model !== 'seaFort' && def.model !== 'battery') w.scale.setScalar(r * 0.9);
-  w.position.y = 0.6;
-  g.add(w);
-  g.userData.turret = w.userData.turret;
-  return g;
-}
+const buildFort = buildFortModel;

@@ -5,6 +5,8 @@
 //   lod: detail level to force (0 = closest)            detail: low | medium | high | ultra
 //   view: quad (default: front, side, back three-quarter, close-up) | single
 //   ref=1 stands a footman beside buildings and ships for scale
+//   cam=az,el,dist[,tx,ty,tz][;...] free cameras (degrees; dist x the fitted distance)   water=<y> sea surface instead of ground
+//   ground=0 hides the ground   opts=<json> options for kind=weapon   bbox=1 reports each model's bounds in stats
 import * as THREE from 'three';
 import { Stage } from './render/stage.js';
 import { buildUnitModel, animateUnit, buildStructure, buildShip, buildCreature, animateCreature, buildCraft, setLod } from './render/models.js';
@@ -33,6 +35,15 @@ stage.scene.fog.near = 500; stage.scene.fog.far = 900;
 const ground = new THREE.Mesh(new THREE.CircleGeometry(60, 48), new THREE.MeshStandardMaterial({ color: 0x6f8a5a, roughness: 1 }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
 stage.scene.add(ground);
+// water=<y> swaps the ground for a see-through sea surface at that height (sea creatures, forts, ships)
+if (q.has('water')) {
+  ground.visible = false;
+  const sea = new THREE.Mesh(new THREE.CircleGeometry(60, 48), new THREE.MeshStandardMaterial({ color: 0x2f6f96, roughness: 0.25, transparent: true, opacity: 0.55 }));
+  sea.rotation.x = -Math.PI / 2; sea.position.y = +q.get('water') || 0; stage.scene.add(sea);
+  const bed = new THREE.Mesh(new THREE.CircleGeometry(60, 48), new THREE.MeshStandardMaterial({ color: 0x35586a, roughness: 1 }));
+  bed.rotation.x = -Math.PI / 2; bed.position.y = sea.position.y - 4; stage.scene.add(bed);
+}
+if (q.get('ground') === '0') ground.visible = false;
 
 const box = new THREE.Box3();
 const items = [];
@@ -60,13 +71,14 @@ for (const id of ids) {
       m = buildStructure(def, w, h); width = Math.max(w, h) + 1;
     } else if (kind === 'ship') { const def = SHIPS[id]; m = buildShip(def, 0x3d7bd9); width = def.len + 1; }
     else if (kind === 'creature') { const def = CREATURES[id]; m = buildCreature(def); width = (def.size || 1) * 2.4 + 1; anim = () => animateCreature(m, T, 0); stats.models[id] = { triangles: triangleStats(m) }; }
-    else if (kind === 'fort') { const def = FORTS[id]; const mod = await import('./render/models.js'); m = mod.buildWeapon(def.model, def.size, def.size, def); width = def.size * 2 + 1; }
+    else if (kind === 'fort') { const def = FORTS[id]; const mod = await import('./render/models.js'); m = mod.buildFortModel(def); width = def.size * 2.6 + 1; }
     else if (kind === 'craft') { m = buildCraft(0x3d7bd9); width = 3; }
     else if (kind === 'weapon') {
       // id "sword", or "shield" / "shield:round" / "shield:tower"; shown standing on its grip, +Y up
       const [name, variant] = id.split(':');
-      const part = name === 'shield' ? makeShield({ shape: variant || 'kite', color: 0x2f5aa8 }) : makeWeapon(name);
-      m = cloneRigged(assemble({ kind: 'float', nodes: [{ name: 'root', pos: [0, name === 'shield' ? 0.3 : 0.2, 0], prims: part.prims, hard: part.hard }] }));
+      const wo = q.get('opts') ? JSON.parse(q.get('opts')) : {};
+      const part = name === 'shield' ? makeShield({ shape: variant || 'kite', color: 0x2f5aa8, ...wo }) : makeWeapon(name, wo);
+      m = cloneRigged(assemble({ kind: 'float', nodes: [{ name: 'root', pos: [0, name === 'shield' ? 0.35 : 0.5, 0], prims: part.prims, hard: part.hard }] }));
       width = 0.6; stats.models[id] = { triangles: triangleStats(m), hold: part.hold, attack: part.attack, length: part.length };
     }
   } catch (err) { stats.errors.push(`${id}: ${err.stack || err}`); }
@@ -80,6 +92,7 @@ for (const id of ids) {
   m.traverse((o) => { if (o.isMesh && o.visible) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
   (stats.models[id] ||= {}).visibleTriangles = Math.round(tris);
   stats.models[id].buildMs = Math.round(performance.now() - t0);
+  if (q.get('bbox')) { m.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(m); stats.models[id].bounds = { min: bb.min.toArray().map((v) => +v.toFixed(3)), max: bb.max.toArray().map((v) => +v.toFixed(3)), at: +m.position.x.toFixed(3) }; }
   items.push(m);
 }
 if (q.get('ref') && items.length) {
@@ -104,15 +117,22 @@ const cam = (ax, ay, dist, target = c) => {
 };
 const D = R / Math.tan((15 * Math.PI) / 180) * 1.12;
 const upper = new THREE.Vector3(c.x, box.min.y + size.y * 0.78, c.z);
-const cams = view === 'single'
+// cam=azimuth,elevation,distance[,tx,ty,tz]: one free camera. Angles in degrees (azimuth 0 looks from +Z),
+// distance as a multiple of the fitted distance, target in scene units (default: centre of everything shown).
+// Several cameras separated by ';' are laid out in a grid.
+const free = q.get('cam') ? q.get('cam').split(';').map((spec) => {
+  const [az = 35, el = 17, dist = 1, tx, ty, tz] = spec.split(',').map(Number);
+  return cam((az * Math.PI) / 180, (el * Math.PI) / 180, D * dist, tx === undefined || Number.isNaN(tx) ? c : new THREE.Vector3(tx, ty, tz));
+}) : null;
+const cams = free ? free : view === 'single'
   ? [cam(0.6, 0.3, D)]
   : [cam(0, 0.12, D), cam(Math.PI / 2, 0.12, D), cam(Math.PI + 0.7, 0.3, D), ids.length === 1 && kind === 'unit' ? cam(0.45, 0.1, D * 0.42, upper) : cam(0.7, 0.75, D)];
-const names = view === 'single' ? ['three-quarter'] : ['front (+Z)', 'side (+X)', 'back three-quarter', ids.length === 1 && kind === 'unit' ? 'close-up' : 'high three-quarter'];
+const names = free ? free.map((_, i) => `cam ${i + 1}`) : view === 'single' ? ['three-quarter'] : ['front (+Z)', 'side (+X)', 'back three-quarter', ids.length === 1 && kind === 'unit' ? 'close-up' : 'high three-quarter'];
 
 function draw() {
   const r = stage.renderer, w = window.innerWidth, h = window.innerHeight;
   r.setPixelRatio(1); r.setSize(w, h); r.setScissorTest(true);
-  const cols = cams.length > 1 ? 2 : 1, rows = cams.length > 1 ? 2 : 1;
+  const cols = cams.length > 4 ? 3 : cams.length > 1 ? 2 : 1, rows = Math.ceil(cams.length / cols);
   cams.forEach((k, i) => {
     const vw = w / cols, vh = h / rows, vx = (i % cols) * vw, vy = (rows - 1 - Math.floor(i / cols)) * vh;
     r.setViewport(vx, vy, vw, vh); r.setScissor(vx, vy, vw, vh);

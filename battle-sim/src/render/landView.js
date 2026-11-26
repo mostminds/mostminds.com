@@ -108,7 +108,7 @@ export class LandView {
     this.structModels = [];
     for (const s of list) {
       const { w, h, def } = structureFootprint(s);
-      const m = buildStructure(def, w, h);
+      const m = buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null });
       // weapons sitting on a bastion or deck are raised to its top
       const base = def.level ? 0 : Math.max(0, this.groundY(s.x + (w >> 1), s.y + (h >> 1)));
       m.position.set(s.x + w / 2, base, s.y + h / 2);
@@ -129,7 +129,7 @@ export class LandView {
   }
 
   addRubble(s) {
-    const r = buildRubble(s.w, s.h, STRUCTURES[s.type].color);
+    const r = buildRubble(s.w, s.h, STRUCTURES[s.type].color, STRUCTURES[s.type].model);
     r.position.set(s.x + s.w / 2, 0, s.y + s.h / 2);
     this.structGroup.add(r);
   }
@@ -218,7 +218,7 @@ export class LandView {
     let gy = this.groundY(Math.round(x), Math.round(y));
     if (u.def.fly) {
       const m = this.models[u.id];
-      const want = u.alive && !(u.landedUntil > this.b.tick) ? 2.6 + Math.sin((this.time || 0) * 2 + u.id) * 0.15 : 0.9;
+      const want = u.alive && !(u.landedUntil > this.b.tick) ? 2.6 + Math.sin((this.time || 0) * 2 + u.id) * 0.15 : 0; // landed and fallen fliers are on the ground
       if (m) { m.userData.air = (m.userData.air ?? want) + (want - (m.userData.air ?? want)) * 0.15; gy = Math.max(0, gy) + (u.alive ? m.userData.air : Math.max(0, m.userData.air)); }
       else gy += want;
     }
@@ -244,9 +244,11 @@ export class LandView {
         st.projectile(v.clone(), w.clone(), e.proj, (e.delay * TICK_MS) / 1000 / this.speed, e.proj === 'arrow' || e.proj === 'ranged' ? 0.8 : 0.2);
       } else if (e.type === 'gunFire') {
         const g = b.guns[e.gun];
-        v.set(g.cx, this.structModels[g.si].position.y + (g.w > 1 ? 0.9 : 0.5), g.cy);
+        // a model may say where its muzzle is: userData.muzzle = [distance out along the barrel, height]
+        const gmod = this.structModels[g.si], mz = gmod.userData.muzzle || [0.6, g.w > 1 ? 0.9 : 0.5], gs = gmod.scale.x;
+        v.set(g.cx, gmod.position.y + mz[1] * gs, g.cy);
         w.set(e.x1, 0.3, e.y1);
-        st.puff(v.clone().add(new THREE.Vector3(Math.cos(g.aim) * 0.6, 0, Math.sin(g.aim) * 0.6)), 0xeeeeee, g.w > 1 ? 0.45 : 0.3, 0.9);
+        st.puff(v.clone().add(new THREE.Vector3(Math.cos(g.aim) * mz[0] * gs, 0, Math.sin(g.aim) * mz[0] * gs)), 0xeeeeee, g.w > 1 ? 0.45 : 0.3, 0.9);
         st.projectile(v.clone(), w.clone(), e.shot, (e.delay * TICK_MS) / 1000 / this.speed, e.shot === 'shell' ? 2.4 : 0.4);
         if (e.shot !== 'bolt') this.later(e.delay, () => { st.puff(w.clone(), 0x8a7a6a, 0.4, 0.8); st.ring(w.clone().setY(0.05), b.guns[e.gun].wpn.splash || 0.4, 0xffb060, 0.5); });
       } else if (e.type === 'shipFire') {

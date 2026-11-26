@@ -25,6 +25,8 @@ export function setDetail(k) { if (DETAIL[k]) detailKey = k; }
 const DEG = Math.PI / 180;
 const lodTable = new Map();   // level-0 geometry uuid -> [geometry per level]
 const rigOf = new WeakMap();  // template -> rig description (names only)
+const EMPTY = new THREE.BufferGeometry(); // stands for "nothing to draw at this level"
+EMPTY.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
 const SINGLE = new Set(['torso', 'head', 'jaw', 'neck', 'core', 'body', 'log', 'turret']);
 
 export function assemble(desc, scale = 1) {
@@ -34,6 +36,8 @@ export function assemble(desc, scale = 1) {
   outer.add(inner);
   const groups = new Map();
   const rig = { kind: desc.kind || 'biped', attack: desc.attack || 'swing', v2: true };
+  // plain values on the description (hold, variant, ...) ride along for animators
+  for (const [k, v] of Object.entries(desc)) if (!(k in rig) && k !== 'nodes' && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) rig[k] = v;
   const mat = sculptMaterial();
   const farParts = [];
 
@@ -50,16 +54,20 @@ export function assemble(desc, scale = 1) {
     }
     const geos = [];
     for (let li = 0; li < levels.length; li++) {
-      geos.push(buildPartGeometry(node, { res: levels[li] * (node.detail || 1), lod: li }));
+      // minRes keeps thin limbs from slipping between sample points on the coarse levels
+      geos.push(buildPartGeometry(node, { res: Math.max(levels[li] * (node.detail || 1), node.minRes || 0), lod: li, levels: levels.length }));
     }
     if (!geos[0]) continue;
-    for (let li = 1; li < geos.length; li++) if (!geos[li]) geos[li] = geos[li - 1];
+    // a sculpt too thin for a coarse level borrows the level before it; a node whose hard pieces
+    // have all dropped out at that level is simply not drawn there
+    const sculpted = (node.prims || []).flat(Infinity).length > 0;
+    for (let li = 1; li < geos.length; li++) if (!geos[li]) geos[li] = sculpted ? geos[li - 1] : EMPTY;
     const mesh = new THREE.Mesh(geos[0], mat);
     mesh.castShadow = true;
     mesh.name = 'part';
     g.add(mesh);
     lodTable.set(geos[0].uuid, geos);
-    farParts.push({ g, geo: geos[geos.length - 1] });
+    if (geos[geos.length - 1] !== EMPTY) farParts.push({ g, geo: geos[geos.length - 1] });
   }
 
   // far level: everything merged in the rest pose
@@ -106,8 +114,9 @@ export function setLod(model, n) {
   if (n === lod.level) return;
   const far = n === lod.levels - 1 && lod.far;
   for (const { mesh, geos } of lod.meshes) {
-    mesh.visible = !far;
-    if (!far) mesh.geometry = geos[Math.min(n, geos.length - 1)];
+    const geo = geos[Math.min(n, geos.length - 1)];
+    mesh.visible = !far && geo !== EMPTY;
+    if (mesh.visible) mesh.geometry = geo;
   }
   if (lod.far) lod.far.visible = !!far;
   lod.level = n;
@@ -120,7 +129,7 @@ export function triangleStats(model) {
   const out = [];
   for (let n = 0; n < lod.levels - 1; n++) {
     let t = 0;
-    for (const { geos } of lod.meshes) { const g = geos[Math.min(n, geos.length - 1)]; t += (g.index ? g.index.count : g.attributes.position.count) / 3; }
+    for (const { geos } of lod.meshes) { const g = geos[Math.min(n, geos.length - 1)]; if (g !== EMPTY) t += (g.index ? g.index.count : g.attributes.position.count) / 3; }
     out.push(Math.round(t));
   }
   if (lod.far) out.push(Math.round((lod.far.geometry.index ? lod.far.geometry.index.count : lod.far.geometry.attributes.position.count) / 3));
