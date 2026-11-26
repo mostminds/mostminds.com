@@ -10,10 +10,15 @@
 // ports cut through the planking), decks laid plank by plank inside the bulwarks, then the stern,
 // the head, deck furniture, guns, spars, sails and rigging. It all bakes into one geometry with
 // vertex colour and per-vertex roughness / metalness for the shared sculpt shader, plus one small
-// geometry for the flags in the side colour: two draw calls per ship.
+// geometry for everything in the side colour (ensign, pennant, vanes and the device painted on
+// the sails): two draw calls per ship.
+//
+// Each class is built at up to three tiers (see TIERS), the lighter ones only when a ship is first
+// seen from far enough away; the returned group carries userData.lod so rigkit.setLod can swap
+// them, and userData.setSide(hex) to change her colours when she is taken.
 import * as THREE from 'three';
 import { S, H as HP, rgb, noise3, fbm3, buildPartGeometry, sculptMaterial } from '../sculpt.js';
-import { getDetail } from '../rigkit.js';
+import { getDetail, setLod } from '../rigkit.js';
 
 const DEG = Math.PI / 180, TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -60,6 +65,7 @@ class Pen {
     this.base = new THREE.Matrix4(); this.stack = []; this.loc = null;
     this.col = [0.6, 0.6, 0.6]; this.ro = 0.8; this.me = 0; this.gl = 0; this.fn = null;
     this.e = null; this.k = null; this.flip = false;
+    this.q = 1;   // mesh quality: below 1 the round shapes get fewer sides and small boxes lose their rounded edges (the distant builds)
   }
   /** colour (linear rgb), roughness, metalness, glow for what follows */
   ink(c, ro = 0.85, me = 0, gl = 0) { this.col = c; this.ro = ro; this.me = me; this.gl = gl; return this; }
@@ -124,6 +130,7 @@ class Pen {
   /** box of full size w, h, d centred on the origin; ch > 0 rounds the edges (44 triangles) */
   box(w, h, d, ch = 0) {
     this.begin();
+    if (this.q < 1 && (this.q < 0.6 || Math.max(w, h, d) < 0.3)) ch = 0;
     const hx = w / 2, hy = h / 2, hz = d / 2;
     ch = Math.min(ch, hx * 0.9, hy * 0.9, hz * 0.9);
     const hs = [hx, hy, hz], id = [];
@@ -159,6 +166,7 @@ class Pen {
   /** surface of revolution about Y from a profile [[r, y], ...]; repeat a point to make a crease */
   lathe(prof, seg = 16, arc = TAU, a0 = 0) {
     this.begin();
+    if (this.q < 1 && seg > 5) seg = Math.max(this.q < 0.6 ? 4 : 5, Math.round(seg * this.q));
     const n = prof.length, nr = [];
     const segN = (i) => { const dr = prof[i + 1][0] - prof[i][0], dy = prof[i + 1][1] - prof[i][1], l = Math.hypot(dr, dy); return l < 1e-9 ? null : [dy / l, -dr / l]; };
     for (let i = 0; i < n; i++) {
@@ -199,6 +207,7 @@ class Pen {
   /** tube through points; r = number or one radius per point */
   tube(pts, r, radial = 6, caps = 0) {
     this.begin();
+    if (this.q < 1 && radial > 3) radial = Math.max(3, Math.round(radial * this.q));
     const n = pts.length, s = this.n, W = radial + 1;
     let nx = 0, ny = 0, nz = 0, px = 0, py = 0, pz = 0;
     for (let i = 0; i < n; i++) {
@@ -237,6 +246,7 @@ class Pen {
     return this.n++;
   }
   sphere(r, ws = 10, hs = 7) {
+    if (this.q < 1) { ws = Math.max(5, Math.round(ws * this.q)); hs = Math.max(3, Math.round(hs * this.q)); }
     const pr = [];
     for (let i = 0; i <= hs; i++) { const a = -Math.PI / 2 + (Math.PI * i) / hs; pr.push([Math.cos(a) * r, Math.sin(a) * r]); }
     pr[0][0] = 0; pr[hs][0] = 0;
@@ -373,7 +383,7 @@ function makeHull(o) {
   // stations: even along the body, crowding toward the stem where the plan curls in
   const sts = [], n = Math.max(8, Math.ceil((0.86 * L) / o.step));
   for (let i = 0; i <= n; i++) sts.push((0.86 * i) / n);
-  for (const s of [0.895, 0.925, 0.95, 0.968, 0.982, 0.992, 1]) sts.push(s);
+  for (const s of o.coarse ? [0.905, 0.95, 0.982, 1] : [0.895, 0.925, 0.95, 0.968, 0.982, 0.992, 1]) sts.push(s);
   H.sts = sts;
   H.stsDeck = sts.filter((s, i) => i % 2 === 0 || s > 0.86);
   H.between = (a, b, list = sts) => [a, ...list.filter((s) => s > a + 2e-3 && s < b - 2e-3), b];
@@ -398,7 +408,7 @@ function strake(p, H, sA, sB, yLo, yHi, st) {
   const inHole = (s) => holes.some((h) => s > h[0] + 1e-6 && s < h[1] - 1e-6);
   const cuts = new Map([[sA, 1], [sB, 1]]);   // station -> 1 flush end, 0 butt joint
   const pl = (st.plank || 2) / L;
-  for (let c = sA - hash2(st.seed, 3) * pl, k = 0; c < sB; k++) { c += pl * (0.75 + 0.5 * hash2(st.seed, k + 9)); if (c > sA + pl * 0.3 && c < sB - pl * 0.3 && !holes.some((h) => c > h[0] - 3 * es && c < h[1] + 3 * es)) cuts.set(c, 0); }
+  if (!far) for (let c = sA - hash2(st.seed, 3) * pl, k = 0; c < sB; k++) { c += pl * (0.75 + 0.5 * hash2(st.seed, k + 9)); if (c > sA + pl * 0.3 && c < sB - pl * 0.3 && !holes.some((h) => c > h[0] - 3 * es && c < h[1] + 3 * es)) cuts.set(c, 0); }
   for (const h of holes) { if (h[0] > sA && h[0] < sB) cuts.set(h[0], 1); if (h[1] > sA && h[1] < sB) cuts.set(h[1], 1); }
   const list = [...cuts.keys()].sort((a, b) => a - b);
   p.ink(st.col(0), st.ro ?? 0.82);
@@ -412,7 +422,7 @@ function strake(p, H, sA, sB, yLo, yHi, st) {
     if (!fb) cols.push([b - es, 0]);
     cols.push([b, fb ? 0 : 1]);
     const base = vary(st.col(k), st.seed * 131 + k * 17, st.vary ?? 0.09), seam = mul(base, 0.36), sd = st.seed * 0.37 + k * 1.9;
-    const rows = lap ? [[0, 0, 0, 1], [0, 0.005, lap, 0], [1, 0, 0, 0]] : proud > 0.004 ? [[0, 0, -groove, 1], [0, 1, 0, 0], [1, -1, 0, 0], [1, 0, -groove, 1]] : [[0, 0, -groove, 1], [0, 1, 0, 0], [1, 0, 0, 0]];
+    const rows = far ? [[0, 0, lap, 0.3], [1, 0, 0, 0]] : lap ? [[0, 0, 0, 1], [0, 0.005, lap, 0], [1, 0, 0, 0]] : proud > 0.004 ? [[0, 0, -groove, 1], [0, 1, 0, 0], [1, -1, 0, 0], [1, 0, -groove, 1]] : [[0, 0, -groove, 1], [0, 1, 0, 0], [1, 0, 0, 0]];
     p.grid(cols.length - 1, rows.length - 1, (i, j, out) => {
       const s = cols[i][0], lo = yLo(s), hi = yHi(s), e = Math.min(0.012, (hi - lo) * 0.22), r = rows[j];
       const y = (r[0] ? hi : lo) + r[1] * (lap ? 1 : e);
@@ -421,7 +431,8 @@ function strake(p, H, sA, sB, yLo, yHi, st) {
     }, (i, j) => {
       const s = cols[i][0], x = (s - 0.5) * L, y = rows[j][0] ? yHi(s) : yLo(s);
       const g = (0.9 + 0.2 * noise3(x * 2.6, sd, y * 9)) * (st.clean ? 1 : weather(x, y, st.seed));
-      return mul(cols[i][1] || rows[j][3] ? seam : base, g);
+      const sk = cols[i][1] ? 1 : rows[j][3];
+      return mul(sk === 1 ? seam : sk ? mix(base, seam, sk) : base, g);
     });
   }
 }
@@ -448,7 +459,7 @@ function sweepCap(p, H, s, yAt, prof, facingAft) {
 /** the planked skin of the starboard side: bottom, boot-top, topside strakes and wales, upperworks */
 function shell(p, H, st, side) {
   const sts = H.sts, n = sts.length - 1, d = H.d, sd = side > 0 ? 1 : 2, C = st.col;
-  const nu = 6;
+  const nu = far ? 3 : 6;
   p.shade(null).ink(C.bottom, 0.92);
   p.grid(n, nu, (i, j, out) => { const q = H.pt(sts[i], -d + Math.pow(j / nu, 1.7) * (H.yP + d)); out[0] = q[0]; out[1] = q[1]; out[2] = q[2]; },
     (i, j) => mul(C.bottom, 0.78 + 0.34 * fbm3(sts[i] * H.L * 2.2, j * 0.7, sd * 3.3, 2)));
@@ -492,7 +503,7 @@ function bulwarkInside(p, H, st, g) {
     if (h1 - h0 < 0.004) continue;
     const cuts = [g.s0, ...(gaps || []).flat(), g.s1];
     for (let k = 0; k < cuts.length - 1; k += 2) {
-      const cols = H.between(cuts[k], cuts[k + 1]), nr = Math.max(1, Math.round((h1 - h0) / 0.11));
+      const cols = H.between(cuts[k], cuts[k + 1]), nr = far ? 1 : Math.max(1, Math.round((h1 - h0) / 0.11));
       p.grid(cols.length - 1, nr, (i, j, out) => { const s = cols[i], y = H.yGun(s) + lerp(h0, h1, j / nr); out[0] = H.x(s, y); out[1] = y; out[2] = H.zIn(s, y); },
         (i, j) => { const s = cols[i], h = lerp(h0, h1, j / nr) - g.lift; return mul(C.inner, (0.62 + 0.38 * smooth(0, 0.22, h)) * (0.88 + 0.2 * noise3(s * H.L * 3, h * 30, 7))); }, true);
     }
@@ -504,8 +515,11 @@ function railCap(p, H, st, g, s0 = g.s0, s1 = g.s1) {
   const t = H.o.thick, ov = st.capOv, h = st.capH, c = h * 0.35, cols = H.between(s0, s1);
   const yAt = (s) => H.railY(s, g) - 0.002;
   p.shade(grainX(0.14)).ink(st.col.rail, 0.7);
-  sweep(p, H, cols, yAt, [[ov, 0], [ov, h - c], [-t / 2, h + c * 0.4], [-t - ov, h - c], [-t - ov, 0]]);
-  sweep(p, H, cols, yAt, [[0, 0], [ov, 0]]); sweep(p, H, cols, yAt, [[-t - ov, 0], [-t, 0]]);
+  if (far) sweep(p, H, cols, yAt, [[ov, 0], [ov * 0.5, h], [-t - ov * 0.5, h], [-t - ov, 0]]);
+  else {
+    sweep(p, H, cols, yAt, [[ov, 0], [ov, h - c], [-t / 2, h + c * 0.4], [-t - ov, h - c], [-t - ov, 0]]);
+    sweep(p, H, cols, yAt, [[0, 0], [ov, 0]]); sweep(p, H, cols, yAt, [[-t - ov, 0], [-t, 0]]);
+  }
   const prof = [[ov, 0], [ov, h], [-t - ov, h], [-t - ov, 0]];
   if (s0 > 0.001) sweepCap(p, H, s0, yAt, prof, true);
   if (s1 < 0.999) sweepCap(p, H, s1, yAt, prof, false);
@@ -521,6 +535,14 @@ function deckPlanks(p, H, st, g, gi) {
   const prev = H.segs[gi - 1], next = H.segs[gi + 1];
   // shade under the bulwarks and under the break of a higher deck
   const ao = (s, z, zs) => (0.6 + 0.4 * smooth(0, 0.24, zs - Math.abs(z))) * (prev && prev.lift > g.lift + 0.2 ? 0.62 + 0.38 * smooth(0, 0.35, (s - g.s0) * L) : 1) * (next && next.lift > g.lift + 0.2 ? 0.62 + 0.38 * smooth(0, 0.35, (g.s1 - s) * L) : 1);
+  if (far) {
+    // far off: one surface per deck, striped a little so it still reads as planking
+    const nz = 6;
+    p.shade(null).ink(C.deck, 0.88);
+    p.grid(cols0.length - 1, nz, (i, j, out) => { const s = cols0[i], z = (j / nz * 2 - 1) * (zi(s) + 0.004); out[0] = H.x(s, H.deckEdge(s, g)); out[1] = H.deckY(s, z, g); out[2] = z; },
+      (i, j) => { const s = cols0[i], z = (j / nz * 2 - 1) * zi(s); return mul(C.deck, ao(s, z, zi(s) + 0.02) * (0.88 + 0.12 * ((i + j) % 2)) * (0.92 + 0.14 * noise3(s * L * 2.4, j * 1.7, gi))); }, true);
+    return;
+  }
   // dark underlay so no ragged plank end ever shows daylight
   p.shade(null).ink(mul(C.deck, 0.3), 0.95);
   p.grid(cols0.length - 1, 2, (i, j, out) => { const s = cols0[i], z = (j - 1) * (zi(s) + 0.004); out[0] = H.x(s, H.deckEdge(s, g)); out[1] = H.deckY(s, z, g) - 0.012; out[2] = z; }, null, true);
@@ -568,28 +590,40 @@ function deckPlanks(p, H, st, g, gi) {
 
 // ---------- class styles ----------
 const KINDS = ['raft', 'skiff', 'sloop', 'cutter', 'brigantine', 'frigate', 'galleon', 'manowar'];
+// Every class is built at up to three tiers, each a complete ship in one geometry:
+//   0 the full model: every plank seam, ratline, reef point and belaying pin
+//   1 for the middle distance (and the close model of the 'low' preset): the fiddly bits left out, coarser cloth and decks
+//   2 far off: flat strakes, one surface per deck, standing rigging only
+// lite / far switch detail off in the builders, eco stretches the mesh of cloth, decks and rails, step spaces the hull
+// stations, q thins the round shapes drawn by the pen, fig scales the sculpt resolution of the figurehead.
+const TIERS = [
+  { lite: false, far: false, eco: 1, step: 1, q: 1, fig: 1 },
+  { lite: true, far: false, eco: 1.5, step: 1.6, q: 0.7, fig: 0.5 },
+  { lite: true, far: true, eco: 2.6, step: 2.6, q: 0.45, fig: 0.3 },
+];
 /** everything the builders need, derived from the class numbers; the stock ids add their own character */
-function styleFor(def) {
+function styleFor(def, tier = 0) {
+  const T = TIERS[tier];
   const L = def.len, B = def.beam, per = Math.max(0, def.cannons?.perSide | 0), masts = Math.max(1, def.sails | 0 || 1);
   const kind = KINDS.includes(def.id) ? def.id
     : per === 0 && L < 2.9 ? 'raft' : L < 4 ? 'skiff' : L < 4.8 ? 'sloop' : L < 5.7 ? 'cutter' : L < 7 ? 'brigantine' : L < 8.1 ? 'frigate' : per >= 9 || L >= 9.3 ? 'manowar' : 'galleon';
   const hullC = hex(def.color ?? 0x6b4a2e), sailC = hex(def.sail ?? 0xe8e2d0);
   const lum = hullC[0] * 0.3 + hullC[1] * 0.6 + hullC[2] * 0.1;
-  const low = getDetail() === 'low';
-  const st = { kind, L, B, per, masts, def, lite: low, eco: (kind === 'frigate' ? 1.2 : 1) * (low ? 1.5 : 1), sw: 0.085, plank: 2.1, deckW: 0.085, deckLen: 1.7, capOv: 0.022, capH: 0.035, lap: 0, open: false, holes: {}, openPorts: [], ports: [] };
+  const st = { kind, L, B, per, masts, def, tier, lite: T.lite, far: T.far, eco: (kind === 'frigate' ? 1.2 : 1) * T.eco, sw: 0.085, plank: 2.1, deckW: 0.085, deckLen: 1.7, capOv: 0.022, capH: 0.035, lap: 0, open: false, holes: {}, openPorts: [], ports: [] };
   const o = { L, B, yP: 0.035, yS: 0.1, sMid: 0.46, midK: 1, wlMid: 0.92, wlP: 2.0, wlE: 1.1, midP: 2.3, midE: 0.8, deckP: 2.6, deckE: 0.58,
     tWl: 0.3, tMid: 0.68, tDeck: 0.74, kMid: 3, kEnd: 0.9, tumble: 0.02, leanMin: -0.3, leanMax: 0.3,
     fwdFrom: 0.6, aftTo: 0.3, stemE: 1.9, thick: 0.05, camber: 0.03, step: { sloop: 0.15, cutter: 0.16, brigantine: 0.19, frigate: 0.27, galleon: 0.21 }[kind] || 0.22, rakeF: 0.1 * L, rakeA: 0.18 };
-  if (low) o.step *= 1.6;
   const wale = mul(hullC, 0.42), dark = mul(hullC, 0.6);
   const C = st.col = { hull: hullC, wale, bottom: hex(0x2c231c), stripe: hex(0xe2d8bc), accent: lum < 0.05 ? OCHRE : mix(hullC, WHITE, 0.55), upper: dark, top: wale,
     inner: mul(mix(hullC, OAK, 0.6), 1.15), deck: DECK, rail: mul(mix(hullC, OAK, 0.5), 0.9), sail: sailC, spar: SPAR, trim: GILT, transom: hullC };
+  // the device each class wears on her mainsail, painted in the colour of her side
+  st.device = { raft: 'daub', skiff: 'disc', sloop: 'lozenge', cutter: 'roundel', brigantine: 'saltire', frigate: 'cross', galleon: 'sun', manowar: 'star' }[kind];
   if (kind === 'raft') return st;
   let portRows = [2, 4], walesC = [], portsC = null, spread = [0.2, 0.8];
   switch (kind) {
     case 'skiff':
       Object.assign(o, { draft: 0.2, fb: 0.42, sheerF: 0.2, sheerA: 0.08, wlMid: 0.76, midK: 0.92, tumble: 0, deckE: 0.62, wlE: 1.0, tWl: 0.42, tMid: 0.68, tDeck: 0.74, kMid: 2.2, kEnd: 1,
-        rakeF: 0.085 * L, rakeA: 0.1, thick: 0.03, camber: 0, yS: 0.08, yP: 0.03, step: low ? 0.2 : 0.13, segs: [{ s0: 0, s1: 1, lift: -0.41, bul: 0.41 }] });
+        rakeF: 0.085 * L, rakeA: 0.1, thick: 0.03, camber: 0, yS: 0.08, yP: 0.03, step: 0.13, segs: [{ s0: 0, s1: 1, lift: -0.41, bul: 0.41 }] });
       st.open = true; st.lap = 0.014; st.sw = 0.075; st.plank = 9; st.deckW = 0.1; st.capOv = 0.016; st.capH = 0.03;
       C.accent = mix(hullC, WHITE, 0.7); C.inner = mul(hullC, 1.0); C.deck = mix(hex(0x8a7c66), hullC, 0.25); C.thwart = mul(mix(hullC, DECK, 0.7), 1.08);
       break;
@@ -613,7 +647,7 @@ function styleFor(def) {
       Object.assign(o, { draft: 0.6, fb: 0.78, sheerF: 0.26, sheerA: 0.18, tumble: 0.045, rakeA: 0.2, deckE: 0.55,
         segs: [{ s0: 0, s1: 0.34, lift: 0.78, bul: 0.45 }, { s0: 0.34, s1: 0.84, lift: 0, bul: 0.51 }, { s0: 0.84, s1: 1, lift: 0.42, bul: 0.36 }] });
       walesC = [4, 5]; spread = [0.16, 0.82];
-      C.accent = hex(0xd8c79a); C.upper = hex(0x1f3050); C.top = hex(0x14110f); C.bottom = hex(0x4a3528); C.inner = hex(0x8c2e22); C.wale = hex(0x14110f);
+      C.accent = hex(0xd8c79a); C.upper = hex(0x1d4a3a); C.top = hex(0x14110f); C.bottom = hex(0x4a3528); C.inner = hex(0x8c2e22); C.wale = hex(0x14110f);
       break;
     case 'galleon':
       Object.assign(o, { draft: 0.7, fb: 0.9, sheerF: 0.3, sheerA: 0.4, tumble: 0.09, rakeF: 0.08 * L, rakeA: 0.2, deckE: 0.5, midE: 0.72, tDeck: 0.7, leanMin: -0.34,
@@ -642,6 +676,7 @@ function styleFor(def) {
     galleon: { type: 'ram', len: 1.0, tip: 0.1, e: 1.25, rails: 2, railY: 0.5, drop: 0.3, bow: -0.03, platform: true, railCol: C.upper, size: 1.25, railS: 0.9 },
     manowar: { type: 'drake', len: 0.72, tip: 0.36, rails: 2, railY: 0.62, drop: 0.3, platform: true, size: 1.15, trail: 0.6 },
   }[kind];
+  o.step *= T.step; o.coarse = T.far;
   st.chW = { brigantine: 0.1, frigate: 0.13, galleon: 0.16, manowar: 0.16 }[kind] || 0;
   st.rig = rigPlan(st);
   st.transomCol = (y) => (y > o.fb + o.sheerA + 0.03 ? C.upper : C.hull);
@@ -709,7 +744,7 @@ function sideWorks(p, H, st) {
     out.push([0, hh]);
     p.push(H.frame(s + (lowFwd ? 0.004 : -0.004) / L, y0, -t / 2)); p.push(X(0, 0, 0, 0, 0, 0, lowFwd ? 1 : -1, 1, 1));
     p.shade(null).ink(st.rowD(8, lowFwd ? a : b, false).col(), 0.8).extrude(out, t + 0.012);
-    p.push(X(ll * 0.2, hh * 0.24, t / 2 + 0.012)); scroll(p, Math.min(ll, hh) * 0.2, 0.012, 1.4, C.trim); p.pop();
+    if (!far) { p.push(X(ll * 0.2, hh * 0.24, t / 2 + 0.012)); scroll(p, Math.min(ll, hh) * 0.2, 0.012, 1.4, C.trim); p.pop(); }
     p.pop(); p.pop();
   }
   // small lights in the sides of the cabins under the quarterdeck and the poop
@@ -728,7 +763,7 @@ function sideWorks(p, H, st) {
   });
   // entry steps up the side amidships, between two guns
   const waist = H.segs.find((g) => Math.abs(g.lift) < 0.01 && g.s1 - g.s0 > 0.2);
-  if (waist && k !== 'sloop' && k !== 'cutter') {
+  if (waist && k !== 'sloop' && k !== 'cutter' && !far) {
     const ups = st.ports.filter((q) => q.s > waist.s0 && q.s < waist.s1).map((q) => q.s).sort((x, y) => x - y);
     let ss = (waist.s0 + waist.s1) / 2;
     for (let j = 0; j < ups.length - 1; j++) if (ups[j + 1] - ups[j] > 0.5 / L && ups[j] < 0.56) ss = (ups[j] + ups[j + 1]) / 2;
@@ -792,6 +827,7 @@ function backbone(p, H, st) {
 
 // ---------- joinery shared by decks and castles ----------
 const BALUSTER = [[0.5, 0], [0.42, 0.12], [0.95, 0.34], [0.78, 0.54], [0.42, 0.74], [0.6, 0.86], [0.42, 1]];
+const BALUSTER_MID = [[0.5, 0], [0.95, 0.34], [0.42, 0.74], [0.42, 1]], BALUSTER_FAR = [[0.62, 0], [0.62, 1]];
 /** a rail on turned stanchions from a to b (points at deck level), h high */
 function balustrade(p, a, b, h, col, o = {}) {
   const len = dist3(a, b);
@@ -800,7 +836,7 @@ function balustrade(p, a, b, h, col, o = {}) {
   const m = frame(a, sub3(b, a), up);
   p.push(m);
   p.shade(null).ink(col, 0.72);
-  const prof = BALUSTER.map(([rr, y]) => [rr * r, y * (h - hr)]);
+  const prof = (far ? BALUSTER_FAR : lite ? BALUSTER_MID : BALUSTER).map(([rr, y]) => [rr * r, y * (h - hr)]);
   for (let i = 0; i <= n; i++) {
     const x = (len * i) / n;
     if (i === 0 || i === n) { if (!o.noPosts) p.T(x, h / 2, 0).box(0.05, h, 0.05, 0.008); } else p.T(x, 0, 0, 0, 45, 0).lathe(prof, 4);
@@ -822,21 +858,28 @@ function ladder(p, foot, head, w, col) {
 function door(p, w, h, col, o = {}) {
   const fr = 0.035;
   p.ink(mul(col, 0.55), 0.8).T2(0, h / 2, 0.004).box(w + 2 * fr, h + fr, 0.02, 0.004);
-  const nb = Math.max(2, Math.round(w / 0.085));
+  const nb = lite ? 1 : Math.max(2, Math.round(w / 0.085));
   for (let i = 0; i < nb; i++) p.ink(vary(col, 77 + i + (o.seed || 0), 0.1), 0.8).T2(-w / 2 + ((i + 0.5) * w) / nb, h / 2 - fr / 4, 0.016).box(w / nb - 0.006, h - fr / 2, 0.014);
+  if (far) return;
   p.ink(IRON, 0.5, 0.8);
   for (const y of [h * 0.2, h * 0.78]) p.T2(-w * 0.12, y, 0.025).box(w * 0.7, 0.022, 0.008);
-  p.T2(w * 0.32, h * 0.5, 0.03, 90).lathe([[0.0, -0.004], [0.022, -0.004], [0.022, 0.004], [0, 0.004]], 8);
+  if (!lite) p.T2(w * 0.32, h * 0.5, 0.03, 90).lathe([[0.0, -0.004], [0.022, -0.004], [0.022, 0.004], [0, 0.004]], 8);
   if (o.light) { p.ink(GLASS, 0.15, 0.5, 0.15).T2(0, h * 0.74, 0.024).box(w * 0.42, h * 0.16, 0.006, 0.002); p.ink(mul(col, 0.5)).T2(0, h * 0.74, 0.027).box(0.012, h * 0.16, 0.006); }
 }
 Pen.prototype.T2 = function (x, y, z, rx, ry, rz, sx, sy, sz) { const m = X(x, y, z, rx, ry, rz, sx, sy, sz); this.loc = this.loc ? this.loc.multiply(m) : m; return this; };
 /** a small leaded window flat on a wall, foot at the origin, facing +Z */
 function windowLight(p, w, h, frameCol, o = {}) {
   const fr = o.fr ?? 0.022, nx = o.nx ?? Math.max(1, Math.round(w / 0.085)), ny = o.ny ?? Math.max(1, Math.round(h / 0.1));
+  if (far) {
+    p.ink(frameCol, 0.6, o.metal || 0).T2(0, h / 2, 0.008).box(w + 2 * fr, h + 2 * fr, 0.016);
+    p.ink(GLASS, 0.14, 0.55, o.glow ?? 0.22).T2(0, h / 2, 0.012).box(w, h, 0.014);
+    return;
+  }
   p.ink(GLASS, 0.14, 0.55, o.glow ?? 0.22).T2(0, h / 2, 0.006).box(w, h, 0.008);
   p.ink(frameCol, 0.6, o.metal || 0);
   p.T2(0, h + fr / 2, 0.01).box(w + 2 * fr, fr, 0.03); p.T2(0, -fr / 2, 0.01).box(w + 2.6 * fr, fr * 1.1, 0.04);
   for (const sg of [-1, 1]) p.T2((sg * (w + fr)) / 2, h / 2, 0.01).box(fr, h, 0.03);
+  if (lite && w * h < 0.03) return;
   for (let i = 1; i < nx; i++) p.T2(-w / 2 + (i * w) / nx, h / 2, 0.012).box(0.009, h, 0.01);
   for (let i = 1; i < ny; i++) p.T2(0, (i * h) / ny, 0.012).box(w, 0.009, 0.01);
 }
@@ -847,7 +890,7 @@ function bulkhead(p, H, st, k) {
   if (Math.abs(a.lift - b.lift) < 0.03) return;
   const hi = a.lift > b.lift ? a : b, lo = hi === a ? b : a, s = a.s1, dir = hi === a ? 1 : -1;   // dir: which way the wall faces along X
   const C = st.col, y0 = H.deckEdge(s, lo) - 0.01, y1 = H.deckEdge(s, hi), ht = y1 - y0;
-  const zi = (y) => H.zIn(s, y), bw = 0.105, zMax = zi(y1) + 0.01, nb = Math.ceil(zMax / bw);
+  const zi = (y) => H.zIn(s, y), bw = far ? 0.32 : lite ? 0.21 : 0.105, zMax = zi(y1) + 0.01, nb = Math.ceil(zMax / bw);
   const cam = (z, g) => H.o.camber * (1 - (z / H.hw) * (z / H.hw));
   const colB = st.bulkCol || C.inner;
   p.shade(null);
@@ -868,13 +911,20 @@ function bulkhead(p, H, st, k) {
   const wide = zt * 2;
   const stairs = ht > 0.3, twoLadders = wide > 1.9 && ht > 0.45;
   const lw = clamp(wide * 0.2, 0.3, 0.44), lz = twoLadders ? zt - lw / 2 - 0.1 : 0;
-  if (ht > 0.66) {
+  if (ht > 0.66 && !far) {
     const dh = Math.min(0.86, ht - 0.07), dw = clamp(wide * 0.16, 0.28, 0.4);
     const doors = twoLadders ? (wide > 2.6 ? [-dw * 0.9, dw * 0.9] : [0]) : [zt * 0.55];
     for (const z of doors) { p.push(M(z, y0 + 0.012 + cam(z))); door(p, dw, dh, st.doorCol || mul(C.rail, 0.9), { seed: k * 9, light: st.kind !== 'brigantine' }); p.pop(); }
     if (wide > 2.2) for (const sg of [-1, 1]) { const z = sg * (twoLadders ? (doors.length > 1 ? dw * 2.3 : dw * 1.5) : zt * 0.5); p.push(M(z, y0 + ht * 0.42)); windowLight(p, 0.2, ht * 0.3, C.trim); p.pop(); }
   }
-  if (stairs) {
+  if (stairs && far) {
+    // far off a ladder is one sloping board
+    const run = Math.min(0.55, ht * 0.62);
+    for (const sg of twoLadders ? [-1, 1] : [1]) {
+      const z = sg * lz, a = [H.x(s, y0) + dir * (run + 0.05), y0 + cam(z) + 0.01, z], b = [H.x(s, y1) + dir * 0.05, y1 + cam(z), z];
+      p.shade(null).ink(mul(C.rail, 0.9), 0.8).TM(frame(lerp3(a, b, 0.5), sub3(b, a), [0, 1, 0])).box(dist3(a, b), 0.05, lw);
+    }
+  } else if (stairs) {
     const run = Math.min(0.55, ht * 0.62);
     for (const sg of twoLadders ? [-1, 1] : [1]) {
       const z = sg * lz;
@@ -895,8 +945,10 @@ function bulkhead(p, H, st, k) {
 // ---------- guns ----------
 const GUN_PROFILE = [[0, -0.66], [0.38, -0.63], [0.3, -0.585], [0.9, -0.55], [1, -0.5], [1, -0.44], [0.92, -0.43], [0.89, -0.2], [0.98, -0.19], [0.88, -0.15], [0.8, 0.12], [0.87, 0.135], [0.78, 0.15], [0.66, 0.4], [0.83, 0.45], [0.7, 0.5], [0.42, 0.5], [0.42, 0.3]];
 /** a muzzle-loading gun lying along +Z, trunnions at the origin; len overall, from = how much of the breech end to leave out (0 = whole gun) */
+const GUN_FAR = [[0, -0.62], [0.95, -0.55], [0.9, -0.2], [0.86, -0.08], [0.68, 0.42], [0.82, 0.47], [0.42, 0.5]];
+const GUN_MID = [[0, -0.66], [0.38, -0.63], [0.3, -0.585], [0.9, -0.55], [1, -0.47], [0.9, -0.2], [0.98, -0.19], [0.88, -0.08], [0.8, 0.12], [0.87, 0.135], [0.66, 0.4], [0.83, 0.45], [0.7, 0.5], [0.42, 0.5], [0.42, 0.3]];
 function gunBarrel(p, len, r, from = -1) {
-  const pr = GUN_PROFILE.filter((q) => q[1] >= from).map(([rr, y]) => [rr * r, y * len]);
+  const pr = (far ? GUN_FAR : lite ? GUN_MID : GUN_PROFILE).filter((q) => q[1] >= from).map(([rr, y]) => [rr * r, y * len]);
   if (from > -0.6) pr.unshift([0, pr[0][1]]);
   p.shade(mottle(0.25, 30)).ink(IRON, 0.42, 0.85);
   p.T2(0, 0, 0, 90).lathe(pr, 8);
@@ -907,6 +959,7 @@ function gunCarriage(p, len, r, h, col) {
   const cl = len * 0.6, z0 = -len * 0.5, wd = r * 2.5;
   const cheek = [[z0, -h + 0.045], [z0 + cl, -h + 0.045], [z0 + cl, 0.01], [z0 + cl * 0.72, 0.01], [z0 + cl * 0.72, -0.012], [z0 + cl * 0.5, -0.012], [z0 + cl * 0.5, -0.05], [z0 + cl * 0.3, -0.05], [z0 + cl * 0.3, -0.09], [z0 + cl * 0.12, -0.09], [z0 + cl * 0.12, -0.13], [z0, -0.13]];
   p.shade(grainY(0.14)).ink(col, 0.8);
+  if (far) { p.T2(0, (0.01 - h + 0.045) / 2, z0 + cl * 0.5).box(wd + 0.03, h - 0.035, cl); p.shade(null); return; }
   for (const sg of [-1, 1]) p.T2((sg * wd) / 2, 0, 0, 0, -90, 0).extrude(cheek, 0.03);
   p.T2(0, -h + 0.06, z0 + cl * 0.5).box(wd, 0.025, cl * 0.92);
   p.shade(null).ink(mul(col, 0.55), 0.8);
@@ -948,9 +1001,11 @@ function gunPorts(p, H, st) {
       const lw = port.w - 0.012, lh = hgt - 0.012;
       p.ink(mul(port.band === 'C' ? (st.chequer ? C.wale : C.hull) : st.rowD(port.rows[0], H.seg(s), false).col(), 0.9), 0.82).T(0, -lh / 2, 0.012).box(lw, lh, 0.024);
       p.ink(RED, 0.8).T(0, -lh / 2, -0.003).box(lw - 0.03, lh - 0.03, 0.008);
-      p.ink(IRON, 0.5, 0.8);
-      for (const sg of [-1, 1]) p.T(sg * lw * 0.28, -lh * 0.45, 0.026).box(0.02, lh * 0.9, 0.006);
-      p.T(0, -lh * 0.8, 0.03).sphere(0.012, 5, 3);
+      if (!lite) {
+        p.ink(IRON, 0.5, 0.8);
+        for (const sg of [-1, 1]) p.T(sg * lw * 0.28, -lh * 0.45, 0.026).box(0.02, lh * 0.9, 0.006);
+        p.T(0, -lh * 0.8, 0.03).sphere(0.012, 5, 3);
+      }
       p.pop(); p.pop();
     }
     // the gun: run out through the port
@@ -977,6 +1032,11 @@ function gunPorts(p, H, st) {
 /** a stern lantern standing on the origin: iron cage, horn panes lit from within, a little spire */
 function lantern(p, h, col = BRASS) {
   const r = h * 0.2;
+  if (far) {
+    p.ink(LAMP, 0.3, 0, 1.15).T2(0, h * 0.2, 0).lathe([[r * 0.5, 0], [r * 0.9, h * 0.07], [r * 0.9, h * 0.47]], 5);
+    p.ink(col, 0.35, 0.9).T2(0, h * 0.67, 0).lathe([[r * 1.0, 0], [r * 0.4, h * 0.16], [0, h * 0.33]], 5);
+    return;
+  }
   p.ink(IRON, 0.5, 0.8).T2(0, h * 0.1, 0).cyl(r * 0.16, r * 0.22, h * 0.2, 6, 0);
   p.ink(col, 0.35, 0.9).T2(0, h * 0.2, 0).lathe([[0, 0], [r * 0.55, 0], [r * 0.9, h * 0.05], [r * 0.9, h * 0.07], [0, h * 0.07]], 8);
   p.ink(LAMP, 0.3, 0, 1.15).T2(0, h * 0.27, 0).lathe([[r * 0.74, 0], [r * 0.86, h * 0.34], [r * 0.74, h * 0.4]], 6);
@@ -986,7 +1046,7 @@ function lantern(p, h, col = BRASS) {
 }
 /** a carved scroll: a gilt volute coiling in the local XY plane about the origin */
 function scroll(p, R, r, turns = 1.6, col = GILT) {
-  const pts = [], rad = [], n = Math.round(turns * 9);
+  const pts = [], rad = [], n = Math.round(turns * (far ? 5 : lite ? 7 : 9));
   for (let i = 0; i <= n; i++) { const t = i / n, a = t * turns * TAU, rr = R * (1 - 0.82 * t); pts.push([Math.cos(a) * rr, Math.sin(a) * rr, 0]); rad.push(r * (1 - 0.55 * t)); }
   p.ink(col, 0.38, 0.85).tube(pts, rad, 4, 1);
 }
@@ -1024,7 +1084,7 @@ function sternWorks(p, H, st) {
     p.push(TS(y));
     p.shade(null).ink(trim, ...trimPbr).T(0, -0.09, 0.012).box(W * 0.94, 0.022, 0.03, 0.006); p.T(0, 0.09, 0.012).box(W * 0.94, 0.022, 0.03, 0.006);
     p.push(X(0, 0, 0.014)); boss(p, 0.06, C.trim); p.pop();
-    for (const sg of [-1, 1]) { p.push(X(sg * 0.2, 0, 0.018, 0, 0, 0, sg, 1, 1)); scroll(p, 0.055, 0.013, 1.5, C.trim); p.pop(); p.push(X(sg * Math.min(W * 0.36, 0.5), 0, 0.018, 0, 0, 0, -sg, 1, 1)); scroll(p, 0.04, 0.011, 1.3, C.trim); p.pop(); }
+    if (!far) for (const sg of [-1, 1]) { p.push(X(sg * 0.2, 0, 0.018, 0, 0, 0, sg, 1, 1)); scroll(p, 0.055, 0.013, 1.5, C.trim); p.pop(); p.push(X(sg * Math.min(W * 0.36, 0.5), 0, 0.018, 0, 0, 0, -sg, 1, 1)); scroll(p, 0.04, 0.011, 1.3, C.trim); p.pop(); }
     p.pop();
   }
   // open gallery: a walk across the stern with a balustrade
@@ -1049,7 +1109,7 @@ function sternWorks(p, H, st) {
     for (let i = 0; i <= 14; i++) { const a = (i / 14) * Math.PI; edge.push([Math.cos(a) * (zt + 0.02), 0.045 + Math.pow(Math.sin(a), 0.8) * ah, 0]); }
     p.ink(trim, ...trimPbr).tube(edge, 0.022, 5, 1);
     p.push(X(0, 0.03 + ah * 0.48, 0.03)); boss(p, ah * 0.3, C.trim); p.pop();
-    for (const sg of [-1, 1]) { p.push(X(sg * zt * 0.5, 0.04 + ah * 0.33, 0.034, 0, 0, 0, sg, 1, 1)); scroll(p, ah * 0.22, 0.016, 1.5, C.trim); p.pop(); }
+    if (!far) for (const sg of [-1, 1]) { p.push(X(sg * zt * 0.5, 0.04 + ah * 0.33, 0.034, 0, 0, 0, sg, 1, 1)); scroll(p, ah * 0.22, 0.016, 1.5, C.trim); p.pop(); }
     const lp = sn.lanterns === 3 ? [[0, 1], [-0.66, 0.78], [0.66, 0.78]] : sn.lanterns ? [[0, 1]] : [];
     for (const [f, k] of lp) {
       const x = f * zt, y = 0.045 + Math.pow(Math.cos(Math.asin(clamp(Math.abs(f), 0, 1))), 0.8) * ah, lh = sn.lanternH * k;
@@ -1083,7 +1143,7 @@ function sternWorks(p, H, st) {
       body([[0.98, y], [0.97, wa]], C.upper);
       body([[0.955, wa], [0.94, wb]], GLASS, 0.14, 0.55, 0.28);
       p.ink(sn.frame || C.trim, 0.5, sn.frame ? 0 : 0.6);
-      for (let i = 0; i <= 6; i++) { const a = (i / 6) * Math.PI; p.T(Math.cos(a) * dep * 0.955, (wa + wb) / 2, Math.sin(a) * dep * 0.955, 0, -a / DEG, 0).box(0.018, wb - wa, 0.012 * (2 * dep / len) + 0.012); }
+      for (let i = 0; i <= 6; i += far ? 2 : 1) { const a = (i / 6) * Math.PI; p.T(Math.cos(a) * dep * 0.955, (wa + wb) / 2, Math.sin(a) * dep * 0.955, 0, -a / DEG, 0).box(0.018, wb - wa, 0.012 * (2 * dep / len) + 0.012); }
       body([[0.95, (wa + wb) / 2 - 0.006], [0.965, (wa + wb) / 2], [0.95, (wa + wb) / 2 + 0.006]], sn.frame || C.trim, 0.5, sn.frame ? 0 : 0.6);
       body([[0.97, wb], [1.04, wb + 0.012], [1.04, wb + 0.035], [0.97, wb + 0.045]], trim, ...trimPbr);
       y = wb + 0.045;
@@ -1097,8 +1157,9 @@ function sternWorks(p, H, st) {
 
 // ---------- the head: knee, rails and figurehead ----------
 const sculptCache = new Map();
-function sculpted(key, make, res) {
-  if (!sculptCache.has(key)) sculptCache.set(key, buildPartGeometry(make(), { res, ao: 0.8 }));
+function sculpted(name, make, res, tier = 0) {
+  const key = `${name}|${tier}`;
+  if (!sculptCache.has(key)) sculptCache.set(key, buildPartGeometry(make(), { res: res * TIERS[tier].fig, ao: 0.8, lod: tier }));
   return sculptCache.get(key);
 }
 // Figureheads face +Z (X across), then are turned to face the bow. The flesh is sculpted;
@@ -1142,34 +1203,35 @@ function drakeFigure() {
     hard.push(plateZY(out, 0.012).color(GILD_HI).pbr(0.32, 0.92)); }
   // the crown
   hard.push(HP.torus(0.062, 0.012, 16, 6).rot(90, 0, 0).rot(-12, 0, 0).at(0, 0.722, 0.24).color(GILD_HI).pbr(0.28, 0.95));
-  for (let i = 0; i < 6; i++) { const a2 = (i / 6) * TAU; hard.push(HP.cone(0.015, 0.055, 6).color(GILD_HI).pbr(0.28, 0.95).at(Math.cos(a2) * 0.062, 0.034, Math.sin(a2) * 0.062).rot(-12, 0, 0).at(0, 0.722, 0.24)); hard.push(HP.sphere(0.008, 6).color(i % 2 ? 0xb3261e : 0x2f6fb5).pbr(0.2).glow(0.2).at(Math.cos(a2 + 0.52) * 0.064, 0.004, Math.sin(a2 + 0.52) * 0.064).rot(-12, 0, 0).at(0, 0.722, 0.24)); }
-  for (let i = 0; i < 5; i++) for (const up of [1, -1]) hard.push(HP.cone(0.007, 0.024, 5).color(0xf4eedc).pbr(0.3).rot(up > 0 ? 180 : 0, 0, 0).at((i - 2) * 0.014, up > 0 ? 0.6 : 0.51, 0.43 + (2 - Math.abs(i - 2)) * 0.022 - (up > 0 ? 0 : 0.02)));
+  for (let i = 0; i < 6; i++) { const a2 = (i / 6) * TAU; hard.push(HP.cone(0.015, 0.055, 6).color(GILD_HI).pbr(0.28, 0.95).at(Math.cos(a2) * 0.062, 0.034, Math.sin(a2) * 0.062).rot(-12, 0, 0).at(0, 0.722, 0.24)); hard.push(HP.sphere(0.008, 6).color(i % 2 ? 0xb3261e : 0x2f6fb5).pbr(0.2).glow(0.2).at(Math.cos(a2 + 0.52) * 0.064, 0.004, Math.sin(a2 + 0.52) * 0.064).rot(-12, 0, 0).at(0, 0.722, 0.24).lod(0)); }
+  for (let i = 0; i < 5; i++) for (const up of [1, -1]) hard.push(HP.cone(0.007, 0.024, 5).color(0xf4eedc).pbr(0.3).rot(up > 0 ? 180 : 0, 0, 0).at((i - 2) * 0.014, up > 0 ? 0.6 : 0.51, 0.43 + (2 - Math.abs(i - 2)) * 0.022 - (up > 0 ? 0 : 0.02)).lod(0));
   return { prims, hard };
 }
 /** a ram's head with curling ridged horns over a fleeced breast: the galleon's beak */
 function ramFigure() {
-  const g = (pr) => pr.color(GILD).pbr(0.32, 0.92), fleece = (pr) => pr.color(0xe9e0c8).pbr(0.9).bump(0.02, 9, 'scales');
+  const g = (pr) => pr.color(GILD).pbr(0.32, 0.92), fleece = (pr) => pr.color(0xb9862a).pbr(0.48, 0.8).bump(0.024, 10, 'scales').tint(0.22, 16);   // the fleece is gilt too, a deeper gold cut into tight curls, so the head reads as one carving
   const prims = [
     fleece(S.capsule([0, -0.14, -0.36], [0, 0.08, 0.04], 0.15, 0.12)).blend(0.04),
     fleece(S.ellipsoid(0.15, 0.14, 0.11)).at(0, 0.0, 0.03).blend(0.05),
     fleece(S.ellipsoid(0.1, 0.07, 0.09)).at(0, 0.27, 0.1).blend(0.04),                                          // poll
     g(S.ellipsoid(0.08, 0.088, 0.105)).at(0, 0.2, 0.18).blend(0.03),                                            // skull
-    g(S.capsule([0, 0.2, 0.23], [0, 0.11, 0.41], 0.062, 0.042)).blend(0.03),                                    // long muzzle
-    g(S.ellipsoid(0.036, 0.02, 0.028)).at(0, 0.088, 0.428).color(0x3a2a1c).pbr(0.6).paint(0.006),               // nose
+    g(S.capsule([0, 0.205, 0.23], [0, 0.128, 0.375], 0.066, 0.05)).blend(0.03),                                 // muzzle, with a ram's arched nose
+    g(S.ellipsoid(0.05, 0.03, 0.06)).rot(-28, 0, 0).at(0, 0.215, 0.3).blend(0.025),
+    g(S.ellipsoid(0.036, 0.02, 0.028)).at(0, 0.104, 0.408).color(0x3a2a1c).pbr(0.6).paint(0.006),               // nose
     g(S.capsule([0, 0.262, 0.16], [0, 0.215, 0.31], 0.03, 0.02)).blend(0.03),                                    // brow ridge
     ...S.mirrorX([
       S.sphere(0.024).at(0.062, 0.212, 0.27).cut(0.008),
-      S.sphere(0.009).at(0.022, 0.1, 0.447).cut(0.004),
+      S.sphere(0.009).at(0.022, 0.116, 0.422).cut(0.004),
       g(S.ellipsoid(0.022, 0.05, 0.014)).rot(0, 0, -66).at(0.118, 0.165, 0.09).blend(0.012),                     // ear
     ]),
-    S.capsule([0, 0.085, 0.36], [0, 0.07, 0.42], 0.012, 0.01).cut(0.006),                                        // mouth line
+    S.capsule([0, 0.09, 0.33], [0, 0.078, 0.4], 0.012, 0.01).cut(0.006),                                         // mouth line
   ];
   const hornPts = [], hornRad = [];
-  for (let i = 0; i <= 14; i++) { const t = i / 14, a2 = (115 + t * 340) * DEG, r = 0.11 * (1 - 0.42 * t); hornPts.push([0.088 + 0.1 * t, 0.2 + Math.sin(a2) * r, 0.11 + Math.cos(a2) * r]); hornRad.push(0.044 * (1 - 0.8 * t)); }
+  for (let i = 0; i <= 14; i++) { const t = i / 14, a2 = (115 + t * 350) * DEG, r = 0.14 * (1 - 0.45 * t); hornPts.push([0.09 + 0.13 * t, 0.2 + Math.sin(a2) * r, 0.1 + Math.cos(a2) * r]); hornRad.push(0.054 * (1 - 0.8 * t)); }
   const hard = HP.mirrorX([
     HP.sphere(0.015, 12).color(0x2a1a10).pbr(0.2).at(0.058, 0.213, 0.272),
     HP.tube(hornPts, hornRad, 28, 8).color(GILD_HI).pbr(0.3, 0.92),
-    ...hornPts.slice(1, 12).map((q, i) => { const n = norm3(sub3(hornPts[i + 2], hornPts[i])), yaw = Math.atan2(n[0], n[2]) / DEG, pitch = -Math.asin(n[1]) / DEG; return HP.torus(hornRad[i + 1] + 0.004, 0.006, 8, 4).rot(pitch, yaw, 0).at(q[0], q[1], q[2]).color(GILD).pbr(0.36, 0.9); }),
+    ...hornPts.slice(1, 12).map((q, i) => { const n = norm3(sub3(hornPts[i + 2], hornPts[i])), yaw = Math.atan2(n[0], n[2]) / DEG, pitch = -Math.asin(n[1]) / DEG; return HP.torus(hornRad[i + 1] + 0.004, 0.006, 8, 4).rot(pitch, yaw, 0).at(q[0], q[1], q[2]).color(GILD).pbr(0.36, 0.9).lod(1); }),
   ]);
   return { prims, hard };
 }
@@ -1208,14 +1270,19 @@ function headWorks(p, H, st) {
   }
   // the figure itself
   if (hd.type === 'scroll') { p.push(X(tip[0] - hd.scroll * 0.75, tip[1] - hd.scroll * 0.2, 0)); p.ink(C.wale, 0.8).T(0, 0, 0, 90).cyl(hd.scroll * 0.92, hd.scroll * 0.92, w * 0.7, 14); for (const sg of [-1, 1]) { p.push(X(0, 0, sg * (w * 0.35 + 0.006), 0, 0, 0, 1, 1, sg)); scroll(p, hd.scroll, hd.scroll * 0.2, 1.7, C.trim); p.pop(); } p.pop(); }
-  if (hd.type === 'drake') p.TM(X(tip[0] - 0.1, tip[1] - 0.02, 0, 0, 90, 0, hd.size)).geo(sculpted('drake', drakeFigure, 48));
-  if (hd.type === 'ram') p.TM(X(tip[0] - 0.16, tip[1] - 0.06, 0, 0, 90, 0, hd.size)).geo(sculpted('ram', ramFigure, 46));
+  if (hd.type === 'drake') p.TM(X(tip[0] - 0.1, tip[1] - 0.02, 0, 0, 90, 0, hd.size)).geo(sculpted('drake', drakeFigure, 48, st.tier));
+  if (hd.type === 'ram') p.TM(X(tip[0] - 0.16, tip[1] - 0.06, 0, 0, 90, 0, hd.size)).geo(sculpted('ram', ramFigure, 46, st.tier));
 }
 
 // ---------- deck furniture ----------
 // Each piece is drawn about the origin, resting on y = 0, long axis fore-and-aft (X) unless noted.
 function hatch(p, l, w, col, grating = true) {
   const t = 0.045, hc = 0.075;
+  if (far) {
+    p.shade(null).ink(mul(col, 0.8), 0.8).T(0, hc / 2, 0).box(l, hc, w);
+    p.ink(grating ? mul(col, 0.42) : mul(col, 0.95), 0.9).T(0, hc + 0.003, 0).box(l - 2 * t, 0.006, w - 2 * t);
+    return;
+  }
   p.shade(grainX(0.12)).ink(mul(col, 0.8), 0.8);
   for (const sg of [-1, 1]) { p.T(0, hc / 2, sg * (w / 2 - t / 2)).box(l, hc, t, 0.008); p.T(sg * (l / 2 - t / 2), hc / 2, 0).box(t, hc, w - 2 * t, 0.008); }
   p.shade(null);
@@ -1238,7 +1305,7 @@ function capstan(p, h, col) {
   for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; p.T(Math.cos(a) * 0.088 * k, 0.185 * k, Math.sin(a) * 0.088 * k, 0, -a / DEG, 6).box(0.05 * k, 0.24 * k, 0.034 * k); }
   p.lathe([[0.068 * k, 0.3 * k], [0.17 * k, 0.315 * k], [0.175 * k, 0.33 * k], [0.175 * k, 0.385 * k], [0.16 * k, 0.4 * k], [0, 0.41 * k]], 14);
   p.shade(null).ink(PITCH, 1);
-  for (let i = 0; i < 8; i++) { const a = ((i + 0.5) / 8) * TAU; p.T(Math.cos(a) * 0.172 * k, 0.357 * k, Math.sin(a) * 0.172 * k, 0, -a / DEG, 0).box(0.012, 0.03 * k, 0.03 * k); }
+  if (!lite) for (let i = 0; i < 8; i++) { const a = ((i + 0.5) / 8) * TAU; p.T(Math.cos(a) * 0.172 * k, 0.357 * k, Math.sin(a) * 0.172 * k, 0, -a / DEG, 0).box(0.012, 0.03 * k, 0.03 * k); }
   p.ink(IRON, 0.5, 0.8).T(0, 0.412 * k, 0).cyl(0.03 * k, 0.04 * k, 0.012, 8);
 }
 /** the ship's wheel on its standards; the helmsman stands aft (-X) of it. dbl = a second wheel forward */
@@ -1272,10 +1339,11 @@ function barrel(p, r, h, col, seed = 0) {
   const pr = [[0, 0.012], [r * 0.74, 0.012], [r * 0.78, 0], [r * 0.93, h * 0.22], [r, h * 0.5], [r * 0.93, h * 0.78], [r * 0.78, h], [r * 0.74, h - 0.012], [0, h - 0.012]];
   p.shade((x, y, z, nx, ny, nz, c) => mul(c, 0.82 + 0.3 * noise3(Math.atan2(nz, nx) * 4.2 + seed, seed * 3.1, 0.5))).ink(col, 0.8).lathe(pr, 10);
   p.shade(null).ink(IRON, 0.5, 0.75);
-  for (const f of [0.12, 0.32, 0.68, 0.88]) { const rr = r * (0.78 + 0.22 * Math.sin(Math.PI * f)) + 0.004; p.T(0, h * f, 0).lathe([[rr - 0.003, -0.012], [rr, 0.012]], 10); }
+  if (!far) for (const f of [0.12, 0.32, 0.68, 0.88]) { const rr = r * (0.78 + 0.22 * Math.sin(Math.PI * f)) + 0.004; p.T(0, h * f, 0).lathe([[rr - 0.003, -0.012], [rr, 0.012]], 10); }
 }
 function crate(p, w, h, d, col, seed = 0) {
   p.shade(grainX(0.2, 2)).ink(vary(col, seed, 0.12), 0.88).T(0, h / 2, 0).box(w - 0.016, h - 0.016, d - 0.016, 0.004);
+  if (far) { p.shade(null); return; }
   p.ink(mul(col, 0.72), 0.88);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) p.T(sx * (w / 2 - 0.016), h / 2, sz * (d / 2 - 0.016)).box(0.032, h, 0.032);
   for (const sy of [0.016, h - 0.016]) { for (const sz of [-1, 1]) p.T(0, sy, sz * (d / 2 - 0.012)).box(w, 0.032, 0.024); for (const sx of [-1, 1]) p.T(sx * (w / 2 - 0.012), sy, 0).box(0.024, 0.032, d); }
@@ -1298,7 +1366,7 @@ function bitts(p, w, h, col) {
 const PIN = [[0.006, -0.04], [0.006, 0.006], [0.012, 0.014], [0.009, 0.052], [0, 0.06]];
 /** a pin rail of length l along X with belaying pins and a few coils hung on them */
 function pinRail(p, l, col, n = Math.max(2, Math.round(l / 0.12)), ropes = true) {
-  if (lite) { n = Math.min(n, 2); ropes = false; }
+  if (lite) { n = far ? 0 : Math.min(n, 2); ropes = false; }
   p.shade(grainX(0.12)).ink(col, 0.8).box(l, 0.03, 0.06);
   p.shade(null);
   for (let i = 0; i < n; i++) {
@@ -1356,6 +1424,12 @@ function deckhouse(p, l, w, h, col, roofCol) {
 function anchor(p, len) {
   const k = len / 0.6;
   p.shade(mottle(0.3, 26)).ink(IRON, 0.55, 0.8);
+  if (far) {
+    p.T(0, -0.33 * k, 0).box(0.03 * k, 0.56 * k, 0.03 * k);
+    p.T(0, -0.52 * k, 0).box(0.36 * k, 0.04 * k, 0.03 * k);
+    p.shade(null).ink(mul(OAK, 0.75), 0.85).T(0, -0.1 * k, 0).box(0.05 * k, 0.05 * k, 0.5 * k);
+    return;
+  }
   p.T(0, -0.035 * k, 0, 90).lathe([[0.03 * k, -0.008 * k], [0.04 * k, 0], [0.03 * k, 0.008 * k], [0.03 * k, -0.008 * k]], 7);
   p.T(0, -0.33 * k, 0).box(0.03 * k, 0.56 * k, 0.03 * k, 0.006);
   const arm = [];
@@ -1409,7 +1483,8 @@ function shipsBoat(p, len, beam, col, inner, seed = 0) {
     kMid: 1.6, kEnd: 1, tumble: 0, leanMin: 0, leanMax: 0, fwdFrom: 0.6, aftTo: 0.3, stemE: 1.8, thick: 0.018, camber: 0, step: 0.14, rakeF: 0.1 * len, rakeA: 0.08,
     draft: 0.0, fb: beam * 0.42, sheerF: beam * 0.14, sheerA: beam * 0.06, topF: 0, topA: 0, segs: [{ s0: 0, s1: 1, lift: 0, bul: 0 }] };
   o.yS = o.fb * 0.3; o.draft = 0;
-  const B = makeHull(o), nS = 5, y0 = 0.004;
+  o.step *= TIERS[far ? 2 : lite ? 1 : 0].step; o.coarse = far;
+  const B = makeHull(o), nS = far ? 3 : 5, y0 = 0.004;
   bothSides(p, (side) => {
     p.shade(null);
     for (let j = 0; j < nS; j++) strake(p, B, 0, 1, (ss) => lerp(y0, B.yGun(ss), j / nS), (ss) => lerp(y0, B.yGun(ss), (j + 1) / nS), { col: () => (j === nS - 1 ? mix(col, WHITE, 0.6) : col), lap: 0.008, plank: 99, seed: seed + j * 3 + (side > 0 ? 0 : 50), clean: true });
@@ -1428,7 +1503,7 @@ function shipsBoat(p, len, beam, col, inner, seed = 0) {
   p.T(-0.02 * len, -0.004, 0).box(len * 0.88, 0.024, 0.024);
   p.shade(grainX(0.14)).ink(mul(inner, 1.1), 0.85);
   for (const ss of [0.14, 0.34, 0.54, 0.74]) { const y = B.yGun(ss) - beam * 0.1; p.T(B.x(ss, y), y, 0).box(len * 0.07, 0.014, 2 * B.zIn(ss, y), 0.003); }
-  for (const sg of [-1, 1]) { const y = B.yGun(0.45) - beam * 0.1 + 0.02; p.ink(mul(SPAR, 1.1), 0.75).bar([-len * 0.28, y, sg * beam * 0.14], [len * 0.3, y + 0.01, sg * beam * 0.1], 0.011, 0.009, 5); p.T(-len * 0.32, y, sg * beam * 0.14).box(len * 0.16, 0.008, 0.04); }
+  if (!far) for (const sg of [-1, 1]) { const y = B.yGun(0.45) - beam * 0.1 + 0.02; p.ink(mul(SPAR, 1.1), 0.75).bar([-len * 0.28, y, sg * beam * 0.14], [len * 0.3, y + 0.01, sg * beam * 0.1], 0.011, 0.009, 5); p.T(-len * 0.32, y, sg * beam * 0.14).box(len * 0.16, 0.008, 0.04); }
   p.shade(null);
   return B;
 }
@@ -1450,18 +1525,22 @@ function clothTone(base, seedPanel, seam, edge, x, y, z) {
  * A square sail bent to a yard. o: { c: head centre, beta: brace angle (rad), wHead, wFoot, drop, belly, roach, col, seed, reefs: [v...] }
  * It bellies forward of the yard, each cloth puffing a little between its seams, with reef bands and reef points.
  */
-function squareSail(p, o) {
+function squareSail(p, o) { return stage(p, 'sails', () => squareSail0(p, o)); }
+function squareSail0(p, o) {
   const A = [Math.sin(o.beta), 0, Math.cos(o.beta)], N = [Math.cos(o.beta), 0, -Math.sin(o.beta)];
-  const panels = Math.max(3, Math.round(Math.max(o.wHead, o.wFoot) / ((o.cloth || 0.3) * eco))), nu = panels * 2;
+  // o.fine: the sail carries a painted device, so even the distant builds keep it smooth enough for the patch to lie on it
+  const panels = Math.max(o.fine ? 8 : 3, Math.round(Math.max(o.wHead, o.wFoot) / ((o.cloth || 0.3) * eco))), nu = panels * 2;
   const reefs = o.reefs || [], vs = new Set();
-  const nr = Math.max(6, Math.round(o.drop / (0.16 * eco)));
+  const nr = Math.max(o.fine ? 10 : far ? 4 : 6, Math.round(o.drop / (0.16 * eco)));
   for (let j = 0; j <= nr; j++) vs.add(+(j / nr).toFixed(4));
-  for (const r of reefs) { vs.add(+(r - 0.012).toFixed(4)); vs.add(+(r + 0.012).toFixed(4)); }
+  if (!far) for (const r of reefs) { vs.add(+(r - 0.012).toFixed(4)); vs.add(+(r + 0.012).toFixed(4)); }
   const rows = [...vs].sort((a, b) => a - b), nv = rows.length - 1;
   const isReef = (v) => reefs.some((r) => Math.abs(v - r) < 0.0125);
-  const P = (u, v) => {
-    const w = lerp(o.wHead, o.wFoot, v) - (o.hollow ?? 0.04) * Math.sin(Math.PI * v) * o.wHead, su = Math.sin(Math.PI * u);
-    const bell = o.belly * Math.pow(su, 0.72) * (Math.sin(Math.PI * Math.pow(v, 0.8) * 0.82) + 0.12 * v) + 0.014 * Math.abs(Math.sin(Math.PI * u * panels)) * Math.min(1, v * 6) + 0.03 * o.belly * Math.sin(Math.PI * v) ;
+  // pk: how much each cloth puffs between its seams (only the full model shows it; a device painted on the sail asks for it either way)
+  const pk0 = lite ? 0 : 1, wAt = (v) => lerp(o.wHead, o.wFoot, v) - (o.hollow ?? 0.04) * Math.sin(Math.PI * v) * o.wHead;
+  const P = (u, v, pk = pk0) => {
+    const w = wAt(v), su = Math.sin(Math.PI * u);
+    const bell = o.belly * Math.pow(su, 0.72) * (Math.sin(Math.PI * Math.pow(v, 0.8) * 0.82) + 0.12 * v) + pk * 0.014 * Math.abs(Math.sin(Math.PI * u * panels)) * Math.min(1, v * 6) + 0.03 * o.belly * Math.sin(Math.PI * v);
     const a = (u - 0.5) * w, dn = v * o.drop - (o.roach ?? 0.08) * o.drop * su * v * v;
     return [o.c[0] + A[0] * a + N[0] * bell, o.c[1] - dn, o.c[2] + A[2] * a + N[2] * bell];
   };
@@ -1471,22 +1550,26 @@ function squareSail(p, o) {
   // reef points: short cords hanging on the fore side
   p.ink(mul(HEMP, 0.75), 0.95);
   if (!lite) for (const r of reefs) for (let k = 0; k < panels * 2; k++) for (const e of [1, -1]) { const q = P((k + 0.5) / (panels * 2), r), a = add3(q, N, e * 0.007), b = [a[0] + N[0] * e * 0.008, a[1] - 0.078, a[2] + N[2] * e * 0.008], w = [A[0] * 0.005, 0, A[2] * 0.005]; p.poly([add3(a, w, -1), add3(a, w), add3(b, w), add3(b, w, -1)]); }
-  return { P, clews: [P(0, 1), P(1, 1)], heads: [P(0, 0), P(1, 0)] };
+  /** a point on the cloth x across and y up (model units) from the middle of the sail at height fraction vc */
+  const on = (x, y, vc = 0.5, pk = pk0) => { const v = clamp(vc - y / o.drop, 0.03, 0.97); return P(clamp(0.5 + x / wAt(v), 0.03, 0.97), v, pk); };
+  return { P, N, on, size: Math.min(wAt(0.5), o.drop), clews: [P(0, 1), P(1, 1)], heads: [P(0, 0), P(1, 0)] };
 }
 /** a four-cornered fore-and-aft sail (gaff, lug): tack and clew along the foot, throat and peak along the head */
-function gaffSail(p, o) {
+function gaffSail(p, o) { return stage(p, 'sails', () => gaffSail0(p, o)); }
+function gaffSail0(p, o) {
   const { tack, clew, throat, peak } = o;
   let N = norm3(cross(sub3(clew, tack), sub3(throat, tack)));
   if (N[2] > 0) N = [-N[0], -N[1], -N[2]];
-  const wFoot = dist3(tack, clew), panels = Math.max(3, Math.round(wFoot / ((o.cloth || 0.3) * eco))), nu = panels * 2;
-  const reefs = o.reefs || [], vs = new Set(), nr = Math.max(6, Math.round(dist3(tack, throat) / (0.17 * eco)));
+  const wFoot = dist3(tack, clew), panels = Math.max(o.fine ? 8 : 3, Math.round(wFoot / ((o.cloth || 0.3) * eco))), nu = panels * 2;
+  const reefs = o.reefs || [], vs = new Set(), nr = Math.max(o.fine ? 10 : far ? 4 : 6, Math.round(dist3(tack, throat) / (0.17 * eco)));
   for (let j = 0; j <= nr; j++) vs.add(+(j / nr).toFixed(4));
-  for (const r of reefs) { vs.add(+(r - 0.012).toFixed(4)); vs.add(+(r + 0.012).toFixed(4)); }
+  if (!far) for (const r of reefs) { vs.add(+(r - 0.012).toFixed(4)); vs.add(+(r + 0.012).toFixed(4)); }
   const rows = [...vs].sort((a, b) => a - b), nv = rows.length - 1;
   const isReef = (v) => reefs.some((r) => Math.abs(v - r) < 0.0125);
-  const P = (u, v) => {
+  const pk0 = lite ? 0 : 1;
+  const P = (u, v, pk = pk0) => {
     const q = lerp3(lerp3(tack, clew, u), lerp3(throat, peak, u), v);
-    const bell = o.belly * Math.sin(Math.PI * Math.pow(u, 0.8)) * Math.pow(Math.sin(Math.PI * (0.08 + 0.92 * v) ), 0.7) * (1 - 0.5 * v * (o.flatHead ?? 1)) + 0.012 * Math.abs(Math.sin(Math.PI * u * panels)) * Math.sin(Math.PI * v);
+    const bell = o.belly * Math.sin(Math.PI * Math.pow(u, 0.8)) * Math.pow(Math.sin(Math.PI * (0.08 + 0.92 * v) ), 0.7) * (1 - 0.5 * v * (o.flatHead ?? 1)) + pk * 0.012 * Math.abs(Math.sin(Math.PI * u * panels)) * Math.sin(Math.PI * v);
     // the leech hollows a little between peak and clew
     const hol = (o.hollow ?? 0.03) * wFoot * Math.sin(Math.PI * v) * u * u;
     return [q[0] + N[0] * bell + (tack[0] - clew[0]) / wFoot * hol, q[1], q[2] + N[2] * bell + (tack[2] - clew[2]) / wFoot * hol];
@@ -1496,14 +1579,18 @@ function gaffSail(p, o) {
     (i, j) => { const q = P(i / nu, rows[j]), pan = Math.min(panels - 1, Math.floor(i / 2)); return clothTone(isReef(rows[j]) ? mul(o.col, 0.9) : o.col, o.seed * 31 + pan, i % 2 === 0, (i === 0 || i === nu || j === 0 || j === nv) ? 1 : 0, q[0], q[1], q[2]); });
   p.ink(mul(HEMP, 0.75), 0.95);
   if (!lite) { const A = norm3(sub3(clew, tack)); for (const r of reefs) for (let k = 0; k < panels * 2; k++) for (const e of [1, -1]) { const q = P((k + 0.5) / (panels * 2), r), a = add3(q, N, e * 0.007), b = [a[0] + N[0] * e * 0.008, a[1] - 0.074, a[2] + N[2] * e * 0.008], w = [A[0] * 0.005, 0, A[2] * 0.005]; p.poly([add3(a, w, -1), add3(a, w), add3(b, w), add3(b, w, -1)]); } }
-  return { P, N };
+  const uc = o.uc ?? 0.46, vc0 = o.vc ?? 0.5, wMid = dist3(lerp3(tack, throat, vc0), lerp3(clew, peak, vc0)), hMid = dist3(lerp3(tack, clew, uc), lerp3(throat, peak, uc));
+  /** a point on the cloth x toward the leech and y toward the head (model units) from the middle of the sail */
+  const on = (x, y, vc = vc0, pk = pk0) => P(clamp(uc + x / wMid, 0.03, 0.97), clamp(vc + y / hMid, 0.03, 0.97), pk);
+  return { P, N, on, size: Math.min(wMid, hMid) };
 }
 /** a three-cornered sail (jib, staysail, lateen): luff from tack to head, clew hauled aft */
-function triSail(p, o) {
+function triSail(p, o) { return stage(p, 'sails', () => triSail0(p, o)); }
+function triSail0(p, o) {
   const { tack, head, clew } = o;
   let N = norm3(cross(sub3(head, tack), sub3(clew, tack)));
   if (N[2] > 0) N = [-N[0], -N[1], -N[2]];
-  const luff = dist3(tack, head), panels = Math.max(3, Math.round(luff / ((o.cloth || 0.32) * eco))), nu = panels * 2, nv = Math.max(5, Math.round(dist3(lerp3(tack, head, 0.5), clew) / (0.2 * eco)));
+  const luff = dist3(tack, head), panels = Math.max(3, Math.round(luff / ((o.cloth || 0.32) * eco))), nu = panels * 2, nv = Math.max(far ? 3 : 5, Math.round(dist3(lerp3(tack, head, 0.5), clew) / (0.2 * eco)));
   const P = (u, v) => {
     const l = lerp3(tack, head, u), q = lerp3(l, clew, v);
     const bell = o.belly * Math.sin(Math.PI * u) * Math.sin(Math.PI * Math.pow(v, 0.85)) + 0.01 * Math.abs(Math.sin(Math.PI * u * panels)) * Math.sin(Math.PI * v);
@@ -1517,14 +1604,21 @@ function triSail(p, o) {
 
 // ---------- spars and cordage ----------
 /** a rope from a to b; sag > 0 lets it hang */
-let ropeK = 1, eco = 1, lite = false;   // per-build settings: rope weight, mesh economy, and the stripped-down 'low' detail preset
+let ropeK = 1, eco = 1, lite = false, far = false;   // per-build settings: rope weight, mesh economy, and the two cut-down tiers (see TIERS)
 function rope(p, a, b, r = 0.008, col = TAR, sag = 0, sides = 4) {
+  if (far && r < 0.0075) return p;
+  if (lite) sides = 3;
   r *= ropeK;
+  const T = globalThis.__shipTally, t0 = p.tris;
   p.shade(null).ink(col, 0.95);
-  if (!sag) return p.bar(a, b, r, r, sides, 0);
-  const pts = [], n = 4;
-  for (let i = 0; i <= n; i++) { const t = i / n, q = lerp3(a, b, t); q[1] -= sag * 4 * t * (1 - t); pts.push(q); }
-  return p.tube(pts, r, sides);
+  if (!sag) p.bar(a, b, r, r, sides, 0);
+  else {
+    const pts = [], n = far ? 2 : 4;
+    for (let i = 0; i <= n; i++) { const t = i / n, q = lerp3(a, b, t); q[1] -= sag * 4 * t * (1 - t); pts.push(q); }
+    p.tube(pts, r, sides);
+  }
+  if (T) T.ropes = (T.ropes || 0) + p.tris - t0;
+  return p;
 }
 /** a block (pulley) at q */
 function block(p, q, k = 1) { if (lite) return; p.shade(null).ink(mul(OAK, 0.8), 0.8).T(q[0], q[1], q[2], 0, 0, 0, 0.022 * k, 0.034 * k, 0.018 * k).sphere(1, 5, 3); }
@@ -1534,6 +1628,7 @@ function yard(p, c, len, r, dir, col) {
   p.shade(grainX(0.12)).ink(col, 0.72);
   const sg8 = r > 0.03 ? 8 : 6;
   p.bar(m1, a, r, r * 0.5, sg8, 1); p.bar(m2, b, r, r * 0.5, sg8, 1); p.bar(m1, m2, r * 1.06, r * 1.06, sg8, 0);
+  if (far) { p.shade(null); return; }
   p.shade(null).ink(IRON, 0.5, 0.8);
   p.bar(add3(c, dir, -0.02), add3(c, dir, 0.02), r * 1.16, r * 1.16, sg8, 0);
   for (const e of [-1, 1]) p.bar(add3(c, dir, e * len * 0.46), add3(c, dir, e * (len * 0.46 + 0.02)), r * 0.72, r * 0.72, 6, 0);
@@ -1580,6 +1675,7 @@ function drawFlags(fp, flags, sideHex) {
     pennant: { us: [0, 0.06, 0.16, 0.22, 1], vs: [0, 1], col: (i) => (i === 0 ? dk : i === 2 ? pale : side) },
   };
   for (const f of flags) {
+    if (f.kind === 'device') { sailDevice(fp, f, side, pale); continue; }
     const len = f.len, hg = f.hgt, ph = f.seed * 1.7, pen = f.kind === 'pennant', D = DEVICE[f.kind] || DEVICE.flag;
     const waves = pen ? 1.3 + len * 0.9 : 1.6;
     const P = (u, v) => {
@@ -1596,6 +1692,39 @@ function drawFlags(fp, flags, sideHex) {
         (a2) => { const u = lerp(u0, u1, a2 / nu); return mul(c, 0.84 + 0.22 * Math.sin(u * waves * TAU - ph + 0.6) * Math.min(1, u * 3)); });
     }
   }
+}
+
+// ---------- devices painted on a sail in the side colour ----------
+// outlines about the origin, radius about 1, anticlockwise; each is star-shaped about its middle
+const ringPts = (n, r = 1, wob = 0) => Array.from({ length: n }, (_, i) => { const a = (i / n) * TAU, k = r * (1 + wob * (noise3(Math.cos(a) * 1.9 + 3.1, Math.sin(a) * 1.9, 7.7) - 0.5)); return [Math.cos(a) * k, Math.sin(a) * k]; });
+const starPts = (n, r0, r1) => Array.from({ length: n * 2 }, (_, i) => { const a = Math.PI / 2 + (i / (n * 2)) * TAU, r = i % 2 ? r1 : r0; return [Math.cos(a) * r, Math.sin(a) * r]; });
+const crossPts = (w, turn = 0) => { const a = w / 2, c = Math.cos(turn), sn = Math.sin(turn); return [[1, -a], [1, a], [a, a], [a, 1], [-a, 1], [-a, a], [-1, a], [-1, -a], [-a, -a], [-a, -1], [a, -1], [a, -a]].map(([x, y]) => [x * c - y * sn, x * sn + y * c]); };
+/** extra points along the long edges, so the painted patch follows the belly of the cloth */
+const densify = (pts, maxSeg = 0.3) => pts.flatMap((a, i) => { const b = pts[(i + 1) % pts.length], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / maxSeg)); return Array.from({ length: n }, (_, k) => [lerp(a[0], b[0], k / n), lerp(a[1], b[1], k / n)]); });
+const DEVICES = {
+  daub: () => [{ pts: ringPts(18, 0.9, 0.5) }],
+  disc: () => [{ pts: ringPts(28) }],
+  roundel: () => [{ pts: ringPts(28) }, { pts: ringPts(22, 0.56), pale: true }, { pts: ringPts(16, 0.24) }],
+  lozenge: () => [{ pts: densify([[0.8, 0], [0, 1.12], [-0.8, 0], [0, -1.12]]) }, { pts: densify([[0.36, 0], [0, 0.5], [-0.36, 0], [0, -0.5]]), pale: true }],
+  saltire: () => [{ pts: densify(crossPts(0.4, Math.PI / 4).map(([x, y]) => [x * 1.1, y * 1.1])) }],
+  cross: () => [{ pts: densify(crossPts(0.44)) }],
+  sun: () => [{ pts: starPts(12, 1.08, 0.7) }, { pts: ringPts(22, 0.46), pale: true }],
+  star: () => [{ pts: densify(starPts(8, 1.12, 0.5)) }, { pts: ringPts(14, 0.22), pale: true }],
+};
+/** f: { shape, on(x, y, puff) -> point on the cloth, N: the way the sail bellies, r } */
+function sailDevice(fp, f, side, pale) {
+  const o0 = f.on(0, 0, 1), ex = sub3(f.on(0.02, 0, 1), o0), ey = sub3(f.on(0, 0.02, 1), o0), z = cross(ex, ey);
+  const frontFlip = z[0] * f.N[0] + z[1] * (f.N[1] || 0) + z[2] * f.N[2] > 0, m = 3;
+  (DEVICES[f.shape] || DEVICES.disc)().forEach((L, li) => {
+    const col = L.pale ? pale : side, n = L.pts.length;
+    for (const e of [1, -1]) {
+      // one skin just in front of the cloth and one just behind, so the device shows from both sides
+      const off = (0.011 + li * 0.004) * e;
+      fp.shade(null).ink(col, 0.92, 0, 0.1);
+      fp.grid(n, m, (i, j, out) => { const q = L.pts[i % n], k = (j / m) * f.r, s = f.on(q[0] * k, q[1] * k, e > 0 ? 1 : 0); out[0] = s[0] + f.N[0] * off; out[1] = s[1]; out[2] = s[2] + f.N[2] * off; },
+        (i, j) => { const q = L.pts[i % n]; return mul(col, (e > 0 ? 1 : 0.88) * (0.9 + 0.16 * noise3(q[0] * 2.2 * j, q[1] * 2.2 * j, 4.4 + li))); }, e > 0 ? frontFlip : !frontFlip);
+    }
+  });
 }
 
 // ---------- the rig ----------
@@ -1666,8 +1795,8 @@ function rig(p, H, st) {
     // gammoning lashing the bowsprit down to the knee, bobstay to the cutwater
     p.shade(null);
     const gm = add3(SH, dir, sp.len * 0.16);
-    for (let i = 0; i < 5; i++) { const q = add3(gm, dir, (i - 2) * 0.024); p.ink(HEMP, 0.95).TM(frame(q, up, dir)).lathe([[r * 0.92, -0.012], [r * 0.92 + 0.011, 0], [r * 0.92, 0.012]], 8); }
-    for (const sg of [-1, 1]) for (const e of [-1, 1]) { const q = add3(gm, dir, e * 0.05); rope(p, [q[0], q[1] - r * 0.6, sg * r * 0.7], [Math.min(stemFront(H, st, q[1] - 0.3) - 0.04, q[0] + 0.02), q[1] - 0.3, sg * 0.035], 0.011, HEMP); }
+    if (!far) for (let i = 0; i < 5; i++) { const q = add3(gm, dir, (i - 2) * 0.024); p.ink(HEMP, 0.95).TM(frame(q, up, dir)).lathe([[r * 0.92, -0.012], [r * 0.92 + 0.011, 0], [r * 0.92, 0.012]], 8); }
+    if (!far) for (const sg of [-1, 1]) for (const e of [-1, 1]) { const q = add3(gm, dir, e * 0.05); rope(p, [q[0], q[1] - r * 0.6, sg * r * 0.7], [Math.min(stemFront(H, st, q[1] - 0.3) - 0.04, q[0] + 0.02), q[1] - 0.3, sg * 0.035], 0.011, HEMP); }
     const yBob = H.yS + 0.12, stemPt = [stemFront(H, st, yBob), yBob, 0];
     rope(p, add3(E, up, -r * 0.7), stemPt, 0.014, TAR, 0, 5);
     if (sp.striker) {
@@ -1685,6 +1814,10 @@ function rig(p, H, st) {
     sprit = { SH, E, tip, dir, up, r, pt: (f) => (f <= 1 ? add3(add3(SH, dir, sp.len * f), up, r) : add3(lerp3(E, tip, f - 1), up, r * 0.5)) };
   }
   const railAt = (s, out = 0.02) => { const g = H.seg(s), q = H.pt(s, H.railY(s, g), out); return q; };
+  // the sail that wears the device: the mainsail of a fore-and-after, the topsails of a square-rigger
+  let devMast = Math.min(1, Ms.length - 1);
+  for (let i = 0; i < Ms.length; i++) if (Ms[i].type === 'gaff' || Ms[i].type === 'lug') devMast = i;
+  const device = (sl, k, vc) => flags.push({ kind: 'device', shape: st.device, on: (x, y, pk) => sl.on(x, y, vc, pk), N: sl.N, r: k * sl.size });
   Ms.forEach((M, mi) => {
     const { r0, yb, top, hgt, y1, y2 } = M, prev = Ms[mi - 1], next = Ms[mi + 1];
     // --- the spars of the mast itself
@@ -1695,7 +1828,7 @@ function rig(p, H, st) {
     // mast coat, iron hoops and rope wooldings on the lower mast
     p.ink(mul(WHITE, 0.8), 0.9).TM(X(M.xb, yb, 0, 0, 0, M.rake)).lathe([[r0 * 1.7, 0], [r0 * 1.25, 0.05], [r0 * 1.04, 0.075]], 12);
     const lowTop = (y1 ?? top) - 0.15;
-    for (let y = yb + 0.38, k = 0; y < lowTop; y += 0.42, k++) { const c = M.at(y), rr = M.rad(y) + 0.003; if (k % 2 && big) p.ink(HEMP, 0.95).TM(X(c[0], c[1], 0, 0, 0, M.rake)).lathe([[rr, -0.03], [rr + 0.008, -0.015], [rr + 0.004, 0], [rr + 0.008, 0.015], [rr, 0.03]], 10); else p.ink(IRON, 0.5, 0.8).TM(X(c[0], c[1], 0, 0, 0, M.rake)).lathe([[rr, -0.014], [rr + 0.005, 0], [rr, 0.014]], 10); }
+    if (!far) for (let y = yb + 0.38, k = 0; y < lowTop; y += 0.42, k++) { const c = M.at(y), rr = M.rad(y) + 0.003; if (k % 2 && big) p.ink(HEMP, 0.95).TM(X(c[0], c[1], 0, 0, 0, M.rake)).lathe([[rr, -0.03], [rr + 0.008, -0.015], [rr + 0.004, 0], [rr + 0.008, 0.015], [rr, 0.03]], 10); else p.ink(IRON, 0.5, 0.8).TM(X(c[0], c[1], 0, 0, 0, M.rake)).lathe([[rr, -0.014], [rr + 0.005, 0], [rr, 0.014]], 10); }
     // top, cap and cross-trees
     if (y1) {
       const c1 = M.at(y1, M.secs[0]), tR = R.tops ? R.topR * (0.7 + 0.3 * M.hf) : 0;
@@ -1732,6 +1865,7 @@ function rig(p, H, st) {
         p.shade(null);
       }
       for (const q of shr) {
+        if (far) { rope(p, q.d0, q.hd, 0.011, TAR, 0, 3); continue; }
         p.ink(IRON, 0.5, 0.8).bar(q.foot, q.d0, 0.008, 0.008, 4, 0);
         p.ink(mul(OAK, 0.5), 0.7);
         for (const d of [q.d0, q.d1]) p.T(d[0], d[1], d[2], 90, 0, 0).cyl(0.027, 0.027, 0.02, 6);
@@ -1746,8 +1880,8 @@ function rig(p, H, st) {
       if (y1 && M.parts >= 2) {
         const tR = M.topR, cx = M.at(y1, M.secs[0])[0] + r0 * 0.7, yT = (y2 ?? top) - 0.06, n2 = M.parts === 3 ? 3 : 2;
         const feet = [], heads = [];
-        for (let k = 0; k < n2; k++) { const f = [cx + 0.1 - k * 0.11, y1 + 0.03, tR * 0.96]; feet.push(f); const hq = M.at(yT, M.secs[1]); hq[2] = r0 * 0.3; heads.push(hq); rope(p, f, hq, 0.008, TAR, 0, 4); if (R.tops) rope(p, f, [M.at(y1 - 0.34)[0], y1 - 0.34, r0 * 0.8], 0.008, TAR, 0, 3); }
-        if (M.parts === 3 || st.kind === 'galleon') { const on = (k, y) => lerp3(feet[k], heads[k], (y - feet[k][1]) / (heads[k][1] - feet[k][1])); for (let y = y1 + 0.2; y < yT - 0.18; y += 0.13 * eco) rope(p, on(0, y), on(n2 - 1, y), 0.0042, TAR, 0, 3); }
+        for (let k = 0; k < n2; k++) { const f = [cx + 0.1 - k * 0.11, y1 + 0.03, tR * 0.96]; feet.push(f); const hq = M.at(yT, M.secs[1]); hq[2] = r0 * 0.3; heads.push(hq); rope(p, f, hq, 0.008, TAR, 0, 4); if (R.tops && !far) rope(p, f, [M.at(y1 - 0.34)[0], y1 - 0.34, r0 * 0.8], 0.008, TAR, 0, 3); }
+        if ((M.parts === 3 || st.kind === 'galleon') && !lite) { const on = (k, y) => lerp3(feet[k], heads[k], (y - feet[k][1]) / (heads[k][1] - feet[k][1])); for (let y = y1 + 0.2; y < yT - 0.18; y += 0.13 * eco) rope(p, on(0, y), on(n2 - 1, y), 0.0042, TAR, 0, 3); }
         if (y2) { const f = [M.at(y2, M.secs[1])[0] + r0 * 0.5, y2 + 0.02, M.crossR], hq = M.at(top - 0.2); rope(p, f, [hq[0], hq[1], 0.01], 0.006, TAR, 0, 3); }
         // backstays to the channel abaft the shrouds
         const bs = shr[nS - 1], ssb = Math.max(0.005, bs.ss - 0.16 / L), foot = H.pt(ssb, H.railY(ssb, M.g) - 0.03, hasCh ? st.chW * 0.5 : 0.012);
@@ -1792,8 +1926,9 @@ function rig(p, H, st) {
         if (!set) return;
         const below = k === 0 ? null : plan[k - 1];
         const drop = k === 0 ? y - ry - (yb + clear) : y - below[0] - ry - 0.07;
-        const wHead = len * 0.9, wFoot = k === 0 ? len * 0.92 : below[1] * 0.9;
-        const sl = squareSail(p, { c: [c[0], y - ry - 0.012, 0], beta, wHead, wFoot, drop, belly: 0.17 * drop + 0.045 * wHead, col: sailC, seed: mi * 10 + k, reefs: k === 0 ? [0.2] : k === 1 ? [0.14, 0.28] : [], stripe: C.sailStripe, roach: k === 0 ? 0.1 : 0.06 });
+        const wHead = len * 0.9, wFoot = k === 0 ? len * 0.92 : below[1] * 0.9, wears = !!st.device && (mi === devMast || (mi === 0 && Ms.length > 2 && Ms[devMast].type === 'square')) && k === (plan.length > 1 ? 1 : 0);   // a three-master shows it on the fore topsail too, to ships ahead
+        const sl = squareSail(p, { c: [c[0], y - ry - 0.012, 0], beta, wHead, wFoot, drop, belly: 0.17 * drop + 0.045 * wHead, col: sailC, seed: mi * 10 + k, reefs: k === 0 ? [0.2] : k === 1 ? [0.14, 0.28] : [], stripe: C.sailStripe, roach: k === 0 ? 0.1 : 0.06, fine: wears });
+        if (wears) device(sl, 0.34, 0.53);
         // robands: the lashings that bend the head of the sail to its yard
         p.ink(mul(HEMP, 0.8), 0.95);
         if (!lite) for (let i = 0; i <= 8; i++) { const q = add3(c, dirY, (i / 8 - 0.5) * wHead); p.TM(frame(q, dirY, [0, 1, 0])).T2(0, 0, 0, 0, 0, 90).lathe([[ry * 0.9 + 0.003, -0.008], [ry * 0.9 + 0.01, 0.008]], 5); }
@@ -1810,14 +1945,16 @@ function rig(p, H, st) {
       const room = isLast ? g0[0] - H.x(0, yBoom) : g0[0] - next.xb - next.r0 * 2 - 0.1;
       const Lb = Math.max(0.5, room * (isLast ? (M.type === 'mizzen' ? 1.02 : 1.0) : 0.92)), db = [-Math.cos(gam), 0.03, -Math.sin(gam)];
       const bEnd = add3(g0, db, Lb), yTh = (y1 ?? yb + hgt * 0.72) - 0.2, th = M.at(yTh); th[0] -= M.rad(yTh) + 0.02;
+      const wearsG = !!st.device && mi === devMast && M.type === 'gaff';
       const pk = 34 * DEG, dg = [-Math.cos(gam) * Math.cos(pk), Math.sin(pk), -Math.sin(gam) * Math.cos(pk)], Lg = Lb * (M.type === 'mizzen' ? 0.66 : 0.6), gEnd = add3(th, dg, Lg);
       p.shade(grainX(0.12)).ink(yardC, 0.72).bar(g0, bEnd, r0 * 0.5, r0 * 0.38, 8, 3); p.bar(th, gEnd, r0 * 0.44, r0 * 0.28, 8, 3);
       p.shade(null).ink(IRON, 0.5, 0.8);
-      for (const q of [g0, th]) p.T(q[0] + 0.02, q[1], 0).cyl(M.rad(q[1]) + 0.012, M.rad(q[1]) + 0.012, 0.045, 10, 0);
-      gaffSail(p, { tack: add3(g0, [-0.02, 0.05, 0]), clew: add3(g0, db, Lb * 0.95), throat: add3(th, [-0.02, -0.04, 0]), peak: add3(th, dg, Lg * 0.95), belly: 0.11 * Lb + 0.05, col: sailC, seed: 40 + mi, reefs: [0.16, 0.3] });
+      if (!far) for (const q of [g0, th]) p.T(q[0] + 0.02, q[1], 0).cyl(M.rad(q[1]) + 0.012, M.rad(q[1]) + 0.012, 0.045, 10, 0);
+      const gs = gaffSail(p, { tack: add3(g0, [-0.02, 0.05, 0]), clew: add3(g0, db, Lb * 0.95), throat: add3(th, [-0.02, -0.04, 0]), peak: add3(th, dg, Lg * 0.95), belly: 0.11 * Lb + 0.05, col: sailC, seed: 40 + mi, reefs: [0.16, 0.3], uc: 0.4, vc: 0.56, fine: wearsG });
+      if (wearsG) device(gs, 0.27);
       // mast hoops up the luff
       p.ink(mul(sparC, 0.7), 0.8);
-      for (let y = yBoom + 0.2; y < yTh - 0.1; y += 0.2) { const c = M.at(y), rr = M.rad(y) + 0.008; p.TM(X(c[0], y, 0, 0, 0, M.rake)).lathe([[rr, -0.008], [rr + 0.008, 0], [rr, 0.008]], 8); }
+      if (!far) for (let y = yBoom + 0.2; y < yTh - 0.1; y += 0.2) { const c = M.at(y), rr = M.rad(y) + 0.008; p.TM(X(c[0], y, 0, 0, 0, M.rake)).lathe([[rr, -0.008], [rr + 0.008, 0], [rr, 0.008]], 8); }
       // topping lift, peak halyard, sheet and vangs
       const mh = M.at(Math.min(top - 0.05, (y1 ?? top) + 0.25));
       rope(p, bEnd, M.at(Math.min(top - 0.05, (y1 ?? top) + 0.05)), 0.006, HEMP, 0, 3);
@@ -1836,7 +1973,8 @@ function rig(p, H, st) {
       const yc = [c[0] - 0.05, yY - 0.08, -(M.rad(yY) + 0.03)], a = add3(yc, dY, -lenY * 0.36), b = add3(yc, dY, lenY * 0.64);
       p.shade(grainX(0.12)).ink(yardC, 0.72).bar(yc, a, r0 * 0.44, r0 * 0.3, 7, 1); p.bar(yc, b, r0 * 0.44, r0 * 0.28, 7, 1);
       const tack = [M.xb + 0.42, yb + 0.56, -0.05], clew = [M.xb - lenY * 0.86, yb + 0.66, -0.3];
-      gaffSail(p, { tack, clew, throat: add3(a, [0, -0.03, 0]), peak: add3(b, [0, -0.03, 0]), belly: 0.1 * lenY + 0.04, col: sailC, seed: 60, reefs: [0.2], flatHead: 0.4 });
+      const gs = gaffSail(p, { tack, clew, throat: add3(a, [0, -0.03, 0]), peak: add3(b, [0, -0.03, 0]), belly: 0.1 * lenY + 0.04, col: sailC, seed: 60, reefs: [0.2], flatHead: 0.4, uc: 0.5, vc: 0.58, fine: !!st.device && mi === devMast });
+      if (mi === devMast && st.device) device(gs, 0.25);
       rope(p, tack, [M.xb + 0.42, yb + 0.1, 0.02], 0.007, HEMP, 0, 3); rope(p, clew, [H.x(0.04, yb + 0.4), H.railY(0.04) - 0.02, 0.0], 0.007, HEMP, 0.03, 3);
       rope(p, yc, M.at(top - 0.04), 0.006, HEMP, 0, 3);
     }
@@ -1863,17 +2001,18 @@ function rig(p, H, st) {
       const q = railAt(clamp(H.sOf(clew[0] - 0.5, H.railY(0.9)), 0.3, 0.97)); rope(p, clew, [q[0], q[1], -q[2]], 0.006, HEMP, 0.04, 3); block(p, clew, 1);
     });
   }
-  // --- the ensign: on the gaff of a fore-and-after, on its own staff over the taffrail otherwise
+  // --- the ensign: on the gaff of a fore-and-after, on its own staff over the taffrail otherwise.
+  // Colours are worn large, as they were: they are how a ship is told from her enemy across the water.
+  const eh = clamp(0.115 * L, 0.36, 1.15);
   if (!flags.some((f) => f.kind === 'ensign') && st.kind !== 'raft') {
-    const y0 = H.railY(0) + (st.stern && st.stern.arch ? st.stern.arch + 0.02 : 0), x0 = H.x(0, y0) + 0.02, hS = st.kind === 'skiff' ? 0.62 : clamp(0.16 * L, 0.8, 1.5);
+    const y0 = H.railY(0) + (st.stern && st.stern.arch ? st.stern.arch + 0.02 : 0), x0 = H.x(0, y0) + 0.02, hS = st.kind === 'skiff' ? 0.62 : Math.max(clamp(0.16 * L, 0.8, 1.5), eh + 0.42);
     const z0 = st.stern && st.stern.lanterns ? Math.min(0.3, H.z(0, y0) * 0.4) : 0;
     p.shade(grainY(0.1)).ink(sparC, 0.72).bar([x0, y0 - 0.25, z0], [x0 - hS * 0.2, y0 + hS, z0], 0.016, 0.01, 6, 1);
     p.ink(GILT, 0.4, 0.8).T(x0 - hS * 0.2, y0 + hS + 0.01, z0).sphere(0.02, 6, 4);
     flags.push({ kind: 'ensign', at: [x0 - hS * 0.2, y0 + hS - 0.01, z0], staff: true });
   }
   // sizes: pennants long at the main, short vanes elsewhere; the ensign scales with the ship
-  const eh = clamp(0.085 * L, 0.3, 0.8);
-  flags.forEach((f, i) => { f.seed = i + 1; if (f.kind === 'ensign') { f.hgt = f.gaff ? eh * 0.8 : eh; f.len = f.hgt * 1.6; } else if (f.kind === 'pennant') { f.hgt = 0.15 + 0.008 * L; f.len = clamp(0.24 * L, 0.7, 2.2); } else { f.kind = 'flag'; f.hgt = 0.2 + 0.01 * L; f.len = f.hgt * 1.7; } });
+  flags.forEach((f, i) => { f.seed = i + 1; if (f.kind === 'device') return; if (f.kind === 'ensign') { f.hgt = f.gaff ? eh * 0.85 : eh; f.len = f.hgt * 1.6; } else if (f.kind === 'pennant') { f.hgt = 0.17 + 0.012 * L; f.len = clamp(0.32 * L, 0.8, 3.2); } else { f.kind = 'flag'; f.hgt = 0.24 + 0.014 * L; f.len = f.hgt * 1.7; } });
   return flags;
 }
 
@@ -1882,6 +2021,7 @@ function fitOut(p, H, st) {
   const C = st.col, k = st.kind, L = H.L, R = st.rig, wood = mul(C.rail, 1.05), t = H.o.thick;
   /** run fn with the origin on deck at station s, zf of the way out to the bulwark, turned ry degrees */
   const on = (s, zf, fn, ry = 0, g = H.seg(s)) => { const q = H.on(s, zf, g); p.push(X(q[0], q[1], q[2], 0, ry, 0)); fn(); p.pop(); };
+  const onS = far ? () => {} : on;   // small things that are left ashore on the distant build
   const from = p.n;
   const segOf = (s) => H.seg(s);
   // timberheads: the frame tops standing inside the bulwarks, and a pin rail abreast each mast
@@ -1906,8 +2046,8 @@ function fitOut(p, H, st) {
     p.shade(null);
   });
   // around the foot of each mast
-  R.masts.forEach((m) => { if (k !== 'skiff' && (m.type === 'square' || k === 'manowar' || k === 'galleon')) on(m.s, 0, () => fifeRail(p, 0.36 + 0.02 * L, wood)); });
-  const kegs = (s, zf, n, seed = 0) => { for (let i = 0; i < n; i++) on(s + (i * 0.26) / L, zf, () => barrel(p, 0.105, 0.3, mul(OAK, 1.05), seed + i)); };
+  R.masts.forEach((m) => { if (k !== 'skiff' && (m.type === 'square' || k === 'manowar' || k === 'galleon')) onS(m.s, 0, () => fifeRail(p, 0.36 + 0.02 * L, wood)); });
+  const kegs = (s, zf, n, seed = 0) => { if (!far) for (let i = 0; i < n; i++) on(s + (i * 0.26) / L, zf, () => barrel(p, 0.105, 0.3, mul(OAK, 1.05), seed + i)); };
   const tiller = (len, yUp) => {
     const g = H.segs[0], y0 = H.railY(0, g) + 0.03, x0 = H.x(0, y0) - 0.03, q = H.on(len / L, 0, g);
     p.shade(grainX(0.12)).ink(wood, 0.72).tube([[x0 - 0.02, y0 - 0.3, 0], [x0, y0 + 0.02, 0], [x0 + len * 0.3, y0 + 0.05, 0], [x0 + len * 0.7, q[1] + yUp + 0.03, 0], [q[0], q[1] + yUp, 0]], [0.03, 0.03, 0.028, 0.022, 0.018], 7, 1);
@@ -1928,15 +2068,15 @@ function fitOut(p, H, st) {
       // ribs, thwarts and stern sheets of an open boat
       bothSides(p, () => {
         p.shade(grainY(0.12)).ink(mul(C.inner, 0.78), 0.85);
-        for (let ss = 0.08; ss < 0.95; ss += 0.26 / L) { const pts = []; for (let i = 0; i <= 5; i++) { const y = lerp(H.deckEdge(ss, g) - 0.01, H.railY(ss, g) - 0.01, i / 5); pts.push([H.x(ss, y), y, H.zIn(ss, y) - 0.012]); } p.tube(pts, 0.016, 4); }
+        if (!far) for (let ss = 0.08; ss < 0.95; ss += 0.26 / L) { const pts = []; for (let i = 0; i <= 5; i++) { const y = lerp(H.deckEdge(ss, g) - 0.01, H.railY(ss, g) - 0.01, i / 5); pts.push([H.x(ss, y), y, H.zIn(ss, y) - 0.012]); } p.tube(pts, 0.016, 4); }
         const cols = H.between(0.03, 0.97);
         p.shade(grainX(0.12)).ink(mul(C.inner, 0.9), 0.85);
         sweep(p, H, cols, (ss) => H.railY(ss, g) - 0.13, [[-t - 0.03, -0.02], [-t - 0.03, 0.02], [-t, 0.02]]);
         // thole pins for the oars
         p.shade(null).ink(mul(SPAR, 0.8), 0.8);
-        for (const ss of [0.36, 0.56]) for (const dx of [-0.035, 0.035]) { const q = H.pt(ss + dx / L, H.railY(ss, g) + st.capH, -t / 2); p.T(q[0], q[1] + 0.03, q[2]).cyl(0.009, 0.011, 0.07, 5); }
+        if (!far) for (const ss of [0.36, 0.56]) for (const dx of [-0.035, 0.035]) { const q = H.pt(ss + dx / L, H.railY(ss, g) + st.capH, -t / 2); p.T(q[0], q[1] + 0.03, q[2]).cyl(0.009, 0.011, 0.07, 5); }
       });
-      const thwart = (ss, w = 0.2) => { const y = H.railY(ss, g) - 0.13; p.shade(grainX(0.14, 2)).ink(vary(C.thwart, ss * 100, 0.08), 0.8).T(H.x(ss, y), y + 0.012, 0).box(w, 0.028, 2 * H.zIn(ss, y) - 0.02, 0.006); for (const sg of [-1, 1]) p.ink(mul(C.inner, 0.8), 0.85).T(H.x(ss, y), y - 0.03, sg * (H.zIn(ss, y) - 0.07), sg * 35, 0, 0).box(0.05, 0.1, 0.03); };
+      const thwart = (ss, w = 0.2) => { const y = H.railY(ss, g) - 0.13; p.shade(grainX(0.14, 2)).ink(vary(C.thwart, ss * 100, 0.08), 0.8).T(H.x(ss, y), y + 0.012, 0).box(w, 0.028, 2 * H.zIn(ss, y) - 0.02, 0.006); if (!far) for (const sg of [-1, 1]) p.ink(mul(C.inner, 0.8), 0.85).T(H.x(ss, y), y - 0.03, sg * (H.zIn(ss, y) - 0.07), sg * 35, 0, 0).box(0.05, 0.1, 0.03); };
       for (const ss of [0.3, 0.5, 0.63, 0.8]) thwart(ss, ss === 0.63 ? 0.26 : 0.2);
       { const y = H.railY(0.07, g) - 0.13; p.T(H.x(0.07, y), y + 0.012, 0).box(0.42, 0.028, 2 * H.zIn(0.09, y) - 0.02, 0.006); }
       p.shade(null);
@@ -1951,9 +2091,9 @@ function fitOut(p, H, st) {
       bothSides(p, () => { for (let i = 0; i < st.per; i++) { const ss = st.per === 1 ? 0.44 : lerp(0.26, 0.76, i / (st.per - 1)), q = H.pt(ss, H.railY(ss, g) + st.capH, -t / 2); p.push(X(q[0], q[1] + 0.1, q[2])); swivelGun(p, 0.34); p.pop(); } });
       on(0.9, 0, () => { coil(p, 0.11, 3, 0.013); }, 0, g);
       on(0.83, 0.3, () => { p.push(X(0, 0.24, 0, 0, 0, 78)); anchor(p, 0.36); p.pop(); }, 20, g);
-      on(0.4, -0.3, () => bucket(p, mul(OAK, 1.1)), 0, g);
-      on(0.18, 0.4, () => barrel(p, 0.08, 0.22, mul(OAK, 1.05), 3), 0, g);
-      on(0.72, -0.35, () => crate(p, 0.22, 0.16, 0.2, mul(OAK, 1.2), 4), 12, g);
+      onS(0.4, -0.3, () => bucket(p, mul(OAK, 1.1)), 0, g);
+      onS(0.18, 0.4, () => barrel(p, 0.08, 0.22, mul(OAK, 1.05), 3), 0, g);
+      onS(0.72, -0.35, () => crate(p, 0.22, 0.16, 0.2, mul(OAK, 1.2), 4), 12, g);
       { const y = H.railY(1, g) + 0.1, x = stemFront(H, st, y) - 0.02; p.push(X(x, y, 0)); p.ink(IRON, 0.5, 0.8).tube([[0, -0.04, 0], [0.05, 0.02, 0], [0.09, 0.0, 0]], 0.008, 4); p.push(X(0.09, -0.19, 0)); lantern(p, 0.17); p.pop(); p.pop(); }
       break;
     }
@@ -1963,49 +2103,49 @@ function fitOut(p, H, st) {
       on(aft.s1 - 0.36 / L, 0, () => companion(p, 0.4, 0.42, 0.36, wood), 0, aft);
       if (k === 'sloop') { on(0.41, 0, () => skylight(p, 0.4, 0.34, wood)); on(0.515, 0, () => hatch(p, 0.36, 0.44, wood, false)); on(0.74, 0, () => hatch(p, 0.34, 0.4, wood)); }
       else { on(0.53, 0, () => deckhouse(p, 0.74, 0.62, 0.3, hex(0xd8d0bc), DECK)); on(0.8, 0, () => hatch(p, 0.32, 0.36, wood)); on(0.3, 0, () => hatch(p, 0.26, 0.36, wood, false)); }
-      on(0.87, 0, () => bitts(p, 0.26, 0.3, wood));
+      onS(0.87, 0, () => bitts(p, 0.26, 0.3, wood));
       on(0.845, 0, () => { p.shade(grainX(0.12)).ink(wood, 0.8).T(0, 0.13, 0, 90, 0, 0).cyl(0.07, 0.07, 0.5, 8); p.shade(null).ink(IRON, 0.5, 0.8); for (const sg of [-1, 1]) p.T(0, 0.13, sg * 0.26, 90).cyl(0.085, 0.085, 0.02, 8); for (const sg of [-1, 1]) p.ink(wood, 0.8).T(0, 0.1, sg * 0.3).box(0.08, 0.2, 0.05, 0.008); });
       cathead(0.9, 0.2);
       kegs(k === 'sloop' ? 0.34 : 0.27, -0.72, 2, 11);
       on(k === 'sloop' ? 0.56 : 0.42, 0.62, () => coil(p, 0.1, 3, 0.012));
-      on(k === 'sloop' ? 0.66 : 0.6, -0.66, () => crate(p, 0.24, 0.2, 0.22, mul(OAK, 1.15), 8), 14);
-      on(k === 'sloop' ? 0.36 : 0.76, 0.7, () => bucket(p, mul(OAK, 1.1)));
+      onS(k === 'sloop' ? 0.66 : 0.6, -0.66, () => crate(p, 0.24, 0.2, 0.22, mul(OAK, 1.15), 8), 14);
+      onS(k === 'sloop' ? 0.36 : 0.76, 0.7, () => bucket(p, mul(OAK, 1.1)));
       break;
     }
     case 'brigantine': {
       const qd = H.segs[0];
-      on(0.15, 0, () => shipWheel(p, 0.2, wood), 0, qd); on(0.195, 0, () => binnacle(p, wood), 0, qd);
+      on(0.15, 0, () => shipWheel(p, 0.2, wood), 0, qd); onS(0.195, 0, () => binnacle(p, wood), 0, qd);
       on(0.25, 0, () => skylight(p, 0.34, 0.4, wood), 0, qd);
       on(0.5, 0, () => hatch(p, 0.56, 0.64, wood)); on(0.6, 0, () => capstan(p, 0.4, wood));
-      on(0.8, 0, () => hatch(p, 0.3, 0.4, wood, false)); on(0.865, 0, () => bitts(p, 0.3, 0.32, wood));
-      on(0.78, -0.6, () => stovePipe(p, 0.42));
+      on(0.8, 0, () => hatch(p, 0.3, 0.4, wood, false)); onS(0.865, 0, () => bitts(p, 0.3, 0.32, wood));
+      onS(0.78, -0.6, () => stovePipe(p, 0.42));
       cathead(0.915, 0.24);
-      kegs(0.43, -0.74, 2, 21); on(0.56, 0.72, () => coil(p, 0.11, 3, 0.013)); on(0.66, 0.7, () => crate(p, 0.26, 0.22, 0.26, mul(OAK, 1.15), 9), 8);
-      on(0.44, 0.74, () => shotRack(p, 4)); on(0.1, -0.6, () => bucket(p, mul(OAK, 1.1)), 0, qd);
+      kegs(0.43, -0.74, 2, 21); on(0.56, 0.72, () => coil(p, 0.11, 3, 0.013)); onS(0.66, 0.7, () => crate(p, 0.26, 0.22, 0.26, mul(OAK, 1.15), 9), 8);
+      on(0.44, 0.74, () => shotRack(p, 4)); onS(0.1, -0.6, () => bucket(p, mul(OAK, 1.1)), 0, qd);
       break;
     }
     case 'frigate': {
       const qd = H.segs[0], fc = H.segs[2];
-      on(0.225, 0, () => shipWheel(p, 0.22, wood), 0, qd); on(0.262, 0, () => binnacle(p, wood), 0, qd);
+      on(0.225, 0, () => shipWheel(p, 0.22, wood), 0, qd); onS(0.262, 0, () => binnacle(p, wood), 0, qd);
       on(0.3, 0, () => skylight(p, 0.3, 0.44, wood), 0, qd); on(0.07, 0, () => hatch(p, 0.3, 0.4, wood, false), 0, qd);
       on(0.435, 0, () => capstan(p, 0.44, wood));
       on(0.6, 0, () => hatch(p, 0.36, 0.7, wood));
       boatAt(0.715, 0, 1.25, 0.46, 30);
-      on(0.9, -0.4, () => stovePipe(p, 0.44), 0, fc); on(0.93, 0, () => bitts(p, 0.34, 0.34, wood), 0, fc);
-      on(fc.s0 + 0.14 / L, 0.0, () => belfry(p, wood), 0, fc);
+      onS(0.9, -0.4, () => stovePipe(p, 0.44), 0, fc); onS(0.93, 0, () => bitts(p, 0.34, 0.34, wood), 0, fc);
+      onS(fc.s0 + 0.14 / L, 0.0, () => belfry(p, wood), 0, fc);
       cathead(0.935, 0.28);
       kegs(0.46, -0.8, 2, 31); on(0.65, 0.8, () => shotRack(p, 5)); on(0.65, -0.8, () => shotRack(p, 5)); on(0.4, 0.56, () => coil(p, 0.12, 3, 0.014));
-      on(0.1, -0.66, () => bucket(p, mul(OAK, 1.1)), 0, qd);
+      onS(0.1, -0.66, () => bucket(p, mul(OAK, 1.1)), 0, qd);
       break;
     }
     case 'galleon': {
       const poop = H.segs[0], hd = H.segs[1], fc = H.segs[3];
       on(0.1, 0, () => skylight(p, 0.34, 0.4, wood), 0, poop);
-      on(0.36, 0, () => capstan(p, 0.44, wood), 0, hd); on(0.4, 0, () => hatch(p, 0.2, 0.44, wood), 0, hd); on(0.225, 0.5, () => binnacle(p, wood), 0, hd);
+      on(0.36, 0, () => capstan(p, 0.44, wood), 0, hd); on(0.4, 0, () => hatch(p, 0.2, 0.44, wood), 0, hd); onS(0.225, 0.5, () => binnacle(p, wood), 0, hd);
       boatAt(0.675, 0, 1.5, 0.56, 40);
       on(0.47, 0, () => hatch(p, 0.24, 0.6, wood)); on(0.76, 0, () => hatch(p, 0.2, 0.6, wood));
-      kegs(0.46, -0.78, 3, 41); kegs(0.47, 0.78, 2, 47); on(0.6, 0.84, () => crate(p, 0.3, 0.26, 0.28, mul(OAK, 1.15), 12), 6); on(0.61, -0.84, () => crate(p, 0.26, 0.22, 0.26, mul(OAK, 1.1), 13), -8);
-      on(fc.s0 + 0.14 / L, 0, () => belfry(p, wood), 0, fc); on(0.9, 0, () => bitts(p, 0.4, 0.36, wood), 0, fc); on(0.83, 0.5, () => stovePipe(p, 0.46), 0, fc);
+      kegs(0.46, -0.78, 3, 41); kegs(0.47, 0.78, 2, 47); onS(0.6, 0.84, () => crate(p, 0.3, 0.26, 0.28, mul(OAK, 1.15), 12), 6); onS(0.61, -0.84, () => crate(p, 0.26, 0.22, 0.26, mul(OAK, 1.1), 13), -8);
+      onS(fc.s0 + 0.14 / L, 0, () => belfry(p, wood), 0, fc); onS(0.9, 0, () => bitts(p, 0.4, 0.36, wood), 0, fc); onS(0.83, 0.5, () => stovePipe(p, 0.46), 0, fc);
       on(0.93, 0, () => coil(p, 0.13, 3, 0.015), 0, fc);
       cathead(0.925, 0.3);
       on(0.3, -0.66, () => coil(p, 0.11, 3, 0.013), 0, hd);
@@ -2013,25 +2153,25 @@ function fitOut(p, H, st) {
     }
     default: {
       const poop = H.segs[0], qd = H.segs[1], fc = H.segs[H.segs.length - 1];
-      on(0.075, 0, () => skylight(p, 0.4, 0.5, wood), 0, poop); on(0.02, 0.5, () => crate(p, 0.34, 0.2, 0.26, hex(0x8a2f22), 14), 0, poop); on(0.02, -0.5, () => crate(p, 0.34, 0.2, 0.26, hex(0x8a2f22), 15), 0, poop);
-      on(0.275, 0, () => shipWheel(p, 0.24, wood, true), 0, qd); on(0.315, 0, () => binnacle(p, wood), 0, qd); on(0.175, 0, () => hatch(p, 0.26, 0.5, wood), 0, qd);
+      on(0.075, 0, () => skylight(p, 0.4, 0.5, wood), 0, poop); onS(0.02, 0.5, () => crate(p, 0.34, 0.2, 0.26, hex(0x8a2f22), 14), 0, poop); onS(0.02, -0.5, () => crate(p, 0.34, 0.2, 0.26, hex(0x8a2f22), 15), 0, poop);
+      on(0.275, 0, () => shipWheel(p, 0.24, wood, true), 0, qd); onS(0.315, 0, () => binnacle(p, wood), 0, qd); on(0.175, 0, () => hatch(p, 0.26, 0.5, wood), 0, qd);
       on(0.445, 0, () => capstan(p, 0.46, wood));
       boatAt(0.635, 0.3, 1.6, 0.56, 50); boatAt(0.635, -0.3, 1.45, 0.5, 60);
       on(0.76, 0, () => hatch(p, 0.34, 0.9, wood));
       on(0.455, 0.8, () => shotRack(p, 6)); on(0.455, -0.8, () => shotRack(p, 6)); kegs(0.73, -0.86, 2, 51); kegs(0.73, 0.86, 2, 55);
-      on(fc.s0 + 0.14 / L, 0, () => belfry(p, wood), 0, fc); on(0.9, 0, () => bitts(p, 0.44, 0.38, wood), 0, fc); on(0.87, -0.45, () => stovePipe(p, 0.5), 0, fc); on(0.945, 0, () => coil(p, 0.14, 3, 0.016), 0, fc);
+      onS(fc.s0 + 0.14 / L, 0, () => belfry(p, wood), 0, fc); onS(0.9, 0, () => bitts(p, 0.44, 0.38, wood), 0, fc); onS(0.87, -0.45, () => stovePipe(p, 0.5), 0, fc); on(0.945, 0, () => coil(p, 0.14, 3, 0.016), 0, fc);
       cathead(0.925, 0.32);
-      on(0.2, 0.66, () => coil(p, 0.12, 3, 0.014), 0, qd); on(0.3, -0.7, () => bucket(p, mul(OAK, 1.1)), 0, qd);
+      on(0.2, 0.66, () => coil(p, 0.12, 3, 0.014), 0, qd); onS(0.3, -0.7, () => bucket(p, mul(OAK, 1.1)), 0, qd);
     }
   }
   // hammock nettings along the waist rails of a warship
-  if ((k === 'manowar' || k === 'frigate') && !lite) bothSides(p, () => {
+  if (k === 'manowar' || k === 'frigate') bothSides(p, () => {
     const g = H.segs.find((q) => Math.abs(q.lift) < 0.01);
     const cols = H.between(g.s0 + 0.05 / L, g.s1 - 0.05 / L), pts = cols.map((ss) => { const q = H.pt(ss, H.railY(ss, g) + st.capH, -t / 2); return [q[0], q[1] + 0.055, q[2]]; });
-    const fine = []; for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < 2; j++) fine.push(lerp3(pts[i], pts[i + 1], j / 2)); fine.push(pts[pts.length - 1]);
+    const sub = far ? 1 : 2, fine = []; for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < sub; j++) fine.push(lerp3(pts[i], pts[i + 1], j / sub)); fine.push(pts[pts.length - 1]);
     p.shade((x, y, z, nx, ny, nz, c) => mul(c, 0.72 + 0.4 * noise3(x * 11, y * 11, z * 11) - (ny < -0.2 ? 0.2 : 0))).ink(hex(0xb9b19c), 0.95).tube(fine, fine.map((q, i) => (i % 2 ? 0.052 : 0.04)), k === 'manowar' ? 5 : 4, 1);
     p.shade(null).ink(IRON, 0.5, 0.8);
-    for (let i = 0; i < pts.length; i += 3) { const q = pts[i]; p.T(q[0], q[1] - 0.012, q[2], 0, 0, 90).lathe([[0.058, -0.01], [0.062, 0.01]], 6); }
+    if (!lite) for (let i = 0; i < pts.length; i += 3) { const q = pts[i]; p.T(q[0], q[1] - 0.012, q[2], 0, 0, 90).lathe([[0.058, -0.01], [0.062, 0.01]], 6); }
   });
   p.shade(null);
   // everything on deck sits in a little pool of its own shadow
@@ -2045,7 +2185,7 @@ function fitOut(p, H, st) {
 // ---------- the raft ----------
 /** a log lying along local X, centred on the origin: bark with furrows and knots, pale cut ends with growth rings */
 function logTimber(p, len, r, seed, bark = hex(0x5e4a33), o = {}) {
-  const nu = Math.max(6, Math.round(len / 0.14)), nv = o.sides || 12;
+  const nu = Math.max(far ? 3 : 6, Math.round(len / (0.14 * eco))), nv = Math.max(6, Math.round((o.sides || 16) * (far ? 0.5 : lite ? 0.75 : 1)));
   const bend = (hash1(seed * 3 + 1) - 0.5) * 0.05 * len, taper = 0.84 + 0.12 * hash1(seed + 5);
   const rad = (t, a) => r * lerp(1, taper, t) * (1 + 0.1 * noise3(t * len * 3.1 + seed, Math.cos(a) * 1.7, Math.sin(a) * 1.7 + seed) + 0.05 * Math.sin(a * 3 + seed) + 0.035 * Math.sin(a * 11 + t * len * 4 + seed * 2));
   const P = (t, a) => { const rr = rad(t, a); return [(t - 0.5) * len, Math.cos(a) * rr + bend * Math.sin(Math.PI * t), Math.sin(a) * rr]; };
@@ -2056,7 +2196,7 @@ function logTimber(p, len, r, seed, bark = hex(0x5e4a33), o = {}) {
   // cut ends: heartwood, rings, sapwood, bark rim
   const cut = hex(0xb9965f);
   for (const e of [0, 1]) {
-    const x = (e - 0.5) * len, rings = [0, 0.3, 0.55, 0.8, 0.94, 1], ids = [];
+    const x = (e - 0.5) * len, rings = far ? [0, 0.8, 1] : [0, 0.3, 0.55, 0.8, 0.94, 1], ids = [];
     p.begin();
     for (let k = 0; k < rings.length; k++) { const row = []; for (let j = 0; j <= nv; j++) { const a = (j / nv) * TAU, q = P(e, a), f = rings[k]; row.push(p.v(x + (e ? 1 : -1) * 0.012 * (1 - f * f), lerp(bend * 0, q[1], f), q[2] * f, e ? 1 : -1, 0, 0, mul(k === rings.length - 1 ? tone : mix(cut, hex(0x7a5a34), k % 2 ? 0.4 : 0.05), 0.85 + 0.2 * hash2(seed, k)))); } ids.push(row); }
     for (let k = 0; k < rings.length - 1; k++) for (let j = 0; j < nv; j++) { const a = ids[k][j], b = ids[k][j + 1], c = ids[k + 1][j + 1], d = ids[k + 1][j]; if (e) p.quad(a, b, c, d); else p.quad(a, d, c, b); }
@@ -2088,8 +2228,8 @@ function buildRaft(def, st, p) {
   // cross-beams over them, lashed at every log
   const rB = rL * 0.52, beams = [-0.36, 0, 0.36].map((f) => f * L);
   for (const [k, x] of beams.entries()) {
-    p.push(X(x, top + rB * 0.8, 0, 0, 90, 0)); p.push(X(0, 0, 0, 40 * k, 0, 0)); logTimber(p, B * 1.04, rB, 20 + k, mix(C.hull, hex(0x6a5236), 0.5), { sides: 9 }); p.pop(); p.pop();
-    for (const g of logs) { p.push(X(x, top + rB * 0.5, g.z, 0, 0, 0)); p.push(X(0, 0, 0, 0, 45, 0)); lashing(p, rB * 1.25, 2); p.pop(); p.push(X(0, 0, 0, 0, -45, 0)); lashing(p, rB * 1.25, 2); p.pop(); p.pop(); }
+    p.push(X(x, top + rB * 0.8, 0, 0, 90, 0)); p.push(X(0, 0, 0, 40 * k, 0, 0)); logTimber(p, B * 1.04, rB, 20 + k, mix(C.hull, hex(0x6a5236), 0.5), { sides: 10 }); p.pop(); p.pop();
+    if (!far) for (const g of logs) { p.push(X(x, top + rB * 0.5, g.z, 0, 0, 0)); p.push(X(0, 0, 0, 0, 45, 0)); lashing(p, rB * 1.25, 2); p.pop(); p.push(X(0, 0, 0, 0, -45, 0)); lashing(p, rB * 1.25, 2); p.pop(); p.pop(); }
   }
   // a rough deck of split planks amidships
   const yD = top + rB * 1.75, x0 = -0.4 * L, x1 = 0.4 * L, nP = Math.round((x1 - x0) / 0.15);
@@ -2110,13 +2250,14 @@ function buildRaft(def, st, p) {
   const yY = mastTop - 0.22, beta = 9 * DEG, wS = Math.min(B * 0.86, 1.5), dirY = [Math.sin(beta), 0, Math.cos(beta)], cY = [mx + mr + 0.03, yY, 0];
   p.shade(grainX(0.14)).ink(mul(SPAR, 0.8), 0.8).tube([add3(cY, dirY, -wS * 0.56), add3(add3(cY, dirY, -wS * 0.2), [0, 0.02, 0]), add3(cY, [0, -0.01, 0]), add3(add3(cY, dirY, wS * 0.25), [0, 0.025, 0]), add3(cY, dirY, wS * 0.56)], [0.014, 0.022, 0.026, 0.022, 0.013], 7, 1);
   rope(p, add3(cY, [0, 0.03, 0]), [mx - 0.02, mastTop - 0.03, 0], 0.007, HEMP, 0, 3);
-  const drop = yY - (deckY + 0.5), sl = squareSail(p, { c: [cY[0], yY - 0.03, 0], beta, wHead: wS * 0.96, wFoot: wS * 0.9, drop, belly: 0.16 * drop + 0.05, col: mul(C.sail, 0.92), seed: 3, cloth: 0.24, roach: 0.14, hollow: 0.06 });
+  const drop = yY - (deckY + 0.5), sl = squareSail(p, { c: [cY[0], yY - 0.03, 0], beta, wHead: wS * 0.96, wFoot: wS * 0.9, drop, belly: 0.16 * drop + 0.05, col: mul(C.sail, 0.92), seed: 3, cloth: 0.24, roach: 0.14, hollow: 0.06, fine: true });
   // patches sewn on, a shade darker, standing just proud of the cloth
   const N = [Math.cos(beta), 0, -Math.sin(beta)];
   for (const [u0, v0, du, dv, k] of [[0.18, 0.5, 0.2, 0.2, 0.8], [0.6, 0.22, 0.17, 0.16, 0.86], [0.62, 0.66, 0.22, 0.14, 0.74]]) {
     for (const e of [1, -1]) p.ink(mul(C.sail, k), 0.95).grid(4, 4, (i, j, out) => { const q = sl.P(u0 + (du * i) / 4, v0 + (dv * j) / 4); out[0] = q[0] + N[0] * 0.006 * e; out[1] = q[1]; out[2] = q[2] + N[2] * 0.006 * e; }, (i, j) => mul(C.sail, k * (i === 0 || i === 4 || j === 0 || j === 4 ? 0.7 : 1)));
   }
   for (const e of [0, 1]) { const cl = sl.clews[e]; rope(p, cl, [-L * 0.2, top + 0.05, (e ? 1 : -1) * B * 0.46], 0.007, HEMP, 0.04, 3); }
+  flags.push({ kind: 'device', shape: st.device, on: (x, y, pk) => sl.on(x, y, 0.47, pk), N: sl.N, r: 0.17 * sl.size });
   for (const e of [-1, 1]) rope(p, add3(cY, dirY, e * wS * 0.54), [-L * 0.36, top + 0.05, e * B * 0.4], 0.006, HEMP, 0.05, 3);
   // lean-to: poles and a sagging tarpaulin over the after end
   const lx0 = -0.42 * L, lx1 = -0.1 * L, lh = 0.62, lw = B * 0.62, pole = mul(SPAR, 0.75), ridgeY = deckY + lh;
@@ -2169,43 +2310,103 @@ function buildRaft(def, st, p) {
 }
 
 // ---------- assembly ----------
+/** run one stage of a build; with globalThis.__shipTally = {} set (previews only) it records the triangles each stage adds */
+function stage(p, name, fn) {
+  const T = globalThis.__shipTally, t0 = p.tris, r = fn();
+  if (T) T[name] = (T[name] || 0) + p.tris - t0;
+  return r;
+}
 function buildSailingShip(def, st, p) {
   const H = makeHull(st.hull);
   bothSides(p, (side) => {
-    shell(p, H, st, side);
-    H.segs.forEach((g) => { bulwarkInside(p, H, st, g); if (g.bul > 0.03) railCap(p, H, st, g); });
+    stage(p, 'shell', () => shell(p, H, st, side));
+    stage(p, 'bulwarks', () => H.segs.forEach((g) => { bulwarkInside(p, H, st, g); if (g.bul > 0.03) railCap(p, H, st, g); }));
   });
-  H.segs.forEach((g, gi) => deckPlanks(p, H, st, g, gi));
-  for (let k = 0; k < H.segs.length - 1; k++) bulkhead(p, H, st, k);
-  transom(p, H, st);
-  sternWorks(p, H, st);
-  backbone(p, H, st);
-  headWorks(p, H, st);
-  bothSides(p, () => { gunPorts(p, H, st); sideWorks(p, H, st); });
-  fitOut(p, H, st);
-  return rig(p, H, st);
+  stage(p, 'decks', () => H.segs.forEach((g, gi) => deckPlanks(p, H, st, g, gi)));
+  stage(p, 'bulkheads', () => { for (let k = 0; k < H.segs.length - 1; k++) bulkhead(p, H, st, k); });
+  stage(p, 'stern', () => { transom(p, H, st); sternWorks(p, H, st); });
+  stage(p, 'backbone', () => backbone(p, H, st));
+  stage(p, 'head', () => headWorks(p, H, st));
+  bothSides(p, () => { stage(p, 'guns', () => gunPorts(p, H, st)); stage(p, 'sideWorks', () => sideWorks(p, H, st)); });
+  stage(p, 'fitOut', () => fitOut(p, H, st));
+  // where the muzzles of the starboard broadside are, for whoever wants to put the smoke there
+  st.muzzles = st.ports.map((port) => { const { lo, hi } = portGeom(H, st, port), s = port.s, yc = (lo(s) + hi(s)) / 2, n = H.nh(s, yc), o = H.pt(s, yc); return [o[0] + n[0] * st.gunOut, yc - (hi(s) - lo(s)) * 0.06, o[2] + n[1] * st.gunOut]; });
+  if (st.kind === 'skiff') for (let i = 0; i < st.per; i++) { const ss = st.per === 1 ? 0.44 : lerp(0.26, 0.76, i / (st.per - 1)), q = H.pt(ss, H.railY(ss) + st.capH, -H.o.thick / 2); st.muzzles.push([q[0], q[1] + 0.19, q[2] + 0.2]); }
+  return stage(p, 'rig', () => rig(p, H, st));
 }
 
 const built = new Map(), flagGeo = new Map();
-function buildMain(def) {
-  const st = styleFor(def), p = new Pen();
-  eco = st.eco; lite = st.lite; ropeK = clamp(0.45 + st.L * 0.075, 0.6, 1.15);
+function buildMain(def, tier) {
+  const st = styleFor(def, tier), p = new Pen();
+  eco = st.eco; lite = st.lite; far = st.far; p.q = TIERS[tier].q; ropeK = clamp(0.45 + st.L * 0.075, 0.6, 1.15);
   const flags = st.kind === 'raft' ? buildRaft(def, st, p) : buildSailingShip(def, st, p);
-  return { geo: p.toGeometry(), flags, st };
+  eco = 1; lite = false; far = false;
+  const geo = p.toGeometry();
+  return { geo, flags, st, muzzles: st.muzzles || [], top: geo.boundingBox.max.y };
 }
+/** one tier of a class, built on first use and shared by every ship of that class */
+function tierOf(def, key, tier) {
+  const k = `${key}|${tier}`;
+  if (!built.has(k)) built.set(k, buildMain(def, tier));
+  return built.get(k);
+}
+function flagsOf(key, flags, sideHex) {
+  const fk = `${key}|${sideHex}`;
+  if (!flagGeo.has(fk)) { const fp = new Pen(); drawFlags(fp, flags, sideHex); flagGeo.set(fk, fp.n ? fp.toGeometry() : null); }
+  return flagGeo.get(fk);
+}
+// which tier each detail level of the game shows (rigkit.setLod levels 0..5; the naval view picks the level from the
+// camera distance, changing at about 21, 45, 90, 165 and 300 tiles for a ship): the full model close to, the middle
+// tier at the usual battle distance, the far tier once a ship is under about two hundred pixels long.
+const LOD_PLAN = { low: [1, 1, 1, 2, 2, 2], ultra: [0, 0, 0, 1, 2, 2] }, LOD_DEFAULT = [0, 0, 1, 2, 2, 2], LOD_STEPS = [14, 30, 60, 110, 200], NOOP = () => {};
 
-/** ship(def, sideColorHex) -> THREE.Object3D: bow toward +X, waterline at y = 0, length def.len, beam def.beam */
+/**
+ * ship(def, sideColorHex) -> THREE.Group: bow toward +X, waterline at y = 0, length def.len, beam def.beam.
+ * Two meshes: the ship (one merged geometry per tier, shared by every ship of the class) and its flags in the side colour.
+ * userData.lod lets rigkit.setLod(ship, n) swap tiers; userData.setSide(hex) re-dyes the flags (they also follow the
+ * colour of a userData.ring the game hangs on the ship, so a captured prize changes her colours);
+ * userData.muzzles and userData.top tell the game where the guns and the mastheads are (and a userData.bar the game
+ * hangs on the ship is lifted clear of the mastheads the first time she is drawn).
+ */
 export function ship(def, sideColorHex = 0x3d7bd9) {
-  const key = [def.id, def.len, def.beam, def.sails, def.cannons?.perSide, def.color, def.sail, getDetail()].join('|');
-  if (!built.has(key)) built.set(key, buildMain(def));
-  const b = built.get(key), fk = `${key}|${sideColorHex}`;
-  if (!flagGeo.has(fk)) { const fp = new Pen(); drawFlags(fp, b.flags, sideColorHex); flagGeo.set(fk, fp.n ? fp.toGeometry() : null); }
-  const g = new THREE.Group();
-  for (const geo of [b.geo, flagGeo.get(fk)]) {
-    if (!geo) continue;
-    const m = new THREE.Mesh(geo, sculptMaterial());
-    m.castShadow = true; m.receiveShadow = true;
-    g.add(m);
+  const key = [def.id, def.len, def.beam, def.sails, def.cannons?.perSide, def.color, def.sail].join('|');
+  const plan = LOD_PLAN[getDetail()] || LOD_DEFAULT, base = tierOf(def, key, plan[0]);
+  const g = new THREE.Group(), mat = sculptMaterial();
+  const hull = new THREE.Mesh(base.geo, mat);
+  hull.castShadow = true; hull.receiveShadow = true; hull.name = 'ship';
+  g.add(hull);
+  g.userData.muzzles = base.muzzles;   // [x, y, z] of each gun muzzle of the starboard (+Z) broadside; the port side mirrors z
+  g.userData.top = base.top;           // height of the mastheads above the waterline
+  // the other tiers are only built when a ship is first seen from that far away
+  const geos = [];
+  plan.forEach((t, i) => Object.defineProperty(geos, i, { enumerable: true, get: () => tierOf(def, key, t).geo }));
+  g.userData.lod = { meshes: [{ mesh: hull, geos }], far: null, level: 0, levels: plan.length, toJSON: () => undefined };   // toJSON: Object3D.clone() must not serialise (and so build) every tier
+  // A ship in a battle (the views hang a selection ring on her) that nobody calls setLod on looks after her own level,
+  // by the same rule the naval view uses; the first time someone else sets a level she leaves it to them.
+  let own = 0;
+  hull.onBeforeRender = (renderer, scene, camera) => {
+    const lod = g.userData.lod;
+    if (!lod || lod.level !== own) { hull.onBeforeRender = NOOP; return; }
+    if (!g.userData.ring) return;
+    const e = hull.matrixWorld.elements, c = camera.matrixWorld.elements, ratio = Math.hypot(c[12] - e[12], c[13] - e[13], c[14] - e[14]) / 1.5;
+    let lv = 0;
+    while (lv < LOD_STEPS.length && ratio > LOD_STEPS[lv]) lv++;
+    if (lv !== own) { setLod(g, lv); own = g.userData.lod.level; }
+  };
+  const fg = flagsOf(key, base.flags, sideColorHex);
+  if (fg) {
+    const fm = new THREE.Mesh(fg, mat);
+    fm.castShadow = true; fm.receiveShadow = true; fm.name = 'flags';
+    let side = sideColorHex;
+    g.userData.setSide = (hexCol) => { if (hexCol === side) return; side = hexCol; const ng = flagsOf(key, base.flags, hexCol); if (ng) fm.geometry = ng; };
+    let barUp = false;
+    fm.onBeforeRender = () => {
+      const ring = g.userData.ring, bar = g.userData.bar;
+      if (ring && ring.material && ring.material.color) g.userData.setSide(ring.material.color.getHex());
+      // the views hang the health bar at 2 + 0.35 x length, which is among the upper sails of anything bigger than a skiff: lift it clear of the mastheads
+      if (bar && !barUp) { barUp = true; if (bar.position) bar.position.y = Math.max(bar.position.y, base.top + 0.3); }
+    };
+    g.add(fm);
   }
   return g;
 }

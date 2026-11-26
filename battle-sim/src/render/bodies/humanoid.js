@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { S, H, rgb, noise3, distanceTo } from '../sculpt.js';
 import { proportions } from './anatomy.js';
-import { dress } from './gear.js';
+import { dress, headCover } from './gear.js';
 import { weapon as makeWeapon, shield as makeShield } from './weapons.js';
 
 const DEG = Math.PI / 180;
@@ -1304,6 +1304,7 @@ function centreOf(x) {
 }
 
 export function humanoid(def = {}, o = {}) {
+  if (!o.helm && !o.hood && headCover(def, o)) o = { ...o, helm: true };   // the outfit brings its own headgear (gear.js): no scalp hair under it
   const P = proportions(o);
   const sp = o.cyclops ? 'cyclops' : SPECIES[P.species] ? P.species : 'human';
   const st = { ...SPECIES[sp] };

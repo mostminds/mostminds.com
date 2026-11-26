@@ -30,7 +30,9 @@ server.listen(0, async () => {
     await page.addInitScript((q) => { try { localStorage.clear(); localStorage.setItem('tb.quality', JSON.stringify(q)); } catch { /* no storage */ } }, args.quality || 'medium');
     await page.goto(`http://localhost:${server.address().port}/index.html`);
     await page.waitForFunction(() => window.__tb && window.__tb.sim.b, null);
-    if (args.preset) { await page.selectOption('#preset', args.preset); await page.click('#loadPreset'); await page.waitForTimeout(1500); }
+    const ready = () => page.waitForFunction(() => !window.__tb.sim.loading, null);
+    await ready();
+    if (args.preset) { await page.selectOption('#preset', args.preset); await page.click('#loadPreset'); await page.waitForTimeout(300); await ready(); await page.waitForTimeout(1200); }
     const ticks = +(args.ticks || 0);
     if (ticks) {
       await page.click('#play');

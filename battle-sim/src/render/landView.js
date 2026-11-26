@@ -134,6 +134,20 @@ export class LandView {
     this.structGroup.add(r);
   }
 
+  /** every distinct model this battle needs, as { label, run } steps, so the page can build them one per frame */
+  warmList(b) {
+    const out = [], seen = new Set();
+    const add = (key, label, run) => { if (!seen.has(key)) { seen.add(key); out.push({ label, run }); } };
+    for (const u of b.units) add(`u:${u.def.id}`, u.def.name || u.def.id, () => buildUnitModel(u.def));
+    for (const s of b.structures) {
+      const { w, h, def } = structureFootprint(s);
+      add(`s:${def.id}:${w}x${h}`, def.name || def.id, () => buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null }));
+    }
+    for (const sh of b.ships) add(`h:${sh.def.id}:${sh.side}`, sh.def.name || sh.def.id, () => buildShip(sh.def, SIDE_COLORS[sh.side]));
+    for (const c of b.crafts) add(`c:${c.side}`, 'Landing craft', () => buildCraft(SIDE_COLORS[c.side]));
+    return out;
+  }
+
   // Full rebuild for a fresh battle object
   load(b) {
     this.b = b;

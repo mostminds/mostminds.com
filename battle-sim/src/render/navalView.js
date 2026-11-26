@@ -44,6 +44,18 @@ export class NavalView {
     }
   }
 
+  /** every distinct model this battle needs, as { label, run } steps, so the page can build them one per frame */
+  warmList(b) {
+    const out = [], seen = new Set();
+    for (const e of b.ents) {
+      const key = e.ship ? `h:${e.def.id}:${e.side}` : e.fort ? `f:${e.def.id}` : `c:${e.def.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ label: e.def.name || e.def.id, run: () => (e.ship ? buildShip(e.def, SIDE_COLORS[e.side]) : e.fort ? buildFort(e.def) : buildCreature(e.def)) });
+    }
+    return out;
+  }
+
   load(b) {
     this.b = b;
     this.buildSea(b);

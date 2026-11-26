@@ -64,6 +64,15 @@ function matchup() {
 }
 
 // ---------- building battles ----------
+// Detailed models take a moment to sculpt the first time each is needed. Whatever fits in a short
+// budget is built at once; past that a progress card goes up and one model is built per frame.
+let buildGen = 0;
+function showLoading(label, i = 0, n = 1) {
+  $('loading').hidden = label === null;
+  if (label === null) return;
+  $('loadingWhat').textContent = `${label} (${i + 1} of ${n})`;
+  $('loadingBar').style.width = `${Math.round((i / n) * 100)}%`;
+}
 function buildSim(seed) {
   sim.seed = seed;
   sim.acc = 0; sim.ended = false;
@@ -74,9 +83,32 @@ function buildSim(seed) {
     sim.b = createBattle({ ...scn(), mode: state.mode }, roster(), seed, navalDefs().SHIPS);
     if (!(view instanceof LandView)) { view?.dispose(); view = new LandView(stage); }
   }
-  view.speed = state.speed;
-  view.time = performance.now() / 1000;
-  view.load(sim.b);
+  const b = sim.b, gen = ++buildGen;
+  const finish = () => {
+    view.speed = state.speed;
+    view.time = performance.now() / 1000;
+    view.load(b);
+    sim.loading = false;
+    showLoading(null);
+    updateHud();
+  };
+  const steps = view.warmList(b);
+  const run = (st) => { try { st.run(); } catch (err) { console.error(err); } };
+  let i = 0;
+  const t0 = performance.now();
+  while (i < steps.length && performance.now() - t0 < 45) run(steps[i++]);
+  if (i >= steps.length) { finish(); return; }
+  sim.loading = true;
+  const next = () => {
+    if (gen !== buildGen) return; // a newer build has replaced this one
+    showLoading(steps[i].label, i, steps.length);
+    requestAnimationFrame(() => setTimeout(() => { // let the card paint before the next model blocks the page
+      if (gen !== buildGen) return;
+      run(steps[i++]);
+      if (i < steps.length) next(); else finish();
+    }, 0));
+  };
+  next();
   updateHud();
 }
 
@@ -112,6 +144,7 @@ function updateHud() {
   $('hudTime').textContent = fmtTime(b?.tick || 0);
   let st = 'Deployment';
   if (b && b.winner !== null) st = b.winner === -1 ? 'Stalemate' : `${names[b.winner]} wins!`;
+  else if (sim.loading) st = 'Sculpting models';
   else if (sim.started) st = sim.playing ? 'Battle in progress' : 'Paused';
   $('hudState').textContent = st;
   $('play').textContent = sim.playing ? 'Pause' : sim.started && b?.winner === null ? 'Resume' : 'Start battle';
@@ -138,7 +171,7 @@ function tickFrame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const b = sim.b;
-  if (b && sim.playing && b.winner === null) {
+  if (b && sim.playing && !sim.loading && b.winner === null) {
     sim.acc += dt * 1000 * state.speed;
     let steps = 0;
     while (sim.acc >= TICK_MS && b.winner === null && steps < 8) {
@@ -149,7 +182,7 @@ function tickFrame(now) {
     if (b.winner !== null) { sim.playing = false; sim.acc = 0; onBattleEnd(); }
     updateHud();
   }
-  if (view) view.update(sim.playing ? sim.acc / TICK_MS : 1, now / 1000, dt, state.speed);
+  if (view && view.b) view.update(sim.playing && !sim.loading ? sim.acc / TICK_MS : 1, now / 1000, dt, state.speed);
   stage.updateFx(dt);
   stage.render();
 }
