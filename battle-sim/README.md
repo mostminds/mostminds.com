@@ -113,8 +113,10 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
 - **Command.** Units have ranks (Recruit, Veteran, Sergeant, Captain) and are promoted for kills. Each side
   has commanders who carry a standard. A squad that breaks, or loses its commander, falls back to the nearest
   rally point or commander, re-forms and returns.
-- **Supply and engineers.** Stores come ashore from landing craft, ships and zeppelins, or stand in rail
-  wagons. Engineers haul them to beachheads, rally points and forts and build what the situation calls for
+- **Supply and engineers.** Stores come ashore from landing craft and ships, are flown in on zeppelin supply
+  runs, or stand in rail wagons (every preset army on land has a supply line). Archers, crossbowmen and
+  slingers carry 30 shots and medics a set number of dressings; both refill at a stocked point, and fight at
+  half strength when they cannot. Each squad sets its own rally point. Engineers haul them to beachheads, rally points and forts and build what the situation calls for
   (breastworks, ballistae against fliers, cannon, aid tents, watchtowers), and repair damaged buildings and
   guns. Vanguards guard the supply chain and raid the enemy's; medics go to the wounded of their own squad first.
 - **Damage and the dead.** Buildings and guns show two stages of damage before they fall; bodies stay on the field.

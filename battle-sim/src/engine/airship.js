@@ -3,6 +3,7 @@
 import { AIRSHIPS } from '../data/airships.js';
 import { isWater } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
+import { addCrate } from './command.js';
 import { hitChance, defenceRoll } from './combat.js';
 import { near, queueHit, damageStructure, hitStructuresAt, unitHeight, spawnUnit, addSquad, freeTileNear, occupy, canStandAir, damage, stepAir } from './battle.js';
 
@@ -132,6 +133,7 @@ function shipTick(b, a) {
   }
   if (tower && td < 5) {
     a.hp = Math.min(a.maxHp, a.hp + 6);
+    if (b.tick % 40 === 0 && a.supplies < 4) a.supplies++; // stores are loaded at the mast
     if (b.tick % 12 === 0 && a.crew < a.def.crew) a.crew++;
   }
   if (a.mode === 'refit' && (!tower || a.hp > a.maxHp * 0.85)) a.mode = 'hunt';
@@ -230,6 +232,28 @@ function shipTick(b, a) {
     }
     if (best) { a.mode = 'rescue'; a.pick = { x: best.x, y: best.y }; b.events.push({ type: 'airRescue', air: a.id, x: best.x, y: best.y }); carry(); return; }
     a.ladderCd = 12;
+  }
+
+  // a supply run: fly to the held point shortest of stores, lower the crates, and go back to the fight
+  if (a.mode === 'hunt' && a.supplies > 0 && b.cmd && b.tick >= (a.nextSupply || 60) && (b.tick + a.id) % 10 === 0) {
+    let best = null, bs = Infinity;
+    for (const p of b.cmd.points) { if (p.side !== a.side || p.stock >= 3) continue; const sc = Math.hypot(p.x - a.x, p.y - a.y) + p.stock * 12; if (sc < bs) { bs = sc; best = p; } }
+    if (best) { a.mode = 'supply'; a.dest = best.id; b.events.push({ type: 'airSupplyRun', air: a.id }); } else a.nextSupply = b.tick + 60;
+  }
+  if (a.mode === 'supply') {
+    const p = b.cmd.points[a.dest];
+    if (!p || a.supplies <= 0) a.mode = 'hunt';
+    else {
+      const d = Math.hypot(p.x - a.x, p.y - a.y);
+      if (d > 1.5) steer(b, a, p.x, p.y, 1.1);
+      else {
+        const n = Math.min(2, a.supplies);
+        if (addCrate(b, a.side, p.x + 1, p.y + 1, n)) { a.supplies -= n; b.events.push({ type: 'airSupply', air: a.id, x: p.x + 1, y: p.y + 1 }); }
+        a.ladder = 5; a.mode = 'hunt'; a.nextSupply = b.tick + 150;
+      }
+      if (a.cd <= 0) fireAtGround(b, a, C);
+      carry(); return;
+    }
   }
 
   // hunting: stand off and pound them, with bombing runs when the bay is loaded

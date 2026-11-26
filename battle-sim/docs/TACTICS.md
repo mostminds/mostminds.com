@@ -10,8 +10,8 @@ taken from each.
 
 | Layer | Behaviour |
 | --- | --- |
-| Side | Rally points behind the fighting line, beachheads where boats land, forts where the garrison has works. Supplies arrive by landing craft, ship, zeppelin or rail wagon. A commander's own position is the rally point when none is marked. |
-| Squad | Hold, advance, flank, fall back, regroup. A squad that drops below strength, or whose commander has just fallen, breaks and falls back to the nearest rally point or living commander, re-forms there and goes back in once. Focus fire on the weakest reachable enemy. |
+| Side | Beachheads where boats land, forts where the garrison has works. Supplies arrive by landing craft, ship, zeppelin supply run or rail wagon, and are used up: shooters draw ammunition and medics dressings from stocked points, and one load is always held back from building for that. |
+| Squad | Each fighting squad chooses its own rally point or ground to hold: the nearest marked point behind it, or a new one a few tiles back (on its commander if he is near). It can break and rally up to three times. Hold, advance, flank, fall back, regroup. A squad that drops below strength, or whose commander has just fallen, breaks and falls back to the nearest rally point or living commander, re-forms there and goes back in. Focus fire on the weakest reachable enemy. |
 | Individual | Ranks (Recruit, Veteran, Sergeant, Captain) with field promotion on kills. Specialisations: line, marksman, medic, engineer, vanguard, commander. Support troops are attached to a fighting squad and look to it first. |
 
 - **Engineers** unload crates and wagons, carry stores to the point shortest of them, then build what the
@@ -64,4 +64,4 @@ taken from each.
 - Suppression and pinning (4), so shooters fix a squad while another flanks.
 - Per-soldier cover scoring (2), so troops pick walls and breastworks rather than only using them when crossed.
 - Utility scoring for squad stance in place of fixed thresholds, and an HTN or goal planner for engineers (1, 5).
-- Supplies that are consumed (arrows, powder, healing), so raids and cut supply lines bite harder (6).
+- Powder for guns and ships as a consumable, and food for long sieges (6).

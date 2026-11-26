@@ -300,7 +300,7 @@ export class LandView {
     g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.6, 6).translate(0, 1.3, 0), mat(0x4a3a26)));
     const pennant = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 2.55, 0), new THREE.Vector3(0, 1.95, 0), new THREE.Vector3(1.0, 2.25, 0)]), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[p.side], side: THREE.DoubleSide }));
     g.add(pennant);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.68, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: p.kind === 'beachhead' ? 0xf0d060 : p.kind === 'fort' ? 0xffffff : SIDE_COLORS[p.side], transparent: true, opacity: 0.55 }));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.68, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: p.kind === 'beachhead' ? 0xf0d060 : p.kind === 'fort' || p.kind === 'hold' ? 0xffffff : SIDE_COLORS[p.side], transparent: true, opacity: 0.55 }));
     ring.position.y = 0.05; g.add(ring);
     const stores = buildStructure(STRUCTURES.crates, 1, 1, null);
     stores.position.set(0.7, 0, 0.5); stores.visible = false; g.add(stores);
@@ -542,7 +542,7 @@ export class LandView {
         if (e.name === 'charge') st.ring(v, 0.6, 0xffffff, 0.4);
       } else if (e.type === 'point') {
         this.markPoint(b.cmd.points[e.point]);
-        msgs.push({ side: e.side, text: e.kind === 'beachhead' ? 'A beachhead is marked: stores come ashore' : e.kind === 'fort' ? 'The garrison holds its works' : 'A rally point is set behind the line' });
+        msgs.push({ side: e.side, text: e.kind === 'beachhead' ? 'A beachhead is marked: stores come ashore' : e.kind === 'fort' ? 'The garrison holds its works' : e.kind === 'hold' ? 'A squad marks the ground it will hold' : 'A squad sets its rally point behind the line' });
       } else if (e.type === 'crate') {
         this.markCrate({ id: e.crate, x: e.x, y: e.y });
       } else if (e.type === 'crateGone') {
@@ -567,6 +567,13 @@ export class LandView {
         const sx = b.structures[e.s];
         st.ring(v.set(sx.x + sx.w / 2, 0.05, sx.y + sx.h / 2), 1, 0xe8d070, 0.6);
         msgs.push({ side: e.side, text: `Engineers finish a ${STRUCTURES[e.kind].name.toLowerCase()}` });
+      } else if (e.type === 'outOfAmmo') {
+        const u = b.units[e.id];
+        if (!this.saidOut || this.time - this.saidOut > 3) { this.saidOut = this.time; msgs.push({ side: e.side, text: e.medic ? `${(u.baseDef || u.def).name}s have run out of dressings` : `${(u.baseDef || u.def).name}s are out of ammunition and no stores are in reach` }); }
+      } else if (e.type === 'resupplied') {
+        this.unitPos(b.units[e.id], 1, v); st.ring(v.setY(0.05), 0.4, 0xe8d070, 0.4);
+      } else if (e.type === 'airSupplyRun') {
+        msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} turns away on a supply run` });
       } else if (e.type === 'fallback') {
         msgs.push({ side: e.side, text: `${e.name} squad breaks and falls back to ${e.to}` });
       } else if (e.type === 'rallied') {

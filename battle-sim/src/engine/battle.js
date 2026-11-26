@@ -638,10 +638,10 @@ function updateSquad(b, sq) {
   const ratio = sq.alive / sq.initial;
   const myHp = sideHp(b, sq.side), theirHp = sideHp(b, 1 - sq.side);
   const shaken = b.cmd.shock[sq.side] > b.tick && sq.leaderless; // their commander has just fallen
-  if (sq.state !== 'regroup' && sq.state !== 'fallback' && !sq.rallied && sq.initial >= 3 && ((ratio <= 0.4 && myHp < theirHp * 0.9) || (shaken && ratio <= 0.75))) {
+  if (sq.state !== 'regroup' && sq.state !== 'fallback' && (sq.breaks || 0) < 3 && !(sq.steadyUntil > b.tick) && sq.initial >= 3 && ((ratio <= 0.4 && myHp < theirHp * 0.9) || (shaken && ratio <= 0.75))) {
     const pt = fallbackFor(b, sq);
     if (pt) {
-      sq.prev = sq.state; sq.state = 'fallback'; sq.rallyPt = pt; sq.rallyUntil = b.tick + 150; sq.rallied = true;
+      sq.prev = sq.state; sq.state = 'fallback'; sq.rallyPt = pt; sq.rallyUntil = b.tick + 150; sq.breaks = (sq.breaks || 0) + 1;
       b.events.push({ type: 'fallback', squad: sq.id, side: sq.side, name: (us[0].baseDef || us[0].def).name, to: pt.kind });
     }
   }
@@ -649,7 +649,7 @@ function updateSquad(b, sq) {
     const pt = sq.rallyPt;
     if (Math.hypot(pt.x - sq.cx, pt.y - sq.cy) < 4 || b.tick > sq.rallyUntil) {
       // steadied at the rally point: reorganise and go back in
-      sq.state = sq.prev === 'hold' ? 'hold' : 'advance'; sq.initial = Math.max(1, sq.alive); sq.leaderless = false;
+      sq.state = sq.prev === 'hold' ? 'hold' : 'advance'; sq.initial = Math.max(1, sq.alive); sq.leaderless = false; sq.steadyUntil = b.tick + 90; // steadied for a while, but it can break again
       b.events.push({ type: 'rallied', squad: sq.id, side: sq.side, name: (us[0].baseDef || us[0].def).name });
     } else { sq.target = nearest.id; return; }
   }
@@ -866,7 +866,7 @@ function unitTick(b, u) {
     }
   }
 
-  if (u.spec !== 'line' && specDuty(b, u)) return;
+  if ((u.spec !== 'line' || u.ammo !== undefined) && specDuty(b, u)) return;
   const mend = ability(u, 'repair') || (u.spec === 'engineer' ? { amount: 22 } : null);
   if (mend && repairDuty(b, u, mend)) return;
 
@@ -1061,6 +1061,10 @@ function attack(b, u, t) {
 
   const hit = b.rng.next() < hitChance(u.def.aRoll, dRoll);
   let dmg = hit ? b.rng.int(0, Math.floor(u.def.max * mult)) : 0;
+  // out of ammunition: scavenged shafts and thrown stones, slower and weaker
+  const spent = u.ammo !== undefined && u.ammo <= 0;
+  if (u.ammo > 0) u.ammo--;
+  if (spent) dmg = Math.floor(dmg * 0.5);
   const delay = hitDelay(style, dist);
   queueHit(b, u, t, dmg, delay, style, hit);
   b.events.push({ type: 'attack', from: u.id, to: t.id, style, delay, proj: u.def.projectile || style });
@@ -1080,7 +1084,7 @@ function attack(b, u, t) {
       queueHit(b, u, v, h2 ? Math.floor(b.rng.int(0, u.def.max) * (splash.mult || 0.5)) : 0, delay, style, h2);
     });
   }
-  u.cd = u.def.speed; u.lastAttack = b.tick;
+  u.cd = spent ? u.def.speed * 2 : u.def.speed; u.lastAttack = b.tick;
 }
 
 // src: where the blow came from when no unit dealt it ({ x, y, blast }), so the fallen lie the right way

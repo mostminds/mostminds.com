@@ -249,6 +249,24 @@ function enlarge(p) {
   for (const sd of scn.sides) for (const q of sd.placed || []) { q.x = Math.round(q.x * k); q.y = Math.round(q.y * k); }
 }
 for (const p of PRESETS) enlarge(p);
+// A supply line for each army: track running in from its own map edge with two loaded wagons on it.
+// Field armies both get one; in landings only the defenders do (the attackers' stores come by sea).
+for (const p of PRESETS) {
+  if (p.mode === 'naval') continue;
+  const scn = p.scn, S = scn.size;
+  const clear = (x0, x1, y) => !scn.structures.some((st) => st.y >= y - 1 && st.y <= y + 1 && st.x < x1 + 3 && st.x + 8 > x0);
+  const line = (side) => {
+    const x0 = side === 0 ? 2 : S - 22, x1 = x0 + 20;
+    for (const y of [4, S - 6, 8, S - 10, 12]) {
+      if (!clear(x0, x1, y)) continue;
+      scn.structures.push({ type: 'rail', x: x0, y, rot: 0, len: 20 });
+      for (let k = 0; k < 2; k++) scn.structures.push({ type: 'railCar', x: side === 0 ? x0 + 3 + k * 4 : x1 - 6 - k * 4, y, rot: 0, side });
+      return;
+    }
+  };
+  if (p.mode === 'field') line(0);
+  line(1);
+}
 
 export const DEFAULT_SCENARIOS = {
   field: PRESETS.find((p) => p.id === 'horde').scn,

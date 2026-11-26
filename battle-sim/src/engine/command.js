@@ -18,6 +18,7 @@ const BOOST = [null, { hp: 1.1, max: 1.1, roll: 1.05 }, { hp: 1.2, max: 1.15, ro
 const BUILDS = {
   sandbags: { cost: 1, work: 5 }, barricade: { cost: 1, work: 5 }, ballista: { cost: 3, work: 12 }, cannon: { cost: 3, work: 12 }, tower: { cost: 4, work: 16 }, tent: { cost: 2, work: 8 },
 };
+export const AMMO = 30;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const has = (u, type) => u.def.abilities.some((a) => a.type === type);
 
@@ -73,14 +74,18 @@ export function initCommand(b, scn) {
     let k = 0;
     for (const u of mine) if ((u.spec === 'medic' || u.spec === 'engineer' || u.spec === 'vanguard') && fighting.length) u.ward = fighting[k++ % fighting.length].id;
 
-    // ground to hold: defenders rally on their own position and on their works
+    // ground to hold: defenders rally on their own position and on their works, where their stores are
+    let garrison = null;
     if (b.sides[side].posture === 'defend' && mine.length) {
       const g = mine.filter((u) => u.aboard < 0 && !u.def.fly);
-      if (g.length) addPoint(b, side, 'rally', Math.round(g.reduce((a, u) => a + u.x, 0) / g.length), Math.round(g.reduce((a, u) => a + u.y, 0) / g.length));
+      if (g.length) garrison = addPoint(b, side, 'rally', Math.round(g.reduce((a, u) => a + u.x, 0) / g.length), Math.round(g.reduce((a, u) => a + u.y, 0) / g.length));
       const works = b.structures.filter((s) => s.side === side && !STRUCTURES[s.type].weapon);
-      if (works.length >= 4) addPoint(b, side, 'fort', Math.round(works.reduce((a, s) => a + s.x + s.w / 2, 0) / works.length), Math.round(works.reduce((a, s) => a + s.y + s.h / 2, 0) / works.length));
+      if (works.length >= 4) garrison = addPoint(b, side, 'fort', Math.round(works.reduce((a, s) => a + s.x + s.w / 2, 0) / works.length), Math.round(works.reduce((a, s) => a + s.y + s.h / 2, 0) / works.length));
     }
   }
+  for (const p of b.cmd.points) if (p.kind === 'fort' || (p.kind === 'rally' && !b.cmd.points.some((q) => q.side === p.side && q.kind === 'fort'))) p.stock = 4;
+  // arrows, bolts and sling stones run out and must be drawn from a stocked point
+  for (const u of b.units) if (u.def.style === 'ranged' && !u.def.fly) u.ammo = AMMO;
   // what there is to unload
   for (const c of b.crafts) c.supplies = 3;
   for (const s of b.ships) s.supplies = s.def.supplies ?? 6;
@@ -100,7 +105,7 @@ function addPoint(b, side, kind, x, y) {
   b.events.push({ type: 'point', point: p.id, side, kind, x: p.x, y: p.y });
   return p;
 }
-function addCrate(b, side, x, y, n) {
+export function addCrate(b, side, x, y, n) {
   const spot = freeTileNear(b, clamp(Math.round(x), 1, b.W - 2), clamp(Math.round(y), 1, b.H - 2), 1, side);
   if (!spot) return null;
   const c = { id: b.cmd.nextId++, side, x: spot[0], y: spot[1], n };
@@ -119,6 +124,8 @@ function liveCommanders(b, side) { return b.cmd.commanders[side].map((id) => b.u
 /** where a broken squad should run: the nearest rally point or beachhead, else the nearest living commander */
 export function fallbackFor(b, sq) {
   let best = null, bd = Infinity;
+  const own = b.cmd.points[sq.point];
+  if (own && Math.hypot(own.x - sq.cx, own.y - sq.cy) > 5) return { x: own.x, y: own.y, kind: own.kind === 'beachhead' ? 'the beachhead' : own.kind === 'fort' ? 'the fortifications' : 'its rally point' };
   for (const p of b.cmd.points) {
     if (p.side !== sq.side) continue;
     const d = Math.hypot(p.x - sq.cx, p.y - sq.cy);
@@ -176,28 +183,32 @@ export function commandTick(b) {
     }
     if (best && addCrate(b, s.side, best[0], best[1], 1)) { s.supplies--; b.events.push({ type: 'shipSupply', ship: s.id, x: best[0], y: best[1] }); }
   }
-  if (b.tick % 70 === 0) for (const a of b.airships) {
-    if (!a.alive || a.crew <= 0 || !(a.supplies > 0) || a.mode !== 'hunt') continue;
-    const p = nearestPoint(b, a.side, a.x, a.y);
-    if (p && Math.hypot(p.x - a.x, p.y - a.y) < 16 && addCrate(b, a.side, p.x + 1, p.y + 1, 1)) { a.supplies--; b.events.push({ type: 'airSupply', air: a.id, x: p.x + 1, y: p.y + 1 }); }
-  }
   if (b.tick % 20 !== 0) return;
-  // an advancing army keeps a rally point a little behind its fighting line
-  for (let side = 0; side < 2; side++) {
-    const g = b.units.filter((u) => u.alive && u.side === side && u.aboard < 0 && !u.def.fly && u.spec !== 'engineer' && u.spec !== 'medic');
-    if (g.length < 6) continue;
-    const fx = g.reduce((a, u) => a + u.x, 0) / g.length, fy = g.reduce((a, u) => a + u.y, 0) / g.length;
-    const p = nearestPoint(b, side, fx, fy);
-    const foe = b.units.filter((u) => u.alive && u.side !== side && u.aboard < 0);
-    if (!foe.length) continue;
-    const ex = foe.reduce((a, u) => a + u.x, 0) / foe.length, ey = foe.reduce((a, u) => a + u.y, 0) / foe.length;
-    const d = Math.hypot(ex - fx, ey - fy) || 1;
-    if ((!p || Math.hypot(p.x - fx, p.y - fy) > 20) && pointsOf(b, side).length < 5 && b.sides[side].posture !== 'defend') {
-      // with nowhere marked, the commander's own position is the rally point
-      const cmd = liveCommanders(b, side).sort((q, r) => Math.hypot(q.x - fx, q.y - fy) - Math.hypot(r.x - fx, r.y - fy))[0];
-      const bx = cmd ? cmd.x : fx - ((ex - fx) / d) * 7, by = cmd ? cmd.y : fy - ((ey - fy) / d) * 7;
-      addPoint(b, side, 'rally', Math.round(bx - ((ex - fx) / d) * 2), Math.round(by - ((ey - fy) / d) * 2));
+  // Each fighting squad decides where it rallies and what ground it holds: the nearest marked point
+  // behind it if one is close, otherwise a new point of its own a few tiles back from where it stands
+  // (on its commander if he is near). Squads that end up close together share a point.
+  const foe = [[], []];
+  for (const u of b.units) if (u.alive && u.aboard < 0) foe[1 - u.side].push(u);
+  for (const sq of b.squads) {
+    if (sq.alive < 2 || sq.role === 'support' || sq.role === 'air' || sq.role === 'siege') continue;
+    const us = squadUnits(b, sq).filter((u) => u.aboard < 0 && !u.def.fly);
+    if (us.length < 2 || !foe[sq.side].length) continue;
+    const cx = us.reduce((a, u) => a + u.x, 0) / us.length, cy = us.reduce((a, u) => a + u.y, 0) / us.length;
+    let ex = 0, ey = 0, ed = Infinity;
+    for (const t of foe[sq.side]) { const d = Math.hypot(t.x - cx, t.y - cy); if (d < ed) { ed = d; ex = t.x; ey = t.y; } }
+    const cur = C.points[sq.point];
+    // keep the present point while it is still close and not in front of the squad
+    const ahead = (p) => (p.x - cx) * (ex - cx) + (p.y - cy) * (ey - cy) > 9;
+    if (cur && Math.hypot(cur.x - cx, cur.y - cy) < 16 && !ahead(cur)) continue;
+    let best = null, bd = 14;
+    for (const p of C.points) { if (p.side !== sq.side || ahead(p)) continue; const d = Math.hypot(p.x - cx, p.y - cy); if (d < bd) { bd = d; best = p; } }
+    if (!best && pointsOf(b, sq.side).length < 10 && ed > 5) {
+      const cmd = liveCommanders(b, sq.side).find((c) => Math.hypot(c.x - cx, c.y - cy) < 8);
+      const d = ed || 1, bx = cmd ? cmd.x : cx, by = cmd ? cmd.y : cy;
+      best = addPoint(b, sq.side, b.sides[sq.side].posture === 'defend' || sq.state === 'hold' ? 'hold' : 'rally', Math.round(bx - ((ex - cx) / d) * 4), Math.round(by - ((ey - cy) / d) * 4));
+      if (best) best.squad = sq.id;
     }
+    if (best) sq.point = best.id;
   }
 }
 
@@ -221,6 +232,7 @@ export function specDuty(b, u) {
   if (u.spec === 'engineer') return engineerDuty(b, u);
   if (u.spec === 'medic') return medicDuty(b, u);
   if (u.spec === 'vanguard') return vanguardDuty(b, u);
+  if (u.ammo !== undefined) return resupply(b, u);
   return false;
 }
 
@@ -269,7 +281,8 @@ function engineerDuty(b, u) {
         else src.car.supplies--;
         if (here) { here.stock++; b.events.push({ type: 'supplyIn', point: here.id, stock: here.stock, by: u.id }); return true; }
         // take it to the point that is shortest of stores, nearer ones first
-        const dest = pts.slice().sort((p, q) => (p.stock - q.stock) * 6 + Math.hypot(p.x - u.x, p.y - u.y) - Math.hypot(q.x - u.x, q.y - u.y))[0];
+        const mine = b.squads[u.ward] ? b.squads[u.ward].point : -1;
+        const dest = pts.slice().sort((p, q) => (p.stock - q.stock) * 6 + Math.hypot(p.x - u.x, p.y - u.y) - Math.hypot(q.x - u.x, q.y - u.y) - (p.id === mine ? 14 : 0) + (q.id === mine ? 14 : 0))[0];
         u.carry = 1; u.carryTo = dest.id;
         b.events.push({ type: 'supplyUp', by: u.id });
         return true;
@@ -279,7 +292,8 @@ function engineerDuty(b, u) {
     }
   }
   // build: whatever the nearest stocked point most needs
-  const stocked = pts.filter((p) => p.stock > 0).sort((p, q) => Math.hypot(p.x - u.x, p.y - u.y) - Math.hypot(q.x - u.x, q.y - u.y));
+  // one load is always kept back for ammunition and dressings
+  const stocked = pts.filter((p) => p.stock > 1).sort((p, q) => Math.hypot(p.x - u.x, p.y - u.y) - Math.hypot(q.x - u.x, q.y - u.y));
   for (const p of stocked) {
     const open = C.builds.find((s) => !s.done && s.point === p.id && s.side === u.side);
     const s = open || planBuild(b, u.side, p);
@@ -359,10 +373,33 @@ function finishBuild(b, s, u) {
   b.events.push({ type: 'built', site: s.id, s: idx, side: s.side, kind: s.type, by: u.id });
 }
 
+// A shooter low on ammunition, or a medic out of dressings, draws more from the nearest stocked point.
+// Each issue uses a share of a load, so a starved or raided point leaves them short.
+function resupply(b, u) {
+  const heal = u.def.abilities.find((a) => a.type === 'heal');
+  const dry = u.ammo !== undefined ? u.ammo <= 0 : heal && (u.heals || 0) >= (heal.charges || 20);
+  const low = u.ammo !== undefined ? u.ammo <= 5 : dry;
+  if (!low) return false;
+  let best = null, bd = dry ? 36 : 4;
+  for (const p of b.cmd.points) { if (p.side !== u.side || p.stock <= 0) continue; const d = Math.hypot(p.x - u.x, p.y - u.y); if (d < bd) { bd = d; best = p; } }
+  if (!best) { if (dry && !u.outSaid) { u.outSaid = true; b.events.push({ type: 'outOfAmmo', id: u.id, side: u.side, medic: u.ammo === undefined }); } return false; }
+  if (bd <= 3) {
+    if (u.ammo !== undefined) u.ammo = AMMO; else u.heals = 0;
+    u.outSaid = false;
+    best.issued = (best.issued || 0) + (u.ammo !== undefined ? 0.2 : 0.34);
+    if (best.issued >= 1) { best.issued -= 1; best.stock--; b.events.push({ type: 'supplyIn', point: best.id, stock: best.stock, by: u.id }); }
+    b.events.push({ type: 'resupplied', id: u.id });
+    return true;
+  }
+  if (!dry || nearestEnemyDist(b, u, 4).d <= 3) return false;
+  return goTo(b, u, `pt${best.id}`, best.x, best.y);
+}
+
 // Medics go to the wounded: their own squad first, then anyone near.
 function medicDuty(b, u) {
   const heal = u.def.abilities.find((a) => a.type === 'heal');
-  if (!heal || (u.heals || 0) >= (heal.charges || 20)) return false;
+  if (!heal) return false;
+  if ((u.heals || 0) >= (heal.charges || 20)) return resupply(b, u);
   let best = null, bs = 0.7;
   const consider = (a, bias) => { if (!a.alive || a === u || a.aboard >= 0 || a.def.fly) return; const r = a.hp / a.def.hp + bias + Math.hypot(a.x - u.x, a.y - u.y) * 0.01; if (r < bs) { bs = r; best = a; } };
   const ward = b.squads[u.ward];
