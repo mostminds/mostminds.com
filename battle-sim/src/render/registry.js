@@ -15,7 +15,11 @@ export const BODIES = { example: exampleBody, ...humanoid.bodies, ...undead.bodi
 let air = {};
 try { air = await import('./props/airships.js'); } catch (err) { console.warn('[models] airship models unavailable, using simple shapes', err); }
 export const AIR = air;
-export const STRUCT = { ...buildings.structures, ...(air.structures || {}) };
+// civic buildings, terraces, walkways, bridges, viaducts and cable cars
+let civic = {};
+try { civic = await import('./props/civic.js'); } catch (err) { console.info('civic building models not available yet; simple shapes stand in', err?.message || err); }
+export const CIVIC = civic;
+export const STRUCT = { ...buildings.structures, ...(air.structures || {}), ...(civic.structures || {}) };
 export const rubble = buildings.rubble;
 export const SIEGE = siegeMod.siege;
 export const craft = siegeMod.craft;

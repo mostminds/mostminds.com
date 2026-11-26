@@ -413,6 +413,12 @@ export function buildAircraft(kind, sideColor, style) {
   else { const rotor = new THREE.Group(); rotor.add(slab(1.5, 0.03, 0.1, 0x333333)); rotor.position.y = 0.4; g.add(rotor); g.userData.rotor = rotor; }
   return g;
 }
+export function buildCableCar(sideColor) {
+  const sm = REG.CIVIC.cableCar && guarded('cableCar', () => REG.CIVIC.cableCar(sideColor));
+  if (sm) return sm;
+  const g = new THREE.Group(); g.add(slab(0.8, 0.55, 0.55, 0x7a5a36, 0, -0.6, 0)); g.add(slab(0.84, 0.1, 0.59, sideColor, 0, -0.4, 0)); g.add(slab(0.05, 0.4, 0.05, 0x333333, 0, -0.2, 0));
+  return g;
+}
 export function buildDropPod(style, sideColor) {
   const sm = REG.AIR.dropPod && guarded(`pod:${style}`, () => REG.AIR.dropPod(style, sideColor));
   if (sm) return sm;
@@ -653,6 +659,12 @@ export function buildStructure(def, w, h, place = null) {
       for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(box(0.15, LEVEL_H, 0.15), dark, x * (w / 2 - 0.1), LEVEL_H / 2, z * (h / 2 - 0.1)));
       break;
     }
+  }
+  if (!g.children.length) {
+    // no model yet for this kind: a plain block of the right size stands in (flat-topped where it is walked on)
+    if (def.level) g.add(mesh(box(w, def.level * LEVEL_H, h), c, 0, (def.level * LEVEL_H) / 2, 0));
+    else if (def.blocksMove) { const hh = Math.min(5, (def.losHeight || 2) * 0.7); g.add(mesh(box(w * 0.9, hh, h * 0.9), c, 0, hh / 2, 0)); g.add(mesh(box(w, 0.25, h), dark, 0, hh + 0.12, 0)); }
+    else g.add(mesh(box(w * 0.94, 0.12, h * 0.94), c, 0, 0.06, 0));
   }
   return g;
 }

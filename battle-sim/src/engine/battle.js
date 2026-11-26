@@ -35,7 +35,8 @@ export function structureFootprint(s) {
   const def = STRUCTURES[s.type];
   const rot = (s.rot || 0) % 2;
   const len = def.stretch && s.len ? Math.max(1, s.len) : def.w;
-  return { w: rot ? def.h : len, h: rot ? len : def.h, def };
+  const wid = def.stretch2 && s.wid ? Math.max(1, s.wid) : def.h; // terraces stretch both ways
+  return { w: rot ? wid : len, h: rot ? len : wid, def };
 }
 
 export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
@@ -361,6 +362,14 @@ export function damageStructure(b, idx, dmg, from) {
   b.fields.clear();
   b.hasRamparts = b.level.some((l) => l > 0);
   b.events.push({ type: 'structDestroyed', s: idx, side: from ? from.side : -1 });
+  const sdef = STRUCTURES[s.type];
+  if (sdef.volatile) {
+    // an alchemist's stock goes up with the building
+    const cx = s.x + s.w / 2, cy = s.y + s.h / 2, R = sdef.volatile;
+    b.events.push({ type: 'explode', x: cx, y: cy, r: R });
+    near(b, Math.round(cx), Math.round(cy), R + 2, (v) => { if (v.alive && v.aboard < 0 && Math.hypot(v.x - cx, v.y - cy) <= R + 1) queueHit(b, { id: -1 }, v, b.rng.int(6, 30), 1, 'ranged', true, { x: cx, y: cy, blast: true }); });
+    b.structures.forEach((o, oi) => { if (oi !== idx && !o.destroyed && o.hp && Math.hypot(o.x + o.w / 2 - cx, o.y + o.h / 2 - cy) <= R + 2) damageStructure(b, oi, 120, null); });
+  }
   // anyone standing on it falls
   for (const u of b.units) {
     if (!u.alive || u.aboard >= 0 || u.def.fly) continue;

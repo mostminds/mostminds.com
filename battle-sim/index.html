@@ -35,8 +35,7 @@
       <label class="speed">Graphics
         <select id="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select>
       </label>
-      <button type="button" id="batchBtn" class="brass">Simulate</button>
-      <select id="batchCount" aria-label="Number of battles"><option value="100">100</option><option value="1000" selected>1,000</option></select>
+      <button type="button" id="genMap" class="brass" title="Build a new map: a random place and factions, or the ones chosen under Scenario">Generate map</button>
       <button type="button" id="sheetToggle" class="sheet-toggle">Setup</button>
     </div>
   </header>
@@ -61,6 +60,11 @@
       <div class="row">
         <button type="button" id="generate" class="brass">Generate</button>
         <span class="hint" id="genName" role="status">Builds a new map in the defending faction's style each time.</span>
+      </div>
+      <h3>Run many battles</h3>
+      <div class="row">
+        <button type="button" id="batchBtn">Simulate</button>
+        <select id="batchCount" aria-label="Number of battles"><option value="100">100</option><option value="1000" selected>1,000</option></select>
       </div>
     </section>
 

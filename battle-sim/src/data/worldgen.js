@@ -93,10 +93,10 @@ function rng32(seed) {
   return next;
 }
 
-const footprint = (type, rot = 0, len = 0) => {
+const footprint = (type, rot = 0, len = 0, wid = 0) => {
   const d = STRUCTURES[type];
-  const l = d.stretch && len ? len : d.w;
-  return rot % 2 ? [d.h, l] : [l, d.h];
+  const l = d.stretch && len ? len : d.w, w2 = d.stretch2 && wid ? wid : d.h;
+  return rot % 2 ? [w2, l] : [l, w2];
 };
 
 // Keeps track of what is built where, so nothing overlaps and roads stay open.
@@ -121,7 +121,7 @@ class Plan {
   }
   /** place if it fits; gap keeps that many clear tiles around it */
   put(type, x, y, extra = {}, gap = 0) {
-    const [w, h] = footprint(type, extra.rot, extra.len);
+    const [w, h] = footprint(type, extra.rot, extra.len, extra.wid);
     if (!this.free(x, y, w, h, gap)) return false;
     this.mark(x, y, w, h);
     this.out.push({ type, x, y, rot: 0, ...extra });
@@ -129,7 +129,7 @@ class Plan {
   }
   /** place on dry land even over a reserved road (walls and gates must close the ring) */
   force(type, x, y, extra = {}) {
-    const [w, h] = footprint(type, extra.rot, extra.len);
+    const [w, h] = footprint(type, extra.rot, extra.len, extra.wid);
     for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) {
       if (i < 0 || j < 0 || i >= this.S || j >= this.S) return false;
       if (this.occ[j * this.S + i] === 1 || (this.t[j * this.S + i] !== GRASS && this.t[j * this.S + i] !== SAND)) return false;
@@ -308,6 +308,92 @@ function wild(p, R, F, density) {
 
 const LAYOUTS = { streets, warren, necropolis, rings, wild };
 
+// Which civic buildings each faction raises.
+const CIVIC = {
+  kingdom: ['marketHall', 'stall', 'bank', 'inn', 'garden', 'fountain', 'barracks', 'temple', 'shrine', 'alchemist', 'graveyard', 'palace'],
+  goblin: ['marketHall', 'stall', 'inn', 'barracks', 'shrine', 'alchemist', 'graveyard'],
+  undead: ['temple', 'shrine', 'graveyard', 'graveyard', 'alchemist', 'palace', 'garden'],
+  infernal: ['temple', 'shrine', 'alchemist', 'barracks', 'palace', 'fountain'],
+  beasts: ['shrine', 'graveyard', 'stall'],
+  elemental: ['shrine', 'temple', 'garden', 'fountain'],
+  dragons: ['shrine', 'graveyard'],
+};
+
+// Districts for the main part of a settlement. Returns true when it built an upper town on terraces.
+function civic(p, R, o) {
+  const { siteId, defId, r, town, S, cy, sea, shoreRow, rampart } = o;
+  const has = new Set(CIVIC[defId] || []);
+  const cx = R.x + (R.w >> 1), my = R.y + (R.h >> 1);
+  const area = R.w * R.h, big = siteId === 'city' || siteId === 'harbor', mid = big || siteId === 'castle' || siteId === 'coast';
+  // try the wanted spot, then spiral out a little
+  const nearPut = (type, x, y, extra = {}, gap = 1) => {
+    if (!has.has(type) && !['terrace', 'stairs', 'cableTower', 'dockhouse'].includes(type)) return false;
+    for (let rad = 0; rad <= 7; rad++) for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+      if (p.put(type, x + dx, y + dy, typeof extra === 'function' ? extra() : extra, gap)) return [x + dx, y + dy];
+    }
+    return false;
+  };
+  // the high street, the cross street and the square stay open
+  p.road(R.x, my - 1, R.w, 3); p.road(cx - 1, R.y, 3, R.h);
+  const plaza = Math.max(3, Math.round(Math.min(R.w, R.h) / 9));
+  p.road(cx - plaza, my - plaza, plaza * 2 + 1, plaza * 2 + 1);
+
+  let levelled = false;
+  if ((big || siteId === 'castle') && R.w >= 26 && R.h >= 30 && (has.has('palace') || has.has('temple'))) {
+    // The upper town: a terrace over the eastern part, a higher one for the palace, an elevated walkway
+    // in from the west wall, a rail viaduct in from the east, and a cable car up from the square.
+    levelled = true;
+    const tw = Math.max(12, Math.round((R.w * 0.42) / 4) * 4), th = Math.max(16, Math.round((R.h * 0.46) / 4) * 4);
+    const tx = R.x + R.w - tw - 1, ty = my - (th >> 1);
+    p.out.push({ type: 'terrace', x: tx, y: ty, rot: 0, len: tw, wid: th, side: 1 });
+    const hw = big ? 12 : 8, hh = big ? 12 : 8, hx = tx + tw - hw - 1, hy = my - (hh >> 1);
+    p.out.push({ type: 'terraceHigh', x: hx, y: hy, rot: 0, len: hw, wid: hh, side: 1 });
+    p.road(tx, my - 1, tw - hw - 1, 3);
+    if (!(big && has.has('palace') && p.put('palace', hx + ((hw - 7) >> 1), hy + ((hh - 6) >> 1), { side: 1 }, 0))) (has.has('temple') && p.put('temple', hx + ((hw - 4) >> 1), hy + ((hh - 5) >> 1), { side: 1 }, 0)) || p.put('keep', hx + ((hw - 5) >> 1), hy + ((hh - 5) >> 1), { side: 1 }, 0);
+    for (const dy of [-1, 0, 1]) p.put('stairs', tx - 2, my + dy * 6, { side: 1 }, 0);
+    if (rampart) {
+      // from the wall-walk over the street to the upper town
+      const wy = my - plaza - 3, x0 = town.x + 1, len = Math.min(40, hx - x0);
+      if (len > 4) { p.out.push({ type: 'walkway', x: x0, y: wy, rot: 0, len, side: 1 }); p.road(x0, wy, len, 1); }
+      const wy2 = my + plaza + 3, len2 = Math.min(40, tx - x0);
+      if (len2 > 4) { p.out.push({ type: 'walkway', x: x0, y: wy2, rot: 0, len: len2, side: 1 }); p.road(x0, wy2, len2, 1); }
+    }
+    // the viaduct comes in over the east wall with two wagons standing on it
+    const vy = Math.min(ty + th - 2, hy + hh + 2), vx = tx + tw;
+    for (let x = vx; x < S - 2; x += 40) p.out.push({ type: 'viaduct', x, y: vy, rot: 0, len: Math.min(40, S - 2 - x), side: 1 });
+    for (let k2 = 0; k2 < 2; k2++) p.out.push({ type: 'railCar', x: S - 7 - k2 * 4, y: vy, rot: 0, side: 1 });
+    p.road(vx, vy, S - vx, 1);
+    // cable car from the square up to the palace terrace
+    const lo = nearPut('cableTower', cx + plaza + 2, my + plaza + 2, { side: 1, cable: 1 }, 1);
+    if (lo && !p.put('cableTower', hx + 1, hy + hh - 3, { side: 1, cable: 1 }, 0)) p.out[p.out.length - 1].cable = undefined;
+    else if (lo) { const a = p.out.length - 2, c = p.out.length - 1; [p.out[a], p.out[c]] = [p.out[c], p.out[a]]; } // the upper tower is the delivery end
+  }
+
+  // the market on the square
+  if (area > 500 && nearPut('marketHall', cx + plaza + 1, my - plaza - 4, { side: 1 })) for (let i = 0; i < (big ? 8 : 4); i++) nearPut('stall', cx + (i % 2 ? plaza + 1 : -plaza - 2), my + (i < 4 ? -1 : 1) * (2 + (i >> 1) * 2) - (i % 2), { rot: 1, side: 1 }, 0);
+  if (mid) nearPut('fountain', cx - plaza + 1, my + plaza - 2);
+  if (mid) nearPut('bank', cx - plaza - 5, my - plaza - 5, { side: 1 });
+  nearPut('inn', R.x + 3, my + 3, { side: 1 });
+  if (big) nearPut('inn', cx + 3, R.y + R.h - 6, { side: 1 });
+  // the temple quarter with its graveyard
+  const t = nearPut(area > 700 ? 'temple' : 'shrine', R.x + 3, R.y + 3, { side: 1 });
+  if (t) nearPut('graveyard', t[0] + 6, t[1], {}, 0);
+  if (area > 300) nearPut('barracks', R.x + 3, my - 8, { side: 1 });
+  if (big) nearPut('barracks', R.x + 3, R.y + R.h - 7, { side: 1 });
+  if (mid || area > 600) nearPut('alchemist', R.x + (R.w >> 2), R.y + R.h - 6, { side: 1 });
+  for (let i = 0, n = big ? 4 : mid ? 2 : 1; i < n; i++) nearPut('garden', R.x + 4 + r.int(0, Math.max(1, R.w - 10)), R.y + 4 + r.int(0, Math.max(1, R.h - 10)), {}, 1);
+  for (let i = 0, n = big ? 3 : 1; i < n; i++) nearPut('shrine', R.x + 2 + r.int(0, Math.max(1, R.w - 6)), R.y + 2 + r.int(0, Math.max(1, R.h - 6)), { side: 1 }, 1);
+  if (!t) nearPut('graveyard', R.x + 2, R.y + R.h - 6, {}, 0);
+  // warehouses along the waterfront
+  if (sea && shoreRow) for (let i = 0, n = siteId === 'harbor' ? 4 : 2; i < n; i++) {
+    const y = Math.round(R.y + 4 + ((R.h - 8) * (i + 0.5)) / n);
+    if (shoreRow[y] > 0) nearPut('dockhouse', shoreRow[y] + 3, y, { side: 1 }, 1);
+  }
+  void cy; void S;
+  return levelled;
+}
+
 // ---------- armies ----------
 // Stronger units cost more than their level alone suggests, so price rises faster than level.
 const priceOf = (id) => Math.pow(combatLevel(UNITS[id]), 1.45) * (UNITS[id].fly ? 1.15 : 1);
@@ -353,7 +439,13 @@ export function generateScenario(opts = {}) {
   const sea = site.mode === 'amphibious';
   const strong = siteId === 'castle' || siteId === 'city' || siteId === 'harbor';
   const wallKind = strong ? D.strongWall : D.wall;
-  const layout = LAYOUTS[D.layout];
+  // The first (main) part of a settlement gets its civic buildings and, for the big places, its
+  // upper town on terraces, before the houses fill in around them.
+  let civicDone = false, shoreRow = null, levelled = null;
+  const layout = (pp, R, F, dens) => {
+    if (!civicDone) { civicDone = true; levelled = civic(pp, R, { siteId, defId, r, town, S, cy, sea, shoreRow, rampart: wallKind === 'rampart' }); }
+    LAYOUTS[D.layout](pp, R, F, dens);
+  };
   const even = (n) => Math.max(8, Math.round(n / 4) * 4); // fences are built from 4-tile pieces
   const guns = (list, spots, side = 1) => { if (list.length) for (const [gx, gy] of spots) p.put(r.pick(list), gx, gy, { side }); };
   let town; // the rectangle the settlement fills
@@ -391,13 +483,15 @@ export function generateScenario(opts = {}) {
     layout(p, burg, D, 0.4);
   } else if (siteId === 'city') {
     const w = even(50 * k), h = even(84 * k);
-    town = { x: Math.round(S * 0.52), y: cy - (h >> 1), w, h };
+    town = { x: Math.min(S - w - 3, Math.round(S * (shape === 'river' ? 0.6 : 0.52))), y: cy - (h >> 1), w, h };
     p.road(0, cy - 1, town.x + 4, 3);
     enclose(p, wallKind, town, 1, ['west', 'north', 'south'], D);
     const yard = inner(town, wallKind === 'rampart' ? 4 : 2);
     // the citadel against the far wall
     const cw = even(16 * k), cit = { x: yard.x + yard.w - cw - 2, y: cy - (cw >> 1), w: cw, h: cw };
-    if (wallKind === 'rampart') { rampart(p, cit.x, cit.y, cit.w, cit.h, 1, ['west']); p.put('keep', cit.x + (cw >> 1) - 2, cit.y + (cw >> 1) - 2, {}, 0); p.mark(cit.x, cit.y, cit.w, cit.h); }
+    const upperTown = (CIVIC[defId] || []).some((c) => c === 'palace' || c === 'temple'); // these build a palace terrace instead of a walled citadel
+    if (upperTown) { /* the upper town is laid out with the districts */ }
+    else if (wallKind === 'rampart') { rampart(p, cit.x, cit.y, cit.w, cit.h, 1, ['west']); p.put('keep', cit.x + (cw >> 1) - 2, cit.y + (cw >> 1) - 2, {}, 0); p.mark(cit.x, cit.y, cit.w, cit.h); }
     else if (wallKind === 'palisade') { fence(p, cit.x, cit.y, cit.w, cit.h, 1, ['west'], 'palisade', 0, 'tower'); p.mark(cit.x, cit.y, cit.w, cit.h, 2); }
     layout(p, yard, D, 0.62);
     const gy = [yard.y + 2, yard.y + (yard.h >> 2), cy - 5, cy + 5, yard.y + yard.h - (yard.h >> 2), yard.y + yard.h - 3];
@@ -406,7 +500,7 @@ export function generateScenario(opts = {}) {
     layout(p, { x: town.x - even(14 * k) - 4, y: cy - even(20 * k), w: even(14 * k), h: even(40 * k) }, D, 0.3);
   } else {
     // coastal places: find where dry land begins on each row
-    const shore = new Int16Array(S).fill(-1);
+    const shore = (shoreRow = new Int16Array(S).fill(-1));
     for (let y = 0; y < S; y++) for (let x = 2; x < S - 2; x++) if (p.land(x, y) && p.land(x + 1, y) && p.land(x + 2, y)) { shore[y] = x; break; }
     const rows = [...shore.keys()].filter((y) => shore[y] >= 0 && y > 4 && y < S - 5);
     const coastX = rows.length ? Math.round(rows.reduce((a, y) => a + shore[y], 0) / rows.length) : S >> 1;
@@ -453,6 +547,13 @@ export function generateScenario(opts = {}) {
   if (big) moored = p.scatter('zeppelinTower', around, siteId === 'city' ? 2 : 1, 2, { side: 1 }, 40) > 0;
   if (siteId === 'city' || siteId === 'harbor') p.scatter('hangar', around, 1, 2, () => ({ side: 1, rot: p.r.int(0, 1) }), 40);
   p.scatter('workshop', around, siteId === 'city' ? 3 : siteId === 'village' ? 1 : 2, 1, { side: 1 }, 30);
+  // stone bridges carry the roads over a river between the fords
+  if (shape === 'river') for (const fy of [0.34, 0.5, 0.68]) {
+    const y = Math.round(S * fy);
+    let x0 = -1, x1 = -1;
+    for (let x = 2; x < S - 2; x++) { const wet = terrain[y * S + x] === 2 || terrain[y * S + x] === 3; if (wet && x0 < 0) x0 = x; if (wet) x1 = x; }
+    if (x0 > 2 && x1 - x0 < 30) { p.out.push({ type: 'stoneBridge', x: x0 - 2, y, rot: 0, len: x1 - x0 + 5 }); p.road(x0 - 6, y, x1 - x0 + 12, 2); }
+  }
   if (!sea) {
     // a supply line runs in from each army's own edge, with loaded wagons standing on it
     const track = (x0, x1, y, side) => {
@@ -461,7 +562,7 @@ export function generateScenario(opts = {}) {
       p.road(x0, y, x1 - x0, 1);
     };
     const ry = clampRow(town.y + town.h + 3, S), ay = clampRow(cy + (ry > cy ? -9 : 9), S);
-    track(Math.min(S - 14, town.x + town.w + 1), S - 2, ry, 1);
+    if (!levelled) track(Math.min(S - 14, town.x + town.w + 1), S - 2, ry, 1); // a city on levels has its own viaduct
     track(2, Math.round(S * 0.2), ay, 0);
   } else {
     // piers run out from the shore in front of the settlement

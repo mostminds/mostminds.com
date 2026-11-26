@@ -1,6 +1,6 @@
 // Renders a land/amphibious battle state produced by engine/battle.js.
 import * as THREE from 'three';
-import { animateCreature, buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
+import { animateCreature, buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, buildCableCar, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
 import { bakePose } from './rigkit.js';
 import { sculptMaterial } from './sculpt.js';
 import { LIFTED } from '../engine/airship.js';
@@ -115,6 +115,10 @@ export class LandView {
     if (this.structGroup) this.root.remove(this.structGroup);
     this.structGroup = new THREE.Group();
     this.structModels = [];
+    // terraces raise whatever is built on them
+    const W = this.b.W;
+    this.podium = new Uint8Array(W * this.b.H);
+    for (const s of list) { const { w, h, def } = structureFootprint(s); if (def.stretch2 && !s.destroyed) for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) if (x >= 0 && y >= 0 && x < W && y < this.b.H) this.podium[y * W + x] = Math.max(this.podium[y * W + x], def.level); }
     for (const s of list) this.makeStruct(s);
     this.root.add(this.structGroup);
   }
@@ -124,7 +128,8 @@ export class LandView {
       const { w, h, def } = structureFootprint(s);
       const m = buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null });
       // weapons sitting on a bastion or deck are raised to its top
-      const base = def.level ? 0 : Math.max(0, this.groundY(s.x + (w >> 1), s.y + (h >> 1)));
+      const onTop = def.stretch2 ? 0 : this.podium[Math.min(this.b.H - 1, s.y + (h >> 1)) * this.b.W + Math.min(this.b.W - 1, s.x + (w >> 1))];
+      const base = def.level ? (def.model === 'stairs' && onTop ? onTop * LEVEL_H : 0) : onTop ? onTop * LEVEL_H : Math.max(0, this.groundY(s.x + (w >> 1), s.y + (h >> 1)));
       m.position.set(s.x + w / 2, base, s.y + h / 2);
       if ((s.rot || 0) % 2 && def.weapon) m.rotation.y = Math.PI / 2;
       this.structModels.push(m);
@@ -267,6 +272,16 @@ export class LandView {
       return { m, bar, crew, ladder, mark, side: a.side, dmg: 0, downAt: undefined, smoke: 0 };
     });
     this.falling = [];
+    // cable cars: a cable between each pair of towers and a gondola running along it
+    this.cableMarks = (b.cmd.cables || []).map((cb) => {
+      const A = b.structures[cb.a], Z = b.structures[cb.c], ma = this.structModels[cb.a], mz = this.structModels[cb.c];
+      const top = (m) => (m.userData.cableAt ? m.userData.cableAt[1] : (m.userData.tall || 4) - 0.2);
+      const pa = new THREE.Vector3(A.x + A.w / 2, ma.position.y + top(ma), A.y + A.h / 2), pz = new THREE.Vector3(Z.x + Z.w / 2, mz.position.y + top(mz), Z.y + Z.h / 2);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pa, pz]), new THREE.LineBasicMaterial({ color: 0x2a2620 }));
+      const car = buildCableCar(SIDE_COLORS[cb.side]);
+      this.dynamic.add(line, car);
+      return { cb, pa, pz, line, car };
+    });
     this.pointMarks = new Map(); this.crateMarks = new Map(); this.siteMarks = new Map();
     for (const p of b.cmd.points) this.markPoint(p);
     for (const c of b.cmd.crates) this.markCrate(c);
@@ -516,6 +531,13 @@ export class LandView {
         const sh = b.ships[e.ship];
         st.ring(v.set(e.x + 0.5, 0.05, e.y + 0.5), 2, 0xffffff, 0.8);
         msgs.push({ side: sh.side, text: `${sh.def.name} comes ashore: ${e.n} troops${e.gun ? ' and a siege weapon' : ''} landed` });
+      } else if (e.type === 'explode') {
+        v.set(e.x, 0.6, e.y);
+        st.ring(v.clone().setY(0.05), e.r, 0x9a6aff, 0.8);
+        for (let k = 0; k < 7; k++) st.puff(v.clone().add(new THREE.Vector3((Math.random() - 0.5) * e.r, Math.random() * 2, (Math.random() - 0.5) * e.r)), [0x9a6aff, 0x6aff9a, 0xffb040][k % 3], 0.8, 1.4);
+        msgs.push({ side: 0, text: "An alchemist's laboratory goes up" });
+      } else if (e.type === 'cable') {
+        if (b.tick % 3 === 0) msgs.push({ side: b.cmd.cables.find((c) => c.a === e.a)?.side ?? 1, text: 'The cable car brings stores to the upper town' });
       } else if (e.type === 'duel') {
         // a matched exchange: both fighters play the same blow, facing one another
         const dur = 0.62;
@@ -809,6 +831,11 @@ export class LandView {
       if (dead >= 0.5) this.layBody(u, m);
     });
     this.updateAir(alpha, t, dt, speed);
+    for (const cm of this.cableMarks || []) {
+      // the car shuttles while both towers stand; when one falls the cable drops and the car with it
+      if (cm.cb.live) { const ph = ((t * speed * 0.09 + cm.cb.a * 0.3) % 2); const k = ph < 1 ? ph : 2 - ph; cm.car.position.lerpVectors(cm.pa, cm.pz, k * k * (3 - 2 * k)); cm.car.position.y -= Math.sin(k * Math.PI) * 0.35; cm.car.rotation.y = Math.atan2(cm.pa.x - cm.pz.x, cm.pa.z - cm.pz.z) + Math.PI / 2; }
+      else if (cm.line.visible) { cm.line.visible = false; this.tumbling.push({ c: { g: cm.car, k: 3 }, v: new THREE.Vector3(0.3, 0, 0.2), w: new THREE.Vector3(1, 0.5, 2), wait: 0, rest: 0.4 }); }
+    }
     // masonry in the air
     if (this.tumbling.length) {
       const h = Math.min(0.05, dt) * Math.max(1, Math.min(3, speed));

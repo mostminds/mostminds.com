@@ -86,6 +86,10 @@ export function initCommand(b, scn) {
   for (const p of b.cmd.points) if (p.kind === 'fort' || (p.kind === 'rally' && !b.cmd.points.some((q) => q.side === p.side && q.kind === 'fort'))) p.stock = 4;
   // arrows, bolts and sling stones run out and must be drawn from a stocked point
   for (const u of b.units) if (u.def.style === 'ranged' && !u.def.fly) u.ammo = AMMO;
+  // cable cars: towers that share a cable number are joined; the car carries stores to the upper end
+  const ends = new Map();
+  b.structures.forEach((st, idx) => { if (STRUCTURES[st.type].cable && st.cable !== undefined) { if (!ends.has(st.cable)) ends.set(st.cable, []); ends.get(st.cable).push(idx); } });
+  b.cmd.cables = [...ends.values()].filter((e) => e.length === 2).map(([a, c]) => ({ a, c, side: b.structures[a].side ?? 1, next: 40, live: true }));
   // what there is to unload
   for (const c of b.crafts) c.supplies = 3;
   for (const s of b.ships) s.supplies = s.def.supplies ?? 6;
@@ -169,6 +173,19 @@ export function commandTick(b) {
     }
   }
   if (b.tick % 10 !== 0) return;
+  // inns and temples tend the wounded of whoever holds them; cable cars keep running while both towers stand
+  for (const st of b.structures) {
+    const h = STRUCTURES[st.type].heals;
+    if (!h || st.destroyed) continue;
+    near(b, st.x + (st.w >> 1), st.y + (st.h >> 1), 6, (u) => { if (u.alive && u.aboard < 0 && u.hp < u.def.hp && (st.side === undefined || st.side === null || st.side === u.side) && Math.max(st.x - u.x, u.x - (st.x + st.w - 1), st.y - u.y, u.y - (st.y + st.h - 1)) <= 3) u.hp = Math.min(u.def.hp, u.hp + h); });
+  }
+  for (const cb of C.cables || []) {
+    const A = b.structures[cb.a], Z = b.structures[cb.c];
+    cb.live = !A.destroyed && !Z.destroyed;
+    if (!cb.live || b.tick < cb.next) continue;
+    cb.next = b.tick + 70;
+    if (addCrate(b, cb.side, Z.x - 1, Z.y + 1, 1)) b.events.push({ type: 'cable', a: cb.a, c: cb.c });
+  }
   C.fighters = [0, 0];
   for (const u of b.units) if (u.alive && (u.spec === 'line' || u.spec === 'marksman' || u.spec === 'commander' || u.spec === undefined)) C.fighters[u.side]++;
   // ships lying close inshore send stores across; zeppelins lower theirs onto a held point

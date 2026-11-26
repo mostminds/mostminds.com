@@ -223,7 +223,7 @@ $('quality').onchange = (e) => { stage.setQuality(e.target.value); store.set('tb
 
 function lockEditing(on) {
   document.querySelectorAll('#panel input, #panel select, #panel button, #panel textarea').forEach((el) => {
-    if (el.closest('details') || el.id === 'preset' || el.id === 'loadPreset' || el.id === 'generate' || el.id.startsWith('gen')) return;
+    if (el.closest('details') || el.id === 'preset' || el.id === 'loadPreset' || el.id === 'generate' || el.id.startsWith('gen') || el.id.startsWith('batch')) return;
     el.disabled = on;
   });
   $('modeHint').textContent = on ? 'Battle running. Press Reset to edit the armies and map.' : modeHint();
@@ -280,15 +280,19 @@ $('loadPreset').onclick = () => {
 };
 
 // ---------- generated scenarios ----------
-$('genSite').replaceChildren(...Object.entries(SITES).map(([k, v]) => new Option(v.name, k)));
-$('genSite').value = 'castle';
+$('genSite').replaceChildren(new Option('Any place', ''), ...Object.entries(SITES).map(([k, v]) => new Option(v.name, k)));
+$('genSite').value = '';
 for (const id of ['genDef', 'genAtt']) $(id).replaceChildren(new Option('Any faction', ''), ...Object.entries(FACTIONS).map(([k, v]) => new Option(v.name, k)));
 $('generate').onclick = () => {
-  const g = generateScenario({ site: $('genSite').value, defender: $('genDef').value, attacker: $('genAtt').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
+  const sites = Object.keys(SITES);
+  const g = generateScenario({ site: $('genSite').value || sites[Math.floor(Math.random() * sites.length)], defender: $('genDef').value, attacker: $('genAtt').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
   state.scn[g.mode] = clone({ ...g.scn, mode: g.mode });
   setMode(g.mode);
   $('genName').textContent = g.name;
+  pushTicker([{ side: 1, text: g.name }]);
 };
+// the button in the run bar: one press, a new map
+$('genMap').onclick = () => { if (sim.started) $('reset').click(); $('generate').click(); closePanelOnPhone(); };
 
 // ---------- armies ----------
 function unitOptions(sel, withLevels = true, withShips = false) {
