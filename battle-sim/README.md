@@ -103,6 +103,30 @@ a `mapping.json` in the folder sets the pairing explicitly:
 
 Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct:` plus a key from `src/data/structures.js`.
 
+## Zeppelins, command and supply
+
+- **War zeppelins**, one per faction (add them from the army list under *Zeppelins*): broadsides and bombs,
+  a hangar that launches gliders, gyrocopters or the faction's own fliers, drop pods of shock troops, and
+  ladders that lift hard-pressed troops out and set them down behind the lines. Each needs a crew. Enemy
+  airships close, grapple and board; fliers can kill the crew and take the ship. Damage shows on the hull,
+  and a wreck stays where it falls. A friendly **zeppelin tower** repairs and re-crews ships moored near it.
+- **Command.** Units have ranks (Recruit, Veteran, Sergeant, Captain) and are promoted for kills. Each side
+  has commanders who carry a standard. A squad that breaks, or loses its commander, falls back to the nearest
+  rally point or commander, re-forms and returns.
+- **Supply and engineers.** Stores come ashore from landing craft, ships and zeppelins, or stand in rail
+  wagons. Engineers haul them to beachheads, rally points and forts and build what the situation calls for
+  (breastworks, ballistae against fliers, cannon, aid tents, watchtowers), and repair damaged buildings and
+  guns. Vanguards guard the supply chain and raid the enemy's; medics go to the wounded of their own squad first.
+- **Damage and the dead.** Buildings and guns show two stages of damage before they fall; bodies stay on the field.
+- **Landing craft** have a crew of three and a bow gun, and can be placed on any open water.
+- **Editing.** Place troops in formation (block, line, column, wedge, hollow square, circle), and move or
+  delete any group, including troops from the army list.
+- **Generated scenarios** (Scenario → Generate): a village, fort, castle, city, coastal town, harbour city or
+  island stronghold laid out in the defending faction's own building style, on maps up to 128 tiles, with docks,
+  mooring towers, hangars, workshops and a rail supply line.
+
+`docs/TACTICS.md` describes the squad AI and the published frameworks it draws on.
+
 ## Graphics
 
 The look is a chunky classic fantasy MMO style with dense, smooth geometry: nothing is built from boxes and
@@ -172,16 +196,17 @@ Imported units are saved in the browser and can be placed by hand or added to ar
 
 ```
 src/engine/   battle.js (land + amphibious, levels, breaching, flight), support.js (guns, fire-support ships),
+              airship.js (zeppelins), command.js (ranks, rally points, supply, engineers, vanguards),
               naval.js (ships, creatures, forts), combat.js, terrain.js (map shapes, biomes), worker.js, batch.js
-src/data/     units.js, structures.js, naval.js, presets.js, castle.js (castle builder)
+src/data/     units.js, structures.js, naval.js, airships.js, presets.js, castle.js (castle builder), worldgen.js (generated scenarios)
 src/render/   stage.js, landView.js, navalView.js, textures.js,
               sculpt.js (sculpting kit), rigkit.js (jointed rigs and detail levels), animate.js (poses),
               registry.js + models.js (gathers the model families; falls back to simple shapes if a builder fails),
               bodies/  humanoid.js, anatomy.js, gear.js, weapons.js, undead.js, beasts.js, monsters.js
-              props/   buildings.js, siege.js, ships.js, seacreatures.js
+              props/   buildings.js, siege.js, ships.js, seacreatures.js, airships.js
               customModels.js (imports and the model library)
 src/app.js    UI wiring          src/viewer.js + viewer.html   model preview page
-docs/         MODELING.md (how the models are authored)
+docs/         MODELING.md (how the models are authored), TACTICS.md (squad AI and its references)
 tools/        model-shot.cjs, smoke.cjs (headless previews and game checks),
               build-artifact.mjs (single-page bundle for hosting as a claude.ai artifact)
 ```

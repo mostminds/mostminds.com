@@ -6,6 +6,9 @@ import { generateTerrain, GRASS, SAND } from '../engine/terrain.js';
 import { combatLevel } from '../engine/combat.js';
 import { STRUCTURES } from './structures.js';
 import { UNITS } from './units.js';
+import { AIRSHIPS } from './airships.js';
+
+const clampRow = (y, S) => Math.max(3, Math.min(S - 4, y));
 
 // ---------- factions ----------
 // wall: what the faction raises around a place that deserves walls.
@@ -15,7 +18,7 @@ export const FACTIONS = {
     name: 'Kingdom', adj: 'Kingdom', biomes: ['temperate', 'temperate', 'snow'],
     wall: 'rampart', strongWall: 'rampart', layout: 'streets', homes: 'house', small: 'hut', camp: 'tent', lookout: 'tower',
     deco: ['crates', 'statue', 'crates'], trees: ['tree', 'tree', 'pine'], guns: ['cannon', 'ballista', 'mortar'], shoreGun: 'battery',
-    army: { footman: 0.24, longbow: 0.14, crossbow: 0.13, halberdier: 0.12, knight: 0.16, militia: 0.05, cleric: 0.05, battlemage: 0.06, paladin: 0.05 },
+    army: { footman: 0.24, longbow: 0.14, crossbow: 0.13, halberdier: 0.12, knight: 0.16, militia: 0.05, cleric: 0.05, battlemage: 0.06, paladin: 0.05, engineer: 0.03 },
     assault: { ram: 0.07, lancer: 0.08, griffon: 0.06 }, ships: ['frigate', 'cutter', 'galleon'],
     places: { village: 'village', fort: 'border fort', castle: 'castle', city: 'walled city', coast: 'fishing town', harbor: 'harbour city', island: 'island keep' },
   },
@@ -23,7 +26,7 @@ export const FACTIONS = {
     name: 'Goblin Horde', adj: 'Goblin', biomes: ['swamp', 'desert', 'jungle', 'temperate'],
     wall: 'palisade', strongWall: 'palisade', layout: 'warren', homes: 'hut', small: 'tent', camp: 'tent', lookout: 'tower',
     deco: ['crates', 'barricade', 'crates'], trees: ['tree', 'pine'], guns: ['ballista', 'ballista', 'cannon'], shoreGun: 'harpoon',
-    army: { goblin: 0.2, goblinArcher: 0.18, hobgoblin: 0.26, shaman: 0.08, warboss: 0.16, wolfRider: 0.12 },
+    army: { goblin: 0.2, goblinArcher: 0.18, hobgoblin: 0.26, shaman: 0.08, warboss: 0.16, wolfRider: 0.12, tinker: 0.02 },
     assault: { sapper: 0.06, wolfRider: 0.08 }, ships: ['sloop', 'brigantine', 'skiff'],
     places: { village: 'warren', fort: 'stockade', castle: 'great stockade', city: 'shanty city', coast: 'wreckers\' cove', harbor: 'corsair haven', island: 'reef stockade' },
   },
@@ -443,6 +446,34 @@ export function generateScenario(opts = {}) {
     }
   }
 
+  // works that serve the army: a mooring tower and hangar for airships, workshops, a supply line
+  const big = siteId === 'castle' || siteId === 'city' || siteId === 'harbor' || siteId === 'island';
+  const around = { x: Math.max(2, town.x - 4), y: Math.max(2, town.y - 4), w: Math.min(S - town.x, town.w + 8), h: Math.min(S - town.y, town.h + 8) };
+  let moored = false;
+  if (big) moored = p.scatter('zeppelinTower', around, siteId === 'city' ? 2 : 1, 2, { side: 1 }, 40) > 0;
+  if (siteId === 'city' || siteId === 'harbor') p.scatter('hangar', around, 1, 2, () => ({ side: 1, rot: p.r.int(0, 1) }), 40);
+  p.scatter('workshop', around, siteId === 'city' ? 3 : siteId === 'village' ? 1 : 2, 1, { side: 1 }, 30);
+  if (!sea) {
+    // a supply line runs in from each army's own edge, with loaded wagons standing on it
+    const track = (x0, x1, y, side) => {
+      for (let x = x0; x < x1; x += 40) p.out.push({ type: 'rail', x, y, rot: 0, len: Math.min(40, x1 - x) });
+      for (let k = 0; k < 2; k++) { const x = side === 0 ? x0 + 2 + k * 4 : x1 - 5 - k * 4; p.out.push({ type: 'railCar', x, y, rot: 0, side }); p.mark(x, y, 3, 1); }
+      p.road(x0, y, x1 - x0, 1);
+    };
+    const ry = clampRow(town.y + town.h + 3, S), ay = clampRow(cy + (ry > cy ? -9 : 9), S);
+    track(Math.min(S - 14, town.x + town.w + 1), S - 2, ry, 1);
+    track(2, Math.round(S * 0.2), ay, 0);
+  } else {
+    // piers run out from the shore in front of the settlement
+    const shoreAt = (y) => { for (let x = 2; x < S - 2; x++) if (p.land(x, y) && p.land(x + 1, y)) return x; return -1; };
+    const n = siteId === 'harbor' ? 4 : 2;
+    for (let k = 0; k < n; k++) {
+      const y = Math.round(town.y + 3 + ((town.h - 8) * (k + 0.5)) / n), sx = shoreAt(y);
+      if (sx < 8 || shoreAt(y + 1) < 0) continue;
+      p.out.push({ type: 'dock', x: sx - 5, y, rot: 0, side: 1 });
+    }
+  }
+
   // countryside: woods and boulders everywhere else, thinner where the attackers form up
   const wilds = Math.round((S * S) / 150);
   const all = { x: 2, y: 2, w: S - 4, h: S - 4 };
@@ -458,6 +489,10 @@ export function generateScenario(opts = {}) {
     { name: `${A.adj} ${sea ? 'landing' : 'host'}`, posture: 'attack', groups: host, placed: [] },
     { name: `${place} ${siteId === 'village' ? 'folk' : 'garrison'}`, posture: 'defend', groups: garrison, placed: [] },
   ];
+  // airships: the attackers bring one to a big fight; a place with a mooring tower keeps its own
+  const zep = (id) => (AIRSHIPS[`${id}Zeppelin`] ? [{ unit: `${id}Zeppelin`, count: 1 }] : []);
+  if (big || S >= 96) sides[0].airships = zep(attId);
+  if (moored && (siteId === 'city' || siteId === 'harbor' || r.chance(0.5))) sides[1].airships = zep(defId);
   if (sea) {
     const big = siteId === 'harbor' ? 4 : 3;
     sides[0].ships = [{ unit: A.ships[0], count: Math.max(1, big - 1) }];

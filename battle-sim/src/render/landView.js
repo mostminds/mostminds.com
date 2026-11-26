@@ -109,7 +109,12 @@ export class LandView {
     if (this.structGroup) this.root.remove(this.structGroup);
     this.structGroup = new THREE.Group();
     this.structModels = [];
-    for (const s of list) {
+    for (const s of list) this.makeStruct(s);
+    this.root.add(this.structGroup);
+  }
+
+  makeStruct(s) {
+    {
       const { w, h, def } = structureFootprint(s);
       const m = buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null });
       // weapons sitting on a bastion or deck are raised to its top
@@ -131,8 +136,8 @@ export class LandView {
       else if (s.maxHp && s.hp < s.maxHp) this.pendingStages = (this.pendingStages || []).concat(this.structModels.length - 1);
       m.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
       this.structGroup.add(m);
+      return m;
     }
-    this.root.add(this.structGroup);
   }
 
   addRubble(s) {
@@ -175,8 +180,32 @@ export class LandView {
     m.userData.bar = bar; m.userData.disc = disc; m.userData.top = top;
     m.userData.phase = (u.id * 1.7) % 6.28;
     m.userData.rotY = Math.PI / 2 - u.face;
+    if (u.spec === 'commander') {
+      // commanders carry the standard their squads rally on
+      const st = new THREE.Group();
+      st.add(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, top + 1.0, 6).translate(0, (top + 1.0) / 2, 0), mat(0x4a3a26)));
+      const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.42, 4, 1), new THREE.MeshStandardMaterial({ color: SIDE_COLORS[u.side], side: THREE.DoubleSide, roughness: 0.9 }));
+      cloth.position.set(0.33, top + 0.72, 0); st.add(cloth);
+      st.add(new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mat(0xd8b04a, { metalness: 0.9, roughness: 0.3 })).translateY(top + 1.03));
+      st.position.set(-0.28 * u.def.size, 0, -0.2); m.add(st); m.userData.standard = st;
+    }
     this.dynamic.add(m);
     return m;
+  }
+
+  makeGunMark(g) {
+    const m = this.structModels[g.si];
+    m.rotation.y = 0;
+    const flag = new THREE.Group();
+    flag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 4), mat(0x3a2a1a)));
+    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.26), new THREE.MeshBasicMaterial({ color: 0xbbbbbb, side: THREE.DoubleSide }));
+    cloth.position.set(0.2, 0.4, 0);
+    flag.add(cloth);
+    flag.position.set(-g.w / 2 + 0.1, 0.55 + (g.w > 1 ? 0.5 : 0), -g.h / 2 + 0.1);
+    m.add(flag);
+    const bar = makeBar(0xd8b04a); bar.position.y = g.w > 1 ? 1.6 : 1.15; setBar(bar, 1, 0.5 + g.w * 0.3);
+    m.add(bar);
+    return { model: m, cloth, bar, aim: g.aim, owner: undefined };
   }
 
   // Full rebuild for a fresh battle object
@@ -184,20 +213,7 @@ export class LandView {
     this.b = b;
     this.buildTerrain(b);
     this.buildStructures(b.structures);
-    this.gunMarks = b.guns.map((g) => {
-      const m = this.structModels[g.si];
-      m.rotation.y = 0;
-      const flag = new THREE.Group();
-      flag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 4), mat(0x3a2a1a)));
-      const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.26), new THREE.MeshBasicMaterial({ color: 0xbbbbbb, side: THREE.DoubleSide }));
-      cloth.position.set(0.2, 0.4, 0);
-      flag.add(cloth);
-      flag.position.set(-g.w / 2 + 0.1, 0.55 + (g.w > 1 ? 0.5 : 0), -g.h / 2 + 0.1);
-      m.add(flag);
-      const bar = makeBar(0xd8b04a); bar.position.y = g.w > 1 ? 1.6 : 1.15; setBar(bar, 1, 0.5 + g.w * 0.3);
-      m.add(bar);
-      return { model: m, cloth, bar, aim: g.aim, owner: undefined };
-    });
+    this.gunMarks = b.guns.map((g) => this.makeGunMark(g));
     this.stage.clear(this.dynamic);
     this.stage.clearFx();
     this.models = b.units.map((u) => this.addUnitModel(u));
@@ -245,6 +261,9 @@ export class LandView {
       return { m, bar, crew, ladder, mark, side: a.side, dmg: 0, downAt: undefined, smoke: 0 };
     });
     this.falling = [];
+    this.pointMarks = new Map(); this.crateMarks = new Map(); this.siteMarks = new Map();
+    for (const p of b.cmd.points) this.markPoint(p);
+    for (const c of b.cmd.crates) this.markCrate(c);
     this.corpseGeo = new Map();
     this.noBody = new Set();
     this.smokeT = 0;
@@ -266,6 +285,30 @@ export class LandView {
     if (!hc) return 0;
     const h = (hc[y * V + x] + hc[y * V + x + 1] + hc[(y + 1) * V + x] + hc[(y + 1) * V + x + 1]) / 4;
     return Math.max(h, -0.22); // wade, don't sink
+  }
+
+  // a rally point, beachhead or fort: a pennant on a pole, with the stores stacked beside it
+  markPoint(p) {
+    if (this.pointMarks.has(p.id)) return;
+    const g = new THREE.Group(), y = Math.max(0, this.groundY(p.x, p.y));
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.6, 6).translate(0, 1.3, 0), mat(0x4a3a26)));
+    const pennant = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 2.55, 0), new THREE.Vector3(0, 1.95, 0), new THREE.Vector3(1.0, 2.25, 0)]), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[p.side], side: THREE.DoubleSide }));
+    g.add(pennant);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.68, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: p.kind === 'beachhead' ? 0xf0d060 : p.kind === 'fort' ? 0xffffff : SIDE_COLORS[p.side], transparent: true, opacity: 0.55 }));
+    ring.position.y = 0.05; g.add(ring);
+    const stores = buildStructure(STRUCTURES.crates, 1, 1, null);
+    stores.position.set(0.7, 0, 0.5); stores.visible = false; g.add(stores);
+    g.position.set(p.x + 0.5, y, p.y + 0.5);
+    this.dynamic.add(g);
+    this.pointMarks.set(p.id, { g, stores, pennant });
+  }
+  markCrate(c) {
+    if (this.crateMarks.has(c.id)) return;
+    const m = buildStructure(STRUCTURES.crates, 1, 1, null);
+    m.scale.setScalar(0.85);
+    m.position.set(c.x + 0.5, Math.max(0, this.groundY(c.x, c.y)), c.y + 0.5);
+    this.dynamic.add(m);
+    this.crateMarks.set(c.id, m);
   }
 
   airPos(a, alpha, out) {
@@ -376,6 +419,7 @@ export class LandView {
         const sh = b.ships[e.ship]; st.splat(v.set(sh.x, 2.4, sh.y), e.dmg);
       } else if (e.type === 'gunHit') {
         const g = b.guns[e.gun]; st.splat(v.set(g.cx, 1.6, g.cy), e.dmg);
+        this.structStage(g.si);
       } else if (e.type === 'shipSunk') {
         const sh = b.ships[e.ship]; this.shipSunkAt.set(e.ship, this.time);
         st.ring(v.set(sh.x, 0, sh.y), 2, 0xffffff, 1.2);
@@ -432,8 +476,42 @@ export class LandView {
           msgs.push({ side: u.side, text: `${u.def.name} breathes fire` });
         }
         if (e.name === 'charge') st.ring(v, 0.6, 0xffffff, 0.4);
-      } else if (e.type === 'gunHit') {
-        this.structStage(b.guns[e.gun].si);
+      } else if (e.type === 'point') {
+        this.markPoint(b.cmd.points[e.point]);
+        msgs.push({ side: e.side, text: e.kind === 'beachhead' ? 'A beachhead is marked: stores come ashore' : e.kind === 'fort' ? 'The garrison holds its works' : 'A rally point is set behind the line' });
+      } else if (e.type === 'crate') {
+        this.markCrate({ id: e.crate, x: e.x, y: e.y });
+      } else if (e.type === 'crateGone') {
+        const m = this.crateMarks.get(e.crate); if (m) { this.dynamic.remove(m); this.crateMarks.delete(e.crate); }
+      } else if (e.type === 'supplyIn' || (e.type === 'raid' && e.point !== undefined)) {
+        const pm = this.pointMarks.get(e.point);
+        if (pm) { pm.stores.visible = e.stock > 0; pm.stores.scale.setScalar(Math.min(1.5, 0.7 + e.stock * 0.12)); }
+        if (e.type === 'raid') msgs.push({ side: e.side, text: 'Vanguard raiders burn enemy stores' });
+      } else if (e.type === 'raid') {
+        msgs.push({ side: e.side, text: e.what === 'crate' ? 'Vanguard raiders carry off enemy supplies' : 'Vanguard raiders wreck a supply wagon' });
+      } else if (e.type === 'airSupply' || e.type === 'shipSupply') {
+        if (e.air !== undefined) this.airPos(b.airships[e.air], 1, v); else { const sh = b.ships[e.ship]; v.set(sh.x, 0.8, sh.y); }
+        st.projectile(v.clone(), w.set(e.x + 0.5, 0.3, e.y + 0.5).clone(), 'rock', 1.2 / this.speed, e.air !== undefined ? 0 : 1.2);
+      } else if (e.type === 'buildStart') {
+        const gm = new THREE.Mesh(new THREE.BoxGeometry(e.w, 0.5, e.h), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.side], transparent: true, opacity: 0.25 }));
+        gm.position.set(e.x + e.w / 2, Math.max(0, this.groundY(e.x, e.y)) + 0.25, e.y + e.h / 2);
+        this.dynamic.add(gm); this.siteMarks.set(e.site, gm);
+      } else if (e.type === 'built') {
+        const gm = this.siteMarks.get(e.site); if (gm) { this.dynamic.remove(gm); this.siteMarks.delete(e.site); }
+        while (this.structModels.length < b.structures.length) this.makeStruct(b.structures[this.structModels.length]);
+        while (this.gunMarks.length < b.guns.length) this.gunMarks.push(this.makeGunMark(b.guns[this.gunMarks.length]));
+        const sx = b.structures[e.s];
+        st.ring(v.set(sx.x + sx.w / 2, 0.05, sx.y + sx.h / 2), 1, 0xe8d070, 0.6);
+        msgs.push({ side: e.side, text: `Engineers finish a ${STRUCTURES[e.kind].name.toLowerCase()}` });
+      } else if (e.type === 'fallback') {
+        msgs.push({ side: e.side, text: `${e.name} squad breaks and falls back to ${e.to}` });
+      } else if (e.type === 'rallied') {
+        if (b.tick % 2 === 0) msgs.push({ side: e.side, text: `${e.name} squad rallies and re-forms` });
+      } else if (e.type === 'commanderDown') {
+        const u = b.units[e.id];
+        msgs.push({ side: 1 - e.side, text: `${(u.baseDef || u.def).name} commander has fallen: nearby squads waver` });
+      } else if (e.type === 'promoted') {
+        this.unitPos(b.units[e.id], 1, v); st.ring(v.setY(0.05), 0.5, 0xf0d060, 0.6);
       } else if (e.type === 'repair') {
         const si = e.gun !== undefined ? b.guns[e.gun].si : e.s, sm = this.structModels[si], sx = b.structures[si];
         st.splat(v.set(sx.x + sx.w / 2, (sm?.userData.tall || 1) + 0.6, sx.y + sx.h / 2), '+', 'heal');
@@ -584,8 +662,12 @@ export class LandView {
     b.units.forEach((u, i) => {
       const m = this.models[i];
       if (!m) return;
-      const died = this.deathAt.get(i);
-      if (!u.alive && died === undefined) { m.visible = false; return; }
+      let died = this.deathAt.get(i);
+      if (!u.alive && died === undefined) {
+        // already dead when this view first saw it: lay the body straight away
+        if (u.aboard >= 0) { m.visible = false; return; }
+        this.deathAt.set(i, -1e6); died = -1e6;
+      }
       let dead = 0;
       if (died !== undefined) {
         if (this.noBody.has(i)) { m.visible = false; return; }
@@ -614,6 +696,10 @@ export class LandView {
       m.userData.rig?.mixer?.update(dt * speed);
       if (u.alive) { m.userData.bar.visible = u.hp < u.def.hp; if (u.hp < u.def.hp) setBar(m.userData.bar, u.hp / u.def.hp); }
       if (u.aboard >= 0) m.scale.setScalar(Math.min(0.75, 1 / u.def.size)); else m.scale.setScalar(1);
+      if (u.carry || m.userData.load) {
+        if (!m.userData.load) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.26), mat(0xa07a48)); l.position.set(0, m.userData.top - 0.02, 0.05); m.add(l); m.userData.load = l; }
+        m.userData.load.visible = !!u.carry && u.alive;
+      }
       if (dead >= 1) this.layBody(u, m);
     });
     this.updateAir(alpha, t, dt, speed);

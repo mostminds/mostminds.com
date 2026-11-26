@@ -628,7 +628,7 @@ function showTip(e, tile) {
   if (!o) { tip.hidden = true; return; }
   const u = b.units[o - 1];
   const r = $('view').getBoundingClientRect();
-  tip.textContent = `${u.def.name} · ${u.hp}/${u.def.hp} hp · ${u.kills} kills`;
+  tip.textContent = `${u.def.name}${u.spec && u.spec !== 'line' ? ` (${u.spec})` : ''} · ${u.hp}/${u.def.hp} hp · ${u.kills} kills${u.carry ? ' · carrying supplies' : ''}`;
   tip.style.left = `${e.clientX - r.left + 14}px`; tip.style.top = `${e.clientY - r.top + 14}px`;
   tip.hidden = false;
 }
