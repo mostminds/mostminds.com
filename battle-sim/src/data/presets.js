@@ -193,6 +193,12 @@ export const PRESETS = [
               { name: 'The deep', groups: [g('kraken', 1), g('shark', 6), g('siren', 2)] }] },
   },
   {
+    id: 'leviathan', name: "Leviathan's wake: the deep rises", mode: 'naval',
+    scn: { islands: [{ x: 60, y: 20, r: 4 }, { x: 98, y: 66, r: 5 }], forts: [],
+      sides: [{ name: 'Grand fleet', groups: [g('manowar', 1), g('frigate', 2), g('brigantine', 1), g('skiff', 3), g('raft', 2)] },
+              { name: 'The deep', groups: [g('leviathan', 1), g('serpent', 2), g('eel', 4), g('crab', 8)] }] },
+  },
+  {
     id: 'narrows', name: 'Narrows of the twin forts', mode: 'naval',
     scn: { islands: [{ x: 72, y: 22, r: 7 }, { x: 72, y: 68, r: 7 }, { x: 112, y: 45, r: 4 }],
       forts: [{ type: 'battery', x: 72, y: 29, side: 1 }, { type: 'battery', x: 72, y: 61, side: 1 }, { type: 'mortar', x: 76, y: 18, side: 1 },
