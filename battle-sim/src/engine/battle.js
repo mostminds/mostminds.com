@@ -63,7 +63,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     const { w, h } = structureFootprint(s);
     let wet = false;
     for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) if (x < 0 || y < 0 || x >= W || y >= H || b.terrain[y * W + x] === DEEP) wet = true;
-    if (wet) continue; // nothing is built on open water or off the map
+    if (wet && !def.overWater) continue; // nothing is built on open water or off the map
     b.structures.push({ ...s, w, h, hp: def.hp || 0, maxHp: def.hp || 0, destroyed: false });
   }
   rebuildGrid(b);
@@ -87,6 +87,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     const order = { siege: 0, frontline: 1, skirmisher: 2, air: 3, support: 4, artillery: 5 };
     pool.sort((a, c) => (order[a.role] ?? 3) - (order[c.role] ?? 3) || (a.id < c.id ? -1 : 1));
 
+    if ((side.crafts || []).length) deployPlacedCrafts(b, side.crafts, pool, addUnit, si);
     if (scn.mode === 'amphibious' && si === 0) {
       // fliers cross the water on their own wings; everyone else takes the boats
       const air = pool.filter((d) => d.fly);
@@ -151,7 +152,7 @@ export function freeTileNear(b, x, y, size, side) {
     if (canStand(b, cx, cy, size, -1, side)) return [cx, cy];
     for (const [dx, dy] of DIRS) {
       const nx = cx + dx, ny = cy + dy, n = ny * b.W + nx;
-      if (nx < 0 || ny < 0 || nx >= b.W || ny >= b.H || seen.has(n) || b.terrain[n] === DEEP) continue;
+      if (nx < 0 || ny < 0 || nx >= b.W || ny >= b.H || seen.has(n) || (b.terrain[n] === DEEP && !b.level[n])) continue;
       seen.add(n); q.push(n);
     }
   }
@@ -181,6 +182,40 @@ function spawnTiles(b, mode, side) {
   return tiles.map((t) => t.i);
 }
 
+const CRAFT_GUN = { range: 6, maxHit: 9, reload: 5 };
+function newCraft(b, side, x, y, tx, ty) {
+  const craft = {
+    id: b.crafts.length, side, x, y, px: x, py: y, tx, ty, hp: 60, maxHp: 60,
+    passengers: [], landed: false, sunk: false, speed: 0.55 + b.rng.next() * 0.1, pending: 0,
+    crew: 3, maxCrew: 3, gunCd: b.rng.int(0, 4), aim: side === 0 ? 0 : Math.PI,
+  };
+  b.crafts.push(craft);
+  return craft;
+}
+// craft the player set down on the water: each takes the next foot soldiers from the pool and
+// makes for the nearest shore on the enemy's side
+function deployPlacedCrafts(b, list, pool, addUnit, side) {
+  const { W, H } = b, ex = side === 0 ? W * 0.85 : W * 0.15;
+  for (const c of list) {
+    if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H || b.terrain[c.y * W + c.x] !== DEEP) continue;
+    let best = null, bs = Infinity;
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (b.terrain[i] === DEEP || b.blockMove[i]) continue;
+      if (b.terrain[i - 1] !== DEEP && b.terrain[i + 1] !== DEEP && b.terrain[i - W] !== DEEP && b.terrain[i + W] !== DEEP) continue;
+      const sc = Math.hypot(x - c.x, y - c.y) + 0.5 * Math.hypot(x - ex, y - H / 2);
+      if (sc < bs) { bs = sc; best = [x, y]; }
+    }
+    if (!best) continue;
+    const craft = newCraft(b, side, c.x, c.y, best[0], best[1]);
+    for (let k = 0, n = 0; k < pool.length && n < CRAFT_CAPACITY;) {
+      if (pool[k].fly || pool[k].size > 1) { k++; continue; }
+      const u = addUnit(pool.splice(k, 1)[0], side, -1, -1);
+      u.aboard = craft.id; u.x = u.px = c.x; u.y = u.py = c.y;
+      craft.passengers.push(u.id); n++;
+    }
+  }
+}
 function deployByCraft(b, pool, addUnit, side) {
   const { W, H } = b;
   const craftCount = Math.max(1, Math.ceil(pool.length / CRAFT_CAPACITY));
@@ -193,11 +228,7 @@ function deployByCraft(b, pool, addUnit, side) {
     // Beach target: first non-deep tile eastward on this row
     let tx = W - 1;
     for (let xx = 0; xx < W; xx++) if (b.terrain[y * W + xx] !== DEEP) { tx = xx; break; }
-    const craft = {
-      id: b.crafts.length, side, x, y, px: x, py: y, tx, ty: y, hp: 60, maxHp: 60,
-      passengers: [], landed: false, sunk: false, speed: 0.55 + b.rng.next() * 0.1, pending: 0,
-    };
-    b.crafts.push(craft);
+    const craft = newCraft(b, side, x, y, tx, y);
     for (let k = 0; k < CRAFT_CAPACITY && p < pool.length; k++, p++) {
       const u = addUnit(pool[p], side, -1, -1);
       u.aboard = craft.id;
@@ -232,11 +263,11 @@ function buildSquads(b) {
 export function walkable(b, x, y) {
   if (x < 0 || y < 0 || x >= b.W || y >= b.H) return false;
   const i = y * b.W + x;
-  return !b.blockMove[i] && b.terrain[i] !== DEEP;
+  return !b.blockMove[i] && (b.terrain[i] !== DEEP || b.level[i] > 0); // a deck over water can be walked on
 }
 // side may pass this tile (doors only open for their owner)
 function passable(b, i, side) {
-  return !b.blockMove[i] && b.terrain[i] !== DEEP && (b.door[i] < 0 || b.door[i] === side);
+  return !b.blockMove[i] && (b.terrain[i] !== DEEP || b.level[i] > 0) && (b.door[i] < 0 || b.door[i] === side);
 }
 // one level up or down per step, or any height on a ladder
 function stepOk(b, a, c) {
@@ -334,6 +365,7 @@ export function damageStructure(b, idx, dmg, from) {
     const i = u.y * b.W + u.x;
     const drop = before[i] - b.level[i];
     if (drop > 0) damage(b, u, drop * 6 + b.rng.int(0, drop * 4), null, 'fall');
+    if (u.alive && b.terrain[i] === DEEP && !b.level[i]) { u.alive = false; u.hp = 0; occupy(b, u, 0); b.events.push({ type: 'death', id: u.id, drowned: true }); } // the dock went from under them
   }
 }
 // blast damage to anything built within r tiles of (x, y)
@@ -392,7 +424,7 @@ function bfs(b, sources, side) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= W || ny >= b.H) continue;
         const n = ny * W + nx;
-        if (b.terrain[n] === DEEP) continue;
+        if (b.terrain[n] === DEEP && !b.level[n]) continue;
         if (!passable(b, n, side) && !breakableFor(b, n, side)) continue;
         let cost;
         if (iOpen && stepOk(b, n, i)) {
@@ -509,15 +541,41 @@ export function summary(b) {
 }
 
 // ---------- landing craft ----------
+// the swivel gun in the bow, worked by the boat's own crew afloat and on the beach
+function craftFire(b, c) {
+  if (c.gunCd > 0) { c.gunCd--; return; }
+  let best = null, bd = CRAFT_GUN.range + 0.01;
+  near(b, Math.round(c.x), Math.round(c.y), CRAFT_GUN.range + 1, (t) => {
+    if (!t.alive || t.side === c.side || t.aboard >= 0) return;
+    const d = Math.hypot(t.x - c.x, t.y - c.y);
+    if (d < bd) { bd = d; best = t; }
+  });
+  if (!best) return;
+  const hit = b.rng.next() < hitChance((40 + 9) * (40 + 64), defenceRoll(best.def, 'ranged'));
+  const delay = 1 + Math.floor(bd / 6);
+  queueHit(b, { id: -1 }, best, hit ? b.rng.int(0, CRAFT_GUN.maxHit) : 0, delay, 'ranged', hit);
+  c.gunCd = CRAFT_GUN.reload; c.aim = Math.atan2(best.y - c.y, best.x - c.x);
+  b.events.push({ type: 'craftFire', craft: c.id, to: best.id, delay });
+}
 function moveCrafts(b) {
   for (const c of b.crafts) {
+    if (!c.sunk && c.crew > 0) {
+      craftFire(b, c);
+      // boarders on the beach cut the crew down
+      if (c.landed && b.tick % 3 === 0) {
+        let foes = 0;
+        near(b, Math.round(c.x), Math.round(c.y), 2, (t) => { if (t.alive && t.side !== c.side && t.aboard < 0 && Math.hypot(t.x - c.x, t.y - c.y) <= 1.6) foes++; });
+        if (foes && b.rng.chance(0.5)) { c.crew--; b.events.push({ type: 'craftCrew', craft: c.id, crew: c.crew }); }
+      }
+    }
+    if (!c.sunk && !c.landed && c.crew <= 0 && !c.passengers.length) continue; // adrift with nobody at the oars
     if (c.sunk || c.landed) {
       if (c.landed && c.passengers.length) disembark(b, c);
       continue;
     }
     const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
     if (d < 0.01) { c.landed = true; continue; }
-    const step = Math.min(c.speed, d);
+    const step = Math.min(c.speed * (c.crew > 0 ? 1 : 0.5), d); // passengers row badly
     const nx = c.x + (dx / d) * step, ny = c.y + (dy / d) * step;
     const ti = Math.round(ny) * b.W + Math.round(nx);
     c.x = nx; c.y = ny;
@@ -633,6 +691,48 @@ function updateSquad(b, sq) {
 }
 
 // ---------- units ----------
+// Repair crews look for damaged buildings and guns that are theirs or nobody's, walk to them and mend them.
+function repairDuty(b, u, mend) {
+  if (nearestEnemyDist(b, u, 3).d <= 2) return false; // fight first when cornered
+  const mine = (side) => side === undefined || side === null || side === u.side;
+  if (!u.job || b.tick % 10 === 0) {
+    let best = null, bd = Infinity;
+    b.structures.forEach((s, idx) => {
+      if (s.destroyed || !s.maxHp || STRUCTURES[s.type].weapon || s.hp >= s.maxHp || !mine(s.side)) return;
+      const d = Math.hypot(s.x + s.w / 2 - u.x, s.y + s.h / 2 - u.y) - (1 - s.hp / s.maxHp) * 6;
+      if (d < bd) { bd = d; best = { s: idx }; }
+    });
+    for (const g of b.guns) {
+      if (g.destroyed || g.hp >= g.maxHp || !mine(g.owner)) continue;
+      const d = Math.hypot(g.cx - u.x, g.cy - u.y) - (1 - g.hp / g.maxHp) * 6 - 3;
+      if (d < bd) { bd = d; best = { g: g.id }; }
+    }
+    u.job = best;
+  }
+  const j = u.job;
+  if (!j) return false;
+  const box = j.g !== undefined ? b.guns[j.g] : b.structures[j.s];
+  const done = j.g !== undefined ? box.destroyed || box.hp >= box.maxHp : box.destroyed || box.hp >= box.maxHp;
+  if (done) { u.job = null; return false; }
+  const gapX = Math.max(box.x - u.x, u.x - (box.x + box.w - 1), 0), gapY = Math.max(box.y - u.y, u.y - (box.y + box.h - 1), 0);
+  if (Math.max(gapX, gapY) <= 1) {
+    if (u.cd > 0) return true;
+    box.hp = Math.min(box.maxHp, box.hp + (j.g !== undefined ? mend.amount : mend.amount * 3));
+    u.cd = u.def.speed; u.lastAttack = b.tick;
+    face(u, box.x + (box.w >> 1), box.y + (box.h >> 1));
+    b.events.push({ type: 'repair', from: u.id, s: j.s, gun: j.g, hp: box.hp });
+    return true;
+  }
+  const f = field(b, `mend:${j.g !== undefined ? 'g' + j.g : j.s}`, 40, () => {
+    const out = [];
+    for (let y = box.y - 1; y <= box.y + box.h; y++) for (let x = box.x - 1; x <= box.x + box.w; x++) if (walkable(b, x, y) && (x < box.x || y < box.y || x >= box.x + box.w || y >= box.y + box.h)) out.push(y * b.W + x);
+    return out;
+  });
+  if (!f || f[u.y * b.W + u.x] >= INF) { u.job = null; return false; }
+  walk(b, u, f, 1, 0);
+  return true;
+}
+
 function ability(u, type) { return u.def.abilities.find((a) => a.type === type); }
 
 function unitRange(b, u) {
@@ -747,6 +847,9 @@ function unitTick(b, u) {
     }
   }
 
+  const mend = ability(u, 'repair');
+  if (mend && repairDuty(b, u, mend)) return;
+
   const sq = b.squads[u.squad];
   const range = unitRange(b, u);
   const target = pickTarget(b, u, range);
@@ -763,7 +866,7 @@ function unitTick(b, u) {
   if (u.def.style !== 'melee' && u.cd <= 0 && b.crafts.length) {
     let craft = null, cd = Infinity;
     for (const c of b.crafts) {
-      if (c.sunk || c.landed || c.side === u.side || !c.passengers.length || c.hp - c.pending <= 0) continue;
+      if (c.sunk || c.side === u.side || c.hp - c.pending <= 0 || (c.landed ? !(c.crew > 0) : !c.passengers.length && !(c.crew > 0))) continue;
       const d = Math.max(Math.abs(c.x - u.x), Math.abs(c.y - u.y));
       if (d <= range && d < cd) { cd = d; craft = c; }
     }
@@ -979,6 +1082,8 @@ function resolvePending(b) {
       if (c.sunk) continue;
       c.hp -= p.dmg;
       b.events.push({ type: 'craftHit', craft: c.id, dmg: p.dmg, hit: p.hit });
+      if (p.dmg > 0 && c.crew > 0 && b.rng.chance(0.3)) { c.crew--; b.events.push({ type: 'craftCrew', craft: c.id, crew: c.crew }); }
+      if (c.hp <= 0 && c.landed) { c.crew = 0; c.wrecked = true; }
       if (c.hp <= 0 && !c.landed) {
         c.sunk = true;
         b.events.push({ type: 'sunk', craft: c.id });

@@ -2,6 +2,7 @@
 // drop pods, ladder rescues, airship duels with boarding, crews and hijacking.
 import { AIRSHIPS } from '../data/airships.js';
 import { DEEP } from './terrain.js';
+import { STRUCTURES } from '../data/structures.js';
 import { hitChance, defenceRoll } from './combat.js';
 import { near, queueHit, damageStructure, hitStructuresAt, unitHeight, spawnUnit, addSquad, freeTileNear, occupy, canStandAir, damage, stepAir } from './battle.js';
 
@@ -119,6 +120,25 @@ function shipTick(b, a) {
   const carry = () => { for (const id of a.cargo) { const u = b.units[id]; u.x = u.px = clamp(Math.round(a.x), 0, b.W - 1); u.y = u.py = clamp(Math.round(a.y), 0, b.H - 1); } };
   if (a.crew <= 0) { // nobody at the helm: she drifts on the wind
     a.heading += 0.01; a.x = clamp(a.x + Math.cos(a.heading) * 0.05, 1, b.W - 2); a.y = clamp(a.y + Math.sin(a.heading) * 0.05, 1, b.H - 2);
+    carry(); return;
+  }
+
+  // a friendly mooring tower patches the hull and tops up the crew; a badly hurt ship runs for one
+  let tower = null, td = Infinity;
+  for (const st of b.structures) {
+    if (st.destroyed || !STRUCTURES[st.type].mooring || (st.side !== undefined && st.side !== null && st.side !== a.side)) continue;
+    const d = Math.hypot(st.x + 1.5 - a.x, st.y + 1.5 - a.y);
+    if (d < td) { td = d; tower = st; }
+  }
+  if (tower && td < 5) {
+    a.hp = Math.min(a.maxHp, a.hp + 6);
+    if (b.tick % 12 === 0 && a.crew < a.def.crew) a.crew++;
+  }
+  if (a.mode === 'refit' && (!tower || a.hp > a.maxHp * 0.85)) a.mode = 'hunt';
+  if (tower && a.mode === 'hunt' && !a.cargo.length && a.hp < a.maxHp * 0.4) { a.mode = 'refit'; b.events.push({ type: 'airRefit', air: a.id }); }
+  if (a.mode === 'refit') {
+    if (td > 2.5) steer(b, a, tower.x + 1.5, tower.y + 1.5 - 2.2);
+    if (a.cd <= 0) fireAtGround(b, a, a.def.cannons);
     carry(); return;
   }
 
