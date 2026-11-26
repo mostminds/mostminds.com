@@ -145,6 +145,14 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
   straits and island chains are joined by tidal sandbars. Rally points are never set in water. Units glide
   between tiles, cut corners, keep their own spot in the rank and stride by the ground they cover.
 
+- **Generate map** (the button in the run bar) builds a new map in one press. Towns have districts: a market
+  square with hall and stalls, bank, inns, gardens, fountain, barracks, a temple quarter with its graveyard,
+  shrines, an alchemist's laboratory (which explodes when destroyed), dock houses and a palace. Inns and temples
+  heal troops of the side that holds them; market halls and dock houses hold stores.
+- **Cities on levels.** Cities and castles have an upper town on a terrace and a higher terrace for the palace,
+  reached by elevated timber walkways from the wall-walk, a rail viaduct with supply wagons, stone bridges over
+  rivers, and a cable car that carries stores up from the square. All of them can be destroyed.
+
 `docs/TACTICS.md` describes the squad AI and the published frameworks it draws on.
 
 ## Graphics
@@ -223,7 +231,7 @@ src/render/   stage.js, landView.js, navalView.js, textures.js,
               sculpt.js (sculpting kit), rigkit.js (jointed rigs and detail levels), animate.js (poses),
               registry.js + models.js (gathers the model families; falls back to simple shapes if a builder fails),
               bodies/  humanoid.js, anatomy.js, gear.js, weapons.js, undead.js, beasts.js, monsters.js
-              props/   buildings.js, siege.js, ships.js, seacreatures.js, airships.js
+              props/   buildings.js, civic.js, siege.js, ships.js, seacreatures.js, airships.js
               customModels.js (imports and the model library)
 src/app.js    UI wiring          src/viewer.js + viewer.html   model preview page
 docs/         MODELING.md (how the models are authored), TACTICS.md (squad AI and its references)
