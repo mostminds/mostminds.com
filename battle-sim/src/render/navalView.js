@@ -1,6 +1,6 @@
 // Renders naval battles from engine/naval.js. Engine (x, y) maps to world (x, 0, y).
 import * as THREE from 'three';
-import { buildShip, buildCreature, animateCreature, mat } from './models.js';
+import { buildShip, buildCreature, animateCreature, buildWeapon, mat } from './models.js';
 import { makeBar, setBar } from './stage.js';
 import { SIDE_COLORS } from './landView.js';
 import { TICK_MS } from '../engine/combat.js';
@@ -36,8 +36,11 @@ export class NavalView {
     this.sea = g;
     this.root.add(g);
     this.stage.scene.background.set(0xb4cddb);
-    this.stage.setBounds(b.W, b.H);
-    this.stage.camera.position.set(b.W * 0.42, 42, b.H * 0.5 + 52);
+    if (this.boundsKey !== `${b.W}x${b.H}`) {
+      this.boundsKey = `${b.W}x${b.H}`;
+      this.stage.setBounds(b.W, b.H);
+      this.stage.camera.position.set(b.W * 0.42, 42, b.H * 0.5 + 52);
+    }
   }
 
   load(b) {
@@ -46,9 +49,9 @@ export class NavalView {
     this.stage.clear(this.dynamic);
     this.stage.clearFx();
     this.models = b.ents.map((e) => {
-      const m = e.ship ? buildShip(e.def, SIDE_COLORS[e.side]) : buildCreature(e.def);
+      const m = e.ship ? buildShip(e.def, SIDE_COLORS[e.side]) : e.fort ? buildFort(e.def) : buildCreature(e.def);
       const bar = makeBar(0x4fd36a);
-      bar.position.y = e.ship ? 2 + e.def.len * 0.35 : 1 + (e.def.size || 1) * 0.5;
+      bar.position.y = e.ship ? 2 + e.def.len * 0.35 : e.fort ? 2.4 + e.def.size * 0.5 : 1 + (e.def.size || 1) * 0.5;
       setBar(bar, 1, e.ship ? Math.min(3, e.def.len * 0.4) : 0.8 + (e.def.size || 1) * 0.3);
       m.add(bar);
       const ring = new THREE.Mesh(new THREE.RingGeometry(e.radius + 0.3, e.radius + 0.5, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.side], transparent: true, opacity: 0.6 }));
@@ -61,6 +64,16 @@ export class NavalView {
     this.deathAt = new Map();
   }
 
+  pickPoint(clientX, clientY) {
+    const r = this.stage.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.stage.camera);
+    const p = new THREE.Vector3();
+    if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) return null;
+    return { x: p.x, y: p.z };
+  }
+
   waveH(x, z, t) { return Math.sin(x * 0.25 + t * 1.2) * 0.18 + Math.cos(z * 0.3 + t * 0.9) * 0.14; }
 
   onEvents(events) {
@@ -70,6 +83,9 @@ export class NavalView {
         const from = new THREE.Vector3(e.x0, 0.8, e.y0), to = new THREE.Vector3(e.x1, e.hit ? 0.8 : 0, e.y1);
         st.projectile(from, to, e.kind === 'spell' ? 'magic' : e.kind, (e.flight * TICK_MS) / 1000 / this.speed, 0.5);
         if (e.kind === 'cannon') st.puff(from, 0xeeeeee, 0.35, 0.9);
+      } else if (e.type === 'blast') {
+        st.ring(new THREE.Vector3(e.x, 0.1, e.y), e.r, 0xffb060, 0.6);
+        st.puff(new THREE.Vector3(e.x, 0.3, e.y), 0x8a7a6a, 0.8, 0.9);
       } else if (e.type === 'splash') {
         st.puff(new THREE.Vector3(e.x, 0, e.y), 0xffffff, 0.3, 0.7);
       } else if (e.type === 'hit') {
@@ -79,10 +95,10 @@ export class NavalView {
         this.deathAt.set(e.id, this.time);
         const x = b.ents[e.id];
         st.ring(new THREE.Vector3(x.x, 0, x.y), 2, 0xffffff, 1.2);
-        msgs.push({ side: x.side, text: `${x.def.name} ${x.ship ? 'is sunk' : 'is slain'}` });
+        msgs.push({ side: x.side, text: `${x.def.name} ${x.ship ? 'is sunk' : x.fort ? 'is reduced to rubble' : 'is slain'}` });
       } else if (e.type === 'captured') {
         const x = b.ents[e.id];
-        msgs.push({ side: e.by, text: `${x.def.name} boarded and captured` });
+        msgs.push({ side: e.by, text: `${x.def.name} ${x.fort ? 'stormed and taken' : 'boarded and captured'}` });
         this.models[e.id].userData.ring.material = new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.by], transparent: true, opacity: 0.6 });
       } else if (e.type === 'ability') {
         const x = b.ents[e.id];
@@ -110,10 +126,20 @@ export class NavalView {
       const x = e.px + (e.x - e.px) * alpha, y = e.py + (e.y - e.py) * alpha;
       let dh = e.heading - e.ph; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
       const hd = e.ph + dh * alpha;
+      if (e.fort) {
+        m.position.set(x, 0, y);
+        const tur = m.userData.turret;
+        if (tur) tur.rotation.y = -hd;
+        if (died !== undefined) { m.rotation.z = 0.2; m.userData.bar.visible = false; }
+        else setBar(m.userData.bar, e.hp / e.maxHp);
+        if (m.userData.side !== e.side) { m.userData.side = e.side; m.userData.ring.material.color.set(SIDE_COLORS[e.side]); }
+        return;
+      }
       m.position.set(x, this.waveH(x, y, t) * 0.8, y);
       m.rotation.y = -hd;
       m.rotation.z = Math.sin(t * 1.1 + i) * 0.04;
       if (!e.ship) animateCreature(m, t, m.userData.phase);
+      m.userData.rig?.mixer?.update(dt * speed);
       const sub = !e.ship && b.tick < e.subUntil;
       m.position.y -= sub ? 1.2 : 0;
       if (died !== undefined) {
@@ -127,4 +153,18 @@ export class NavalView {
       }
     });
   }
+}
+
+// Fort on a rocky footing; the weapon turret aims at its target.
+function buildFort(def) {
+  const g = new THREE.Group();
+  const r = def.size;
+  const rock = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.05, r * 1.25, 1, 9), mat(0x7a756c));
+  rock.position.y = 0.1; g.add(rock);
+  const w = buildWeapon(def.model, def.model === 'seaFort' ? r * 0.9 : Math.max(1, r * 0.9), Math.max(1, r * 0.9));
+  if (def.model !== 'seaFort' && def.model !== 'battery') w.scale.setScalar(r * 0.9);
+  w.position.y = 0.6;
+  g.add(w);
+  g.userData.turret = w.userData.turret;
+  return g;
 }

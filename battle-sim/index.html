@@ -54,12 +54,32 @@
 
     <section class="block" id="mapBlock">
       <h2>Map</h2>
-      <div class="row">
+      <div class="row wrap">
+        <label class="inline">Shape <select id="mapShape"></select></label>
+        <label class="inline">Land <select id="mapBiome"></select></label>
+      </div>
+      <div class="row wrap">
         <label class="inline">Size <select id="mapSize"><option>32</option><option>40</option><option>48</option><option>64</option><option>80</option><option>96</option></select></label>
+        <button type="button" id="reshape" title="Generate a new coastline with the same shape">New coastline</button>
+      </div>
+      <div class="row wrap">
         <button type="button" id="rotate" title="Rotate (R)">Rotate</button>
         <button type="button" id="clearMap">Clear map</button>
+        <label class="inline">Guns belong to <select id="gunSide"><option value="">Whoever crews them</option><option value="0">Side A</option><option value="1">Side B</option></select></label>
       </div>
+      <h3>Castles</h3>
+      <div class="row wrap">
+        <button type="button" id="kitSmall">Small castle</button>
+        <button type="button" id="kitLarge">Large castle</button>
+        <label class="inline">Gate faces <select id="kitFacing"><option value="west">West</option><option value="east">East</option><option value="north">North</option><option value="south">South</option></select></label>
+      </div>
+      <p class="hint">Castles have three levels: stairs (1) lead up to the wall-walks (2), which connect to the towers (3). Melee can't reach more than one level up, and shooters gain range with height. Gates open only for their owner; anything with hit points can be broken down.</p>
+      <h3>Buildings and cover</h3>
+      <div class="row wrap"><label class="inline">Castle wall length <input id="wallLen" type="number" min="1" max="40" value="6"></label></div>
       <div class="palette" id="palette"></div>
+      <h3>Guns and siege weapons</h3>
+      <div class="palette" id="gunPalette"></div>
+      <p class="hint">A gun fires for the side with troops standing next to it and no enemies there. Kill the crew and step up to capture it. Ships and mortars can knock guns out.</p>
       <h3>Place units by hand</h3>
       <div class="row wrap">
         <select id="placeSide" aria-label="Side to place"><option value="0">Side A</option><option value="1">Side B</option></select>
@@ -68,6 +88,43 @@
         <button type="button" id="placeTool">Place</button>
       </div>
       <p class="hint">Pick a tool, then tap the ground. Erase removes objects and hand-placed units. Units added in the army list deploy automatically.</p>
+    </section>
+
+    <section class="block" id="seaBlock" hidden>
+      <h2>Sea map</h2>
+      <div class="row wrap">
+        <label class="inline">Island radius <select id="islandSize"><option>3</option><option selected>5</option><option>7</option><option>10</option></select></label>
+        <button type="button" id="islandTool">Add island</button>
+        <button type="button" id="seaErase">Erase</button>
+        <button type="button" id="clearSea">Clear sea</button>
+      </div>
+      <h3>Forts</h3>
+      <div class="row wrap">
+        <select id="fortSide" aria-label="Fort owner"><option value="1">Side B</option><option value="0">Side A</option></select>
+      </div>
+      <div class="palette" id="fortPalette"></div>
+      <p class="hint">Forts fire in every direction. A ship whose crew outnumbers the garrison can come alongside and storm the fort; a fort whose garrison falls changes sides.</p>
+    </section>
+
+    <section class="block">
+      <details id="modelDetails">
+        <summary>Your 3D models</summary>
+        <p class="hint">Load models you've exported from your own tools and assign them to a unit, ship, creature or building. Select the model file together with any files it uses: <code>.glb</code>; <code>.gltf</code> with its <code>.bin</code> and textures; <code>.obj</code> with its <code>.mtl</code> and textures; <code>.ply</code> (vertex colours); or <code>.fbx</code>. Models are scaled to fit the unit; clips named walk, attack, death and idle play automatically. They stay in this browser only.</p>
+        <div class="row wrap">
+          <select id="modelTarget" aria-label="Assign model to"></select>
+        </div>
+        <div class="row wrap">
+          <input type="file" id="modelFile" multiple accept=".glb,.gltf,.bin,.obj,.mtl,.ply,.fbx,.png,.jpg,.jpeg,.webp,.tga,.bmp">
+        </div>
+        <div class="row wrap">
+          <label class="inline">Scale <input id="modelScale" type="number" step="0.1" min="0.1" max="10" value="1"></label>
+          <label class="inline">Turn <input id="modelYaw" type="number" step="15" value="0">°</label>
+          <label class="inline">Up axis <select id="modelUp"><option value="y">Y up</option><option value="z">Z up</option><option value="flip">Upside down</option></select></label>
+          <button type="button" id="modelApply">Load model</button>
+        </div>
+        <ul class="groups" id="modelList"></ul>
+        <p class="hint" id="modelMsg" role="status"></p>
+      </details>
     </section>
 
     <section class="block">

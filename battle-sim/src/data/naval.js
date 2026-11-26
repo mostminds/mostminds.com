@@ -34,3 +34,20 @@ export const CREATURES = {
 };
 for (const [id, s] of Object.entries(SHIPS)) s.id = id;
 for (const [id, c] of Object.entries(CREATURES)) c.id = id;
+
+// Island forts for naval battles. They never move, fire in every direction,
+// and can be stormed: a ship that comes alongside with a bigger crew than the
+// garrison lands a boarding party, and a fort whose garrison falls changes hands.
+// weapon: shots per volley, dmg [min,max], range, reload ticks, acc,
+//  minRange (mortars), splash radius, vsCreature multiplier, grapple {slow, duration}
+export const FORTS = {
+  battery:  { name: 'Shore battery',  level: 40, hp: 450,  armour: 30, garrison: 30, size: 2.2, model: 'battery',
+              weapon: { shots: 3, dmg: [10, 28], range: 18, reload: 9, acc: 0.55 } },
+  mortar:   { name: 'Mortar battery', level: 55, hp: 380,  armour: 25, garrison: 24, size: 2,   model: 'mortar',
+              weapon: { shots: 2, dmg: [16, 34], range: 26, minRange: 7, reload: 14, acc: 0.4, splash: 3 } },
+  harpoon:  { name: 'Harpoon tower',  level: 45, hp: 320,  armour: 20, garrison: 16, size: 1.8, model: 'harpoon',
+              weapon: { shots: 1, dmg: [14, 32], range: 15, reload: 7, acc: 0.65, vsCreature: 2.2, grapple: { slow: 0.4, duration: 6 } } },
+  seaFort:  { name: 'Sea fort',       level: 80, hp: 1400, armour: 45, garrison: 120, size: 4,   model: 'seaFort',
+              weapon: { shots: 8, dmg: [12, 30], range: 20, reload: 10, acc: 0.55 } },
+};
+for (const [id, f] of Object.entries(FORTS)) f.id = id;

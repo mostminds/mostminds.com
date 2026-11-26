@@ -1,6 +1,8 @@
 // Procedural low-poly models built from primitives. Every model is a Group
 // with userData.rig describing its moving parts, animated by animateUnit().
 import * as THREE from 'three';
+import { instantiateCustom, animateCustom } from './customModels.js';
+export const LEVEL_H = 0.8; // world height of one walkable level
 
 const matCache = new Map();
 export function mat(color, o = {}) {
@@ -135,13 +137,20 @@ function quadruped(o) {
     g.add(leg); rig.legs.push(leg);
   }
   const tail = mesh(box(0.06, 0.06, 0.3), fur, 0, 0.5, -0.45); tail.rotation.x = -0.6; g.add(tail);
+  if (o.wings) {
+    rig.wings = [];
+    for (const sd of [-1, 1]) {
+      const w = pivot(sd * 0.16, 0.55, 0.05, mesh(box(0.8, 0.03, 0.45), mat(o.wingColor ?? 0xe8dcc0, { side: THREE.DoubleSide }), sd * 0.4, 0, 0));
+      g.add(w); rig.wings.push(w);
+    }
+  }
   g.userData.rig = rig;
   return g;
 }
 
 function rider(o) {
   const g = new THREE.Group();
-  const mount = quadruped({ fur: o.mount, wolf: !!o.wolf });
+  const mount = quadruped({ fur: o.mount, wolf: !!o.wolf, wings: o.wings });
   const man = humanoid({ ...o, body: 'humanoid' });
   for (const l of man.userData.rig.legs) { l.rotation.z = l.position.x > 0 ? -0.9 : 0.9; }
   man.position.set(0, 0.3, 0);
@@ -167,7 +176,7 @@ function spider(o) {
 }
 
 function golem(o) {
-  const g = humanoid({ skin: o.stone, cloth: o.stone, armor: o.stone, weapon: 'none' });
+  const g = humanoid({ skin: o.stone, cloth: o.stone, armor: o.stone, weapon: 'none', wings: o.wings });
   g.traverse((c) => { if (c.isMesh) c.scale.multiplyScalar(1.25); });
   g.userData.rig.head.add(mesh(box(0.12, 0.03, 0.02), mat(0xffb030, { emissive: 0xff7a00 }), 0, 0.02, 0.13));
   return g;
@@ -210,8 +219,37 @@ function dragon(o) {
   return g;
 }
 
+function bat(o) {
+  const g = new THREE.Group();
+  const m = mat(o.fur ?? 0x2a1f24);
+  g.add(mesh(sph(0.16, 6), m, 0, 0.5, 0), mesh(sph(0.1, 5), m, 0, 0.56, 0.16));
+  for (const sd of [-1, 1]) g.add(mesh(cone(0.04, 0.1, 4), m, sd * 0.06, 0.68, 0.16));
+  const rig = { legs: [], arms: [], kind: 'float', wings: [] };
+  for (const sd of [-1, 1]) {
+    const w = pivot(sd * 0.12, 0.52, 0, mesh(box(0.55, 0.02, 0.3), mat(0x3a2a30, { side: THREE.DoubleSide }), sd * 0.28, 0, 0));
+    g.add(w); rig.wings.push(w);
+  }
+  rig.core = g.children[0]; rig.shards = new THREE.Group();
+  g.userData.rig = rig;
+  return g;
+}
+function ram(o) {
+  const g = new THREE.Group();
+  const wood = mat(o.color ?? 0x6b4a2e), roofM = mat(0x5a4a3a), iron = mat(0x3a3a3c);
+  g.add(mesh(box(0.9, 0.12, 1.6), wood, 0, 0.3, 0));
+  for (const z of [-0.6, 0, 0.6]) for (const x of [-0.5, 0.5]) { const wh = mesh(cyl(0.2, 0.2, 0.08, 8), wood, x, 0.2, z); wh.rotation.z = Math.PI / 2; g.add(wh); }
+  const roof = mesh(cone(0.75, 0.7, 4), roofM, 0, 0.85, 0); roof.rotation.y = Math.PI / 4; roof.scale.set(1, 1, 1.7); g.add(roof);
+  const log = pivot(0, 0.55, 0, mesh(cyl(0.12, 0.12, 1.9, 7), wood, 0, 0, 0.2), mesh(sph(0.16, 6), iron, 0, 0, 1.15));
+  log.children[0].rotation.x = Math.PI / 2;
+  g.add(log);
+  g.userData.rig = { legs: [], arms: [], kind: 'ram', log };
+  return g;
+}
+
 export function buildUnitModel(def) {
   const o = def.model || { body: 'humanoid' };
+  const custom = instantiateCustom(def.id, 0.95 * (o.scale || 1) * Math.max(1, def.size * 0.8), 'unit');
+  if (custom) return custom;
   let g;
   switch (o.body) {
     case 'quadruped': g = quadruped(o); break;
@@ -220,6 +258,8 @@ export function buildUnitModel(def) {
     case 'golem': g = golem(o); break;
     case 'elemental': g = elemental(o); break;
     case 'dragon': g = dragon(o); break;
+    case 'bat': g = bat(o); break;
+    case 'ram': g = ram(o); break;
     default: g = humanoid(o);
   }
   const outer = new THREE.Group();
@@ -235,6 +275,7 @@ export function buildUnitModel(def) {
 export function animateUnit(model, t, moving, atk, dead, phase = 0) {
   const r = model.userData.rig;
   if (!r) return;
+  if (r.kind === 'gltf') { animateCustom(model, t, moving, atk, dead); return; }
   const inner = model.userData.inner;
   const sw = moving ? Math.sin(t * 10 + phase) * 0.6 : 0;
   r.legs.forEach((l, i) => {
@@ -248,7 +289,13 @@ export function animateUnit(model, t, moving, atk, dead, phase = 0) {
     r.arms[1].rotation.x = a;
   }
   if (r.wings) r.wings.forEach((w, i) => { w.rotation.z = Math.sin(t * 6 + phase) * 0.3 * (i ? -1 : 1); });
-  if (r.kind === 'float') {
+  if (r.kind === 'ram') {
+    r.log.position.z = atk >= 0 ? Math.sin(atk * Math.PI) * 0.35 : 0;
+    inner.position.y = 0;
+    if (dead > 0) { inner.rotation.z = Math.min(1, dead) * 0.5; inner.position.y = -Math.max(0, dead - 0.5) * 0.4; }
+    return;
+  }
+  if (r.kind === 'float' && r.shards) {
     r.core.position.y = 0.7 + Math.sin(t * 3 + phase) * 0.08;
     r.shards.rotation.y = t * 2 + phase;
     if (atk >= 0) r.core.scale.setScalar(1 + Math.sin(atk * Math.PI) * 0.4);
@@ -263,6 +310,8 @@ export function animateUnit(model, t, moving, atk, dead, phase = 0) {
 
 // ---------- structures ----------
 export function buildStructure(def, w, h) {
+  const custom = def.id && instantiateCustom(`struct:${def.id}`, Math.max(w, h), 'struct');
+  if (custom) return custom;
   const g = new THREE.Group();
   const c = mat(def.color), dark = mat(0x4a3a2a), roof = mat(0x8a3a2a), stone = mat(0x8a8a86);
   switch (def.model) {
@@ -291,10 +340,12 @@ export function buildStructure(def, w, h) {
     }
     case 'sandbags': for (let i = 0; i < 3; i++) g.add(mesh(box(w * 0.9 - i * 0.2, 0.18, h * 0.6), c, 0, 0.09 + i * 0.18, 0)); break;
     case 'tower': {
-      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(box(0.15, 1.6, 0.15), c, x * (w / 2 - 0.15), 0.8, z * (h / 2 - 0.15)));
-      g.add(mesh(box(w, 0.12, h), c, 0, 1.0, 0));
-      g.add(mesh(box(w, 0.3, 0.06), c, 0, 1.2, h / 2), mesh(box(w, 0.3, 0.06), c, 0, 1.2, -h / 2));
-      const tr = mesh(cone(w * 0.8, 0.7, 4), roof, 0, 2.0, 0);
+      const top = LEVEL_H * 2;
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(box(0.15, top + 1, 0.15), c, x * (w / 2 - 0.15), (top + 1) / 2, z * (h / 2 - 0.15)));
+      g.add(mesh(box(w, 0.12, h), c, 0, top - 0.06, 0));
+      g.add(mesh(box(w, 0.3, 0.06), c, 0, top + 0.15, h / 2), mesh(box(w, 0.3, 0.06), c, 0, top + 0.15, -h / 2));
+      const ladder = mesh(box(0.3, top, 0.04), dark, 0, top / 2, h / 2 + 0.05); g.add(ladder);
+      const tr = mesh(cone(w * 0.8, 0.7, 4), roof, 0, top + 1.05, 0);
       tr.rotation.y = Math.PI / 4; g.add(tr);
       break;
     }
@@ -327,12 +378,124 @@ export function buildStructure(def, w, h) {
     case 'crates': g.add(mesh(box(0.7, 0.5, 0.7), c, 0, 0.25, 0), mesh(box(0.45, 0.4, 0.45), c, 0.05, 0.7, 0.05)); break;
     case 'statue': g.add(mesh(box(0.8, 0.4, 0.8), stone, 0, 0.2, 0)); { const s = humanoid({ skin: def.color, cloth: def.color, weapon: 'sword', shield: true }); s.position.y = 0.4; s.scale.setScalar(1.3); g.add(s); } break;
     case 'pillar': g.add(mesh(cyl(0.3, 0.32, 1.8, 8), c, 0, 0.9, 0), mesh(box(0.8, 0.15, 0.8), c, 0, 1.85, 0)); break;
+    case 'bastion': {
+      g.add(mesh(box(w, LEVEL_H, h), c, 0, LEVEL_H / 2, 0));
+      for (const [x, z, ww, hh] of [[0, -h / 2 + 0.1, w, 0.2], [0, h / 2 - 0.1, w, 0.2], [-w / 2 + 0.1, 0, 0.2, h], [w / 2 - 0.1, 0, 0.2, h]]) g.add(mesh(box(ww, 0.3, hh), c, x, LEVEL_H + 0.15, z));
+      break;
+    }
+    case 'castleWall': {
+      const top = LEVEL_H * 2, along = w >= h;
+      g.add(mesh(box(w, top, h), c, 0, top / 2, 0));
+      const n = Math.max(w, h);
+      // crenellations on both faces of the wall-walk
+      for (let i = 0; i < n; i++) for (const sd of [-1, 1]) {
+        const a = -n / 2 + i + 0.5;
+        g.add(mesh(box(along ? 0.45 : 0.14, 0.3, along ? 0.14 : 0.45), c, along ? a : sd * 0.43, top + 0.15, along ? sd * 0.43 : a));
+      }
+      break;
+    }
+    case 'castleTower': {
+      const top = LEVEL_H * 3;
+      g.add(mesh(box(w, top, h), c, 0, top / 2, 0));
+      for (let i = 0; i < 4; i++) for (let k = 0; k < 3; k++) {
+        const a = -w / 2 + 0.5 + k, sd = i < 2 ? -1 : 1, onX = i % 2 === 0;
+        g.add(mesh(box(onX ? 0.6 : 0.2, 0.4, onX ? 0.2 : 0.6), c, onX ? a : sd * (w / 2 - 0.1), top + 0.2, onX ? sd * (h / 2 - 0.1) : a));
+      }
+      g.add(mesh(box(0.05, 0.9, 0.05), mat(0x3a2a1a), 0, top + 0.45, 0));
+      break;
+    }
+    case 'stairs': {
+      const along = w >= h, n = 4;
+      for (let i = 0; i < n; i++) {
+        const k = (i + 1) / n, hgt = LEVEL_H * 2 * k;
+        const pos = -Math.max(w, h) / 2 + (i + 0.5) * (Math.max(w, h) / n);
+        g.add(mesh(box(along ? Math.max(w, h) / n : 0.9, hgt, along ? 0.9 : Math.max(w, h) / n), c, along ? pos : 0, hgt / 2, along ? 0 : pos));
+      }
+      break;
+    }
+    case 'castleGate': {
+      const top = LEVEL_H * 2, along = w >= h;
+      g.add(mesh(box(along ? w : h, 0.5, 1), mat(0x9a958b), 0, top + 0.05, 0));
+      for (const sd of [-1, 1]) g.add(mesh(box(along ? 0.35 : 1, top, along ? 1 : 0.35), mat(0x9a958b), along ? sd * (w / 2 - 0.17) : 0, top / 2, along ? 0 : sd * (h / 2 - 0.17)));
+      g.add(mesh(box(along ? w - 0.7 : 0.15, top - 0.1, along ? 0.15 : h - 0.7), c, 0, (top - 0.1) / 2, 0));
+      for (let i = 0; i < 4; i++) g.add(mesh(box(along ? 0.05 : 0.2, top - 0.2, along ? 0.2 : 0.05), mat(0x2a2a2c), along ? -w / 2 + 0.6 + i * (w - 1.2) / 3 : 0, (top - 0.2) / 2, along ? 0 : -h / 2 + 0.6 + i * (h - 1.2) / 3));
+      if (!along) g.children.forEach((ch) => { void ch; });
+      break;
+    }
+    case 'cannon': case 'ballista': case 'mortar': case 'battery': case 'harpoon': return buildWeapon(def.model, w, h);
     case 'deck': {
-      g.add(mesh(box(w, 0.12, h), c, 0, 0.7, 0));
-      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(box(0.15, 0.7, 0.15), dark, x * (w / 2 - 0.1), 0.35, z * (h / 2 - 0.1)));
+      g.add(mesh(box(w, 0.12, h), c, 0, LEVEL_H - 0.06, 0));
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(box(0.15, LEVEL_H, 0.15), dark, x * (w / 2 - 0.1), LEVEL_H / 2, z * (h / 2 - 0.1)));
       break;
     }
   }
+  return g;
+}
+
+// ---------- crewed weapons and forts ----------
+// Each returns a group; userData.turret rotates to aim (forward is +x).
+function carriage(g, wood) {
+  g.add(mesh(box(0.7, 0.18, 0.5), wood, 0, 0.18, 0));
+  for (const z of [-0.28, 0.28]) for (const x of [-0.22, 0.22]) {
+    const w = mesh(cyl(0.14, 0.14, 0.06, 8), mat(0x3a2a1a), x, 0.14, z); w.rotation.x = Math.PI / 2; g.add(w);
+  }
+}
+export function buildWeapon(model, w = 1, h = 1) {
+  const g = new THREE.Group();
+  const turret = new THREE.Group();
+  const iron = mat(0x2a2a2c), wood = mat(0x6b4a2e), stone = mat(0x8a8a86), rope = mat(0xb8a070);
+  switch (model) {
+    case 'cannon': {
+      carriage(g, wood);
+      const barrel = mesh(cyl(0.09, 0.13, 0.95, 8), iron, 0.15, 0, 0); barrel.rotation.z = -Math.PI / 2 + 0.12;
+      turret.position.y = 0.38; turret.add(barrel); break;
+    }
+    case 'ballista': {
+      g.add(mesh(cyl(0.06, 0.08, 0.45, 5), wood, 0, 0.22, 0));
+      turret.position.y = 0.5;
+      turret.add(mesh(box(0.9, 0.08, 0.1), wood, 0.1, 0, 0));
+      for (const z of [-1, 1]) { const arm = mesh(box(0.06, 0.06, 0.55), wood, 0.35, 0, z * 0.27); arm.rotation.y = z * 0.5; turret.add(arm); }
+      turret.add(mesh(box(0.7, 0.03, 0.03), rope, 0.25, 0.04, 0));
+      const bolt = mesh(cone(0.04, 0.2, 4), iron, 0.62, 0.04, 0); bolt.rotation.z = -Math.PI / 2; turret.add(bolt);
+      break;
+    }
+    case 'mortar': {
+      g.add(mesh(box(0.7, 0.2, 0.7), wood, 0, 0.1, 0));
+      const tube = mesh(cyl(0.2, 0.24, 0.5, 8), iron, 0.06, 0.1, 0); tube.rotation.z = -0.7;
+      turret.position.y = 0.3; turret.add(tube); break;
+    }
+    case 'battery': {
+      // stone emplacement with a parapet and a heavy gun
+      g.add(mesh(box(w, 0.35, h), stone, 0, 0.17, 0));
+      for (const [x, z, ww, hh] of [[w / 2 - 0.12, 0, 0.24, h], [0, -h / 2 + 0.12, w, 0.24], [0, h / 2 - 0.12, w, 0.24]]) g.add(mesh(box(ww, 0.35, hh), stone, x, 0.52, z));
+      carriage(turret, wood);
+      const barrel = mesh(cyl(0.14, 0.2, 1.4, 8), iron, 0.35, 0.3, 0); barrel.rotation.z = -Math.PI / 2 + 0.08;
+      turret.add(barrel); turret.position.y = 0.35; turret.scale.setScalar(1.15); break;
+    }
+    case 'harpoon': {
+      g.add(mesh(cyl(0.3, 0.38, 0.4, 8), stone, 0, 0.2, 0));
+      turret.position.y = 0.55;
+      turret.add(mesh(box(0.8, 0.12, 0.14), wood, 0.15, 0, 0));
+      const spear = mesh(cyl(0.025, 0.025, 1.1, 4), iron, 0.4, 0.1, 0); spear.rotation.z = -Math.PI / 2; turret.add(spear);
+      const tip = mesh(cone(0.07, 0.2, 4), iron, 0.98, 0.1, 0); tip.rotation.z = -Math.PI / 2; turret.add(tip);
+      turret.add(mesh(cyl(0.12, 0.12, 0.16, 8), rope, -0.15, 0.1, 0));
+      break;
+    }
+    case 'seaFort': {
+      const r = w;
+      g.add(mesh(cyl(r, r * 1.08, 1.6, 14), stone, 0, 0.8, 0));
+      for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; g.add(mesh(box(0.4, 0.35, 0.4), stone, Math.cos(a) * r * 0.92, 1.75, Math.sin(a) * r * 0.92)); }
+      g.add(mesh(cyl(r * 0.45, r * 0.5, 2.6, 10), stone, 0, 1.3, 0));
+      g.add(mesh(cone(r * 0.55, 1, 10), mat(0x6a3a2a), 0, 3.1, 0));
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2, c = mesh(cyl(0.12, 0.16, 0.8, 6), iron, Math.cos(a) * r, 1.1, Math.sin(a) * r);
+        c.rotation.z = Math.PI / 2; c.rotation.y = -a; g.add(c);
+      }
+      break;
+    }
+  }
+  g.add(turret);
+  g.userData.turret = turret;
   return g;
 }
 
@@ -351,6 +514,11 @@ export function buildCraft(color) {
 
 // ---------- ships ----------
 export function buildShip(def, sideColor) {
+  const custom = instantiateCustom(def.id, def.len, 'ship');
+  if (custom) {
+    custom.add(mesh(box(0.02, 0.3, 0.5), mat(sideColor, { side: THREE.DoubleSide }), 0, 1.4 + def.len * 0.35, 0));
+    return custom;
+  }
   const g = new THREE.Group();
   const L = def.len, B = def.beam;
   const hull = mat(def.color), deck = mat(0xb08a5a), sail = mat(def.sail, { side: THREE.DoubleSide });
@@ -385,6 +553,8 @@ export function buildShip(def, sideColor) {
 }
 
 export function buildCreature(def) {
+  const custom = instantiateCustom(def.id, (def.size || 1) * 1.6, 'creature');
+  if (custom) { custom.userData.rig.segs = []; return custom; }
   const g = new THREE.Group();
   const m = mat(def.color), pale = mat(0xd8d0c0);
   const s = def.size || 1;
@@ -447,8 +617,23 @@ export function buildCreature(def) {
 
 export function animateCreature(g, t, phase) {
   const r = g.userData.rig;
+  if (r.kind === 'gltf') { animateCustom(g, t, true, -1, 0); return; }
   if (r.kind === 'serpent' || r.kind === 'eel') r.segs.forEach((s, i) => { s.position.z = Math.sin(t * 3 - i * 0.7 + phase) * 0.25 * (i / 3); s.position.y = Math.sin(t * 2 - i * 0.9 + phase) * 0.25; });
   else if (r.kind === 'kraken') r.segs.forEach((s, i) => { s.rotation.z = Math.sin(t * 1.5 + i + phase) * 0.35 + 0.1; });
   else r.segs.forEach((s) => { s.rotation.y = Math.sin(t * 5 + phase) * 0.4; });
   if (r.arms) r.arms[1].rotation.x = -1.5 + Math.sin(t * 2 + phase) * 0.4;
+}
+
+// Heap of broken stone and timber left where a structure fell
+export function buildRubble(w, h, color) {
+  const g = new THREE.Group();
+  const m = mat(color), d = mat(0x4a4540);
+  const n = Math.min(24, 3 + w * h * 2);
+  for (let i = 0; i < n; i++) {
+    const r = 0.15 + ((i * 37) % 10) / 40;
+    const piece = mesh(ico(r), i % 3 ? m : d, ((i * 53) % 100) / 100 * w - w / 2, r * 0.5, ((i * 71) % 100) / 100 * h - h / 2);
+    piece.rotation.set(i, i * 2, i * 3);
+    g.add(piece);
+  }
+  return g;
 }

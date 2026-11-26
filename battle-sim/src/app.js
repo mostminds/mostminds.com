@@ -6,9 +6,12 @@ import { createNaval, stepNaval } from './engine/naval.js';
 import { runBatch } from './engine/batch.js';
 import { TICK_MS } from './engine/combat.js';
 import { UNITS } from './data/units.js';
-import { SHIPS, CREATURES } from './data/naval.js';
+import { SHIPS, CREATURES, FORTS } from './data/naval.js';
 import { STRUCTURES } from './data/structures.js';
+import { MAP_SHAPES, BIOMES } from './engine/terrain.js';
+import { addCustomModel, removeCustomModel, customModelList, restoreCustomModels } from './render/customModels.js';
 import { PRESETS, DEFAULT_SCENARIOS } from './data/presets.js';
+import { castleKit } from './data/castle.js';
 
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -20,7 +23,7 @@ const store = {
 // ---------- state ----------
 const custom = store.get('tb.custom') || { units: {}, ships: {}, creatures: {} };
 const roster = () => ({ ...UNITS, ...custom.units });
-const navalDefs = () => ({ SHIPS: { ...SHIPS, ...custom.ships }, CREATURES: { ...CREATURES, ...custom.creatures } });
+const navalDefs = () => ({ SHIPS: { ...SHIPS, ...custom.ships }, CREATURES: { ...CREATURES, ...custom.creatures }, FORTS });
 
 const state = {
   mode: 'field',
@@ -40,15 +43,19 @@ const sim = { b: null, playing: false, acc: 0, seed: 1, started: false, ended: f
 // ---------- helpers ----------
 const isNaval = () => state.mode === 'naval';
 const scn = () => state.scn[state.mode];
-const defFor = (id) => isNaval() ? (navalDefs().SHIPS[id] || navalDefs().CREATURES[id]) : roster()[id];
+const defFor = (id) => {
+  if (id?.startsWith?.('ship:')) return navalDefs().SHIPS[id.slice(5)];
+  return isNaval() ? (navalDefs().SHIPS[id] || navalDefs().CREATURES[id]) : roster()[id];
+};
 const fmtTime = (ticks) => { const s = Math.floor((ticks * TICK_MS) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-const levelOf = (def) => isNaval() ? def.level : prepareDef(def).level;
+const levelOf = (def) => (isNaval() || def.hull) ? def.level : prepareDef(def).level;
 
 function persist() { store.set('tb.state', { mode: state.mode, scn: state.scn }); }
 
 function matchup() {
   return scn().sides.map((s) => {
     const parts = (s.groups || []).filter((g) => g.count > 0).map((g) => `${g.count} ${defFor(g.unit)?.name || g.unit}`);
+    if (!isNaval()) for (const g of s.ships || []) if (g.count > 0) parts.push(`${g.count} ${navalDefs().SHIPS[g.unit]?.name || g.unit}`);
     const placed = (s.placed || []).length;
     if (placed) parts.push(`${placed} placed`);
     return parts.join(', ') || 'nobody';
@@ -63,7 +70,7 @@ function buildSim(seed) {
     sim.b = createNaval(scn(), seed, navalDefs());
     if (!(view instanceof NavalView)) { view?.dispose(); view = new NavalView(stage); }
   } else {
-    sim.b = createBattle({ ...scn(), mode: state.mode }, roster(), seed);
+    sim.b = createBattle({ ...scn(), mode: state.mode }, roster(), seed, navalDefs().SHIPS);
     if (!(view instanceof LandView)) { view?.dispose(); view = new LandView(stage); }
   }
   view.speed = state.speed;
@@ -198,7 +205,13 @@ function setMode(mode) {
   ticker.replaceChildren();
   setTool(null);
   $('mapBlock').hidden = isNaval();
-  if (!isNaval()) unitOptions($('placeUnit'), false);
+  $('seaBlock').hidden = !isNaval();
+  if (!isNaval()) {
+    unitOptions($('placeUnit'), false);
+    $('mapShape').value = scn().shape || (mode === 'amphibious' ? 'island' : 'plains');
+    $('mapBiome').value = scn().biome || 'temperate';
+    $('mapSize').value = String(scn().size);
+  }
   renderSides();
   renderPresets();
   buildSim(sim.seed);
@@ -221,10 +234,11 @@ $('loadPreset').onclick = () => {
   if (!p) return;
   state.scn[p.mode] = clone({ ...p.scn, mode: p.mode === 'naval' ? undefined : p.mode });
   setMode(p.mode);
+  $('preset').value = p.id;
 };
 
 // ---------- armies ----------
-function unitOptions(sel, withLevels = true) {
+function unitOptions(sel, withLevels = true, withShips = false) {
   sel.replaceChildren();
   const groups = new Map();
   if (isNaval()) {
@@ -237,6 +251,7 @@ function unitOptions(sel, withLevels = true) {
       if (!groups.has(c)) groups.set(c, []);
       groups.get(c).push(u);
     }
+    if (withShips) groups.set('Fire-support ships', Object.values(navalDefs().SHIPS).map((x) => ({ ...x, id: `ship:${x.id}` })));
   }
   for (const [name, list] of groups) {
     const og = document.createElement('optgroup'); og.label = name;
@@ -301,18 +316,22 @@ function renderSides() {
     el.append(head);
 
     const ul = document.createElement('ul'); ul.className = 'groups';
-    side.groups.forEach((g, gi) => {
-      const def = defFor(g.unit);
+    side.ships ||= [];
+    const rows = [...side.groups.map((g, gi) => ({ g, gi, arr: side.groups, ship: false })),
+      ...(isNaval() ? [] : side.ships.map((g, gi) => ({ g, gi, arr: side.ships, ship: true })))];
+    rows.forEach(({ g, gi, arr, ship }) => {
+      const def = ship ? navalDefs().SHIPS[g.unit] : defFor(g.unit);
       const li = document.createElement('li');
+      if (ship) li.className = 'ship';
       const nm = document.createElement('span'); nm.className = 'nm';
       nm.innerHTML = `${def?.name || g.unit} <span class="lv">lvl ${def ? levelOf(def) : '?'}</span>`;
       nm.onclick = () => { const old = el.querySelector('.unitcard'); old?.replaceWith(unitCard(def)); };
       const qty = document.createElement('input');
-      qty.type = 'number'; qty.min = 0; qty.max = isNaval() ? 60 : 500; qty.value = g.count;
-      qty.id = `qty${si}_${gi}`; qty.setAttribute('aria-label', `${def?.name} count`);
+      qty.type = 'number'; qty.min = 0; qty.max = isNaval() || ship ? (ship ? 30 : 60) : 500; qty.value = g.count;
+      qty.id = `qty${si}_${ship ? 's' : ''}${gi}`; qty.setAttribute('aria-label', `${def?.name} count`);
       qty.onchange = () => { g.count = Math.max(0, Math.min(+qty.max, +qty.value || 0)); qty.value = g.count; renderTotals(); rebuildPreview(); };
       const rm = document.createElement('button'); rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', `Remove ${def?.name}`);
-      rm.onclick = () => { side.groups.splice(gi, 1); renderSides(); rebuildPreview(); };
+      rm.onclick = () => { arr.splice(gi, 1); renderSides(); rebuildPreview(); };
       li.append(nm, qty, rm);
       ul.append(li);
     });
@@ -320,13 +339,15 @@ function renderSides() {
 
     const add = document.createElement('div'); add.className = 'row';
     const sel = document.createElement('select'); sel.id = `addUnit${si}`; sel.setAttribute('aria-label', 'Unit to add');
-    unitOptions(sel);
+    unitOptions(sel, true, true);
     const qty = document.createElement('input'); qty.type = 'number'; qty.min = 1; qty.value = isNaval() ? 1 : 10; qty.id = `addQty${si}`; qty.setAttribute('aria-label', 'Quantity');
     const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Add';
     btn.onclick = () => {
       const n = Math.max(1, +qty.value || 1);
-      const ex = side.groups.find((g) => g.unit === sel.value);
-      if (ex) ex.count += n; else side.groups.push({ unit: sel.value, count: n });
+      const isShip = sel.value.startsWith('ship:');
+      const arr = isShip ? side.ships : side.groups, id = isShip ? sel.value.slice(5) : sel.value;
+      const ex = arr.find((g) => g.unit === id);
+      if (ex) ex.count += n; else arr.push({ unit: id, count: isShip ? Math.min(n, 30) : n });
       renderSides(); rebuildPreview();
     };
     add.append(sel, qty, btn);
@@ -347,22 +368,34 @@ function renderTotals() {
   document.querySelectorAll('.side-total').forEach((el) => {
     const side = scn().sides[+el.dataset.side];
     const n = side.groups.reduce((a, g) => a + g.count, 0) + (side.placed?.length || 0);
+    const ships = isNaval() ? 0 : (side.ships || []).reduce((a, g) => a + g.count, 0);
     const placed = side.placed?.length ? `, ${side.placed.length} hand-placed` : '';
-    el.textContent = `${n} ${isNaval() ? 'vessels and creatures' : 'units'}${placed}`;
+    el.textContent = `${n} ${isNaval() ? 'vessels and creatures' : 'units'}${placed}${ships ? `, ${ships} ship${ships > 1 ? 's' : ''} offshore` : ''}`;
   });
 }
 
 // ---------- map editor ----------
 function renderPalette() {
-  const pal = $('palette');
-  pal.replaceChildren();
+  const pal = $('palette'), guns = $('gunPalette');
+  pal.replaceChildren(); guns.replaceChildren();
   for (const [id, s] of Object.entries(STRUCTURES)) {
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = s.name; b.dataset.tool = id;
     const flags = [s.blocksMove && 'blocks movement', s.blocksLos && 'blocks sight', s.cover && 'gives cover', s.elevated && 'raised: +2 range'].filter(Boolean).join(', ');
-    b.title = `${s.w}×${s.h}, ${flags}`;
+    const w = s.weapon;
+    b.title = w ? `range ${w.range}${w.minRange ? ` (min ${w.minRange})` : ''}, max hit ${w.maxHit}, every ${w.speed} ticks${w.splash ? `, blast ${w.splash}` : ''}, ×${w.antiShip} vs ships${w.indirect ? ', fires over walls' : ''}` : `${s.w}×${s.h}, ${flags}`;
     b.onclick = () => setTool(state.tool?.id === id ? null : { kind: 'structure', id });
-    pal.append(b);
+    (w ? guns : pal).append(b);
+  }
+  const fp = $('fortPalette');
+  fp.replaceChildren();
+  for (const [id, f] of Object.entries(FORTS)) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = f.name; b.dataset.tool = `fort:${id}`;
+    const w = f.weapon;
+    b.title = `${f.hp} hp, garrison ${f.garrison}, ${w.shots} shots of ${w.dmg[0]}–${w.dmg[1]}, range ${w.range}${w.vsCreature ? `, ×${w.vsCreature} vs creatures` : ''}${w.splash ? `, blast ${w.splash}` : ''}`;
+    b.onclick = () => setTool(state.tool?.id === `fort:${id}` ? null : { kind: 'fort', id: `fort:${id}`, type: id });
+    fp.append(b);
   }
   const er = document.createElement('button');
   er.type = 'button'; er.textContent = 'Erase'; er.dataset.tool = 'erase';
@@ -371,11 +404,17 @@ function renderPalette() {
 }
 function setTool(t) {
   state.tool = t;
-  document.querySelectorAll('#palette button').forEach((b) => b.classList.toggle('on', !!t && b.dataset.tool === t.id));
+  document.querySelectorAll('#palette button, #gunPalette button, #fortPalette button').forEach((b) => b.classList.toggle('on', !!t && b.dataset.tool === t.id));
+  $('islandTool').classList.toggle('on', t?.kind === 'island');
+  $('kitSmall').classList.toggle('on', t?.id === 'kit16');
+  $('kitLarge').classList.toggle('on', t?.id === 'kit24');
+  $('seaErase').classList.toggle('on', t?.kind === 'seaErase');
   $('placeTool').classList.toggle('on', t?.kind === 'unit');
   view?.showGhost?.(null);
 }
 $('rotate').onclick = () => { state.rot = (state.rot + 1) % 2; };
+$('kitSmall').onclick = () => setTool(state.tool?.id === 'kit16' ? null : { kind: 'kit', id: 'kit16', size: 16 });
+$('kitLarge').onclick = () => setTool(state.tool?.id === 'kit24' ? null : { kind: 'kit', id: 'kit24', size: 24 });
 window.addEventListener('keydown', (e) => { if (e.key === 'r' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) state.rot = (state.rot + 1) % 2; if (e.key === 'Escape') setTool(null); });
 $('clearMap').onclick = () => { scn().structures = []; scn().sides.forEach((s) => (s.placed = [])); renderTotals(); rebuildPreview(); };
 $('mapSize').onchange = (e) => {
@@ -395,7 +434,13 @@ function applyTool(tile) {
   const s = scn(), t = state.tool;
   if (!t || !tile || tile.x < 0 || tile.y < 0 || tile.x >= s.size || tile.y >= s.size) return;
   if (t.kind === 'structure') {
-    s.structures.push({ type: t.id, x: tile.x, y: tile.y, rot: state.rot });
+    const st = { type: t.id, x: tile.x, y: tile.y, rot: state.rot };
+    if (STRUCTURES[t.id].stretch) st.len = Math.max(1, Math.min(40, +$('wallLen').value || 4));
+    if (STRUCTURES[t.id].weapon && $('gunSide').value !== '') st.side = +$('gunSide').value;
+    s.structures.push(st);
+  } else if (t.kind === 'kit') {
+    const side = $('gunSide').value === '' ? 1 : +$('gunSide').value;
+    s.structures.push(...castleKit(tile.x, tile.y, Math.min(t.size, s.size - tile.x, s.size - tile.y), side, $('kitFacing').value));
   } else if (t.kind === 'erase') {
     const i = s.structures.findIndex((st) => { const { w, h } = structureFootprint(st); return tile.x >= st.x && tile.y >= st.y && tile.x < st.x + w && tile.y < st.y + h; });
     if (i >= 0) s.structures.splice(i, 1);
@@ -427,8 +472,9 @@ canvas.addEventListener('pointerup', (e) => {
   if (!down) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
   down = null;
-  if (moved > 8 || sim.started || isNaval() || !state.tool) return;
-  applyTool(view.pickTile(e.clientX, e.clientY));
+  if (moved > 8 || sim.started || !state.tool) return;
+  if (isNaval()) applySeaTool(view.pickPoint(e.clientX, e.clientY));
+  else applyTool(view.pickTile(e.clientX, e.clientY));
 });
 canvas.addEventListener('pointermove', (e) => {
   if (isNaval() || !(view instanceof LandView)) return;
@@ -464,7 +510,7 @@ $('batchBtn').onclick = async () => {
   batch = runBatch({
     kind: isNaval() ? 'naval' : 'land',
     scn: isNaval() ? clone(scn()) : { ...clone(scn()), mode: state.mode },
-    roster: isNaval() ? navalDefs() : roster(),
+    roster: isNaval() ? navalDefs() : { units: roster(), ships: navalDefs().SHIPS },
     count,
     onProgress: (p) => { $('progressBar').style.width = `${Math.round(p * 100)}%`; $('progressText').textContent = `Running ${count.toLocaleString()} battles… ${Math.round(p * count).toLocaleString()} done`; },
   });
@@ -561,6 +607,81 @@ $('importText').placeholder = `{
   }
 }`;
 
+// ---------- terrain ----------
+$('mapShape').replaceChildren(...Object.entries(MAP_SHAPES).map(([k, v]) => new Option(v, k)));
+$('mapBiome').replaceChildren(...Object.entries(BIOMES).map(([k, v]) => new Option(v.name, k)));
+$('mapShape').onchange = (e) => { scn().shape = e.target.value; rebuildPreview(); };
+$('mapBiome').onchange = (e) => { scn().biome = e.target.value; rebuildPreview(); };
+$('reshape').onclick = () => { scn().terrainSeed = 1 + Math.floor(Math.random() * 9999); rebuildPreview(); };
+
+// ---------- sea map editor ----------
+$('islandTool').onclick = () => setTool(state.tool?.kind === 'island' ? null : { kind: 'island', id: 'island' });
+$('seaErase').onclick = () => setTool(state.tool?.kind === 'seaErase' ? null : { kind: 'seaErase', id: 'seaErase' });
+$('clearSea').onclick = () => { scn().islands = []; scn().forts = []; rebuildPreview(); };
+function applySeaTool(pt) {
+  const s = scn(), t = state.tool;
+  if (!pt || !t) return;
+  s.islands ||= []; s.forts ||= [];
+  const x = Math.round(pt.x * 2) / 2, y = Math.round(pt.y * 2) / 2;
+  if (t.kind === 'island') s.islands.push({ x, y, r: +$('islandSize').value });
+  else if (t.kind === 'fort') s.forts.push({ type: t.type, x, y, side: +$('fortSide').value });
+  else if (t.kind === 'seaErase') {
+    const fi = s.forts.findIndex((f) => Math.hypot(f.x - x, f.y - y) < 4);
+    if (fi >= 0) s.forts.splice(fi, 1);
+    else {
+      const ii = s.islands.findIndex((i) => Math.hypot(i.x - x, i.y - y) < i.r + 1);
+      if (ii >= 0) s.islands.splice(ii, 1);
+    }
+  }
+  rebuildPreview();
+}
+
+// ---------- custom 3D models ----------
+function renderModelPanel() {
+  const sel = $('modelTarget'), keep = sel.value;
+  sel.replaceChildren();
+  const add = (label, entries) => {
+    const og = document.createElement('optgroup'); og.label = label;
+    for (const [id, d] of entries) og.append(new Option(d.name, id));
+    sel.append(og);
+  };
+  add('Land units', Object.entries(roster()));
+  add('Ships', Object.entries(navalDefs().SHIPS));
+  add('Sea creatures', Object.entries(navalDefs().CREATURES));
+  add('Buildings and guns', Object.entries(STRUCTURES).map(([id, d]) => [`struct:${id}`, d]));
+  if (keep) sel.value = keep;
+  const names = { ...roster(), ...navalDefs().SHIPS, ...navalDefs().CREATURES, ...Object.fromEntries(Object.entries(STRUCTURES).map(([id, d]) => [`struct:${id}`, d])) };
+  const list = $('modelList');
+  list.replaceChildren(...customModelList().map((m) => {
+    const li = document.createElement('li');
+    const nm = document.createElement('span'); nm.className = 'nm';
+    nm.textContent = `${names[m.id]?.name || m.id}: ${m.name}`;
+    nm.title = m.clips.length ? `Clips: ${m.clips.join(', ')}` : 'No animation clips';
+    const info = document.createElement('span'); info.className = 'lv'; info.textContent = `${m.clips.length} clips`;
+    const rm = document.createElement('button'); rm.type = 'button'; rm.textContent = 'Remove';
+    rm.onclick = async () => { await removeCustomModel(m.id); renderModelPanel(); if (!sim.started) buildSim(sim.seed); };
+    li.append(nm, info, rm);
+    return li;
+  }));
+}
+$('modelApply').onclick = async () => {
+  const list = [...$('modelFile').files], msg = $('modelMsg');
+  if (!list.length) { msg.textContent = 'Choose a model file first, plus any .bin, .mtl or texture files it uses.'; return; }
+  const main = list.find((f) => /\.(glb|gltf|fbx|obj|ply)$/i.test(f.name));
+  if (!main) { msg.textContent = 'The selection has no .glb, .gltf, .fbx, .obj or .ply file.'; return; }
+  msg.textContent = `Loading ${main.name}…`;
+  try {
+    const files = await Promise.all(list.map(async (f) => ({ name: f.name, buffer: await f.arrayBuffer() })));
+    const entry = await addCustomModel($('modelTarget').value, files, { name: main.name, scale: +$('modelScale').value || 1, yaw: +$('modelYaw').value || 0, up: $('modelUp').value });
+    const extra = list.length > 1 ? ` with ${list.length - 1} supporting file${list.length > 2 ? 's' : ''}` : '';
+    msg.textContent = `${main.name}${extra} assigned. ${entry.clips.length ? `Found ${entry.clips.length} animation clips.` : 'No animation clips, so it moves with a simple bob.'} If it is lying down or facing backwards, change Up axis or Turn and load it again.`;
+    renderModelPanel();
+    if (!sim.started) buildSim(sim.seed);
+  } catch (err) {
+    msg.textContent = `Could not read ${main.name}: ${err.message}. If it references other files (.bin, .mtl, textures), select them together with it.`;
+  }
+};
+
 // ---------- phone sheet ----------
 $('sheetToggle').onclick = () => $('panel').classList.toggle('open');
 function closePanelOnPhone() { $('panel').classList.remove('open'); }
@@ -568,6 +689,8 @@ function closePanelOnPhone() { $('panel').classList.remove('open'); }
 // ---------- boot ----------
 renderPalette();
 unitOptions($('placeUnit'), false);
+renderModelPanel();
+restoreCustomModels().then((n) => { if (n) { renderModelPanel(); if (!sim.started) buildSim(sim.seed); } });
 $('mapSize').value = String(state.scn.field.size);
 const syncSize = () => { if (!isNaval()) $('mapSize').value = String(scn().size); };
 new MutationObserver(syncSize).observe($('sides'), { childList: true });

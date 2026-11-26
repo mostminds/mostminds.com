@@ -4,6 +4,7 @@ import { createRng } from './rng.js';
 import { attackRoll, defenceRoll, hitChance, maxHit, hitDelay, combatLevel } from './combat.js';
 import { generateTerrain, DEEP } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
+import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGunRing } from './support.js';
 
 const INF = 32767;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -12,6 +13,7 @@ const CRAFT_CAPACITY = 6;
 
 export function inferRole(def) {
   if (def.role) return def.role;
+  if (def.fly) return 'air';
   if ((def.abilities || []).some((a) => a.type === 'heal')) return 'support';
   if (def.style !== 'melee') return 'artillery';
   if ((def.move || 1) >= 2) return 'skirmisher';
@@ -30,16 +32,20 @@ export function prepareDef(def) {
 export function structureFootprint(s) {
   const def = STRUCTURES[s.type];
   const rot = (s.rot || 0) % 2;
-  return { w: rot ? def.h : def.w, h: rot ? def.w : def.h, def };
+  const len = def.stretch && s.len ? Math.max(1, s.len) : def.w;
+  return { w: rot ? def.h : len, h: rot ? len : def.h, def };
 }
 
-export function createBattle(scn, roster, seed = 1) {
+export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   const W = scn.size, H = scn.size, N = W * H;
   const b = {
     W, H, mode: scn.mode, tick: 0, seed, rng: createRng(seed),
-    terrain: scn.terrain || generateTerrain(scn.mode, W),
+    terrain: scn.terrain || generateTerrain(scn.shape || (scn.mode === 'amphibious' ? 'island' : 'plains'), W, scn.terrainSeed || 7),
+    shape: scn.shape, biome: scn.biome || 'temperate', guns: [], ships: [],
     blockMove: new Uint8Array(N), blockLos: new Uint8Array(N), cover: new Uint8Array(N),
-    elevated: new Uint8Array(N), occ: new Int32Array(N),
+    elevated: new Uint8Array(N), occ: new Int32Array(N), occAir: new Int32Array(N),
+    level: new Uint8Array(N), ladder: new Uint8Array(N), door: new Int8Array(N).fill(-1),
+    losH: new Uint8Array(N), sid: new Int16Array(N),
     units: [], squads: [], crafts: [], pending: [], events: [], fields: new Map(),
     sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, posture: s.posture || 'attack', initial: 0 })),
     maxTicks: scn.maxTicks || 3000, winner: null, structures: [],
@@ -53,16 +59,13 @@ export function createBattle(scn, roster, seed = 1) {
     const def = STRUCTURES[s.type];
     if (!def) continue;
     const { w, h } = structureFootprint(s);
-    b.structures.push({ ...s, w, h });
-    for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) {
-      if (x < 0 || y < 0 || x >= W || y >= H) continue;
-      const i = y * W + x;
-      if (def.blocksMove) b.blockMove[i] = 1;
-      if (def.blocksLos) b.blockLos[i] = 1;
-      if (def.cover) b.cover[i] = 1;
-      if (def.elevated) b.elevated[i] = 1;
-    }
+    let wet = false;
+    for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) if (x < 0 || y < 0 || x >= W || y >= H || b.terrain[y * W + x] === DEEP) wet = true;
+    if (wet) continue; // nothing is built on open water or off the map
+    b.structures.push({ ...s, w, h, hp: def.hp || 0, maxHp: def.hp || 0, destroyed: false });
   }
+  rebuildGrid(b);
+  b.hasRamparts = b.level.some((l) => l > 0);
 
   const addUnit = (def, side, x, y) => {
     const u = {
@@ -75,12 +78,13 @@ export function createBattle(scn, roster, seed = 1) {
     if (x >= 0) occupy(b, u, 1);
     return u;
   };
+  const fits = (def, x, y, side) => def.fly ? canStandAir(b, x, y, def.size, -1) : canStand(b, x, y, def.size, -1, side);
 
   scn.sides.forEach((side, si) => {
     const fresh = [];
     for (const p of side.placed || []) {
       const def = getDef(p.unit);
-      if (def && canStand(b, p.x, p.y, def.size, -1)) fresh.push(addUnit(def, si, p.x, p.y));
+      if (def && fits(def, p.x, p.y, si)) fresh.push(addUnit(def, si, p.x, p.y));
     }
     const pool = [];
     for (const g of side.groups || []) {
@@ -88,18 +92,30 @@ export function createBattle(scn, roster, seed = 1) {
       if (!def) continue;
       for (let k = 0; k < Math.min(g.count, 500); k++) pool.push(def);
     }
-    const order = { frontline: 0, skirmisher: 1, support: 2, artillery: 3 };
-    pool.sort((a, c) => order[a.role] - order[c.role] || (a.id < c.id ? -1 : 1));
+    const order = { siege: 0, frontline: 1, skirmisher: 2, air: 3, support: 4, artillery: 5 };
+    pool.sort((a, c) => (order[a.role] ?? 3) - (order[c.role] ?? 3) || (a.id < c.id ? -1 : 1));
 
     if (scn.mode === 'amphibious' && si === 0) {
-      deployByCraft(b, pool, addUnit, si);
+      // fliers cross the water on their own wings; everyone else takes the boats
+      const air = pool.filter((d) => d.fly);
+      deployByCraft(b, pool.filter((d) => !d.fly), addUnit, si);
+      let k = 0;
+      for (const def of air) {
+        for (; k < W * H; k++) {
+          const x = 1 + Math.floor(k / (H - 4)) * def.size, y = 2 + (k % (H - 4));
+          if (x >= W * 0.3) break;
+          if (fits(def, x, y, si)) { addUnit(def, si, x, y); break; }
+        }
+      }
     } else {
       const tiles = spawnTiles(b, scn.mode, si);
       let ti = 0;
       for (const def of pool) {
-        while (ti < tiles.length && !canStand(b, tiles[ti] % W, (tiles[ti] / W) | 0, def.size, -1)) ti++;
-        if (ti >= tiles.length) break;
-        addUnit(def, si, tiles[ti] % W, (tiles[ti] / W) | 0);
+        let t = ti;
+        while (t < tiles.length && !fits(def, tiles[t] % W, (tiles[t] / W) | 0, si)) t++;
+        if (t >= tiles.length) continue;
+        addUnit(def, si, tiles[t] % W, (tiles[t] / W) | 0);
+        if (t === ti && !def.fly) ti++;
       }
     }
     // Also squad manually-placed units
@@ -107,6 +123,7 @@ export function createBattle(scn, roster, seed = 1) {
   });
 
   buildSquads(b);
+  initSupport(b, scn, shipDefs);
   return b;
 }
 
@@ -116,7 +133,7 @@ function spawnTiles(b, mode, side) {
   const cy = H / 2;
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     const i = y * W + x;
-    if (b.terrain[i] === DEEP || b.blockMove[i]) continue;
+    if (b.terrain[i] === DEEP || b.blockMove[i] || b.door[i] >= 0) continue;
     let depth;
     if (mode === 'amphibious') {
       if (side === 0) continue;
@@ -181,25 +198,120 @@ function buildSquads(b) {
 }
 
 // ---------- grid helpers ----------
-function walkable(b, x, y) {
+export function walkable(b, x, y) {
   if (x < 0 || y < 0 || x >= b.W || y >= b.H) return false;
   const i = y * b.W + x;
   return !b.blockMove[i] && b.terrain[i] !== DEEP;
 }
-export function canStand(b, x, y, size, selfId) {
+// side may pass this tile (doors only open for their owner)
+function passable(b, i, side) {
+  return !b.blockMove[i] && b.terrain[i] !== DEEP && (b.door[i] < 0 || b.door[i] === side);
+}
+// one level up or down per step, or any height on a ladder
+function stepOk(b, a, c) {
+  return Math.abs(b.level[a] - b.level[c]) <= 1 || b.ladder[a] || b.ladder[c];
+}
+function breakableFor(b, i, side) {
+  const id = b.sid[i] - 1;
+  if (id < 0) return null;
+  const s = b.structures[id];
+  if (s.destroyed || !s.hp) return null;
+  if (s.side !== undefined && s.side !== null && s.side === side) return null;
+  return s;
+}
+const breachCost = (s) => 4 + Math.ceil(s.hp / 50);
+
+export function canStand(b, x, y, size, selfId, side) {
   for (let yy = y; yy < y + size; yy++) for (let xx = x; xx < x + size; xx++) {
     if (!walkable(b, xx, yy)) return false;
-    const o = b.occ[yy * b.W + xx];
+    const i = yy * b.W + xx;
+    if (b.door[i] >= 0 && b.door[i] !== side) return false;
+    const o = b.occ[i];
+    if (o && o - 1 !== selfId) return false;
+  }
+  return true;
+}
+export function canStandAir(b, x, y, size, selfId) {
+  for (let yy = y; yy < y + size; yy++) for (let xx = x; xx < x + size; xx++) {
+    if (xx < 0 || yy < 0 || xx >= b.W || yy >= b.H) return false;
+    const o = b.occAir[yy * b.W + xx];
     if (o && o - 1 !== selfId) return false;
   }
   return true;
 }
 function occupy(b, u, on) {
-  const s = u.def.size;
+  const s = u.def.size, grid = u.def.fly ? b.occAir : b.occ;
   for (let yy = u.y; yy < u.y + s; yy++) for (let xx = u.x; xx < u.x + s; xx++) {
     if (xx < 0 || yy < 0 || xx >= b.W || yy >= b.H) continue;
     const i = yy * b.W + xx;
-    if (on) b.occ[i] = u.id + 1; else if (b.occ[i] === u.id + 1) b.occ[i] = 0;
+    if (on) grid[i] = u.id + 1; else if (grid[i] === u.id + 1) grid[i] = 0;
+  }
+}
+const isAirborne = (b, u) => u.def.fly && !(u.landedUntil > b.tick);
+export function unitHeight(b, u) {
+  if (isAirborne(b, u)) return 4;
+  if (u.x < 0) return 0;
+  return b.level[u.y * b.W + u.x];
+}
+
+// Paint every standing structure onto the grid (also used after one is destroyed)
+export function rebuildGrid(b) {
+  const N = b.W * b.H;
+  b.blockMove.fill(0); b.blockLos.fill(0); b.cover.fill(0); b.elevated.fill(0);
+  b.level.fill(0); b.ladder.fill(0); b.door.fill(-1); b.losH.fill(0); b.sid.fill(0);
+  b.structures.forEach((s, idx) => {
+    const def = STRUCTURES[s.type];
+    for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) {
+      const i = y * b.W + x;
+      if (s.destroyed) { if (def.blocksMove || def.level) b.cover[i] = 1; continue; } // rubble
+      if (def.blocksMove) b.blockMove[i] = 1;
+      if (def.blocksLos) { b.blockLos[i] = 1; b.losH[i] = def.losHeight || 6; }
+      if (def.cover) b.cover[i] = 1;
+      if (def.level) b.level[i] = Math.max(b.level[i], def.level);
+      if (def.ladder) b.ladder[i] = 1;
+      if (def.door) b.door[i] = s.side ?? 1;
+      b.sid[i] = idx + 1;
+    }
+  });
+  for (let i = 0; i < N; i++) b.elevated[i] = b.level[i] > 0 ? 1 : 0;
+}
+
+export function damageStructure(b, idx, dmg, from) {
+  const s = b.structures[idx];
+  if (!s || s.destroyed || !s.hp || dmg <= 0) return;
+  if (STRUCTURES[s.type].weapon) {
+    // guns keep their own hit points; a wrecked gun stays as an obstacle
+    const g = b.guns.find((x) => x.si === idx);
+    if (!g || g.destroyed) return;
+    g.hp = Math.max(0, g.hp - dmg);
+    b.events.push({ type: 'gunHit', gun: g.id, dmg });
+    if (g.hp <= 0) { g.destroyed = true; b.events.push({ type: 'gunDestroyed', gun: g.id }); }
+    return;
+  }
+  s.hp = Math.max(0, s.hp - dmg);
+  b.events.push({ type: 'structHit', s: idx, dmg });
+  if (s.hp > 0) return;
+  s.destroyed = true;
+  const before = b.level.slice();
+  rebuildGrid(b);
+  b.fields.clear();
+  b.hasRamparts = b.level.some((l) => l > 0);
+  b.events.push({ type: 'structDestroyed', s: idx, side: from ? from.side : -1 });
+  // anyone standing on it falls
+  for (const u of b.units) {
+    if (!u.alive || u.aboard >= 0 || u.def.fly) continue;
+    const i = u.y * b.W + u.x;
+    const drop = before[i] - b.level[i];
+    if (drop > 0) damage(b, u, drop * 6 + b.rng.int(0, drop * 4), null, 'fall');
+  }
+}
+// blast damage to anything built within r tiles of (x, y)
+export function hitStructuresAt(b, x, y, r, dmg) {
+  const seen = new Set();
+  for (let yy = Math.floor(y - r); yy <= Math.ceil(y + r); yy++) for (let xx = Math.floor(x - r); xx <= Math.ceil(x + r); xx++) {
+    if (xx < 0 || yy < 0 || xx >= b.W || yy >= b.H) continue;
+    const id = b.sid[yy * b.W + xx] - 1;
+    if (id >= 0 && !seen.has(id)) { seen.add(id); damageStructure(b, id, dmg, null); }
   }
 }
 function gap(ax, ay, as, bx, by, bs) {
@@ -209,8 +321,10 @@ function gap(ax, ay, as, bx, by, bs) {
 }
 export function unitDist(a, c) { return gap(a.x, a.y, a.def.size, c.x, c.y, c.def.size); }
 
-function losCheck(b, x0, y0, x1, y1) {
-  // returns 0 blocked, 1 clear, 2 clear-through-cover
+export function losCheck(b, x0, y0, x1, y1, h0, h1) {
+  // returns 0 blocked, 1 clear, 2 clear-through-cover. Heights are in levels;
+  // a raised shooter or target sees over anything no taller than itself.
+  const h = Math.max(h0 ?? b.level[y0 * b.W + x0] ?? 0, h1 ?? b.level[y1 * b.W + x1] ?? 0);
   let dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx + dy, x = x0, y = y0, cov = false;
@@ -220,43 +334,66 @@ function losCheck(b, x0, y0, x1, y1) {
     if (e2 <= dx) { err += dx; y += sy; }
     if (x === x1 && y === y1) break;
     const i = y * b.W + x;
-    if (b.blockLos[i]) return 0;
-    if (b.cover[i]) cov = true;
+    if ((b.blockLos[i] && b.losH[i] > h) || b.level[i] > h) return 0;
+    if (b.cover[i] && h < 2) cov = true;
   }
   return cov ? 2 : 1;
 }
 
-function bfs(b, sources) {
-  const N = b.W * b.H;
+// Weighted distance field toward the sources for movers of `side`.
+// Stepping into a wall, gate or building costs its breach time, so troops go
+// around when that is quicker and break through when it is not.
+function bfs(b, sources, side) {
+  const W = b.W, N = W * b.H;
   const dist = new Int16Array(N).fill(INF);
-  const q = new Int32Array(N);
-  let head = 0, tail = 0;
-  for (const s of sources) if (dist[s] === INF) { dist[s] = 0; q[tail++] = s; }
-  while (head < tail) {
-    const i = q[head++], x = i % b.W, y = (i / b.W) | 0, d = dist[i] + 1;
-    for (const [dx, dy] of DIRS) {
-      const nx = x + dx, ny = y + dy;
-      if (!walkable(b, nx, ny)) continue;
-      if (dx && dy && (!walkable(b, x + dx, y) || !walkable(b, x, y + dy))) continue;
-      const n = ny * b.W + nx;
-      if (dist[n] > d) { dist[n] = d; q[tail++] = n; }
+  const buckets = [[]];
+  for (const s of sources) if (dist[s] === INF) { dist[s] = 0; buckets[0].push(s); }
+  for (let d = 0; d < buckets.length; d++) {
+    const list = buckets[d];
+    if (!list) continue;
+    for (let k = 0; k < list.length; k++) {
+      const i = list[k];
+      if (dist[i] !== d) continue;
+      const x = i % W, y = (i / W) | 0;
+      const iOpen = passable(b, i, side);
+      const brk = iOpen ? null : breakableFor(b, i, side);
+      for (const [dx, dy] of DIRS) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= b.H) continue;
+        const n = ny * W + nx;
+        if (b.terrain[n] === DEEP) continue;
+        if (!passable(b, n, side) && !breakableFor(b, n, side)) continue;
+        let cost;
+        if (iOpen && stepOk(b, n, i)) {
+          if (dx && dy && (!passable(b, y * W + nx, side) || !passable(b, ny * W + x, side))) continue;
+          cost = 1;
+        } else {
+          const s = brk || breakableFor(b, i, side);
+          if (!s || (dx && dy)) continue;
+          cost = breachCost(s);
+        }
+        const nd = d + cost;
+        if (nd < dist[n] && nd < INF) { dist[n] = nd; (buckets[nd] ||= []).push(n); }
+      }
     }
   }
   return dist;
 }
 function field(b, key, ttl, sourceFn) {
+  const side = b.moverSide ?? -1;
+  key = `${key}|${side}`;
   const c = b.fields.get(key);
   if (c && b.tick - c.tick < ttl) return c.dist;
   const src = sourceFn();
   if (!src.length) return null;
-  const dist = bfs(b, src);
+  const dist = bfs(b, src, side);
   b.fields.set(key, { tick: b.tick, dist });
   return dist;
 }
 function unitTiles(b, list) {
   const out = [];
   for (const u of list) {
-    if (!u.alive || u.aboard >= 0) continue;
+    if (!u.alive || u.aboard >= 0 || isAirborne(b, u)) continue;
     const s = u.def.size;
     for (let yy = u.y; yy < u.y + s; yy++) for (let xx = u.x; xx < u.x + s; xx++) out.push(yy * b.W + xx);
   }
@@ -275,7 +412,7 @@ function rebuildBuckets(b) {
     a.push(u);
   }
 }
-function near(b, x, y, r, fn) {
+export function near(b, x, y, r, fn) {
   const x0 = Math.floor((x - r) / BK), x1 = Math.floor((x + r) / BK);
   const y0 = Math.floor((y - r) / BK), y1 = Math.floor((y + r) / BK);
   for (let bx = x0; bx <= x1; bx++) for (let by = y0; by <= y1; by++) {
@@ -294,6 +431,7 @@ export function stepBattle(b) {
   rebuildBuckets(b);
 
   moveCrafts(b);
+  supportTick(b);
   for (const sq of b.squads) if ((b.tick + sq.id) % 3 === 0) updateSquad(b, sq);
 
   // Fair-ish ordering: shuffle each tick
@@ -311,6 +449,8 @@ export function stepBattle(b) {
 function sideAlive(b, side) {
   let n = 0;
   for (const u of b.units) if (u.alive && u.side === side) n++;
+  // a side made only of ships stays in the fight while it has hulls afloat
+  if (!b.sides[side].initial) for (const s of b.ships) if (s.alive && s.side === side) n++;
   return n;
 }
 function sideHp(b, side) {
@@ -364,7 +504,7 @@ function disembark(b, c) {
     let placed = false;
     for (let h = 0; h < q.length && h < 400; h++) {
       const i = q[h], x = i % b.W, y = (i / b.W) | 0;
-      if (canStand(b, x, y, u.def.size, -1)) {
+      if (canStand(b, x, y, u.def.size, -1, u.side)) {
         u.x = x; u.y = y; u.px = Math.round(c.x); u.py = Math.round(c.y);
         u.aboard = -1; occupy(b, u, 1); placed = true; break;
       }
@@ -424,6 +564,10 @@ function updateSquad(b, sq) {
   }
 
   let target = nearest;
+  if (sq.role === 'air') {
+    const soft = enemies.filter((s) => s.role === 'artillery' || s.role === 'support' || s.role === 'siege');
+    if (soft.length) target = soft.reduce((a, c) => (dTo(c) < dTo(a) ? c : a));
+  }
   if (sq.role === 'skirmisher') {
     const soft = enemies.filter((s) => s.role === 'artillery' || s.role === 'support');
     if (soft.length) {
@@ -461,21 +605,30 @@ function ability(u, type) { return u.def.abilities.find((a) => a.type === type);
 
 function unitRange(b, u) {
   let r = u.def.range;
-  if (u.def.style !== 'melee' && u.aboard < 0 && b.elevated[u.y * b.W + u.x]) r += 2;
+  if (u.def.style !== 'melee' && u.aboard < 0) r += u.def.fly ? 1 : Math.min(3, b.level[u.y * b.W + u.x]);
   return r;
 }
+// melee can't reach a flier in the air, or a foe two levels above or below
+function canReach(b, u, t) {
+  if (u.def.style !== 'melee') return true;
+  const ha = unitHeight(b, u), ht = unitHeight(b, t);
+  if (isAirborne(b, u)) return true;
+  if (ht === 4) return false;
+  return Math.abs(ha - ht) <= 1;
+}
+const sees = (b, u, t) => losCheck(b, u.x, u.y, t.x, t.y, unitHeight(b, u), unitHeight(b, t));
 
 function pickTarget(b, u, range) {
   const sq = b.squads[u.squad];
   const focus = sq && sq.focus >= 0 ? b.units[sq.focus] : null;
-  const inReach = (t) => t.alive && t.side !== u.side && (t.aboard < 0 || u.def.style !== 'melee') && t.hp - t.pending > 0;
-  if (focus && inReach(focus) && focus.aboard < 0 && unitDist(u, focus) <= range && (range <= 1 || losCheck(b, u.x, u.y, focus.x, focus.y))) return focus;
+  const inReach = (t) => t.alive && t.side !== u.side && (t.aboard < 0 || u.def.style !== 'melee') && t.hp - t.pending > 0 && canReach(b, u, t);
+  if (focus && inReach(focus) && focus.aboard < 0 && unitDist(u, focus) <= range && (range <= 1 || sees(b, u, focus))) return focus;
   let best = null, bs = Infinity;
   near(b, u.x, u.y, range + 3, (t) => {
     if (!inReach(t) || t.aboard >= 0) return;
     const d = unitDist(u, t);
     if (d > range) return;
-    if (range > 1 && d > 1 && !losCheck(b, u.x, u.y, t.x, t.y)) return;
+    if (range > 1 && d > 1 && !sees(b, u, t)) return;
     // prefer low effective hp, close, and squishy roles
     const s = (t.hp - t.pending) + d * 2 + (t.def.role === 'artillery' || t.def.role === 'support' ? -4 : 0);
     if (s < bs) { bs = s; best = t; }
@@ -494,6 +647,7 @@ function nearestEnemyDist(b, u, r) {
 }
 
 function unitTick(b, u) {
+  b.moverSide = u.side;
   // Status effects
   if (u.poison && b.tick >= u.poison.next) {
     damage(b, u, u.poison.dmg, null, 'poison');
@@ -504,6 +658,23 @@ function unitTick(b, u) {
   const regen = ability(u, 'regen');
   if (regen && b.tick % regen.every === 0 && u.hp < u.def.hp) u.hp = Math.min(u.def.hp, u.hp + regen.amount);
   if (u.cd > 0) u.cd--;
+  // fliers tire: after `stamina` ticks aloft they must land and rest
+  if (u.def.fly && u.aboard < 0) {
+    if (isAirborne(b, u)) {
+      u.airTime = (u.airTime || 0) + 1;
+      if (u.airTime > (u.def.stamina || 250)) {
+        u.airTime = 0;
+        if (b.terrain[u.y * b.W + u.x] === DEEP) { u.seekLand = true; u.airTime = (u.def.stamina || 250); }
+        else {
+          u.seekLand = false;
+          u.landedUntil = b.tick + 40;
+          b.events.push({ type: 'ability', id: u.id, name: 'rest' });
+        }
+      }
+    }
+  }
+
+  if (u.seekLand) { flyToward(b, u, null, 0); return; }
 
   // Embarked: ranged/magic passengers can shoot from the boat
   if (u.aboard >= 0) {
@@ -527,7 +698,7 @@ function unitTick(b, u) {
 
   // Healers
   const heal = ability(u, 'heal');
-  if (heal && u.cd <= 0) {
+  if (heal && u.cd <= 0 && (u.heals || 0) < (heal.charges || 20)) {
     let best = null, bs = 0.75;
     near(b, u.x, u.y, heal.range + 1, (a) => {
       if (!a.alive || a.side !== u.side || a.aboard >= 0 || unitDist(u, a) > heal.range) return;
@@ -537,6 +708,7 @@ function unitTick(b, u) {
     if (best) {
       const amt = b.rng.int(Math.ceil(heal.amount / 2), heal.amount);
       best.hp = Math.min(best.def.hp, best.hp + amt);
+      u.heals = (u.heals || 0) + 1; // runes and prayer run out
       u.cd = u.def.speed;
       b.events.push({ type: 'heal', from: u.id, to: best.id, amount: amt });
       return;
@@ -564,6 +736,52 @@ function unitTick(b, u) {
       if (d <= range && d < cd) { cd = d; craft = c; }
     }
     if (craft) { attackCraft(b, u, craft, cd); return; }
+  }
+  if (u.def.style !== 'melee' && u.cd <= 0 && b.ships.length && unitVsShip(b, u, range)) return;
+  if (u.def.fly) { flyToward(b, u, sq, range); return; }
+
+  // Siege engines and sappers make for the enemy's gates and walls
+  if (u.def.role === 'siege' && b.structures.some((s) => !s.destroyed && s.hp && ((s.side !== undefined && s.side !== null && s.side !== u.side) || STRUCTURES[s.type].door))) {
+    const f = field(b, 'siege', 10, () => {
+      const out = [];
+      b.structures.forEach((s, idx) => {
+        if (s.destroyed || !s.hp) return;
+        const enemy = (s.side !== undefined && s.side !== null && s.side !== u.side) || (STRUCTURES[s.type].door && (s.side ?? 1) !== u.side);
+        if (!enemy) return;
+        for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) out.push(y * b.W + x);
+        void idx;
+      });
+      return out;
+    });
+    if (f) { walk(b, u, f, 1); return; }
+  }
+
+  // Defending shooters man the walls and towers and stay up there
+  if (b.sides[u.side].posture === 'defend' && u.def.style !== 'melee' && !u.def.fly && b.hasRamparts) {
+    const hi = u.y * b.W + u.x, lv = b.level[hi];
+    const stair = (i) => b.sid[i] && STRUCTURES[b.structures[b.sid[i] - 1].type].model === 'stairs';
+    const nearStair = (i) => { const x = i % b.W, y = (i / b.W) | 0; for (const [dx, dy] of DIRS) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < b.W && yy < b.H && stair(yy * b.W + xx)) return true; } return stair(i); };
+    const posted = lv > 0 && !nearStair(hi);
+    if (posted && b.tick - u.lastAttack < 220) return;
+    if (!posted) {
+      const f = field(b, 'ramparts', 60, () => {
+        const out = [];
+        for (let i = 0; i < b.W * b.H; i++) if (b.level[i] > 0 && !b.blockMove[i] && b.door[i] < 0 && b.terrain[i] !== DEEP && !nearStair(i)) out.push(i);
+        return out;
+      });
+      const d = f ? f[hi] : INF;
+      if (d < 18 && (b.tick - u.lastAttack > 6 || d < 6 || lv > 0)) { walk(b, u, f, 1, 0); return; }
+    }
+  }
+
+  // Crew a gun, or seize one whose crew has fallen
+  const enemyNear = b.guns.length ? nearestEnemyDist(b, u, 6).d : Infinity;
+  const gun = gunDuty(b, u, sq, enemyNear);
+  if (gun) {
+    if (onGunRing(b, gun, u)) return;
+    const f = field(b, `g${gun.id}`, 9999, () => gun.ring.filter((i) => walkable(b, i % b.W, (i / b.W) | 0)));
+    if (f) walk(b, u, f, 1, 0);
+    return;
   }
 
   if (!sq || sq.target < 0 && sq.state !== 'regroup') {
@@ -607,20 +825,29 @@ function face(u, tx, ty) {
   if (tx !== u.x || ty !== u.y) u.face = Math.atan2(ty - u.y, tx - u.x);
 }
 
-function walk(b, u, f, range) {
+function walk(b, u, f, range, stop = null) {
   const steps = u.def.move;
   for (let s = 0; s < steps; s++) {
-    const here = f[u.y * b.W + u.x];
-    if (here <= Math.max(1, range === 1 ? 1 : range - 1)) return; // close enough for this weapon
-    let best = -1, bv = here, bx = 0, by = 0;
+    const hi = u.y * b.W + u.x;
+    const here = f[hi];
+    if (here <= (stop ?? Math.max(1, range === 1 ? 1 : range - 1))) return; // close enough for this weapon
+    let best = -1, bv = here, bx = 0, by = 0, side = null;
     for (const [dx, dy] of DIRS) {
       const nx = u.x + dx, ny = u.y + dy;
       if (nx < 0 || ny < 0 || nx >= b.W || ny >= b.H) continue;
-      if (dx && dy && (!walkable(b, u.x + dx, u.y) || !walkable(b, u.x, u.y + dy))) continue;
-      const v = f[ny * b.W + nx] + (b.rng.next() * 0.5);
-      if (v < bv && canStand(b, nx, ny, u.def.size, u.id)) { bv = v; best = 1; bx = nx; by = ny; }
+      const n = ny * b.W + nx;
+      if (dx && dy && (!passable(b, u.y * b.W + nx, u.side) || !passable(b, ny * b.W + u.x, u.side))) continue;
+      if (!stepOk(b, hi, n)) continue;
+      const v = f[n] + (b.rng.next() * 0.5);
+      if (v < bv && canStand(b, nx, ny, u.def.size, u.id, u.side)) { bv = v; best = 1; bx = nx; by = ny; }
+      else if (best < 0 && f[n] === here && !side && canStand(b, nx, ny, u.def.size, u.id, u.side)) side = [nx, ny];
     }
-    if (best < 0) return;
+    // blocked by a crowd: sometimes step sideways to flow around it
+    if (best < 0 && side && b.rng.next() < 0.4) { best = 1; bx = side[0]; by = side[1]; }
+    if (best < 0) {
+      if (s === 0) { const br = breachTarget(b, u, f, here); if (br !== null) attackStructure(b, u, br); }
+      return;
+    }
     occupy(b, u, 0);
     face(u, bx, by);
     u.x = bx; u.y = by; u.moved++;
@@ -629,10 +856,11 @@ function walk(b, u, f, range) {
 }
 
 function kite(b, u, threat) {
+  if (u.def.fly) return;
   let best = null, bv = unitDist(u, threat);
   for (const [dx, dy] of DIRS) {
     const nx = u.x + dx, ny = u.y + dy;
-    if (!canStand(b, nx, ny, u.def.size, u.id)) continue;
+    if (!canStand(b, nx, ny, u.def.size, u.id, u.side) || !stepOk(b, u.y * b.W + u.x, ny * b.W + nx)) continue;
     const d = gap(nx, ny, u.def.size, threat.x, threat.y, threat.def.size);
     if (d > bv) { bv = d; best = [nx, ny]; }
   }
@@ -644,8 +872,10 @@ function attack(b, u, t) {
   const dist = unitDist(u, t);
   const style = u.def.style;
   let dRoll = defenceRoll(t.def, style);
-  if (b.elevated[t.y * b.W + t.x] && t.aboard < 0) dRoll *= 1.1;
-  if (style !== 'melee' && dist > 1 && losCheck(b, u.x, u.y, t.x, t.y) === 2) dRoll *= 1.35;
+  const th = t.aboard < 0 && !isAirborne(b, t) ? b.level[t.y * b.W + t.x] : 0;
+  if (th) dRoll *= 1 + 0.06 * th;
+  if (style !== 'melee' && dist > 1 && sees(b, u, t) === 2) dRoll *= 1.35;
+  if (style === 'melee' && isAirborne(b, u)) u.landedUntil = b.tick + 3; // swoops down to strike
 
   let mult = 1;
   const enrage = ability(u, 'enrage');
@@ -684,7 +914,7 @@ function attack(b, u, t) {
   u.cd = u.def.speed; u.lastAttack = b.tick;
 }
 
-function queueHit(b, u, t, dmg, delay, style, hit = dmg > 0) {
+export function queueHit(b, u, t, dmg, delay, style, hit = dmg > 0) {
   const prot = t.def.abilities.find((a) => a.type === 'protect' && a.style === style);
   if (prot) dmg = Math.floor(dmg * (1 - prot.reduction));
   t.pending += dmg;
@@ -707,6 +937,7 @@ function resolvePending(b) {
   for (const p of b.pending) {
     if (p.tick > b.tick) { keep.push(p); continue; }
     const from = b.units[p.from];
+    if (p.ship !== undefined || p.gun !== undefined) { resolveSupportHit(b, p); continue; }
     if (p.craft !== undefined) {
       const c = b.crafts[p.craft];
       c.pending -= p.dmg;
@@ -755,4 +986,73 @@ function damage(b, t, dmg, from, style, hit = true) {
 export function runToEnd(b) {
   while (b.winner === null) stepBattle(b);
   return summary(b);
+}
+
+// ---------- sieges and flight ----------
+// Something breakable touching the unit's footprint that lies on its route
+function breachTarget(b, u, f, here) {
+  const z = u.def.size, hi = u.y * b.W + u.x;
+  let pick = null, pv = here + 0.5 + (z - 1);
+  for (let k = 0; k < z; k++) for (const [x, y] of [[u.x + k, u.y - 1], [u.x + k, u.y + z], [u.x - 1, u.y + k], [u.x + z, u.y + k]]) {
+    if (x < 0 || y < 0 || x >= b.W || y >= b.H) continue;
+    const n = y * b.W + x;
+    const brk = breakableFor(b, n, u.side);
+    if (!brk || (passable(b, n, u.side) && stepOk(b, hi, n))) continue;
+    const v = f[n] + breachCost(brk);
+    if (v <= pv) { pv = v; pick = b.sid[n] - 1; }
+  }
+  return pick;
+}
+function attackStructure(b, u, idx) {
+  if (u.cd > 0) return;
+  const st = b.structures[idx];
+  const siege = ability(u, 'siege');
+  const mult = siege ? siege.mult : u.def.style === 'melee' ? 0.6 : 0.3;
+  const dmg = Math.round(b.rng.int(Math.ceil(u.def.max / 3), Math.max(1, u.def.max)) * mult);
+  face(u, st.x + st.w / 2 - 0.5, st.y + st.h / 2 - 0.5);
+  u.cd = u.def.speed; u.lastAttack = b.tick;
+  b.events.push({ type: 'attack', from: u.id, struct: idx, style: u.def.style, delay: 0, proj: u.def.projectile || u.def.style });
+  damageStructure(b, idx, dmg, u);
+}
+
+function flyToward(b, u, sq, range) {
+  if (u.landedUntil > b.tick) return; // resting on the ground
+  if (u.seekLand) {
+    // exhausted over open water: make for the nearest shore
+    let best = null, bd = Infinity;
+    for (let r = 1; r < 30 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const x = u.x + dx, y = u.y + dy;
+      if (x < 0 || y < 0 || x >= b.W || y >= b.H || b.terrain[y * b.W + x] === DEEP) continue;
+      const d = Math.hypot(dx, dy);
+      if (d < bd) { bd = d; best = { x, y, def: { size: 1 } }; }
+    }
+    if (best) { stepAir(b, u, best); return; }
+  }
+  let goal = sq && sq.focus >= 0 ? b.units[sq.focus] : null;
+  if (!goal || !goal.alive || goal.aboard >= 0) {
+    let bd = Infinity; goal = null;
+    for (const t of b.units) {
+      if (!t.alive || t.side === u.side || t.aboard >= 0) continue;
+      const d = Math.hypot(t.x - u.x, t.y - u.y);
+      if (d < bd) { bd = d; goal = t; }
+    }
+  }
+  if (!goal) return;
+  if (unitDist(u, goal) <= range) return;
+  stepAir(b, u, goal);
+}
+function stepAir(b, u, goal) {
+  for (let s = 0; s < u.def.move; s++) {
+    let best = null, bd = Math.hypot(goal.x - u.x, goal.y - u.y);
+    for (const [dx, dy] of DIRS) {
+      const nx = u.x + dx, ny = u.y + dy;
+      if (!canStandAir(b, nx, ny, u.def.size, u.id)) continue;
+      const d = Math.hypot(goal.x - nx, goal.y - ny) + b.rng.next() * 0.2;
+      if (d < bd) { bd = d; best = [nx, ny]; }
+    }
+    if (!best) return;
+    occupy(b, u, 0); face(u, best[0], best[1]);
+    u.x = best[0]; u.y = best[1]; u.moved++;
+    occupy(b, u, 1);
+  }
 }

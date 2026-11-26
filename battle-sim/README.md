@@ -19,7 +19,31 @@ python3 -m http.server 8000   # any static server works
 | --- | --- |
 | Field battle | Two armies deploy on opposite edges. A side set to *Defend* holds until the enemy closes in. |
 | Island assault | Side A starts on landing craft (6 per boat) and sails for the beach. Defenders' archers and mages fire on the boats; a boat sunk before landing drowns everyone aboard. Ranged passengers can fire back from the boat. The ramp drops on landing and troops disembark onto free tiles. |
-| Naval | Ships fire broadsides only at targets within ±35° of the beam, reload each side separately, lose crew as hull takes damage (fewer crew means slower sailing and fewer guns), and board ships with a much weaker crew to capture them. Sea creatures bite, ram, grapple, ink, charm and submerge. |
+| Naval | Ships fire broadsides only at targets within ±35° of the beam, reload each side separately, lose crew as hull takes damage (fewer crew means slower sailing and fewer guns), and board ships with a much weaker crew to capture them. Sea creatures bite, ram, grapple, ink, charm and submerge. Island forts (shore battery, mortar battery, harpoon tower, sea fort) fire in every direction and can be stormed by a ship whose crew outnumbers the garrison. |
+
+Land maps come in eight shapes (plains, island, coastline, harbor bay, archipelago, river with fords, lake, strait)
+and six kinds of land (temperate, frozen north, desert, swamp, volcanic, jungle). In land battles either side can
+bring **fire-support ships** that sail the deep water, bombard guns, troops, landing craft and enemy walls, and duel
+with shore guns.
+
+## Guns, castles and flight
+
+- **Crewed guns**: cannon, ballista, mortar, shore battery and harpoon gun fire for whichever side has troops next to
+  them and no enemies there. Kill the crew and step up to capture the gun. Mortars fire over walls with a dead zone up
+  close; ballistae and harpoons can hit flying units; cannons, mortars and batteries batter nearby buildings.
+- **Levels**: every tile has a height. Units step up or down one level at a time (ladders on watchtowers and bastions
+  allow any). Castle stairs are level 1, wall-walks level 2, towers level 3. Melee can't reach more than one level
+  up or down; shooters gain a tile of range per level and see over anything lower than themselves.
+- **Destructible buildings**: anything with hit points can be broken. Pathfinding prices each breakable tile by how long
+  it takes to break, so troops go around when that is faster and smash through when it is not. Rams and sappers
+  (siege role) head straight for gates and walls; big brutes carry a siege multiplier. Rubble gives cover, and units
+  standing on a collapsing wall fall and take damage. Gates open only for their owner.
+- **Castle builder**: one tap places a whole castle (corner towers, wall-walks, gate, stairs, and a keep in the large size).
+  Defending shooters climb onto the walls and towers and stay there.
+- **Flying units** (griffon riders, harpies, gargoyles, vampire bats, imps, dragons) ignore terrain. Ground melee can
+  only hit them in the moment they swoop down to strike, and after about two and a half minutes aloft they must land
+  and rest.
+- Healers carry 20 heals by default (`charges`), so healing duels can't stall a battle forever.
 
 ## Combat model (land)
 
@@ -46,6 +70,25 @@ Units are grouped into squads of up to 8 of the same type. Each squad picks a ro
 - A squad reduced to a third of its strength while its side is losing falls back and merges into a healthier squad of the same role.
 
 Pathing uses breadth-first flow fields over the grid, shared per target squad and refreshed every few ticks.
+
+## Your own 3D models
+
+**Your 3D models** in the app assigns a model file to any unit, ship, creature or building. Select the model file
+together with every file it references:
+
+| Format | Select together |
+| --- | --- |
+| `.glb` | just the file |
+| `.gltf` | the `.gltf`, its `.bin` files and textures |
+| `.obj` | the `.obj`, its `.mtl` and textures |
+| `.ply` | just the file (vertex colours are used) |
+| `.fbx` | the file and any textures |
+
+These are the formats common model exporters write, so models you export with your own tools can be loaded as long as
+you have the rights to use them. Nothing reads game files directly. Models are scaled to the unit (by height) or to the
+footprint (ships, creatures, buildings). **Up axis** fixes exports that are Z-up or upside down, and **Turn** fixes facing.
+Animation clips whose names contain walk/run, attack/hit/cast, death/die and idle/stand play automatically.
+Models are stored in the browser's IndexedDB and never leave the device.
 
 ## Adding your own units
 
@@ -82,9 +125,10 @@ Imported units are saved in the browser and can be placed by hand or added to ar
 ## Layout
 
 ```
-src/engine/   battle.js (land + amphibious), naval.js, combat.js, terrain.js, worker.js, batch.js
-src/data/     units.js, structures.js, naval.js, presets.js
-src/render/   stage.js, landView.js, navalView.js, models.js (procedural animated models)
+src/engine/   battle.js (land + amphibious, levels, breaching, flight), support.js (guns, fire-support ships),
+              naval.js (ships, creatures, forts), combat.js, terrain.js (map shapes, biomes), worker.js, batch.js
+src/data/     units.js, structures.js, naval.js, presets.js, castle.js (castle builder)
+src/render/   stage.js, landView.js, navalView.js, models.js (procedural animated models), customModels.js (imports)
 src/app.js    UI wiring
 tools/        build-artifact.mjs (single-page bundle for hosting as a claude.ai artifact)
 ```

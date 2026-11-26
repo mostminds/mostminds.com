@@ -74,11 +74,11 @@ export class Stage {
   projectile(from, to, kind, duration, arc = 0.6) {
     const colors = { fire: 0xff7a1a, ice: 0x9fe0ff, shadow: 0x6a3aa0, poison: 0x6ad040, holy: 0xfff0a0, magic: 0x8ab4ff };
     let obj;
-    if (kind === 'arrow' || kind === 'bolt' || kind === 'ranged') {
+    if (kind === 'arrow' || kind === 'bolt' || kind === 'ranged' || kind === 'harpoon') {
       obj = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.5, 3), new THREE.MeshBasicMaterial({ color: 0x3a2a1a }));
       obj.geometry.rotateX(Math.PI / 2);
-    } else if (kind === 'rock' || kind === 'cannon' || kind === 'musket') {
-      obj = new THREE.Mesh(new THREE.SphereGeometry(kind === 'musket' ? 0.06 : 0.14, 6, 4), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+    } else if (kind === 'rock' || kind === 'cannon' || kind === 'musket' || kind === 'shell') {
+      obj = new THREE.Mesh(new THREE.SphereGeometry(kind === 'musket' ? 0.06 : kind === 'shell' ? 0.2 : 0.14, 6, 4), new THREE.MeshBasicMaterial({ color: 0x222222 }));
     } else {
       obj = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), new THREE.MeshBasicMaterial({ color: colors[kind] || colors.magic }));
     }

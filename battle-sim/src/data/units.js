@@ -9,11 +9,15 @@
 //  breath {every, maxHit, radius}  special AoE every N attacks
 //  stomp  {every, radius, maxHit}  ground slam around self
 //  poison {damage, chance}         5 ticks of damage over time
-//  heal   {amount, range}          heals the weakest nearby ally
+//  heal   {amount, range, charges} heals the weakest nearby ally (20 heals unless charges says otherwise)
 //  regen  {amount, every}          self heal
 //  enrage {threshold, mult}        bigger hits when wounded
 //  charge {mult}                   first hit after running 3+ tiles
 //  protect{style, reduction}       damage reduction vs one style
+//  siege  {mult}                   extra damage against walls, gates and buildings
+//
+// fly: true puts a unit in the air. Ground melee cannot reach it except in the
+// moment it swoops down to strike; archers, mages, ballistae and harpoons can.
 
 const H = (o) => ({ body: 'humanoid', ...o });
 
@@ -45,6 +49,13 @@ export const UNITS = {
     abilities: [{ type: 'regen', amount: 2, every: 5 }, { type: 'protect', style: 'magic', reduction: 0.4 }],
     bonus: { att: 85, str: 82, defMelee: 180, defRanged: 170, defMagic: 40 }, model: H({ skin: 0xd9a77c, cloth: 0xd8c07a, armor: 0xe8e2c8, weapon: 'warhammer', shield: true, helm: 'full', scale: 1.1 }) },
 
+  griffon: { name: 'Griffon Rider', category: 'Kingdom', fly: true, hp: 60, att: 60, str: 58, def: 45, rng: 1, mag: 1, style: 'melee', speed: 4, move: 2, size: 1,
+    abilities: [{ type: 'charge', mult: 1.5 }],
+    bonus: { att: 50, str: 45, defMelee: 60, defRanged: 40, defMagic: 10 }, model: { body: 'rider', skin: 0xd9a77c, cloth: 0x2f5aa8, armor: 0x9aa3ad, weapon: 'lance', mount: 0xc8a050, wings: true } },
+  ram: { name: 'Battering Ram', category: 'Kingdom', role: 'siege', hp: 160, att: 30, str: 40, def: 90, rng: 1, mag: 1, style: 'melee', speed: 6, size: 2,
+    abilities: [{ type: 'siege', mult: 10 }, { type: 'protect', style: 'ranged', reduction: 0.6 }],
+    bonus: { att: 0, str: 0, defMelee: 120, defRanged: 220, defMagic: 40 }, model: { body: 'ram', color: 0x6b4a2e } },
+
   // ---- Goblin horde ----
   goblin: { name: 'Goblin Grunt', category: 'Goblin Horde', hp: 8, att: 5, str: 5, def: 3, rng: 1, mag: 1, style: 'melee', speed: 4,
     bonus: { att: 4, str: 4, defMelee: 2, defRanged: 2, defMagic: 0 }, model: H({ skin: 0x6f9a3a, cloth: 0x6b4a2e, weapon: 'dagger', scale: 0.72 }) },
@@ -59,8 +70,12 @@ export const UNITS = {
     abilities: [{ type: 'heal', amount: 8, range: 4 }, { type: 'poison', damage: 2, chance: 0.4 }],
     bonus: { magAtt: 12, defMelee: 4, defRanged: 4, defMagic: 15 }, projectile: 'poison', model: H({ skin: 0x6f9a3a, cloth: 0x3d6b6b, weapon: 'staff', robe: true, scale: 0.75 }) },
   warboss: { name: 'Goblin Warboss', category: 'Goblin Horde', hp: 120, att: 70, str: 80, def: 60, rng: 1, mag: 1, style: 'melee', speed: 5, size: 2,
-    abilities: [{ type: 'cleave', radius: 1, mult: 0.6 }, { type: 'enrage', threshold: 0.4, mult: 1.3 }],
+    abilities: [{ type: 'siege', mult: 3 }, { type: 'cleave', radius: 1, mult: 0.6 }, { type: 'enrage', threshold: 0.4, mult: 1.3 }],
     bonus: { att: 50, str: 60, defMelee: 80, defRanged: 60, defMagic: 10 }, model: H({ skin: 0x5f8a2a, cloth: 0x8a2c2c, armor: 0x6b6b6b, weapon: 'greataxe', helm: 'horned', scale: 1.5 }) },
+
+  sapper: { name: 'Goblin Sapper', category: 'Goblin Horde', role: 'siege', hp: 14, att: 8, str: 10, def: 5, rng: 1, mag: 1, style: 'melee', speed: 5,
+    abilities: [{ type: 'siege', mult: 12 }],
+    bonus: { att: 5, str: 5, defMelee: 5, defRanged: 5, defMagic: 0 }, model: H({ skin: 0x6f9a3a, cloth: 0x8a3a1a, weapon: 'axe', scale: 0.72, helm: true }) },
 
   // ---- Undead ----
   skeleton: { name: 'Skeleton', category: 'Undead', hp: 24, att: 22, str: 22, def: 20, rng: 1, mag: 1, style: 'melee', speed: 4,
@@ -75,8 +90,12 @@ export const UNITS = {
     abilities: [{ type: 'heal', amount: 10, range: 6 }],
     bonus: { magAtt: 45, defMelee: 10, defRanged: 10, defMagic: 50 }, projectile: 'shadow', model: H({ skin: 0xb8b8a8, cloth: 0x2a1f3a, weapon: 'staff', hood: true, robe: true }) },
   boneColossus: { name: 'Bone Colossus', category: 'Undead', hp: 260, att: 90, str: 105, def: 80, rng: 1, mag: 1, style: 'melee', speed: 6, size: 3,
-    abilities: [{ type: 'stomp', every: 10, radius: 2, maxHit: 18 }, { type: 'protect', style: 'ranged', reduction: 0.4 }],
+    abilities: [{ type: 'siege', mult: 6 }, { type: 'stomp', every: 10, radius: 2, maxHit: 18 }, { type: 'protect', style: 'ranged', reduction: 0.4 }],
     bonus: { att: 60, str: 80, defMelee: 120, defRanged: 200, defMagic: 20 }, model: { body: 'skeleton', weapon: 'greataxe', scale: 2.6 } },
+
+  bat: { name: 'Vampire Bat', category: 'Undead', fly: true, hp: 16, att: 22, str: 16, def: 10, rng: 1, mag: 1, style: 'melee', speed: 3, move: 2,
+    abilities: [{ type: 'regen', amount: 1, every: 3 }],
+    bonus: { att: 10, str: 8, defMelee: 10, defRanged: 5, defMagic: 5 }, model: { body: 'bat', fur: 0x2a1f24 } },
 
   // ---- Beasts & giants ----
   wolf: { name: 'Dire Wolf', category: 'Beasts', hp: 34, att: 38, str: 34, def: 22, rng: 1, mag: 1, style: 'melee', speed: 4, move: 2, role: 'skirmisher',
@@ -85,41 +104,47 @@ export const UNITS = {
     abilities: [{ type: 'poison', damage: 4, chance: 0.35 }],
     bonus: { att: 30, str: 25, defMelee: 40, defRanged: 20, defMagic: 10 }, model: { body: 'spider', fur: 0x2a2420 } },
   troll: { name: 'Hill Troll', category: 'Beasts', hp: 110, att: 60, str: 75, def: 55, rng: 1, mag: 1, style: 'melee', speed: 5, size: 2,
-    abilities: [{ type: 'regen', amount: 3, every: 4 }],
+    abilities: [{ type: 'siege', mult: 3 }, { type: 'regen', amount: 3, every: 4 }],
     bonus: { att: 30, str: 50, defMelee: 60, defRanged: 50, defMagic: 10 }, model: H({ skin: 0x6b7f6a, cloth: 0x5a4630, weapon: 'club', scale: 1.7, hunch: true }) },
   ogre: { name: 'Ogre', category: 'Beasts', hp: 90, att: 50, str: 70, def: 45, rng: 1, mag: 1, style: 'melee', speed: 6, size: 2,
-    abilities: [{ type: 'cleave', radius: 1, mult: 0.5 }],
+    abilities: [{ type: 'siege', mult: 3 }, { type: 'cleave', radius: 1, mult: 0.5 }],
     bonus: { att: 25, str: 45, defMelee: 40, defRanged: 30, defMagic: 10 }, model: H({ skin: 0xa6895a, cloth: 0x6b4a2e, weapon: 'club', scale: 1.65 }) },
   cyclops: { name: 'Cyclops', category: 'Beasts', hp: 125, att: 82, str: 92, def: 60, rng: 1, mag: 1, style: 'melee', speed: 6, size: 2,
-    abilities: [{ type: 'stomp', every: 12, radius: 1, maxHit: 12 }],
+    abilities: [{ type: 'siege', mult: 4 }, { type: 'stomp', every: 12, radius: 1, maxHit: 12 }],
     bonus: { att: 40, str: 60, defMelee: 50, defRanged: 40, defMagic: 20 }, model: H({ skin: 0xc8a07a, cloth: 0x6b4a2e, weapon: 'club', scale: 1.8, cyclops: true }) },
   minotaur: { name: 'Minotaur', category: 'Beasts', hp: 140, att: 85, str: 95, def: 70, rng: 1, mag: 1, style: 'melee', speed: 5, size: 2, move: 2, role: 'skirmisher',
-    abilities: [{ type: 'charge', mult: 1.5 }, { type: 'enrage', threshold: 0.5, mult: 1.2 }],
+    abilities: [{ type: 'siege', mult: 3 }, { type: 'charge', mult: 1.5 }, { type: 'enrage', threshold: 0.5, mult: 1.2 }],
     bonus: { att: 60, str: 70, defMelee: 70, defRanged: 60, defMagic: 20 }, model: H({ skin: 0x5a3a24, cloth: 0x3a2a1a, weapon: 'greataxe', scale: 1.6, horns: true }) },
+
+  harpy: { name: 'Harpy', category: 'Beasts', fly: true, hp: 32, att: 34, str: 28, def: 18, rng: 1, mag: 1, style: 'melee', speed: 4, move: 2,
+    bonus: { att: 20, str: 16, defMelee: 15, defRanged: 10, defMagic: 10 }, model: H({ skin: 0xc8a07a, cloth: 0x6a5a8a, weapon: 'claws', wings: true, scale: 0.85 }) },
 
   // ---- Elemental & infernal ----
   golem: { name: 'Stone Golem', category: 'Elemental', hp: 150, att: 60, str: 70, def: 110, rng: 1, mag: 1, style: 'melee', speed: 7, size: 2,
-    abilities: [{ type: 'protect', style: 'ranged', reduction: 0.5 }],
+    abilities: [{ type: 'siege', mult: 5 }, { type: 'protect', style: 'ranged', reduction: 0.5 }],
     bonus: { att: 20, str: 40, defMelee: 180, defRanged: 220, defMagic: -30 }, model: { body: 'golem', stone: 0x8a8580, scale: 1.6 } },
+  gargoyle: { name: 'Gargoyle', category: 'Elemental', fly: true, hp: 90, att: 55, str: 60, def: 85, rng: 1, mag: 1, style: 'melee', speed: 5,
+    abilities: [{ type: 'protect', style: 'ranged', reduction: 0.4 }],
+    bonus: { att: 30, str: 40, defMelee: 120, defRanged: 150, defMagic: -10 }, model: { body: 'golem', stone: 0x6a6a72, scale: 1.1, wings: true } },
   fireElemental: { name: 'Fire Elemental', category: 'Elemental', hp: 60, att: 1, str: 1, def: 40, rng: 1, mag: 60, style: 'magic', speed: 4, range: 6, maxHit: 15,
     abilities: [{ type: 'splash', radius: 1, mult: 0.5 }],
     bonus: { magAtt: 40, defMelee: 60, defRanged: 80, defMagic: 20 }, projectile: 'fire', model: { body: 'elemental', glow: 0xff6a1a } },
   iceWraith: { name: 'Ice Wraith', category: 'Elemental', hp: 55, att: 1, str: 1, def: 45, rng: 1, mag: 65, style: 'magic', speed: 5, range: 7, maxHit: 14,
     bonus: { magAtt: 50, defMelee: 40, defRanged: 40, defMagic: 60 }, projectile: 'ice', model: { body: 'elemental', glow: 0x7fd4ff } },
-  imp: { name: 'Lesser Imp', category: 'Infernal', hp: 14, att: 12, str: 10, def: 6, rng: 1, mag: 15, style: 'magic', speed: 4, range: 4, maxHit: 4, move: 2,
+  imp: { name: 'Lesser Imp', category: 'Infernal', fly: true, hp: 14, att: 12, str: 10, def: 6, rng: 1, mag: 15, style: 'magic', speed: 4, range: 4, maxHit: 4, move: 2,
     bonus: { magAtt: 10, defMelee: 5, defRanged: 5, defMagic: 10 }, projectile: 'fire', model: H({ skin: 0xb33a2a, cloth: 0x2a1a1a, weapon: 'none', scale: 0.6, horns: true, wings: true }) },
   pitFiend: { name: 'Pit Fiend', category: 'Infernal', hp: 160, att: 95, str: 100, def: 75, rng: 1, mag: 60, style: 'melee', speed: 5, size: 2,
-    abilities: [{ type: 'cleave', radius: 1, mult: 0.5 }, { type: 'protect', style: 'melee', reduction: 0.25 }],
+    abilities: [{ type: 'siege', mult: 2 }, { type: 'cleave', radius: 1, mult: 0.5 }, { type: 'protect', style: 'melee', reduction: 0.25 }],
     bonus: { att: 70, str: 80, defMelee: 100, defRanged: 80, defMagic: 50 }, model: H({ skin: 0x8a1f1f, cloth: 0x1a1010, weapon: 'greatsword', scale: 1.7, horns: true, wings: true }) },
   infernalLord: { name: 'Infernal Lord', category: 'Infernal', hp: 420, att: 140, str: 150, def: 120, rng: 1, mag: 120, style: 'melee', speed: 5, size: 3,
-    abilities: [{ type: 'cleave', radius: 1, mult: 0.6 }, { type: 'breath', every: 4, maxHit: 30, radius: 2 }, { type: 'regen', amount: 4, every: 5 }],
+    abilities: [{ type: 'siege', mult: 4 }, { type: 'cleave', radius: 1, mult: 0.6 }, { type: 'breath', every: 4, maxHit: 30, radius: 2 }, { type: 'regen', amount: 4, every: 5 }],
     bonus: { att: 120, str: 140, defMelee: 200, defRanged: 180, defMagic: 120 }, model: H({ skin: 0x6a0f0f, cloth: 0x1a0a0a, armor: 0x2a2a2a, weapon: 'greatsword', scale: 2.6, horns: true, wings: true }) },
 
   // ---- Dragons ----
-  wyrmling: { name: 'Wyrmling', category: 'Dragons', hp: 80, att: 50, str: 50, def: 50, rng: 1, mag: 40, style: 'melee', speed: 4, size: 2,
+  wyrmling: { name: 'Wyrmling', category: 'Dragons', fly: true, hp: 80, att: 50, str: 50, def: 50, rng: 1, mag: 40, style: 'melee', speed: 4, size: 2,
     abilities: [{ type: 'breath', every: 3, maxHit: 14, radius: 1 }],
     bonus: { att: 30, str: 30, defMelee: 60, defRanged: 50, defMagic: 40 }, model: { body: 'dragon', scale: 0.8, scales: 0x3a8a3a } },
-  drake: { name: 'Elder Drake', category: 'Dragons', hp: 240, att: 110, str: 115, def: 110, rng: 1, mag: 100, style: 'melee', speed: 4, size: 3,
+  drake: { name: 'Elder Drake', category: 'Dragons', fly: true, hp: 240, att: 110, str: 115, def: 110, rng: 1, mag: 100, style: 'melee', speed: 4, size: 3,
     abilities: [{ type: 'breath', every: 3, maxHit: 35, radius: 2 }],
     bonus: { att: 80, str: 90, defMelee: 160, defRanged: 140, defMagic: 100 }, model: { body: 'dragon', scale: 1.4, scales: 0x8a2a2a } },
 };

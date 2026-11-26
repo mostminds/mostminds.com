@@ -1,12 +1,13 @@
 // Continuous-space naval battle: ships fire broadsides, board each other,
 // and fight sea creatures. Shares the 0.6s tick with land battles.
 import { createRng } from './rng.js';
-import { SHIPS, CREATURES } from '../data/naval.js';
+import { SHIPS, CREATURES, FORTS } from '../data/naval.js';
 
 const DEG = Math.PI / 180;
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
-export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES }) {
+export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES, FORTS }) {
+  const fortDefs = defs.FORTS || FORTS;
   const W = scn.width || 140, H = scn.height || 90;
   const b = {
     W, H, tick: 0, rng: createRng(seed), ents: [], shots: [], events: [], winner: null,
@@ -28,21 +29,25 @@ export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES }) {
       addEnt(b, def, si, x + b.rng.next() * 2, Math.max(4, Math.min(H - 4, y + b.rng.next() * 2)));
     });
   });
+  for (const f of scn.forts || []) {
+    const def = fortDefs[f.type];
+    if (def && (f.side === 0 || f.side === 1)) addEnt(b, def, f.side, f.x, f.y);
+  }
   return b;
 }
 
 function addEnt(b, def, side, x, y) {
-  const ship = !!def.hull;
+  const ship = !!def.hull, fort = !!def.garrison;
   const e = {
-    id: b.ents.length, side, def, ship, x, y, px: x, py: y,
+    id: b.ents.length, side, def, ship, fort, x, y, px: x, py: y,
     heading: side === 0 ? 0 : Math.PI, ph: side === 0 ? 0 : Math.PI,
-    hp: ship ? def.hull : def.hp, maxHp: ship ? def.hull : def.hp, crew: ship ? def.crew : 0,
+    hp: ship ? def.hull : def.hp, maxHp: ship ? def.hull : def.hp, crew: ship ? def.crew : fort ? def.garrison : 0,
     alive: true, reload: [b.rng.int(0, 4), b.rng.int(0, 4)], cd: b.rng.int(0, 3), target: -1,
     slowUntil: 0, slow: 1, inkUntil: 0, ink: 0, charmUntil: 0, charmBy: -1, subUntil: 0, nextSub: 0,
-    nextSweep: 0, nextRam: 0, nextCharm: 0, radius: ship ? def.len / 2 : (def.size || 1) * 0.7, kills: 0,
+    nextSweep: 0, nextRam: 0, nextCharm: 0, radius: ship ? def.len / 2 : fort ? def.size : (def.size || 1) * 0.7, kills: 0,
   };
   b.ents.push(e);
-  b.sides[side].initial++;
+  if (!fort) b.sides[side].initial++;
 }
 
 export function stepNaval(b) {
@@ -50,11 +55,18 @@ export function stepNaval(b) {
   b.tick++;
   b.events = [];
   for (const e of b.ents) { e.px = e.x; e.py = e.y; e.ph = e.heading; }
-  for (const e of b.ents) if (e.alive) (e.ship ? shipTick : creatureTick)(b, e);
+  for (const e of b.ents) if (e.alive) (e.ship ? shipTick : e.fort ? fortTick : creatureTick)(b, e);
   separate(b);
   resolveShots(b);
   boarding(b);
-  const alive = [0, 1].map((s) => b.ents.some((e) => e.alive && e.side === s));
+  // a fort with no garrison is out of the fight; forts alone can't finish a battle
+  const fighting = (e) => e.alive && (!e.fort || e.crew > 0);
+  const alive = [0, 1].map((s) => b.ents.some((e) => fighting(e) && e.side === s));
+  const mobile = [0, 1].map((s) => b.ents.some((e) => fighting(e) && !e.fort && e.side === s));
+  if (alive[0] && alive[1] && !mobile[0] && !mobile[1]) {
+    const hp = [0, 1].map((s) => b.ents.filter((e) => fighting(e) && e.side === s).reduce((a, e) => a + e.hp, 0));
+    alive[hp[0] >= hp[1] ? 1 : 0] = false;
+  }
   if (!alive[0] && !alive[1]) b.winner = -1;
   else if (!alive[0]) b.winner = 1;
   else if (!alive[1]) b.winner = 0;
@@ -62,7 +74,7 @@ export function stepNaval(b) {
   if (b.winner !== null) b.events.push({ type: 'end', winner: b.winner });
 }
 
-const submerged = (b, e) => !e.ship && b.tick < e.subUntil;
+const submerged = (b, e) => !e.ship && !e.fort && b.tick < e.subUntil;
 const dist = (a, c) => Math.hypot(a.x - c.x, a.y - c.y) - a.radius - c.radius;
 
 function chooseTarget(b, e) {
@@ -87,7 +99,8 @@ function steer(b, e, desired, speedMul = 1) {
   if (e.y > b.H - margin) ay -= (e.y - (b.H - margin)) * 0.4;
   for (const isl of b.islands) {
     const dx = e.x - isl.x, dy = e.y - isl.y, d = Math.hypot(dx, dy);
-    const clear = isl.r + e.radius + 4;
+    const storming = e.storming && Math.hypot(e.storming.x - isl.x, e.storming.y - isl.y) < isl.r + 3;
+    const clear = isl.r + e.radius + (storming ? 0.5 : 4);
     if (d < clear) { ax += (dx / d) * (clear - d) * 0.5; ay += (dy / d) * (clear - d) * 0.5; }
   }
   desired = Math.atan2(ay, ax);
@@ -116,8 +129,9 @@ function shipTick(b, e) {
   const dx = t.x - e.x, dy = t.y - e.y, d = Math.hypot(dx, dy), bearing = Math.atan2(dy, dx);
   const range = e.def.cannons.perSide ? e.def.cannons.range : (e.def.musket ? e.def.musket.range : 3);
   let desired;
-  const boarder = e.crew > (t.crew || 0) * 1.6 && t.ship && e.crew >= 8;
-  if (boarder && d < range * 1.2) {
+  const boarder = e.crew > (t.crew || 0) * 1.6 && (t.ship || t.fort) && e.crew >= 8;
+  e.storming = boarder && t.fort ? t : null;
+  if (boarder && (d < range * 1.2 || t.fort)) {
     desired = bearing; // close in and board
   } else if (!t.ship && d < range * 0.45) {
     desired = bearing + Math.PI; // keep monsters at arm's length
@@ -180,9 +194,9 @@ function shoot(b, e, t, dmg, acc, range, kind, broadside = 0, offset = 0) {
   // miss lands somewhere near the target
   const mx = t.x + (hit ? 0 : (b.rng.next() - 0.5) * 6), my = t.y + (hit ? 0 : (b.rng.next() - 0.5) * 6);
   // cannon origin along the hull
-  const along = (offset - 0.5) * e.def.len * 0.7;
+  const along = (offset - 0.5) * (e.def.len || 0) * 0.7;
   const ox = e.x + Math.cos(e.heading) * along, oy = e.y + Math.sin(e.heading) * along;
-  b.shots.push({ tick: b.tick + flight, from: e.id, to: t.id, dmg: dm, hit, x: mx, y: my });
+  b.shots.push({ tick: b.tick + flight, from: e.id, to: t.id, dmg: dm, hit, x: mx, y: my, splash: e.def.weapon?.splash || 0, grapple: e.def.weapon?.grapple });
   b.events.push({ type: 'shot', kind, from: e.id, to: t.id, x0: ox, y0: oy, x1: mx, y1: my, flight, hit });
 }
 
@@ -242,7 +256,7 @@ function creatureTick(b, e) {
 function hurt(b, t, dmg, from) {
   if (!t.alive) return;
   t.hp -= dmg;
-  if (t.ship && dmg > 0) t.crew = Math.max(0, t.crew - Math.floor(dmg / 12 + (b.rng.chance(0.3) ? 1 : 0)));
+  if ((t.ship || t.fort) && dmg > 0) t.crew = Math.max(0, t.crew - Math.floor(dmg / 12 + (b.rng.chance(0.3) ? 1 : 0)));
   b.events.push({ type: 'hit', id: t.id, dmg });
   if (t.hp <= 0) {
     t.alive = false; t.hp = 0;
@@ -256,8 +270,18 @@ function resolveShots(b) {
   for (const s of b.shots) {
     if (s.tick > b.tick) { keep.push(s); continue; }
     const t = b.ents[s.to];
-    if (s.hit && t.alive && !submerged(b, t)) hurt(b, t, s.dmg, b.ents[s.from]);
-    else b.events.push({ type: 'splash', x: s.x, y: s.y });
+    if (s.hit && t.alive && !submerged(b, t)) {
+      hurt(b, t, s.dmg, b.ents[s.from]);
+      if (s.grapple) { t.slowUntil = b.tick + s.grapple.duration; t.slow = s.grapple.slow; }
+    } else b.events.push({ type: 'splash', x: s.x, y: s.y });
+    if (s.splash) {
+      const src = b.ents[s.from];
+      for (const o of b.ents) {
+        if (o === t || !o.alive || o.side === src.side || submerged(b, o)) continue;
+        if (Math.hypot(o.x - s.x, o.y - s.y) - o.radius < s.splash) hurt(b, o, Math.floor(s.dmg * 0.5), src);
+      }
+      b.events.push({ type: 'blast', x: s.x, y: s.y, r: s.splash });
+    }
   }
   b.shots = keep;
 }
@@ -269,19 +293,21 @@ function separate(b) {
     if (submerged(b, a) || submerged(b, c)) continue;
     const dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy) || 0.01, min = a.radius + c.radius;
     if (d < min) {
-      const push = (min - d) / 2;
-      a.x -= (dx / d) * push; a.y -= (dy / d) * push;
-      c.x += (dx / d) * push; c.y += (dy / d) * push;
+      const wa = a.fort ? 0 : c.fort ? 1 : 0.5, wc = 1 - wa;
+      const push = min - d;
+      a.x -= (dx / d) * push * wa; a.y -= (dy / d) * push * wa;
+      c.x += (dx / d) * push * wc; c.y += (dy / d) * push * wc;
     }
   }
 }
 
 // Ships touching hulls fight crew vs crew; a ship with no crew left is captured.
 function boarding(b) {
-  const ships = b.ents.filter((e) => e.alive && e.ship);
+  const ships = b.ents.filter((e) => e.alive && (e.ship || e.fort));
   for (let i = 0; i < ships.length; i++) for (let j = i + 1; j < ships.length; j++) {
     const a = ships[i], c = ships[j];
-    if (a.side === c.side || dist(a, c) > 1.2) continue;
+    if (a.fort && c.fort) continue;
+    if (a.side === c.side || dist(a, c) > (a.fort || c.fort ? 3 : 1.2)) continue;
     if (b.tick % 2) continue;
     const la = Math.max(0, Math.round(c.crew * 0.08 * b.rng.next() + b.rng.next()));
     const lc = Math.max(0, Math.round(a.crew * 0.08 * b.rng.next() + b.rng.next()));
@@ -298,7 +324,31 @@ function boarding(b) {
 }
 
 export function navalSummary(b) {
-  const surv = [0, 1].map((s) => b.ents.filter((e) => e.alive && e.side === s).length);
+  const surv = [0, 1].map((s) => b.ents.filter((e) => e.alive && e.side === s && !e.fort).length);
   return { winner: b.winner, ticks: b.tick, survivors: surv, initial: b.sides.map((s) => s.initial) };
 }
 export function runNaval(b) { while (b.winner === null) stepNaval(b); return navalSummary(b); }
+
+function fortTick(b, e) {
+  if (e.cd > 0) e.cd--;
+  const w = e.def.weapon;
+  if (e.cd > 0 || e.crew <= 0) return;
+  let best = null, bs = Infinity;
+  for (const o of b.ents) {
+    if (!o.alive || o.side === e.side || submerged(b, o)) continue;
+    const d = dist(e, o);
+    if (d > w.range || d < (w.minRange || 0)) continue;
+    const s = d - (w.vsCreature && !o.ship && !o.fort ? 15 : 0) + (o.hp / o.maxHp) * 5;
+    if (s < bs) { bs = s; best = o; }
+  }
+  if (!best) return;
+  e.target = best.id;
+  e.heading = Math.atan2(best.y - e.y, best.x - e.x);
+  const crewEff = Math.max(0.3, e.crew / e.def.garrison);
+  const shots = Math.max(1, Math.round(w.shots * crewEff));
+  const mult = w.vsCreature && !best.ship && !best.fort ? w.vsCreature : 1;
+  const dmg = [Math.round(w.dmg[0] * mult), Math.round(w.dmg[1] * mult)];
+  for (let i = 0; i < shots; i++) shoot(b, e, best, dmg, w.acc, w.range, w.splash ? 'shell' : w.grapple ? 'harpoon' : 'cannon', 0, i / shots);
+  e.cd = Math.round(w.reload / Math.min(1, crewEff + 0.3));
+  b.events.push({ type: 'broadside', id: e.id, side: 0, guns: shots });
+}

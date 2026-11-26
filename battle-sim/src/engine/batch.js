@@ -58,7 +58,7 @@ export function runBatch({ kind, scn, roster, count, onProgress }) {
         if (cancelled) return reject(new Error('cancelled'));
         const end = performance.now() + 30;
         while (i < seeds.length && performance.now() < end) {
-          out.push(kind === 'naval' ? runNaval(createNaval(scn, seeds[i], roster)) : runToEnd(createBattle(scn, roster, seeds[i])));
+          out.push(kind === 'naval' ? runNaval(createNaval(scn, seeds[i], roster)) : runToEnd(createBattle(scn, roster.units || roster, seeds[i], roster.ships || {})));
           i++;
         }
         onProgress?.(i / count);
