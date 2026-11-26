@@ -126,7 +126,7 @@ export class LandView {
   makeStruct(s) {
     {
       const { w, h, def } = structureFootprint(s);
-      const m = buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null });
+      const m = buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null, style: s.style || this.b.style || null });
       // weapons sitting on a bastion or deck are raised to its top
       const onTop = def.stretch2 ? 0 : this.podium[Math.min(this.b.H - 1, s.y + (h >> 1)) * this.b.W + Math.min(this.b.W - 1, s.x + (w >> 1))];
       const base = def.level ? (def.model === 'stairs' && onTop ? onTop * LEVEL_H : 0) : onTop ? onTop * LEVEL_H : Math.max(0, this.groundY(s.x + (w >> 1), s.y + (h >> 1)));
@@ -164,7 +164,7 @@ export class LandView {
     for (const u of b.units) add(`u:${u.def.id}`, u.def.name || u.def.id, () => buildUnitModel(u.def));
     for (const s of b.structures) {
       const { w, h, def } = structureFootprint(s);
-      add(`s:${def.id}:${w}x${h}`, def.name || def.id, () => buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null }));
+      add(`s:${def.id}:${w}x${h}:${s.style || b.style || ''}`, def.name || def.id, () => buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null, style: s.style || b.style || null }));
     }
     for (const sh of b.ships) add(`h:${sh.def.id}:${sh.side}`, sh.def.name || sh.def.id, () => buildShip(sh.def, SIDE_COLORS[sh.side]));
     for (const c of b.crafts) add(`c:${c.side}`, 'Landing craft', () => buildCraft(SIDE_COLORS[c.side]));
@@ -301,7 +301,12 @@ export class LandView {
     const b = this.b;
     if (x < 0 || y < 0 || x >= b.W || y >= b.H) return 0;
     const i = y * b.W + x;
-    if (b.level[i]) return b.level[i] * LEVEL_H;
+    if (b.level[i]) {
+      // the first and last tile of a stone bridge are its ramps
+      const st = b.sid[i] ? b.structures[b.sid[i] - 1] : null;
+      if (st && st.type === 'stoneBridge' && (st.w >= st.h ? x === st.x || x === st.x + st.w - 1 : y === st.y || y === st.y + st.h - 1)) return b.level[i] * LEVEL_H * 0.5;
+      return b.level[i] * LEVEL_H;
+    }
     const hc = this.hCorner, V = b.W + 1;
     if (!hc) return 0;
     const h = (hc[y * V + x] + hc[y * V + x + 1] + hc[(y + 1) * V + x] + hc[(y + 1) * V + x + 1]) / 4;
@@ -436,6 +441,7 @@ export class LandView {
     }
     const x = u.px + (u.x - u.px) * alpha, y = u.py + (u.y - u.py) * alpha;
     let gy = this.groundY(Math.round(x), Math.round(y));
+    if (u.under) gy = 0; // passing beneath a walkway or viaduct
     if (u.def.fly) {
       const m = this.models[u.id];
       const want = u.alive && !(u.landedUntil > this.b.tick) ? 2.6 + Math.sin((this.time || 0) * 2 + u.id) * 0.15 : 0; // landed and fallen fliers are on the ground

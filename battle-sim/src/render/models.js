@@ -527,7 +527,17 @@ export function buildStructure(def, w, h, place = null) {
   const custom = def.id && instantiateCustom(`struct:${def.id}`, Math.max(w, h), 'struct');
   if (custom) return custom;
   if (def.weapon) { const sg = buildWeapon(def.model, w, h, def); if (sg.userData.sculpted) return sg; }
-  else if (REG.STRUCT[def.model]) { const sm = guarded(`struct:${def.model}:${w}x${h}`, () => REG.STRUCT[def.model](def, w, h, place)); if (sm) return sm; }
+  else if (REG.STRUCT[def.model]) { const sm = guarded(`struct:${def.model}:${w}x${h}`, () => REG.STRUCT[def.model](def, w, h, place));
+    if (sm) {
+      // a faction other than the kingdom gives the building its own look
+      const st = place && place.style;
+      if (st && st !== 'kingdom' && REG.FACTION.restyle && !(REG.FACTION.structures || {})[def.model]) {
+        const rs = guarded(`restyle:${st}:${def.model}`, () => REG.FACTION.restyle(sm, st, `${def.model}:${w}x${h}:${def.color}`));
+        if (rs) { rs.userData = { ...sm.userData, ...rs.userData }; return rs; }
+      }
+      return sm;
+    }
+  }
   const g = new THREE.Group();
   const TEXKIND = { wall: 'stone', castleWall: 'stone', castleTower: 'stone', keep: 'stone', bastion: 'stone', gate: 'stone', pillar: 'stone', statue: 'stone', stairs: 'stone',
     palisade: 'bark', barricade: 'wood', tower: 'wood', deck: 'wood', crates: 'wood', hut: 'wood', castleGate: 'wood', house: 'plaster', tent: 'canvas', sandbags: 'canvas' };
@@ -536,6 +546,29 @@ export function buildStructure(def, w, h, place = null) {
   const c = kind ? tmat(kind, lift(def.color)) : mat(def.color, def.model === 'rock' ? { flatShading: true } : {});
   const dark = tmat('wood', 0x7a5c3c), roof = tmat('tiles', 0xb04a32), stone = tmat('stone', lift(0x8a8a86));
   switch (def.model) {
+    case 'rail': { // two iron rails on timber sleepers, running the long way
+      const n = Math.max(w, h), ax = w >= h, iron = mat(0x4a4a50, { metalness: 0.6, roughness: 0.45 });
+      g.add(mesh(box(ax ? n : 0.9, 0.05, ax ? 0.9 : n), tmat('stone', lift(0x6f6a60)), 0, 0.025, 0)); // ballast
+      for (let i = 0; i < n * 2; i++) { const t = -n / 2 + (i + 0.5) / 2; g.add(mesh(box(ax ? 0.16 : 0.8, 0.06, ax ? 0.8 : 0.16), dark, ax ? t : 0, 0.07, ax ? 0 : t)); }
+      for (const o of [-0.26, 0.26]) g.add(mesh(box(ax ? n : 0.06, 0.07, ax ? 0.06 : n), iron, ax ? 0 : o, 0.13, ax ? o : 0));
+      break;
+    }
+    case 'railCar': { // an open goods wagon loaded with stores
+      const n = Math.max(w, h), ax = w >= h, iron = mat(0x3c3c42, { metalness: 0.6, roughness: 0.5 }), L = n * 0.92, B = 0.74;
+      const bx = (l, t, d, m, x, y, z) => g.add(mesh(box(ax ? l : d, t, ax ? d : l), m, ax ? x : z, y, ax ? z : x));
+      for (const o of [-0.26, 0.26]) bx(n, 0.06, 0.06, iron, 0, 0.1, o);
+      for (const x of [-L * 0.32, L * 0.32]) for (const z of [-0.3, 0.3]) { const wl = mesh(cyl(0.2, 0.2, 0.08, 12), iron, ax ? x : z, 0.3, ax ? z : x); wl.rotation[ax ? 'x' : 'z'] = Math.PI / 2; g.add(wl); }
+      bx(L, 0.1, B, dark, 0, 0.5, 0);
+      for (const z of [-B / 2, B / 2]) { bx(L, 0.34, 0.06, c, 0, 0.72, z); bx(L, 0.04, 0.08, iron, 0, 0.9, z); }
+      for (const x of [-L / 2, L / 2]) bx(0.06, 0.34, B, c, x, 0.72, 0);
+      for (let i = 0; i < 7; i++) { const x = -L * 0.4 + i * L * 0.133; bx(0.05, 0.36, 0.03, dark, x, 0.72, -B / 2 - 0.03); bx(0.05, 0.36, 0.03, dark, x, 0.72, B / 2 + 0.03); }
+      const crate = tmat('wood', lift(0xa07a4a)), sack = tmat('canvas', lift(0xb8a888));
+      bx(0.5, 0.42, 0.5, crate, -L * 0.28, 0.8, 0.05); bx(0.44, 0.36, 0.44, crate, L * 0.02, 0.77, -0.08); bx(0.36, 0.3, 0.36, crate, -L * 0.14, 1.12, 0);
+      const bar = mesh(cyl(0.2, 0.2, 0.46, 10), crate, ax ? L * 0.3 : 0.1, 0.8, ax ? 0.1 : L * 0.3); g.add(bar);
+      bx(0.4, 0.2, 0.5, sack, L * 0.3, 0.68, -0.14);
+      bx(0.12, 0.08, 0.12, iron, -L / 2 - 0.08, 0.46, 0); bx(0.12, 0.08, 0.12, iron, L / 2 + 0.08, 0.46, 0); // couplings
+      break;
+    }
     case 'wall': {
       g.add(mesh(box(w, 1.1, h), c, 0, 0.55, 0));
       const n = Math.max(w, h);

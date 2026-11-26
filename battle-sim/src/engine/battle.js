@@ -44,11 +44,11 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   const b = {
     W, H, mode: scn.mode, tick: 0, seed, rng: createRng(seed),
     terrain: scn.terrain || generateTerrain(scn.shape || (scn.mode === 'amphibious' ? 'island' : 'plains'), W, scn.terrainSeed || 7),
-    shape: scn.shape, biome: scn.biome || 'temperate', guns: [], ships: [],
+    shape: scn.shape, biome: scn.biome || 'temperate', style: scn.style || null, guns: [], ships: [],
     blockMove: new Uint8Array(N), blockLos: new Uint8Array(N), cover: new Uint8Array(N),
     elevated: new Uint8Array(N), occ: new Int32Array(N), occAir: new Int32Array(N),
     level: new Uint8Array(N), ladder: new Uint8Array(N), door: new Int8Array(N).fill(-1),
-    losH: new Uint8Array(N), sid: new Int16Array(N),
+    losH: new Uint8Array(N), sid: new Int16Array(N), span: new Uint8Array(N),
     units: [], squads: [], crafts: [], pending: [], events: [], fields: new Map(),
     sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, posture: s.posture || 'attack', initial: 0 })),
     maxTicks: scn.maxTicks || 3000, winner: null, structures: [],
@@ -315,7 +315,7 @@ export function occupy(b, u, on) {
 const isAirborne = (b, u) => u.def.fly && !(u.landedUntil > b.tick);
 export function unitHeight(b, u) {
   if (isAirborne(b, u)) return 4;
-  if (u.x < 0) return 0;
+  if (u.x < 0 || u.under) return 0;
   return b.level[u.y * b.W + u.x];
 }
 
@@ -323,7 +323,7 @@ export function unitHeight(b, u) {
 export function rebuildGrid(b) {
   const N = b.W * b.H;
   b.blockMove.fill(0); b.blockLos.fill(0); b.cover.fill(0); b.elevated.fill(0);
-  b.level.fill(0); b.ladder.fill(0); b.door.fill(-1); b.losH.fill(0); b.sid.fill(0);
+  b.level.fill(0); b.ladder.fill(0); b.door.fill(-1); b.losH.fill(0); b.sid.fill(0); b.span.fill(0);
   b.structures.forEach((s, idx) => {
     const def = STRUCTURES[s.type];
     for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) {
@@ -334,6 +334,7 @@ export function rebuildGrid(b) {
       if (def.cover) b.cover[i] = 1;
       if (def.level) b.level[i] = Math.max(b.level[i], def.level);
       if (def.ladder) b.ladder[i] = 1;
+      if (def.span) b.span[i] = 1; // walkways and viaducts: troops pass underneath as well as along the top
       if (def.door) b.door[i] = s.side ?? 1;
       b.sid[i] = idx + 1;
     }
@@ -1021,6 +1022,7 @@ export function walk(b, u, f, range, stop = null) {
     }
     occupy(b, u, 0);
     face(u, bx, by);
+    { const from = u.y * b.W + u.x, to = by * b.W + bx; if (!b.span[to]) u.under = false; else if (!b.span[from]) u.under = b.level[from] < 2; }
     u.x = bx; u.y = by; u.moved++;
     occupy(b, u, 1);
   }

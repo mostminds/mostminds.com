@@ -18,7 +18,7 @@ export const FACTIONS = {
     name: 'Kingdom', adj: 'Kingdom', biomes: ['temperate', 'temperate', 'snow'],
     wall: 'rampart', strongWall: 'rampart', layout: 'streets', homes: 'house', small: 'hut', camp: 'tent', lookout: 'tower',
     deco: ['crates', 'statue', 'crates'], trees: ['tree', 'tree', 'pine'], guns: ['cannon', 'ballista', 'mortar'], shoreGun: 'battery',
-    army: { footman: 0.24, longbow: 0.14, crossbow: 0.13, halberdier: 0.12, knight: 0.16, militia: 0.05, cleric: 0.05, battlemage: 0.06, paladin: 0.05, engineer: 0.03 },
+    army: { footman: 0.24, longbow: 0.14, crossbow: 0.13, halberdier: 0.12, knight: 0.16, militia: 0.05, cleric: 0.05, battlemage: 0.06, paladin: 0.05, engineer: 0.03, pikeman: 0.1, scout: 0.04, grenadier: 0.05, warPriest: 0.04 },
     assault: { ram: 0.07, lancer: 0.08, griffon: 0.06 }, ships: ['frigate', 'cutter', 'galleon'],
     places: { village: 'village', fort: 'border fort', castle: 'castle', city: 'walled city', coast: 'fishing town', harbor: 'harbour city', island: 'island keep' },
   },
@@ -26,7 +26,7 @@ export const FACTIONS = {
     name: 'Goblin Horde', adj: 'Goblin', biomes: ['swamp', 'desert', 'jungle', 'temperate'],
     wall: 'palisade', strongWall: 'palisade', layout: 'warren', homes: 'hut', small: 'tent', camp: 'tent', lookout: 'tower',
     deco: ['crates', 'barricade', 'crates'], trees: ['tree', 'pine'], guns: ['ballista', 'ballista', 'cannon'], shoreGun: 'harpoon',
-    army: { goblin: 0.2, goblinArcher: 0.18, hobgoblin: 0.26, shaman: 0.08, warboss: 0.16, wolfRider: 0.12, tinker: 0.02 },
+    army: { goblin: 0.2, goblinArcher: 0.18, hobgoblin: 0.26, shaman: 0.08, warboss: 0.16, wolfRider: 0.12, tinker: 0.02, goblinSpear: 0.12, bomber: 0.06, trollShaman: 0.05 },
     assault: { sapper: 0.06, wolfRider: 0.08 }, ships: ['sloop', 'brigantine', 'skiff'],
     places: { village: 'warren', fort: 'stockade', castle: 'great stockade', city: 'shanty city', coast: 'wreckers\' cove', harbor: 'corsair haven', island: 'reef stockade' },
   },
@@ -34,7 +34,7 @@ export const FACTIONS = {
     name: 'Undead', adj: 'Undead', biomes: ['swamp', 'snow', 'temperate'],
     wall: 'ruin', strongWall: 'rampart', layout: 'necropolis', homes: 'keep', small: 'statue', camp: 'pillar', lookout: 'pillar',
     deco: ['statue', 'pillar', 'pillar'], trees: ['pine'], guns: ['mortar', 'ballista'], shoreGun: 'battery',
-    army: { skeleton: 0.32, skeletonArcher: 0.2, ghoul: 0.14, necromancer: 0.1, boneColossus: 0.16, bat: 0.08 },
+    army: { skeleton: 0.32, skeletonArcher: 0.2, ghoul: 0.14, necromancer: 0.1, boneColossus: 0.16, bat: 0.08, wight: 0.12, banshee: 0.05, plagueBearer: 0.08 },
     assault: { boneColossus: 0.08 }, ships: ['brigantine', 'cutter'],
     places: { village: 'graveyard', fort: 'barrow fort', castle: 'black keep', city: 'necropolis', coast: 'drowned chapel', harbor: 'ghost harbour', island: 'crypt isle' },
   },
@@ -42,7 +42,7 @@ export const FACTIONS = {
     name: 'Infernal', adj: 'Infernal', biomes: ['volcanic'],
     wall: 'bastions', strongWall: 'rampart', layout: 'rings', homes: 'bastion', small: 'pillar', camp: 'rock', lookout: 'pillar',
     deco: ['pillar', 'statue', 'rock'], trees: [], guns: ['mortar', 'cannon'], shoreGun: 'battery',
-    army: { imp: 0.2, pitFiend: 0.42, infernalLord: 0.24, fireElemental: 0.14 },
+    army: { imp: 0.16, pitFiend: 0.3, infernalLord: 0.2, fireElemental: 0.1, hellhound: 0.1, cultist: 0.06, hellknight: 0.16 },
     assault: { gargoyle: 0.08 }, ships: ['galleon', 'brigantine'],
     places: { village: 'ash shrine', fort: 'brimstone redoubt', castle: 'obsidian citadel', city: 'infernal city', coast: 'cinder shore', harbor: 'burning harbour', island: 'ember isle' },
   },
@@ -50,7 +50,7 @@ export const FACTIONS = {
     name: 'Beasts', adj: 'Wild', biomes: ['jungle', 'temperate', 'desert'],
     wall: 'ring', strongWall: 'palisade', layout: 'wild', homes: 'rock', small: 'tent', camp: 'tent', lookout: 'tower',
     deco: ['rock', 'barricade', 'crates'], trees: ['tree', 'tree', 'pine'], guns: [], shoreGun: null,
-    army: { wolf: 0.14, spider: 0.12, troll: 0.18, ogre: 0.18, cyclops: 0.16, minotaur: 0.14, harpy: 0.08 },
+    army: { wolf: 0.14, spider: 0.12, troll: 0.18, ogre: 0.18, cyclops: 0.16, minotaur: 0.14, harpy: 0.08, alphaWolf: 0.08, broodmother: 0.08, ogreMage: 0.06 },
     assault: {}, ships: ['raft', 'skiff'],
     places: { village: 'den', fort: 'ogre camp', castle: 'giants\' hold', city: 'great lair', coast: 'troll shore', harbor: 'harpy cove', island: 'cyclops isle' },
   },
@@ -58,7 +58,7 @@ export const FACTIONS = {
     name: 'Elemental', adj: 'Elemental', biomes: ['snow', 'volcanic', 'desert'],
     wall: 'ring', strongWall: 'ring', layout: 'rings', homes: 'pillar', small: 'statue', camp: 'rock', lookout: 'pillar',
     deco: ['pillar', 'rock', 'statue'], trees: ['pine'], guns: [], shoreGun: null,
-    army: { golem: 0.36, gargoyle: 0.24, fireElemental: 0.2, iceWraith: 0.2 },
+    army: { golem: 0.28, gargoyle: 0.2, fireElemental: 0.16, iceWraith: 0.16, frostGolem: 0.14, stormElemental: 0.1 },
     assault: {}, ships: ['cutter'],
     places: { village: 'standing stones', fort: 'rune circle', castle: 'stone sanctum', city: 'city of pillars', coast: 'tide stones', harbor: 'drowned sanctum', island: 'rune isle' },
   },
@@ -66,7 +66,7 @@ export const FACTIONS = {
     name: 'Dragons', adj: 'Dragon', biomes: ['volcanic', 'snow'],
     wall: 'ring', strongWall: 'ring', layout: 'wild', homes: 'rock', small: 'rock', camp: 'rock', lookout: 'pillar',
     deco: ['rock', 'pillar', 'statue'], trees: ['pine'], guns: [], shoreGun: null,
-    army: { drake: 0.6, wyrmling: 0.4 },
+    army: { drake: 0.4, wyrmling: 0.25, whelp: 0.1, kobold: 0.1, dragonKnight: 0.15 },
     assault: {}, ships: ['frigate'],
     places: { village: 'nesting ground', fort: 'eyrie', castle: 'great eyrie', city: 'dragon roost', coast: 'sea eyrie', harbor: 'drake cove', island: 'dragon isle' },
   },
@@ -308,15 +308,16 @@ function wild(p, R, F, density) {
 
 const LAYOUTS = { streets, warren, necropolis, rings, wild };
 
+const FACTION_OWN = new Set(['scrapHut', 'warDrum', 'brewery', 'crypt', 'boneSpire', 'charnel', 'forge', 'obelisk', 'pitGate', 'yurt', 'totem', 'bonePit', 'crystalSpire', 'monolith', 'stoneRing', 'nest', 'perch', 'hoard']);
 // Which civic buildings each faction raises.
 const CIVIC = {
   kingdom: ['marketHall', 'stall', 'bank', 'inn', 'garden', 'fountain', 'barracks', 'temple', 'shrine', 'alchemist', 'graveyard', 'palace'],
-  goblin: ['marketHall', 'stall', 'inn', 'barracks', 'shrine', 'alchemist', 'graveyard'],
-  undead: ['temple', 'shrine', 'graveyard', 'graveyard', 'alchemist', 'palace', 'garden'],
-  infernal: ['temple', 'shrine', 'alchemist', 'barracks', 'palace', 'fountain'],
-  beasts: ['shrine', 'graveyard', 'stall'],
-  elemental: ['shrine', 'temple', 'garden', 'fountain'],
-  dragons: ['shrine', 'graveyard'],
+  goblin: ['marketHall', 'stall', 'inn', 'barracks', 'shrine', 'alchemist', 'graveyard', 'scrapHut', 'warDrum', 'brewery'],
+  undead: ['temple', 'shrine', 'graveyard', 'alchemist', 'palace', 'garden', 'crypt', 'boneSpire', 'charnel'],
+  infernal: ['temple', 'shrine', 'alchemist', 'barracks', 'palace', 'fountain', 'forge', 'obelisk', 'pitGate'],
+  beasts: ['shrine', 'graveyard', 'stall', 'yurt', 'totem', 'bonePit'],
+  elemental: ['shrine', 'temple', 'garden', 'fountain', 'crystalSpire', 'monolith', 'stoneRing'],
+  dragons: ['shrine', 'graveyard', 'nest', 'perch', 'hoard'],
 };
 
 // Districts for the main part of a settlement. Returns true when it built an upper town on terraces.
@@ -385,6 +386,9 @@ function civic(p, R, o) {
   for (let i = 0, n = big ? 4 : mid ? 2 : 1; i < n; i++) nearPut('garden', R.x + 4 + r.int(0, Math.max(1, R.w - 10)), R.y + 4 + r.int(0, Math.max(1, R.h - 10)), {}, 1);
   for (let i = 0, n = big ? 3 : 1; i < n; i++) nearPut('shrine', R.x + 2 + r.int(0, Math.max(1, R.w - 6)), R.y + 2 + r.int(0, Math.max(1, R.h - 6)), { side: 1 }, 1);
   if (!t) nearPut('graveyard', R.x + 2, R.y + R.h - 6, {}, 0);
+  // the faction's own buildings, scattered through the place
+  const own = (CIVIC[defId] || []).filter((c) => FACTION_OWN.has(c));
+  own.forEach((type, i) => { for (let k2 = 0, n = Math.max(1, Math.round(area / (STRUCTURES[type].w > 1 ? 420 : 200))); k2 < Math.min(n, 5); k2++) nearPut(type, R.x + 3 + r.int(0, Math.max(1, R.w - 8)), R.y + 3 + r.int(0, Math.max(1, R.h - 8)), { side: 1 }, 1); void i; });
   // warehouses along the waterfront
   if (sea && shoreRow) for (let i = 0, n = siteId === 'harbor' ? 4 : 2; i < n; i++) {
     const y = Math.round(R.y + 4 + ((R.h - 8) * (i + 0.5)) / n);
@@ -603,6 +607,6 @@ export function generateScenario(opts = {}) {
   return {
     name: `${place}: ${A.adj} ${sea ? 'landing' : 'assault'} on a ${D.adj.toLowerCase()} ${D.places[siteId]}`,
     mode: site.mode, seed, site: siteId, defender: defId, attacker: attId,
-    scn: { size: S, shape, biome, terrainSeed, structures: p.out, sides },
+    scn: { size: S, shape, biome, terrainSeed, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId })), sides, style: defId },
   };
 }

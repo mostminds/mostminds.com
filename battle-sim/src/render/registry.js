@@ -19,7 +19,11 @@ export const AIR = air;
 let civic = {};
 try { civic = await import('./props/civic.js'); } catch (err) { console.info('civic building models not available yet; simple shapes stand in', err?.message || err); }
 export const CIVIC = civic;
-export const STRUCT = { ...buildings.structures, ...(air.structures || {}), ...(civic.structures || {}) };
+// each faction's own buildings, and the restyling that gives every other building that faction's look
+let fac = {};
+try { fac = await import('./props/factions.js'); } catch (err) { console.info('faction building styles not available yet', err?.message || err); }
+export const FACTION = fac;
+export const STRUCT = { ...buildings.structures, ...(air.structures || {}), ...(civic.structures || {}), ...(fac.structures || {}) };
 export const rubble = buildings.rubble;
 export const SIEGE = siegeMod.siege;
 export const craft = siegeMod.craft;

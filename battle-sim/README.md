@@ -115,7 +115,7 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
   rally point or commander, re-forms and returns.
 - **Supply and engineers.** Stores come ashore from landing craft and ships, are flown in on zeppelin supply
   runs, or stand in rail wagons (every preset army on land has a supply line). Archers, crossbowmen and
-  slingers carry 30 shots and medics a set number of dressings; both refill at a stocked point, and fight at
+  slingers carry 40 shots and medics a set number of dressings; both refill at a stocked point, and fight at
   half strength when they cannot. Each squad sets its own rally point. Engineers haul them to beachheads, rally points and forts and build what the situation calls for
   (breastworks, ballistae against fliers, cannon, aid tents, watchtowers), and repair damaged buildings and
   guns. Vanguards guard the supply chain and raid the enemy's; medics go to the wounded of their own squad first.
@@ -152,6 +152,20 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
 - **Cities on levels.** Cities and castles have an upper town on a terrace and a higher terrace for the palace,
   reached by elevated timber walkways from the wall-walk, a rail viaduct with supply wagons, stone bridges over
   rivers, and a cable car that carries stores up from the square. All of them can be destroyed.
+
+- **Faction towns.** Every faction builds in its own look: goblin scrap and hide, undead bone and black stone,
+  demon basalt and brass, beastfolk timber and bone, elemental crystal, dragon-roost rock. Each also has
+  buildings only it raises (goblin scrap huts, war drums and breweries; undead crypts, bone spires and charnel
+  houses; demon forges, obelisks and pit gates; beast yurts, totems and bone pits; elemental crystal spires,
+  monoliths and stone rings; dragon nests, perches and hoards).
+- **More troops.** 21 further unit types (pikemen, scouts, grenadiers, war priests, goblin spearmen and bombers,
+  troll shamans, wights, banshees, plague bearers, alpha wolves, broodmothers, ogre magi, frost golems, storm
+  elementals, hellhounds, cultists, hell knights, kobolds, dragon knights, whelps).
+- **Specialisations.** On reaching Veteran a soldier takes one of his kind's trades (an archer becomes a
+  Sharpshooter, Fire archer or Quickshot; a wraith a Restless or Soul-leech, and so on), which shifts his
+  stats and shows in the tooltip.
+- **Under the walkways.** Troops arriving at ground level pass beneath walkways and viaducts; those coming off
+  a wall or terrace cross on top.
 
 `docs/TACTICS.md` describes the squad AI and the published frameworks it draws on.
 

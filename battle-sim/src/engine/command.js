@@ -18,15 +18,29 @@ const BOOST = [null, { hp: 1.1, max: 1.1, roll: 1.05 }, { hp: 1.2, max: 1.15, ro
 const BUILDS = {
   sandbags: { cost: 1, work: 5 }, barricade: { cost: 1, work: 5 }, ballista: { cost: 3, work: 12 }, cannon: { cost: 3, work: 12 }, tower: { cost: 4, work: 16 }, tent: { cost: 2, work: 8 },
 };
-export const AMMO = 30;
+export const AMMO = 40;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const has = (u, type) => u.def.abilities.some((a) => a.type === type);
 
 function promote(b, u, rank) {
   if (rank <= u.rank) return;
-  const base = u.baseDef || u.def, k = BOOST[rank], key = `${base.id}:${rank}`;
+  const base = u.baseDef || u.def, k = BOOST[rank];
   u.baseDef = base;
-  b.cmd.defs[key] ||= { ...base, hp: Math.round(base.hp * k.hp), max: Math.max(base.max + 1, Math.round(base.max * k.max)), aRoll: Math.round(base.aRoll * k.roll), name: `${base.name} ${RANKS[rank]}`, rankOf: rank };
+  // a soldier takes one of his kind's trades when he becomes a veteran, and keeps it
+  const trades = base.trades || [];
+  if (u.trade === undefined && trades.length) u.trade = (u.id * 7 + (u.id >> 3)) % trades.length;
+  const t = trades[u.trade] || null, key = `${base.id}:${rank}:${t ? u.trade : ''}`;
+  if (!b.cmd.defs[key]) {
+    const d = { ...base, hp: Math.round(base.hp * k.hp * (t?.hp || 1)), max: Math.max(base.max + 1, Math.round(base.max * k.max * (t?.max || 1))), aRoll: Math.round(base.aRoll * k.roll * (t?.roll || 1)),
+      name: `${base.name} ${RANKS[rank]}`, rankOf: rank, tradeName: t ? t.name : '' };
+    if (t) {
+      if (t.speed) d.speed = Math.max(2, Math.round(base.speed * t.speed));
+      if (t.range && base.range > 1) d.range = base.range + t.range;
+      if (t.move) d.move = base.move + t.move;
+      if (t.gain) d.abilities = [...base.abilities.filter((a) => a.type !== t.gain.type), t.gain];
+    }
+    b.cmd.defs[key] = d;
+  }
   const gain = b.cmd.defs[key].hp - u.def.hp;
   u.def = b.cmd.defs[key]; u.hp += Math.max(0, gain); u.rank = rank;
 }
