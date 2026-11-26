@@ -642,7 +642,7 @@ function updateSquad(b, sq) {
     const pt = fallbackFor(b, sq);
     if (pt) {
       sq.prev = sq.state; sq.state = 'fallback'; sq.rallyPt = pt; sq.rallyUntil = b.tick + 150; sq.rallied = true;
-      b.events.push({ type: 'fallback', squad: sq.id, side: sq.side, name: us[0].def.name, to: pt.kind });
+      b.events.push({ type: 'fallback', squad: sq.id, side: sq.side, name: (us[0].baseDef || us[0].def).name, to: pt.kind });
     }
   }
   if (sq.state === 'fallback') {
@@ -650,7 +650,7 @@ function updateSquad(b, sq) {
     if (Math.hypot(pt.x - sq.cx, pt.y - sq.cy) < 4 || b.tick > sq.rallyUntil) {
       // steadied at the rally point: reorganise and go back in
       sq.state = sq.prev === 'hold' ? 'hold' : 'advance'; sq.initial = Math.max(1, sq.alive); sq.leaderless = false;
-      b.events.push({ type: 'rallied', squad: sq.id, side: sq.side, name: us[0].def.name });
+      b.events.push({ type: 'rallied', squad: sq.id, side: sq.side, name: (us[0].baseDef || us[0].def).name });
     } else { sq.target = nearest.id; return; }
   }
   if (sq.state !== 'regroup' && ratio <= 0.34 && sq.initial >= 3 && myHp < theirHp * 0.8) {
@@ -658,7 +658,7 @@ function updateSquad(b, sq) {
     if (friends.length) {
       sq.state = 'regroup';
       sq.rally = friends.reduce((a, c) => (Math.hypot(c.cx - sq.cx, c.cy - sq.cy) < Math.hypot(a.cx - sq.cx, a.cy - sq.cy) ? c : a)).id;
-      b.events.push({ type: 'regroup', squad: sq.id, side: sq.side, name: us[0].def.name });
+      b.events.push({ type: 'regroup', squad: sq.id, side: sq.side, name: (us[0].baseDef || us[0].def).name });
     }
   }
   if (sq.state === 'regroup') {
@@ -687,7 +687,7 @@ function updateSquad(b, sq) {
         const fy = sq.cy < b.H / 2 ? 2 : b.H - 3;
         sq.state = 'flank'; sq.flanked = true; sq.flankUntil = b.tick + 45;
         sq.waypoint = { x: Math.round(Math.max(1, Math.min(b.W - 2, target.cx))), y: fy };
-        b.events.push({ type: 'flank', squad: sq.id, side: sq.side, name: us[0].def.name });
+        b.events.push({ type: 'flank', squad: sq.id, side: sq.side, name: (us[0].baseDef || us[0].def).name });
       }
     }
   }
