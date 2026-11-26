@@ -14,7 +14,7 @@ export const MAP_SHAPES = {
 
 export const BIOMES = {
   temperate: { name: 'Temperate', grass: [0.33, 0.5, 0.24], sand: [0.82, 0.74, 0.52], shallow: [0.62, 0.56, 0.4], water: 0x2f6f9a, floor: 0x1f3f55, sky: 0x9fb8c8, outer: 0x4b6a35 },
-  snow:      { name: 'Frozen north', grass: [0.86, 0.89, 0.93], sand: [0.62, 0.64, 0.66], shallow: [0.55, 0.62, 0.68], water: 0x3a6a8a, floor: 0x1f3448, sky: 0xc8d4de, outer: 0xd8dee6 },
+  snow:      { name: 'Frozen north', grass: [0.78, 0.82, 0.88], sand: [0.6, 0.62, 0.65], shallow: [0.55, 0.62, 0.68], water: 0x3a6a8a, floor: 0x1f3448, sky: 0xc8d4de, outer: 0xd8dee6 },
   desert:    { name: 'Desert', grass: [0.8, 0.68, 0.42], sand: [0.88, 0.8, 0.58], shallow: [0.6, 0.62, 0.5], water: 0x2f7f8a, floor: 0x29525a, sky: 0xe0cfa8, outer: 0xc4a466 },
   swamp:     { name: 'Swamp', grass: [0.27, 0.33, 0.2], sand: [0.38, 0.36, 0.24], shallow: [0.32, 0.36, 0.26], water: 0x3a4f36, floor: 0x1e2a1c, sky: 0x8a9a84, outer: 0x2e3a22 },
   volcanic:  { name: 'Volcanic', grass: [0.24, 0.22, 0.22], sand: [0.42, 0.38, 0.36], shallow: [0.4, 0.3, 0.26], water: 0x283c4a, floor: 0x401a10, sky: 0x8a6a5a, outer: 0x2a2424 },

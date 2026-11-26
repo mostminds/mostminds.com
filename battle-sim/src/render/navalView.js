@@ -18,24 +18,25 @@ export class NavalView {
   buildSea(b) {
     if (this.sea) this.root.remove(this.sea);
     const g = new THREE.Group();
-    const geo = new THREE.PlaneGeometry(b.W * 3, b.H * 3, 90, 60);
+    const geo = new THREE.PlaneGeometry(b.W * 3, b.H * 3, 160, 110);
     geo.rotateX(-Math.PI / 2);
     this.waterGeo = geo;
     this.base = Float32Array.from(geo.attributes.position.array);
-    const water = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x24628a, flatShading: true }));
+    const water = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x2a6f96, roughness: 0.22, metalness: 0.3 }));
     water.position.set(b.W / 2, 0, b.H / 2);
     water.receiveShadow = true;
     g.add(water);
     for (const isl of b.islands) {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(isl.r * 0.8, isl.r, 1.2, 14), mat(0xcdb57a));
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(isl.r * 0.8, isl.r, 1.2, 28), mat(0xcdb57a));
       m.position.set(isl.x, 0.1, isl.y);
-      const top = new THREE.Mesh(new THREE.ConeGeometry(isl.r * 0.7, isl.r * 0.6, 10), mat(0x4f7a3a));
-      top.position.set(isl.x, 0.7 + isl.r * 0.3, isl.y);
+      const top = new THREE.Mesh(new THREE.SphereGeometry(isl.r * 0.72, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x4f7a3a));
+      top.scale.y = 0.55;
+      top.position.set(isl.x, 0.68, isl.y);
       g.add(m, top);
     }
     this.sea = g;
     this.root.add(g);
-    this.stage.scene.background.set(0xb4cddb);
+    this.stage.setSky(0xb4cddb);
     if (this.boundsKey !== `${b.W}x${b.H}`) {
       this.boundsKey = `${b.W}x${b.H}`;
       this.stage.setBounds(b.W, b.H);
@@ -119,6 +120,7 @@ export class NavalView {
     const pos = this.waterGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) pos.array[i * 3 + 1] = this.waveH(this.base[i * 3], this.base[i * 3 + 2], t) - 0.15;
     pos.needsUpdate = true;
+    if ((this.waterTick = (this.waterTick || 0) + 1) % 2 === 0) this.waterGeo.computeVertexNormals();
     b.ents.forEach((e, i) => {
       const m = this.models[i];
       const died = this.deathAt.get(i);

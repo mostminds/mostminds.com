@@ -175,18 +175,22 @@ export function animateCustom(model, t, moving, atk, dead) {
 function db() {
   return new Promise((resolve, reject) => {
     let req;
-    try { req = indexedDB.open('thousand-battles', 1); } catch (e) { reject(e); return; }
-    req.onupgradeneeded = () => req.result.createObjectStore('models', { keyPath: 'id' });
+    try { req = indexedDB.open('thousand-battles', 2); } catch (e) { reject(e); return; }
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains('models')) d.createObjectStore('models', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('library')) d.createObjectStore('library', { keyPath: 'key' });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-async function tx(mode, fn) {
+async function tx(mode, fn, storeName = 'models') {
   try {
     const d = await db();
     return await new Promise((resolve, reject) => {
-      const t = d.transaction('models', mode);
-      const r = fn(t.objectStore('models'));
+      const t = d.transaction(storeName, mode);
+      const r = fn(t.objectStore(storeName));
       t.oncomplete = () => resolve(r?.result);
       t.onerror = () => reject(t.error);
     });
@@ -204,4 +208,89 @@ export async function restoreCustomModels() {
     try { await addCustomModel(rec.id, rec.files || rec.buffer, rec, false); n++; } catch { /* skip unreadable file */ }
   }
   return n;
+}
+
+// ---------- model library: your exported files, searchable by name ----------
+const MODEL_RE = /\.(glb|gltf|fbx|obj|ply)$/i;
+const dirOf = (f) => (f.webkitRelativePath || f.name).split('/').slice(0, -1).join('/');
+const stem = (n) => base(n).replace(/\.[^.]+$/, '');
+let libIndex = null; // [{ key, name, path, bytes }]
+
+// Which other files does this model file point at?
+function references(name, text) {
+  const out = new Set();
+  const e = ext(name);
+  try {
+    if (e === 'gltf') { const j = JSON.parse(text); for (const x of [...(j.buffers || []), ...(j.images || [])]) if (x.uri && !x.uri.startsWith('data:')) out.add(base(decodeURIComponent(x.uri))); }
+    else if (e === 'obj') { for (const m of text.matchAll(/^mtllib\s+(.+)$/gm)) out.add(base(m[1].trim())); }
+    else if (e === 'mtl') { for (const m of text.matchAll(/^\s*(?:map_\w+|bump|disp|norm)\s+(?:-\w+\s+\S+\s+)*(.+)$/gim)) out.add(base(m[1].trim())); }
+  } catch { /* unreadable: treat as having no companions */ }
+  return out;
+}
+
+// Adds every model in a file selection (files or a whole folder) with the files it uses.
+export async function libraryAdd(fileList) {
+  const files = [...fileList];
+  const byDir = new Map();
+  for (const f of files) { const d = dirOf(f); if (!byDir.has(d)) byDir.set(d, new Map()); byDir.get(d).set(base(f.name), f); }
+  let added = 0;
+  for (const f of files) {
+    if (!MODEL_RE.test(f.name)) continue;
+    const siblings = byDir.get(dirOf(f));
+    const group = [{ name: f.name, buffer: await f.arrayBuffer() }];
+    const want = new Set();
+    if (/\.(gltf|obj)$/i.test(f.name)) for (const r of references(f.name, new TextDecoder().decode(group[0].buffer))) want.add(r);
+    else if (/\.fbx$/i.test(f.name)) for (const [n] of siblings) if (/\.(png|jpe?g|webp|tga|bmp)$/i.test(n) && n.startsWith(stem(f.name).slice(0, 4))) want.add(n);
+    for (const r of [...want]) {
+      const sf = siblings.get(r);
+      if (!sf) continue;
+      const buf = await sf.arrayBuffer();
+      group.push({ name: sf.name, buffer: buf });
+      if (/\.mtl$/i.test(r)) for (const t of references(r, new TextDecoder().decode(buf))) { const tf = siblings.get(t); if (tf) group.push({ name: tf.name, buffer: await tf.arrayBuffer() }); }
+    }
+    const path = f.webkitRelativePath || f.name;
+    await tx('readwrite', (st) => st.put({ key: path, name: f.name, path, files: group, bytes: group.reduce((a, g) => a + g.buffer.byteLength, 0) }), 'library');
+    added++;
+  }
+  libIndex = null;
+  return added;
+}
+export async function libraryList() {
+  if (!libIndex) {
+    const all = (await tx('readonly', (st) => st.getAll(), 'library')) || [];
+    libIndex = all.map((r) => ({ key: r.key, name: r.name, path: r.path, bytes: r.bytes, parts: r.files.length }));
+  }
+  return libIndex;
+}
+export async function librarySearch(query, limit = 40) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const list = await libraryList();
+  return list.filter((e) => words.every((w) => e.path.toLowerCase().includes(w))).slice(0, limit);
+}
+export async function libraryRemove(key) { await tx('readwrite', (st) => st.delete(key), 'library'); libIndex = null; }
+export async function libraryClear() { await tx('readwrite', (st) => st.clear(), 'library'); libIndex = null; }
+export async function libraryAssign(key, targetId, opts = {}) {
+  const rec = await tx('readonly', (st) => st.get(key), 'library');
+  if (!rec) throw new Error('that model is no longer in the library');
+  return addCustomModel(targetId, rec.files, { name: rec.name, ...opts });
+}
+
+// Pair library files with targets by name. targets: [{ id, name }]; mapping: { "file name or stem": "target id" }
+const norm = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+export async function libraryAutoMatch(targets, mapping = {}, opts = {}) {
+  const list = await libraryList();
+  const map = new Map(Object.entries(mapping).map(([k, v]) => [norm(stem(k)), v]));
+  const done = [], used = new Set();
+  for (const e of list) {
+    const key = norm(stem(e.name));
+    let target = map.get(key);
+    if (!target) {
+      const hit = targets.find((t) => !used.has(t.id) && (norm(t.name) === key || norm(t.id.replace(/^struct:/, '')) === key))
+        || targets.find((t) => !used.has(t.id) && key.length >= 4 && norm(t.name).length >= 4 && (key.includes(norm(t.name)) || norm(t.name).includes(key)));
+      target = hit?.id;
+    }
+    if (!target || used.has(target)) continue;
+    try { await libraryAssign(e.key, target, opts); used.add(target); done.push({ file: e.name, target }); } catch { /* skip unreadable */ }
+  }
+  return done;
 }

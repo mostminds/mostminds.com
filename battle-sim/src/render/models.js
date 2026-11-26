@@ -1,24 +1,35 @@
 // Procedural low-poly models built from primitives. Every model is a Group
 // with userData.rig describing its moving parts, animated by animateUnit().
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { instantiateCustom, animateCustom } from './customModels.js';
+import { tmat } from './textures.js';
 export const LEVEL_H = 0.8; // world height of one walkable level
 
 const matCache = new Map();
+const METAL = { metalness: 0.75, roughness: 0.35 };
 export function mat(color, o = {}) {
   const k = color + JSON.stringify(o);
-  if (!matCache.has(k)) {
-    matCache.set(k, new THREE.MeshLambertMaterial({ color, flatShading: true, ...o }));
-  }
+  if (!matCache.has(k)) matCache.set(k, new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, ...o }));
   return matCache.get(k);
 }
 const geoCache = new Map();
 function geo(key, make) { if (!geoCache.has(key)) geoCache.set(key, make()); return geoCache.get(key); }
-const box = (w, h, d) => geo(`b${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d));
-const cyl = (rt, rb, h, s = 6) => geo(`c${rt},${rb},${h},${s}`, () => new THREE.CylinderGeometry(rt, rb, h, s));
-const sph = (r, s = 6) => geo(`s${r},${s}`, () => new THREE.SphereGeometry(r, s, Math.max(3, s - 2)));
-const cone = (r, h, s = 6) => geo(`k${r},${h},${s}`, () => new THREE.ConeGeometry(r, h, s));
-const ico = (r) => geo(`i${r}`, () => new THREE.IcosahedronGeometry(r, 0));
+// UVs are scaled by size so textures keep one density on every wall and beam
+function scaleUv(g, fn) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) { const [u, v] = fn(i, uv.getX(i), uv.getY(i)); uv.setXY(i, u, v); } return g; }
+const TEX = 2; // world units per texture repeat
+const box = (w, h, d) => geo(`b${w},${h},${d}`, () => scaleUv(new THREE.BoxGeometry(w, h, d), (i, u, v) => {
+  const f = Math.floor(i / 4); // px nx py ny pz nz
+  const [a, c] = f < 2 ? [d, h] : f < 4 ? [w, d] : [w, h];
+  return [u * a / TEX, v * c / TEX];
+}));
+const rbox = (w, h, d, r = 0.04) => geo(`r${w},${h},${d},${r}`, () => new RoundedBoxGeometry(w, h, d, 1, Math.min(r, w / 2, h / 2, d / 2)));
+const cyl = (rt, rb, h, s = 6) => geo(`c${rt},${rb},${h},${s}`, () => scaleUv(new THREE.CylinderGeometry(rt, rb, h, s <= 5 ? s : Math.max(s, 10)), (i, u, v) => [u * Math.max(1, Math.round(Math.PI * (rt + rb) / TEX)), v * h / TEX]));
+const sph = (r, s = 6) => geo(`s${r},${s}`, () => new THREE.SphereGeometry(r, s <= 5 ? 6 : 10, s <= 5 ? 4 : 7));
+const cone = (r, h, s = 6) => geo(`k${r},${h},${s}`, () => scaleUv(new THREE.ConeGeometry(r, h, s <= 5 ? s : 10), (i, u, v) => [u * Math.max(1, Math.round(Math.PI * r / TEX * 2)), v * Math.hypot(r, h) / TEX]));
+const ico = (r) => geo(`i${r}`, () => new THREE.IcosahedronGeometry(r, 1));
+const cap = (r, len) => geo(`p${r},${len}`, () => new THREE.CapsuleGeometry(r, Math.max(0.001, len - 2 * r), 2, 7));
 
 function mesh(g, m, x = 0, y = 0, z = 0) {
   const o = new THREE.Mesh(g, m);
@@ -36,7 +47,7 @@ function pivot(x, y, z, ...children) {
 // ---------- weapons ----------
 function weapon(kind, m) {
   const g = new THREE.Group();
-  const wood = mat(0x6b4a2e), steel = mat(0xc9d1d9), dark = mat(0x4a4a4a);
+  const wood = mat(0x6b4a2e), steel = mat(0xc9d1d9, METAL), dark = mat(0x4a4a4a, METAL);
   switch (kind) {
     case 'sword': g.add(mesh(box(0.05, 0.45, 0.02), steel, 0, -0.3, 0.12)); g.add(mesh(box(0.15, 0.03, 0.04), dark, 0, -0.08, 0.12)); break;
     case 'longsword': case 'greatsword': {
@@ -77,46 +88,99 @@ function weapon(kind, m) {
 // ---------- humanoid ----------
 function humanoid(o) {
   const g = new THREE.Group();
-  const skin = mat(o.skin ?? 0xd9a77c), cloth = mat(o.cloth ?? 0x777766), armor = o.armor ? mat(o.armor) : cloth;
+  const skin = mat(o.skin ?? 0xd9a77c), cloth = mat(o.cloth ?? 0x777766);
+  const armor = o.armor ? mat(o.armor, METAL) : cloth;
+  const leather = mat(0x4a3220), dark = mat(0x1c1c1c);
   const bone = o.body === 'skeleton';
-  const limbW = bone ? 0.06 : 0.12;
+  const lr = bone ? 0.03 : 0.062; // limb radius
   const hipY = 0.42;
   const rig = { legs: [], arms: [], torso: null, kind: 'biped' };
 
   if (o.robe) {
-    g.add(mesh(cone(0.26, 0.5, 6), cloth, 0, 0.25, 0));
+    g.add(mesh(cone(0.27, 0.52, 12), cloth, 0, 0.26, 0));
+    g.add(mesh(cyl(0.275, 0.275, 0.03, 12), mat(0x2a2a2a), 0, 0.015, 0));
   } else {
     for (const s of [-1, 1]) {
-      const leg = pivot(s * 0.09, hipY, 0, mesh(box(limbW, 0.42, limbW), bone ? skin : cloth, 0, -0.21, 0));
+      const leg = pivot(s * 0.09, hipY, 0,
+        mesh(cap(lr * 1.08, 0.24), bone ? skin : cloth, 0, -0.11, 0),
+        mesh(cap(lr * 0.92, 0.22), bone ? skin : (o.armor ? armor : cloth), 0, -0.29, 0));
+      if (!bone) leg.add(mesh(rbox(0.11, 0.07, 0.19, 0.03), leather, 0, -0.39, 0.03));
+      else leg.add(mesh(box(0.06, 0.02, 0.12), skin, 0, -0.41, 0.03), mesh(sph(0.04, 5), skin, 0, -0.2, 0));
       g.add(leg); rig.legs.push(leg);
     }
   }
   const torso = new THREE.Group();
   torso.position.y = hipY;
   g.add(torso); rig.torso = torso;
-  torso.add(mesh(box(bone ? 0.2 : 0.32, 0.38, bone ? 0.12 : 0.2), bone ? skin : armor, 0, 0.19, 0));
-  if (bone) for (let i = 0; i < 3; i++) torso.add(mesh(box(0.28, 0.03, 0.16), skin, 0, 0.1 + i * 0.09, 0));
+  if (bone) {
+    torso.add(mesh(cap(0.025, 0.4), skin, 0, 0.2, -0.02));
+    for (let i = 0; i < 4; i++) { const rb = mesh(geo(`rib${i}`, () => new THREE.TorusGeometry(0.1 - i * 0.008, 0.014, 4, 8)), skin, 0, 0.12 + i * 0.065, 0); rb.rotation.x = Math.PI / 2; torso.add(rb); }
+    torso.add(mesh(rbox(0.2, 0.07, 0.11, 0.03), skin, 0, 0.02, 0));
+  } else {
+    torso.add(mesh(rbox(0.33, 0.24, 0.21, 0.07), armor, 0, 0.27, 0));       // chest
+    torso.add(mesh(rbox(0.28, 0.18, 0.18, 0.06), o.armor ? armor : cloth, 0, 0.09, 0)); // waist
+    torso.add(mesh(rbox(0.3, 0.05, 0.2, 0.02), leather, 0, 0.03, 0));          // belt
+    torso.add(mesh(box(0.05, 0.05, 0.02), mat(0xd6a646, METAL), 0, 0.03, 0.105));
+    if (o.armor) for (const s of [-1, 1]) torso.add(mesh(sph(0.085), armor, s * 0.2, 0.37, 0)); // pauldrons
+    if (o.armor && (o.helm === 'full' || o.shield)) {
+      const cape = mesh(box(0.3, 0.5, 0.02), mat(o.cloth ?? 0x7a2a2a, { side: THREE.DoubleSide }), 0, 0.12, -0.13);
+      cape.rotation.x = 0.12; torso.add(cape);
+    }
+  }
+  torso.add(mesh(cyl(0.05, 0.055, 0.06, 8), skin, 0, 0.41, 0)); // neck
   const head = new THREE.Group();
   head.position.y = 0.5;
   torso.add(head);
-  head.add(mesh(o.cyclops ? sph(0.14) : box(0.2, 0.22, 0.2), skin, 0, 0, 0));
-  if (o.cyclops) head.add(mesh(sph(0.055, 6), mat(0xffffff), 0, 0.02, 0.12), mesh(sph(0.03, 5), mat(0x1a1a1a), 0, 0.02, 0.165));
-  else if (bone) head.add(mesh(box(0.05, 0.04, 0.02), mat(0x111111), -0.05, 0.02, 0.1), mesh(box(0.05, 0.04, 0.02), mat(0x111111), 0.05, 0.02, 0.1));
-  else head.add(mesh(box(0.04, 0.03, 0.02), mat(0x222222), -0.05, 0.02, 0.1), mesh(box(0.04, 0.03, 0.02), mat(0x222222), 0.05, 0.02, 0.1));
-  if (o.helm === 'full') head.add(mesh(box(0.24, 0.26, 0.24), armor, 0, 0.02, 0), mesh(box(0.16, 0.025, 0.02), mat(0x111111), 0, 0.03, 0.125));
-  else if (o.helm === 'horned') { head.add(mesh(box(0.23, 0.12, 0.23), armor, 0, 0.08, 0)); for (const s of [-1, 1]) { const h = mesh(cone(0.04, 0.2), mat(0xe8e2d0), s * 0.15, 0.17, 0); h.rotation.z = -s * 0.8; head.add(h); } }
-  else if (o.helm) head.add(mesh(cyl(0.12, 0.13, 0.12, 6), armor, 0, 0.1, 0));
-  if (o.hood) head.add(mesh(cone(0.16, 0.3, 6), cloth, 0, 0.14, -0.02));
-  if (o.horns) for (const s of [-1, 1]) { const h = mesh(cone(0.04, 0.18), mat(0x2a2a2a), s * 0.1, 0.16, 0); h.rotation.z = -s * 0.4; head.add(h); }
+  if (o.cyclops) {
+    head.add(mesh(sph(0.14), skin, 0, 0, 0));
+    head.add(mesh(sph(0.055, 6), mat(0xffffff), 0, 0.02, 0.105), mesh(sph(0.028, 6), mat(0x3a2a1a), 0, 0.02, 0.15));
+    head.add(mesh(rbox(0.12, 0.025, 0.04, 0.01), dark, 0, 0.085, 0.11));
+  } else if (bone) {
+    head.add(mesh(sph(0.105), skin, 0, 0.02, 0), mesh(rbox(0.12, 0.07, 0.11, 0.02), skin, 0, -0.07, 0.02));
+    for (const s of [-1, 1]) head.add(mesh(sph(0.028, 6), dark, s * 0.04, 0.02, 0.085));
+    head.add(mesh(box(0.02, 0.03, 0.02), dark, 0, -0.025, 0.1));
+  } else {
+    head.add(mesh(rbox(0.2, 0.22, 0.2, 0.07), skin, 0, 0, 0));
+    for (const s of [-1, 1]) {
+      head.add(mesh(sph(0.02, 6), mat(0xf2f2f2), s * 0.045, 0.025, 0.094), mesh(sph(0.011, 5), dark, s * 0.045, 0.025, 0.11));
+      head.add(mesh(sph(0.03, 5), skin, s * 0.102, 0, 0)); // ears
+    }
+    head.add(mesh(rbox(0.035, 0.05, 0.04, 0.012), skin, 0, -0.01, 0.105));  // nose
+    head.add(mesh(box(0.07, 0.012, 0.01), mat(0x7a3a34), 0, -0.06, 0.1));  // mouth
+    if (!o.helm && !o.hood && !o.horns && (o.scale ?? 1) >= 0.9) head.add(mesh(rbox(0.21, 0.09, 0.21, 0.04), mat(0x3a2a1c), 0, 0.085, -0.01)); // hair
+  }
+  if (o.helm === 'full') {
+    head.add(mesh(rbox(0.25, 0.27, 0.25, 0.08), armor, 0, 0.02, 0), mesh(box(0.17, 0.025, 0.02), dark, 0, 0.03, 0.125), mesh(box(0.02, 0.1, 0.02), dark, 0, -0.03, 0.125));
+    head.add(mesh(rbox(0.03, 0.12, 0.2, 0.01), mat(o.cloth ?? 0x8a2c2c), 0, 0.2, -0.02)); // crest
+  } else if (o.helm === 'horned') {
+    head.add(mesh(sph(0.125), armor, 0, 0.05, 0));
+    for (const s of [-1, 1]) { const h = mesh(cone(0.04, 0.22, 8), mat(0xe8e2d0), s * 0.15, 0.17, 0); h.rotation.z = -s * 0.8; head.add(h); }
+  } else if (o.helm) {
+    const dome = mesh(sph(0.118), armor, 0, 0.055, 0); dome.scale.y = 0.85; head.add(dome);
+    head.add(mesh(cyl(0.125, 0.13, 0.03, 12), armor, 0, 0.04, 0), mesh(box(0.025, 0.09, 0.02), armor, 0, 0.0, 0.11));
+  }
+  if (o.hood) { head.add(mesh(sph(0.135), cloth, 0, 0.03, -0.025), mesh(cone(0.1, 0.16, 10), cloth, 0, 0.16, -0.06)); }
+  if (o.horns) for (const s of [-1, 1]) { const h = mesh(cone(0.04, 0.2, 8), mat(0x2a2a2a), s * 0.1, 0.16, 0); h.rotation.z = -s * 0.4; head.add(h); }
   if (o.wings) for (const s of [-1, 1]) {
-    const w = mesh(box(0.5, 0.35, 0.02), mat(0x3a1a1a, { side: THREE.DoubleSide }), s * 0.3, 0.3, -0.14);
+    const w = pivot(s * 0.1, 0.34, -0.12);
+    const wm = mat(o.wingColor ?? 0x3a1a1a, { side: THREE.DoubleSide });
+    w.add(mesh(cap(0.018, 0.55), mat(0x2a1414), s * 0.26, 0.05, 0));
+    w.children[0].rotation.z = Math.PI / 2;
+    for (let k = 0; k < 3; k++) { const m = mesh(box(0.17, 0.34 - k * 0.07, 0.012), wm, s * (0.1 + k * 0.17), -0.1 + k * 0.02, 0); w.add(m); }
     w.rotation.y = s * 0.5; torso.add(w); (rig.wings ||= []).push(w);
   }
   for (const s of [-1, 1]) {
-    const arm = pivot(s * (bone ? 0.15 : 0.22), 0.36, 0, mesh(box(limbW * 0.85, 0.38, limbW * 0.85), bone ? skin : (o.armor ? armor : skin), 0, -0.18, 0));
+    const sleeve = bone ? skin : (o.armor ? armor : cloth);
+    const arm = pivot(s * (bone ? 0.15 : 0.215), 0.36, 0,
+      mesh(cap(lr * 0.95, 0.2), sleeve, 0, -0.09, 0),
+      mesh(cap(lr * 0.82, 0.19), bone ? skin : (o.armor ? armor : skin), 0, -0.24, 0),
+      mesh(sph(bone ? 0.03 : 0.05), skin, 0, -0.35, 0));
     torso.add(arm); rig.arms.push(arm);
     if (s === 1 && o.weapon && o.weapon !== 'none') { const w = weapon(o.weapon); w.position.y = -0.18; arm.add(w); }
-    if (s === -1 && o.shield) { const sh = mesh(box(0.04, 0.3, 0.26), mat(o.cloth ?? 0x6b4a2e), -0.06, -0.25, 0.08); arm.add(sh); }
+    if (s === -1 && o.shield) {
+      const sc = o.cloth ?? 0x6b4a2e;
+      arm.add(mesh(rbox(0.045, 0.34, 0.28, 0.02), mat(sc), -0.07, -0.25, 0.08), mesh(rbox(0.05, 0.36, 0.3, 0.02), mat(0xb8bcc2, METAL), -0.062, -0.25, 0.08), mesh(sph(0.045), mat(0xd6a646, METAL), -0.1, -0.25, 0.08));
+    }
   }
   if (o.hunch) torso.rotation.x = 0.35;
   rig.head = head;
@@ -246,10 +310,76 @@ function ram(o) {
   return g;
 }
 
+// ---- baking: one mesh per moving part, so detail costs almost nothing at 300 units ----
+const bakeMats = {
+  matte: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05, side: THREE.DoubleSide }),
+  glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
+};
+function bake(root, rig) {
+  const pivots = new Set([root]);
+  for (const [k, v] of Object.entries(rig)) {
+    if (k === 'head' && rig.arms?.length) continue; // only armless bodies nod their heads
+    for (const o of Array.isArray(v) ? v : [v]) if (o && o.isObject3D) pivots.add(o);
+  }
+  root.updateMatrixWorld(true);
+  const meshes = [];
+  root.traverse((o) => { if (o.isMesh && !pivots.has(o)) meshes.push(o); });
+  const buckets = new Map();
+  const inv = new THREE.Matrix4();
+  for (const m of meshes) {
+    let p = m.parent;
+    while (!pivots.has(p)) p = p.parent;
+    let gm = m.geometry.clone().applyMatrix4(inv.copy(p.matrixWorld).invert().multiply(m.matrixWorld));
+    if (gm.index) gm = gm.toNonIndexed();
+    for (const k of Object.keys(gm.attributes)) if (k !== 'position' && k !== 'normal') gm.deleteAttribute(k);
+    if (!gm.attributes.normal) gm.computeVertexNormals();
+    const mt = m.material, glow = mt.emissive && (mt.emissive.r + mt.emissive.g + mt.emissive.b) > 0.01;
+    const cls = glow ? 'glow' : 'matte';
+    const shine = !glow && mt.metalness > 0.3 ? 1.25 : 1; // metal reads as a brighter tint
+    const c = glow ? mt.emissive : mt.color, n = gm.attributes.position.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r * shine; col[i * 3 + 1] = c.g * shine; col[i * 3 + 2] = c.b * shine; }
+    gm.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (!buckets.has(p)) buckets.set(p, {});
+    (buckets.get(p)[cls] ||= []).push(gm);
+    m.parent.remove(m);
+  }
+  for (const [p, classes] of buckets) for (const [cls, list] of Object.entries(classes)) {
+    const merged = new THREE.Mesh(mergeGeometries(list, false), bakeMats[cls]);
+    merged.castShadow = cls !== 'glow';
+    p.add(merged);
+  }
+}
+// rigs survive cloning by naming each moving part
+function tagRig(rig) {
+  for (const [k, v] of Object.entries(rig)) {
+    if (Array.isArray(v)) v.forEach((o, i) => { if (o?.isObject3D) o.name = `rig:${k}:${i}`; });
+    else if (v?.isObject3D) v.name = `rig:${k}`;
+  }
+}
+function cloneRigged(tpl) {
+  const c = tpl.clone(true);
+  const src = rigOf.get(tpl), rig = {};
+  for (const [k, v] of Object.entries(src)) rig[k] = Array.isArray(v) ? [] : v?.isObject3D ? null : v;
+  c.traverse((o) => {
+    if (!o.name.startsWith('rig:')) return;
+    const [, k, i] = o.name.split(':');
+    if (i !== undefined) rig[k][+i] = o; else rig[k] = o;
+  });
+  c.userData = { rig, inner: c.children[0] };
+  return c;
+}
+const templates = new Map();
+const rigOf = new WeakMap();
+
 export function buildUnitModel(def) {
   const o = def.model || { body: 'humanoid' };
   const custom = instantiateCustom(def.id, 0.95 * (o.scale || 1) * Math.max(1, def.size * 0.8), 'unit');
   if (custom) return custom;
+  const key = `${def.id}:${JSON.stringify(o)}`;
+  if (!templates.has(key)) templates.set(key, buildTemplate(def, o));
+  return cloneRigged(templates.get(key));
+}
+function buildTemplate(def, o) {
   let g;
   switch (o.body) {
     case 'quadruped': g = quadruped(o); break;
@@ -265,9 +395,12 @@ export function buildUnitModel(def) {
   const outer = new THREE.Group();
   const s = (o.scale || 1) * (def.size > 1 ? 1 : 1);
   g.scale.setScalar(s);
+  tagRig(g.userData.rig);
+  bake(g, g.userData.rig);
   outer.add(g);
-  outer.userData.rig = g.userData.rig;
-  outer.userData.inner = g;
+  // keep the rig out of userData: cloning serialises userData
+  rigOf.set(outer, g.userData.rig);
+  outer.traverse((x) => { x.userData = {}; });
   return outer;
 }
 
@@ -313,7 +446,12 @@ export function buildStructure(def, w, h) {
   const custom = def.id && instantiateCustom(`struct:${def.id}`, Math.max(w, h), 'struct');
   if (custom) return custom;
   const g = new THREE.Group();
-  const c = mat(def.color), dark = mat(0x4a3a2a), roof = mat(0x8a3a2a), stone = mat(0x8a8a86);
+  const TEXKIND = { wall: 'stone', castleWall: 'stone', castleTower: 'stone', keep: 'stone', bastion: 'stone', gate: 'stone', pillar: 'stone', statue: 'stone', stairs: 'stone',
+    palisade: 'bark', barricade: 'wood', tower: 'wood', deck: 'wood', crates: 'wood', hut: 'wood', castleGate: 'wood', house: 'plaster', tent: 'canvas', sandbags: 'canvas' };
+  const kind = TEXKIND[def.model];
+  const lift = (hex, k = 1.25) => new THREE.Color(hex).multiplyScalar(k).getHex(); // textures darken, so brighten the tint
+  const c = kind ? tmat(kind, lift(def.color)) : mat(def.color, def.model === 'rock' ? { flatShading: true } : {});
+  const dark = tmat('wood', 0x7a5c3c), roof = tmat('tiles', 0xb04a32), stone = tmat('stone', lift(0x8a8a86));
   switch (def.model) {
     case 'wall': {
       g.add(mesh(box(w, 1.1, h), c, 0, 0.55, 0));
@@ -361,7 +499,7 @@ export function buildStructure(def, w, h) {
     case 'house': case 'hut': {
       const hh = def.model === 'house' ? 1.3 : 0.9;
       g.add(mesh(box(w * 0.9, hh, h * 0.9), c, 0, hh / 2, 0));
-      const r = mesh(cone(Math.max(w, h) * 0.75, hh * 0.8, 4), def.model === 'hut' ? mat(0xb89a5a) : roof, 0, hh + hh * 0.4, 0);
+      const r = mesh(cone(Math.max(w, h) * 0.75, hh * 0.8, 4), def.model === 'hut' ? tmat('thatch', 0xd8b870) : roof, 0, hh + hh * 0.4, 0);
       r.rotation.y = Math.PI / 4; g.add(r);
       g.add(mesh(box(0.35, 0.6, 0.04), dark, 0, 0.3, h * 0.45));
       break;
@@ -372,8 +510,18 @@ export function buildStructure(def, w, h) {
       g.add(mesh(box(w, 0.4, h), c, 0, 1.6, 0));
       break;
     }
-    case 'tree': g.add(mesh(cyl(0.08, 0.12, 0.7, 5), dark, 0, 0.35, 0), mesh(ico(0.5), c, 0, 1.0, 0)); break;
-    case 'pine': g.add(mesh(cyl(0.07, 0.1, 0.5, 5), dark, 0, 0.25, 0), mesh(cone(0.45, 0.8, 6), c, 0, 0.8, 0), mesh(cone(0.32, 0.6, 6), c, 0, 1.25, 0)); break;
+    case 'tree': {
+      g.add(mesh(cyl(0.09, 0.14, 0.9, 8), tmat('bark', 0x8a6a48), 0, 0.45, 0));
+      const leaf = mat(def.color, { flatShading: true }), leaf2 = mat(new THREE.Color(def.color).multiplyScalar(1.2).getHex(), { flatShading: true });
+      g.add(mesh(ico(0.48), leaf, 0, 1.15, 0), mesh(ico(0.34), leaf2, 0.28, 1.0, 0.12), mesh(ico(0.32), leaf, -0.24, 1.05, -0.18), mesh(ico(0.3), leaf2, 0.02, 1.48, 0.05));
+      break;
+    }
+    case 'pine': {
+      g.add(mesh(cyl(0.07, 0.1, 0.55, 8), tmat('bark', 0x7a5a3c), 0, 0.27, 0));
+      const leaf = mat(def.color, { flatShading: true });
+      for (let k = 0; k < 4; k++) g.add(mesh(cone(0.48 - k * 0.1, 0.55, 9), leaf, 0, 0.7 + k * 0.32, 0));
+      break;
+    }
     case 'rock': { const r = mesh(ico(0.85), c, 0, 0.4, 0); r.scale.set(1, 0.6, 0.9); g.add(r); break; }
     case 'crates': g.add(mesh(box(0.7, 0.5, 0.7), c, 0, 0.25, 0), mesh(box(0.45, 0.4, 0.45), c, 0.05, 0.7, 0.05)); break;
     case 'statue': g.add(mesh(box(0.8, 0.4, 0.8), stone, 0, 0.2, 0)); { const s = humanoid({ skin: def.color, cloth: def.color, weapon: 'sword', shield: true }); s.position.y = 0.4; s.scale.setScalar(1.3); g.add(s); } break;

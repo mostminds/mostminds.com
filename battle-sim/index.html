@@ -31,6 +31,9 @@
       <label class="speed">Speed
         <select id="speed"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option><option value="8">8×</option></select>
       </label>
+      <label class="speed">Graphics
+        <select id="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select>
+      </label>
       <button type="button" id="batchBtn" class="brass">Simulate</button>
       <select id="batchCount" aria-label="Number of battles"><option value="100">100</option><option value="1000" selected>1,000</option></select>
       <button type="button" id="sheetToggle" class="sheet-toggle">Setup</button>
@@ -124,6 +127,17 @@
         </div>
         <ul class="groups" id="modelList"></ul>
         <p class="hint" id="modelMsg" role="status"></p>
+        <h3>Model library</h3>
+        <p class="hint">Add a whole folder of models you've exported, then search it by name. <b>Assign</b> puts a model on the target chosen above. <b>Auto-match</b> replaces every unit, ship, creature and building whose name matches a file name. To control the pairing, include a <code>mapping.json</code> in the folder, such as <code>{"my_knight.glb": "knight", "big_wall.obj": "struct:castleWall"}</code>.</p>
+        <div class="row wrap">
+          <label class="filebtn">Add folder<input type="file" id="libFolder" webkitdirectory multiple hidden></label>
+          <label class="filebtn">Add files<input type="file" id="libFiles" multiple hidden accept=".glb,.gltf,.bin,.obj,.mtl,.ply,.fbx,.png,.jpg,.jpeg,.webp,.tga,.bmp,.json"></label>
+          <button type="button" id="libAuto">Auto-match</button>
+          <button type="button" id="libClear">Clear library</button>
+        </div>
+        <input type="search" id="libSearch" placeholder="Search your library by name" aria-label="Search your model library">
+        <ul class="groups" id="libResults"></ul>
+        <p class="hint" id="libMsg" role="status"></p>
       </details>
     </section>
 

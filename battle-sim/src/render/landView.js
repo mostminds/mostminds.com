@@ -4,7 +4,7 @@ import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, bui
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
 import { structureFootprint } from '../engine/battle.js';
-import { DEEP, SHALLOW, SAND, BIOMES } from '../engine/terrain.js';
+import { GRASS, DEEP, SHALLOW, SAND, BIOMES } from '../engine/terrain.js';
 import { TICK_MS } from '../engine/combat.js';
 
 export const SIDE_COLORS = [0x3d7bd9, 0xd9463d];
@@ -32,45 +32,68 @@ export class LandView {
     const bio = BIOMES[b.biome] || BIOMES.temperate;
     if (this.terrain) this.root.remove(this.terrain);
     const g = new THREE.Group();
-    const N = b.W * b.H;
-    const tiles = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial(), N);
-    tiles.receiveShadow = true;
-    const m4 = new THREE.Matrix4(), col = new THREE.Color();
-    let n = 0;
-    for (let y = 0; y < b.H; y++) for (let x = 0; x < b.W; x++) {
-      const t = b.terrain[y * b.W + x];
-      if (t === DEEP) continue;
-      const top = t === SHALLOW ? -0.22 : t === SAND ? -0.03 : 0;
-      m4.makeScale(1, 1, 1).setPosition(x + 0.5, top - 0.5, y + 0.5);
-      tiles.setMatrixAt(n, m4);
-      const v = ((x * 7 + y * 13) % 5) * 0.012 + ((x + y) % 2) * 0.015;
-      const c3 = t === SHALLOW ? bio.shallow : t === SAND ? bio.sand : bio.grass;
-      col.setRGB(c3[0] + v, c3[1] + v, c3[2] + v * 0.5);
-      tiles.setColorAt(n, col);
-      n++;
+    const W = b.W, H = b.H, V = W + 1;
+    const tileAt = (x, y) => b.terrain[Math.max(0, Math.min(H - 1, y)) * W + Math.max(0, Math.min(W - 1, x))];
+    const BASE = [0, -0.05, -0.34, -1.3]; // grass, sand, shallow, deep
+    const deepCol = new THREE.Color(bio.floor).multiplyScalar(1.6);
+    const COL = [new THREE.Color().setRGB(...bio.grass, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.sand, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.shallow, THREE.SRGBColorSpace), deepCol];
+    const noise = (x, y) => Math.sin(x * 0.31 + 1.7) * Math.cos(y * 0.27 + 0.4) * 0.5 + Math.sin(x * 0.83 + y * 0.61) * 0.25 + Math.sin(x * 1.9 - y * 1.3) * 0.12;
+    // one height and one blended colour per tile corner: smooth ground instead of flat squares
+    const hc = (this.hCorner = new Float32Array(V * V));
+    const pos = new Float32Array(V * V * 3), col = new Float32Array(V * V * 3);
+    const c = new THREE.Color();
+    for (let y = 0; y <= H; y++) for (let x = 0; x <= W; x++) {
+      const ts = [tileAt(x - 1, y - 1), tileAt(x, y - 1), tileAt(x - 1, y), tileAt(x, y)];
+      let h = 0; c.setRGB(0, 0, 0);
+      for (const t of ts) { h += BASE[t] / 4; c.r += COL[t].r / 4; c.g += COL[t].g / 4; c.b += COL[t].b / 4; }
+      const dry = ts.every((t) => t === GRASS);
+      const n = noise(x, y);
+      if (dry) h += n * 0.09;
+      const shade = 1 + n * 0.14 + ((x * 7 + y * 13) % 5 - 2) * 0.012;
+      const k = y * V + x;
+      hc[k] = h;
+      pos[k * 3] = x; pos[k * 3 + 1] = h; pos[k * 3 + 2] = y;
+      col[k * 3] = c.r * shade; col[k * 3 + 1] = c.g * shade; col[k * 3 + 2] = c.b * (1 + n * 0.05);
     }
-    tiles.count = n;
-    g.add(tiles);
-    const S = b.W;
+    const idx = new Uint32Array(W * H * 6);
+    let q = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const a = y * V + x, d = a + V;
+      idx[q++] = a; idx[q++] = d; idx[q++] = a + 1; idx[q++] = a + 1; idx[q++] = d; idx[q++] = d + 1;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeVertexNormals();
+    const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+    ground.receiveShadow = true;
+    g.add(ground);
+
+    const S = W;
     const wet = b.terrain.some((t) => t === DEEP || t === SHALLOW);
     if (wet) {
-      this.water = new THREE.Mesh(new THREE.PlaneGeometry(S * 4, S * 4, 1, 1), new THREE.MeshLambertMaterial({ color: bio.water, transparent: true, opacity: 0.82 }));
-      this.water.rotation.x = -Math.PI / 2; this.water.position.set(S / 2, -0.12, S / 2);
+      const wg = new THREE.PlaneGeometry(S * 4, S * 4, 96, 96);
+      wg.rotateX(-Math.PI / 2);
+      this.waterBase = Float32Array.from(wg.attributes.position.array);
+      this.water = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: bio.water, transparent: true, opacity: 0.8, roughness: 0.18, metalness: 0.25 }));
+      this.water.position.set(S / 2, -0.12, S / 2);
+      this.water.receiveShadow = true;
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(S * 4, S * 4), mat(bio.floor));
-      floor.rotation.x = -Math.PI / 2; floor.position.set(S / 2, -1.2, S / 2);
+      floor.rotation.x = -Math.PI / 2; floor.position.set(S / 2, -1.5, S / 2);
       g.add(this.water, floor);
     } else {
       this.water = null;
-      const outer = new THREE.Mesh(new THREE.PlaneGeometry(S * 5, S * 5), mat(bio.outer));
-      outer.rotation.x = -Math.PI / 2; outer.position.set(S / 2, -0.02, S / 2); outer.receiveShadow = true;
+      const outer = new THREE.Mesh(new THREE.PlaneGeometry(S * 5, S * 5), new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...bio.grass, THREE.SRGBColorSpace).multiplyScalar(0.9), roughness: 1 }));
+      outer.rotation.x = -Math.PI / 2; outer.position.set(S / 2, -0.12, S / 2); outer.receiveShadow = true;
       g.add(outer);
     }
-    this.stage.scene.background.set(bio.sky);
-    this.stage.scene.fog.color.set(bio.sky);
-    // faint tile grid for placement
+    this.stage.setSky(bio.sky);
+    // faint tile grid for placement, only while editing
     const grid = new THREE.GridHelper(S, S, 0x000000, 0x000000);
-    grid.material.opacity = 0.07; grid.material.transparent = true;
-    grid.position.set(S / 2, 0.01, S / 2);
+    grid.material.opacity = 0.05; grid.material.transparent = true; grid.material.depthWrite = false;
+    grid.position.set(S / 2, 0.12, S / 2);
+    this.grid = grid;
     g.add(grid);
     this.terrain = g;
     this.root.add(g);
@@ -174,8 +197,10 @@ export class LandView {
     if (x < 0 || y < 0 || x >= b.W || y >= b.H) return 0;
     const i = y * b.W + x;
     if (b.level[i]) return b.level[i] * LEVEL_H;
-    const t = b.terrain[i];
-    return t === SHALLOW ? -0.2 : t === SAND ? -0.03 : 0;
+    const hc = this.hCorner, V = b.W + 1;
+    if (!hc) return 0;
+    const h = (hc[y * V + x] + hc[y * V + x + 1] + hc[(y + 1) * V + x] + hc[(y + 1) * V + x + 1]) / 4;
+    return Math.max(h, -0.22); // wade, don't sink
   }
 
   unitPos(u, alpha, out) {
@@ -350,7 +375,13 @@ export class LandView {
         if (k > 3) m.visible = false;
       } else setBar(m.userData.bar, sh.hp / sh.maxHp);
     });
-    if (this.water) this.water.position.y = -0.12 + Math.sin(t * 0.8) * 0.03;
+    if (this.water) {
+      const p = this.water.geometry.attributes.position, base = this.waterBase;
+      for (let k = 0; k < p.count; k++) p.array[k * 3 + 1] = Math.sin(base[k * 3] * 0.35 + t * 1.3) * 0.045 + Math.cos(base[k * 3 + 2] * 0.3 + t * 1.0) * 0.04;
+      p.needsUpdate = true;
+      if ((this.waterTick = (this.waterTick || 0) + 1) % 3 === 0) this.water.geometry.computeVertexNormals();
+    }
+    if (this.grid) this.grid.visible = b.tick === 0;
     const v = new THREE.Vector3();
     const tickNow = b.tick + alpha;
     b.units.forEach((u, i) => {
@@ -376,7 +407,7 @@ export class LandView {
       animateUnit(m, t, moving || (u.def.fly && u.alive), atk, dead, m.userData.phase);
       if (u.def.fly) m.userData.disc.position.y = -(m.position.y - Math.max(0, this.groundY(u.x, u.y))) + 0.02;
       m.userData.rig?.mixer?.update(dt * speed);
-      if (u.alive) setBar(m.userData.bar, u.hp / u.def.hp);
+      if (u.alive) { m.userData.bar.visible = u.hp < u.def.hp; if (u.hp < u.def.hp) setBar(m.userData.bar, u.hp / u.def.hp); }
       if (u.aboard >= 0) m.scale.setScalar(Math.min(0.75, 1 / u.def.size)); else m.scale.setScalar(1);
     });
     b.crafts.forEach((c, i) => {

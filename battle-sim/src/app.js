@@ -9,7 +9,7 @@ import { UNITS } from './data/units.js';
 import { SHIPS, CREATURES, FORTS } from './data/naval.js';
 import { STRUCTURES } from './data/structures.js';
 import { MAP_SHAPES, BIOMES } from './engine/terrain.js';
-import { addCustomModel, removeCustomModel, customModelList, restoreCustomModels } from './render/customModels.js';
+import { addCustomModel, removeCustomModel, customModelList, restoreCustomModels, libraryAdd, libraryList, librarySearch, libraryAssign, libraryAutoMatch, libraryClear, libraryRemove } from './render/customModels.js';
 import { PRESETS, DEFAULT_SCENARIOS } from './data/presets.js';
 import { castleKit } from './data/castle.js';
 
@@ -178,6 +178,9 @@ $('reset').onclick = () => {
 };
 $('speed').onchange = (e) => { state.speed = +e.target.value; };
 $('speed').value = String(state.speed);
+$('quality').value = store.get('tb.quality') || 'auto';
+stage.setQuality($('quality').value);
+$('quality').onchange = (e) => { stage.setQuality(e.target.value); store.set('tb.quality', e.target.value); };
 
 function lockEditing(on) {
   document.querySelectorAll('#panel input, #panel select, #panel button, #panel textarea').forEach((el) => {
@@ -682,6 +685,67 @@ $('modelApply').onclick = async () => {
   }
 };
 
+// ---------- model library ----------
+const modelOpts = () => ({ scale: +$('modelScale').value || 1, yaw: +$('modelYaw').value || 0, up: $('modelUp').value });
+const modelTargets = () => [
+  ...Object.values(roster()).map((d) => ({ id: d.id, name: d.name })),
+  ...Object.values(navalDefs().SHIPS).map((d) => ({ id: d.id, name: d.name })),
+  ...Object.values(navalDefs().CREATURES).map((d) => ({ id: d.id, name: d.name })),
+  ...Object.entries(STRUCTURES).map(([id, d]) => ({ id: `struct:${id}`, name: d.name })),
+];
+const fmtBytes = (n) => n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`;
+async function renderLibrary() {
+  const all = await libraryList();
+  const q = $('libSearch').value.trim();
+  const hits = await librarySearch(q);
+  $('libResults').replaceChildren(...hits.map((e) => {
+    const li = document.createElement('li');
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = e.name; nm.title = e.path;
+    const info = document.createElement('span'); info.className = 'lv'; info.textContent = fmtBytes(e.bytes);
+    const row = document.createElement('span'); row.className = 'row';
+    const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Assign';
+    use.onclick = async () => {
+      const target = $('modelTarget').value, label = $('modelTarget').selectedOptions[0]?.textContent;
+      $('libMsg').textContent = `Loading ${e.name}…`;
+      try { await libraryAssign(e.key, target, modelOpts()); $('libMsg').textContent = `${e.name} now stands in for ${label}.`; renderModelPanel(); if (!sim.started) buildSim(sim.seed); }
+      catch (err) { $('libMsg').textContent = `Could not load ${e.name}: ${err.message}`; }
+    };
+    const rm = document.createElement('button'); rm.type = 'button'; rm.textContent = '×'; rm.setAttribute('aria-label', `Remove ${e.name} from the library`);
+    rm.onclick = async () => { await libraryRemove(e.key); renderLibrary(); };
+    row.append(use, rm);
+    li.append(nm, info, row);
+    return li;
+  }));
+  if (!$('libMsg').textContent || /in your library/.test($('libMsg').textContent)) {
+    $('libMsg').textContent = all.length ? `${all.length} model${all.length > 1 ? 's' : ''} in your library${q ? `, ${hits.length} matching "${q}"` : hits.length < all.length ? `, showing the first ${hits.length}` : ''}.` : 'Your library is empty. Add a folder or files to start.';
+  }
+}
+async function addToLibrary(input) {
+  const files = [...input.files];
+  if (!files.length) return;
+  $('libMsg').textContent = `Reading ${files.length} files…`;
+  const mapFile = files.find((f) => /^mapping\.json$/i.test(f.name));
+  if (mapFile) { try { store.set('tb.modelMap', JSON.parse(await mapFile.text())); } catch { /* ignore a broken mapping file */ } }
+  const n = await libraryAdd(files);
+  input.value = '';
+  $('libMsg').textContent = n ? `Added ${n} model${n > 1 ? 's' : ''} to your library${mapFile ? ' and saved the mapping file' : ''}.` : 'No model files found in that selection (.glb, .gltf, .fbx, .obj, .ply).';
+  renderLibrary();
+}
+$('libFolder').onchange = (e) => addToLibrary(e.target);
+$('libFiles').onchange = (e) => addToLibrary(e.target);
+$('libSearch').oninput = () => { $('libMsg').textContent = ''; renderLibrary(); };
+$('libClear').onclick = async () => { await libraryClear(); $('libMsg').textContent = ''; renderLibrary(); };
+$('libAuto').onclick = async () => {
+  $('libMsg').textContent = 'Matching names…';
+  const done = await libraryAutoMatch(modelTargets(), store.get('tb.modelMap') || {}, modelOpts());
+  const names = Object.fromEntries(modelTargets().map((t) => [t.id, t.name]));
+  $('libMsg').textContent = done.length
+    ? `Replaced ${done.length}: ${done.slice(0, 8).map((d) => `${names[d.target] || d.target} ← ${d.file}`).join(', ')}${done.length > 8 ? ', …' : ''}.`
+    : 'No file names matched a unit or building. Rename files to match, or add a mapping.json.';
+  renderModelPanel();
+  if (!sim.started) buildSim(sim.seed);
+};
+
 // ---------- phone sheet ----------
 $('sheetToggle').onclick = () => $('panel').classList.toggle('open');
 function closePanelOnPhone() { $('panel').classList.remove('open'); }
@@ -690,10 +754,11 @@ function closePanelOnPhone() { $('panel').classList.remove('open'); }
 renderPalette();
 unitOptions($('placeUnit'), false);
 renderModelPanel();
+renderLibrary();
 restoreCustomModels().then((n) => { if (n) { renderModelPanel(); if (!sim.started) buildSim(sim.seed); } });
 $('mapSize').value = String(state.scn.field.size);
 const syncSize = () => { if (!isNaval()) $('mapSize').value = String(scn().size); };
 new MutationObserver(syncSize).observe($('sides'), { childList: true });
 setMode(state.mode);
 requestAnimationFrame(frame);
-window.__tb = { state, sim };
+window.__tb = { state, sim, stage };

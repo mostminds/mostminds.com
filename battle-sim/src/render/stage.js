@@ -1,33 +1,60 @@
 // Shared Three.js stage: renderer, camera, controls, lights and pooled FX.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { skyTexture } from './textures.js';
+
+// pixel density and shadow resolution per quality level
+const QUALITY = { low: { px: 1, shadow: 0 }, medium: { px: 1.5, shadow: 2048 }, high: { px: 2, shadow: 4096 }, ultra: { px: 3, shadow: 4096 } };
 
 export class Stage {
   constructor(container) {
     this.container = container;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x9fb8c8);
+    this.skyColor = null;
     this.scene.fog = new THREE.Fog(0x9fb8c8, 80, 220);
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 600);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.screenSpacePanning = false;
-    const hemi = new THREE.HemisphereLight(0xe8f0ff, 0x5a4a30, 0.9);
-    const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
+    const hemi = new THREE.HemisphereLight(0xdfeaff, 0x6a5a40, 1.5);
+    const sun = new THREE.DirectionalLight(0xfff0d8, 3.2);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
+    const fill = new THREE.DirectionalLight(0xbcd0ff, 0.5);
+    fill.position.set(-1, 0.6, -0.8);
     this.sun = sun;
-    this.scene.add(hemi, sun, sun.target);
+    this.scene.add(hemi, sun, sun.target, fill);
+    this.setQuality('auto');
     this.fx = [];
     this.splatTex = new Map();
     window.addEventListener('resize', () => this.resize());
     this.resize();
+  }
+  setQuality(q) {
+    if (q === 'auto' || !QUALITY[q]) q = window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 820 ? 'medium' : 'high';
+    this.quality = q;
+    const cfg = QUALITY[q];
+    this.renderer.setPixelRatio(Math.min(cfg.px, window.devicePixelRatio || 1));
+    this.sun.castShadow = cfg.shadow > 0;
+    if (cfg.shadow && this.sun.shadow.mapSize.x !== cfg.shadow) {
+      this.sun.shadow.mapSize.set(cfg.shadow, cfg.shadow);
+      this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
+    }
+    this.resize?.();
+  }
+  setSky(color) {
+    if (this.skyColor === color) return;
+    this.skyColor = color;
+    this.scene.background = skyTexture(color);
+    this.scene.fog.color.set(color).lerp(new THREE.Color(0xffffff), 0.2);
   }
   setBounds(w, h) {
     const s = Math.max(w, h);
@@ -54,8 +81,9 @@ export class Stage {
     const key = `${kind}:${dmg}`;
     let tex = this.splatTex.get(key);
     if (!tex) {
-      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const c = document.createElement('canvas'); c.width = c.height = 128;
       const x = c.getContext('2d');
+      x.scale(2, 2);
       x.fillStyle = kind === 'heal' ? '#2f8f3a' : kind === 'poison' ? '#3a7a2a' : dmg > 0 ? '#b3261e' : '#2f5aa8';
       x.beginPath(); x.arc(32, 32, 26, 0, Math.PI * 2); x.fill();
       x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.55)'; x.stroke();

@@ -98,6 +98,11 @@ details > * + * { margin-top: 8px; }
 .palette button { font-size: 12.5px; padding: 6px 4px; }
 .groups li.ship .nm::before { content: "⛵ "; }
 input[type="file"] { width: 100%; font-size: 12.5px; }
+.filebtn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.filebtn:hover { border-color: var(--muted); }
+.filebtn:focus-within { outline: 2px solid var(--brass); outline-offset: 2px; }
+input[type="search"] { width: 100%; box-sizing: border-box; }
+#libResults { max-height: 220px; overflow-y: auto; }
 
 .view { grid-area: view; position: relative; overflow: hidden; min-width: 0; touch-action: none; }
 .view canvas { display: block; }

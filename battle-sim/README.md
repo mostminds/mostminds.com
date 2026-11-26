@@ -90,6 +90,28 @@ footprint (ships, creatures, buildings). **Up axis** fixes exports that are Z-up
 Animation clips whose names contain walk/run, attack/hit/cast, death/die and idle/stand play automatically.
 Models are stored in the browser's IndexedDB and never leave the device.
 
+### Model library
+
+Under **Your 3D models**, **Add folder** reads a whole folder of exported models (each model keeps the `.bin`, `.mtl`
+and texture files it references), and the search box filters the library by file name or path. **Assign** puts a model
+on the selected target. **Auto-match** replaces every unit, ship, creature and building whose name matches a file name;
+a `mapping.json` in the folder sets the pairing explicitly:
+
+```json
+{ "my_knight.glb": "knight", "big_wall.obj": "struct:castleWall", "war_galley.glb": "galleon" }
+```
+
+Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct:` plus a key from `src/data/structures.js`.
+
+## Graphics
+
+The look is a retro low-poly fantasy style at modern fidelity: smooth terrain with colours blended between ground types,
+rounded characters with faces, armour plates, capes and shields, procedurally painted stone, wood, thatch and roof-tile
+textures, soft shadows, tone mapping, a sky gradient and rippling water. Each unit type is built once, its parts are
+merged into one mesh per moving limb, and every soldier is a clone of that template, so a 300-unit battle stays near
+1,800 draw calls. The **Graphics** menu sets pixel density and shadow resolution (Low, Medium, High, Ultra; Auto picks
+Medium on phones and High elsewhere).
+
 ## Adding your own units
 
 The built-in roster is an original fantasy roster. Add your own through
@@ -128,7 +150,8 @@ Imported units are saved in the browser and can be placed by hand or added to ar
 src/engine/   battle.js (land + amphibious, levels, breaching, flight), support.js (guns, fire-support ships),
               naval.js (ships, creatures, forts), combat.js, terrain.js (map shapes, biomes), worker.js, batch.js
 src/data/     units.js, structures.js, naval.js, presets.js, castle.js (castle builder)
-src/render/   stage.js, landView.js, navalView.js, models.js (procedural animated models), customModels.js (imports)
+src/render/   stage.js, landView.js, navalView.js, models.js (procedural animated models), textures.js (painted textures),
+              customModels.js (imports and the model library)
 src/app.js    UI wiring
 tools/        build-artifact.mjs (single-page bundle for hosting as a claude.ai artifact)
 ```
