@@ -77,10 +77,10 @@ export const SITES = {
   village: { name: 'Village raid', mode: 'field', shape: ['plains', 'plains', 'lake'], size: 96, points: 11000, edge: 1.15 },
   fort: { name: 'Fort assault', mode: 'field', shape: ['plains', 'plains', 'river'], size: 96, points: 15000, edge: 1.5 },
   castle: { name: 'Castle siege', mode: 'field', shape: ['plains'], size: 112, points: 21000, edge: 1.9 },
-  city: { name: 'City siege', mode: 'field', shape: ['plains', 'river'], size: 144, points: 36000, edge: 1.8 },
-  coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast'], size: 112, points: 14000, edge: 1.5 },
-  harbor: { name: 'Harbour city assault', mode: 'amphibious', shape: ['harbor'], size: 128, points: 24000, edge: 1.6 },
-  island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island'], size: 112, points: 16000, edge: 1.6 },
+  city: { name: 'City siege', mode: 'field', shape: ['plains', 'river'], size: 144, points: 36000, edge: 1.6 },
+  coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast'], size: 112, points: 14000, edge: 1.2 },
+  harbor: { name: 'Harbour city assault', mode: 'amphibious', shape: ['harbor'], size: 128, points: 24000, edge: 1.4 },
+  island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island'], size: 112, points: 16000, edge: 1.3 },
 };
 
 // ---------- helpers ----------
