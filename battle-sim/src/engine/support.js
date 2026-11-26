@@ -4,6 +4,7 @@ import { defenceRoll, hitChance } from './combat.js';
 import { DEEP } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { near, losCheck, queueHit, damageStructure, hitStructuresAt, unitHeight } from './battle.js';
+import { airTargetFor } from './airship.js';
 
 const NOBODY = { id: -1 };
 const ucx = (u) => u.x + u.def.size / 2;
@@ -104,6 +105,10 @@ function gunTick(b, g) {
     const sc = d - 12 * w.antiShip;
     if (sc < bs) { bs = sc; best = cr; kind = 'craft'; }
   }
+  if (w.antiAir) {
+    const a = airTargetFor(b, side, g.cx, g.cy, R + 2);
+    if (a) { const sc = Math.hypot(a.x - g.cx, a.y - g.cy) - 14; if (sc < bs) { bs = sc; best = a; kind = 'air'; } }
+  }
   near(b, g.cx, g.cy, R + 1, (u) => {
     if (!u.alive || u.side === side || u.aboard >= 0) return;
     const air = unitHeight(b, u) === 4;
@@ -126,11 +131,14 @@ function gunTick(b, g) {
   g.aim = Math.atan2(ty - g.cy, tx - g.cx);
   g.cd = c[side] >= 2 ? Math.round(w.speed * 0.8) : w.speed;
   g.lastFire = b.tick;
-  b.events.push({ type: 'gunFire', gun: g.id, x1: tx, y1: ty, delay, shot: w.shot });
+  b.events.push({ type: 'gunFire', gun: g.id, x1: tx, y1: ty, h1: kind === 'air' ? best.def.altitude : 0.3, delay, shot: w.shot });
 
   if (kind === 'unit') {
     blast(b, side, aRoll, w.maxHit, best, w.splash, delay);
     if (w.siege && unitHeight(b, best) < 4) hitStructuresAt(b, tx, ty, Math.max(0.6, w.splash), Math.round(b.rng.int(0, w.maxHit) * w.siege * 0.5));
+  } else if (kind === 'air') {
+    const hit = b.rng.next() < hitChance(aRoll, (30 + 9) * (best.def.armour * 2 + 64));
+    b.pending.push({ tick: b.tick + delay, air: best.id, dmg: hit ? Math.round(b.rng.int(0, w.maxHit) * 1.5 * (100 / (100 + best.def.armour))) : 0, hit, by: side });
   } else if (kind === 'craft') {
     const hit = b.rng.next() < hitChance(aRoll, (30 + 9) * (40 + 64));
     const dmg = hit ? Math.round(b.rng.int(0, w.maxHit) * w.antiShip) : 0;

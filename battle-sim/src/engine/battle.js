@@ -5,6 +5,7 @@ import { attackRoll, defenceRoll, hitChance, maxHit, hitDelay, combatLevel } fro
 import { generateTerrain, DEEP } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGunRing } from './support.js';
+import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsAirship } from './airship.js';
 
 const INF = 32767;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -53,6 +54,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   };
   const defs = {};
   const getDef = (id) => (defs[id] ||= roster[id] ? prepareDef(roster[id]) : null);
+  b.getDef = getDef;
 
   // Structures
   for (const s of scn.structures || []) {
@@ -67,17 +69,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   rebuildGrid(b);
   b.hasRamparts = b.level.some((l) => l > 0);
 
-  const addUnit = (def, side, x, y) => {
-    const u = {
-      id: b.units.length, side, def, x, y, px: x, py: y, hp: def.hp, cd: b.rng.int(0, def.speed),
-      alive: true, aboard: -1, pending: 0, squad: -1, poison: null, kills: 0, dealt: 0,
-      moved: 0, attacks: 0, face: side === 0 ? 0 : Math.PI, lastAttack: -99,
-    };
-    b.units.push(u);
-    b.sides[side].initial++;
-    if (x >= 0) occupy(b, u, 1);
-    return u;
-  };
+  const addUnit = (def, side, x, y) => spawnUnit(b, def, side, x, y);
   const fits = (def, x, y, side) => def.fly ? canStandAir(b, x, y, def.size, -1) : canStand(b, x, y, def.size, -1, side);
 
   scn.sides.forEach((side, si) => {
@@ -124,7 +116,46 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
 
   buildSquads(b);
   initSupport(b, scn, shipDefs);
+  initAirships(b, scn);
   return b;
+}
+
+/** add one unit to a battle (x < 0 leaves it off the grid, e.g. aboard something) */
+export function spawnUnit(b, def, side, x, y) {
+  const u = {
+    id: b.units.length, side, def, x, y, px: x, py: y, hp: def.hp, cd: b.rng.int(0, def.speed),
+    alive: true, aboard: -1, pending: 0, squad: -1, poison: null, kills: 0, dealt: 0,
+    moved: 0, attacks: 0, face: side === 0 ? 0 : Math.PI, lastAttack: -99,
+  };
+  b.units.push(u);
+  b.sides[side].initial++;
+  if (x >= 0) occupy(b, u, 1);
+  return u;
+}
+/** form units that arrived mid-battle into a squad of their own */
+export function addSquad(b, members, state = 'advance') {
+  if (!members.length) return null;
+  const sq = {
+    id: b.squads.length, side: members[0].side, role: members[0].def.role, members: members.map((u) => u.id),
+    initial: members.length, state, target: -1, focus: -1, waypoint: null, cx: 0, cy: 0, alive: members.length, flankUntil: 0,
+  };
+  for (const u of members) u.squad = sq.id;
+  b.squads.push(sq);
+  return sq;
+}
+/** nearest free tiles to (x, y) for a unit of this size, searched outward over walkable ground */
+export function freeTileNear(b, x, y, size, side) {
+  const start = y * b.W + x, seen = new Set([start]), q = [start];
+  for (let h = 0; h < q.length && h < 600; h++) {
+    const i = q[h], cx = i % b.W, cy = (i / b.W) | 0;
+    if (canStand(b, cx, cy, size, -1, side)) return [cx, cy];
+    for (const [dx, dy] of DIRS) {
+      const nx = cx + dx, ny = cy + dy, n = ny * b.W + nx;
+      if (nx < 0 || ny < 0 || nx >= b.W || ny >= b.H || seen.has(n) || b.terrain[n] === DEEP) continue;
+      seen.add(n); q.push(n);
+    }
+  }
+  return null;
 }
 
 function spawnTiles(b, mode, side) {
@@ -239,7 +270,7 @@ export function canStandAir(b, x, y, size, selfId) {
   }
   return true;
 }
-function occupy(b, u, on) {
+export function occupy(b, u, on) {
   const s = u.def.size, grid = u.def.fly ? b.occAir : b.occ;
   for (let yy = u.y; yy < u.y + s; yy++) for (let xx = u.x; xx < u.x + s; xx++) {
     if (xx < 0 || yy < 0 || xx >= b.W || yy >= b.H) continue;
@@ -432,6 +463,7 @@ export function stepBattle(b) {
 
   moveCrafts(b);
   supportTick(b);
+  airTick(b);
   for (const sq of b.squads) if ((b.tick + sq.id) % 3 === 0) updateSquad(b, sq);
 
   // Fair-ish ordering: shuffle each tick
@@ -451,7 +483,7 @@ function sideAlive(b, side) {
   for (const u of b.units) if (u.alive && u.side === side) n++;
   // a side made only of ships stays in the fight while it has hulls afloat
   if (!b.sides[side].initial) for (const s of b.ships) if (s.alive && s.side === side) n++;
-  return n;
+  return n + airAlive(b, side); // a crewed airship keeps its side in the fight
 }
 function sideHp(b, side) {
   let n = 0;
@@ -738,6 +770,8 @@ function unitTick(b, u) {
     if (craft) { attackCraft(b, u, craft, cd); return; }
   }
   if (u.def.style !== 'melee' && u.cd <= 0 && b.ships.length && unitVsShip(b, u, range)) return;
+  if (u.def.style !== 'melee' && u.cd <= 0 && b.airships.length && unitVsAirship(b, u, range)) return;
+  if (u.def.fly && u.def.style === 'melee' && b.airships.length && flierVsAirship(b, u)) return;
   if (u.def.fly) { flyToward(b, u, sq, range); return; }
 
   // Siege engines and sappers make for the enemy's gates and walls
@@ -937,6 +971,7 @@ function resolvePending(b) {
   for (const p of b.pending) {
     if (p.tick > b.tick) { keep.push(p); continue; }
     const from = b.units[p.from];
+    if (p.air !== undefined) { resolveAirHit(b, p); continue; }
     if (p.ship !== undefined || p.gun !== undefined) { resolveSupportHit(b, p); continue; }
     if (p.craft !== undefined) {
       const c = b.crafts[p.craft];
@@ -969,7 +1004,7 @@ function resolvePending(b) {
   b.pending = keep;
 }
 
-function damage(b, t, dmg, from, style, hit = true) {
+export function damage(b, t, dmg, from, style, hit = true) {
   if (!t.alive) return;
   dmg = Math.min(dmg, t.hp);
   t.hp -= dmg;
@@ -1041,7 +1076,7 @@ function flyToward(b, u, sq, range) {
   if (unitDist(u, goal) <= range) return;
   stepAir(b, u, goal);
 }
-function stepAir(b, u, goal) {
+export function stepAir(b, u, goal) {
   for (let s = 0; s < u.def.move; s++) {
     let best = null, bd = Math.hypot(goal.x - u.x, goal.y - u.y);
     for (const [dx, dy] of DIRS) {
