@@ -100,10 +100,16 @@
       <div class="row wrap">
         <select id="placeSide" aria-label="Side to place"><option value="0">Side A</option><option value="1">Side B</option></select>
         <select id="placeUnit" aria-label="Unit to place"></select>
-        <label class="inline">Brush <input id="placeBrush" type="number" min="1" max="50" value="5"></label>
-        <button type="button" id="placeTool">Place</button>
+        <label class="inline">Count <input id="placeBrush" type="number" min="1" max="200" value="12"></label>
+        <label class="inline">Formation <select id="placeForm"><option value="block">Block</option><option value="line">Line</option><option value="column">Column</option><option value="wedge">Wedge</option><option value="square">Hollow square</option><option value="circle">Circle</option></select></label>
       </div>
-      <p class="hint">Pick a tool, then tap the ground. Erase removes objects and hand-placed units. Units added in the army list deploy automatically.</p>
+      <div class="row wrap">
+        <button type="button" id="placeTool">Place</button>
+        <button type="button" id="moveTool" title="Tap a group, then tap where it should go">Move</button>
+        <button type="button" id="deleteTool">Delete</button>
+        <button type="button" id="craftTool" title="Put a landing craft on open water for the chosen side">Landing craft</button>
+      </div>
+      <p class="hint" id="placeHint" role="status">Pick a tool, then tap the ground. Move and Delete also work on troops from the army list: they are pinned where they deployed first. Count sets how many are placed and how wide Move and Delete reach.</p>
     </section>
 
     <section class="block" id="seaBlock" hidden>

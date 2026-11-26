@@ -39,6 +39,9 @@ server.listen(0, async () => {
       await page.selectOption('#genSite', site); await page.selectOption('#genDef', def); await page.selectOption('#genAtt', att); await page.selectOption('#genSize', size);
       await page.click('#generate'); await page.waitForTimeout(300); await ready(); await page.waitForTimeout(1200);
     }
+    if (args.eval) { // --eval "js" runs in the page after loading (window.__tb = { state, sim, stage }), then the battle is rebuilt
+      await page.evaluate(args.eval); await page.click('#reset'); await page.waitForTimeout(300); await ready(); await page.waitForTimeout(1200);
+    }
     const ticks = +(args.ticks || 0);
     if (ticks) {
       await page.click('#play');

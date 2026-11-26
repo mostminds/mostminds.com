@@ -11,7 +11,11 @@ import { registerAnimators } from './animate.js';
 import { exampleBody } from './bodies/_example.js';
 
 export const BODIES = { example: exampleBody, ...humanoid.bodies, ...undead.bodies, ...beasts.bodies, ...monsters.bodies };
-export const STRUCT = buildings.structures;
+// airships, aircraft, drop pods and the buildings that serve them
+let air = {};
+try { air = await import('./props/airships.js'); } catch (err) { console.warn('[models] airship models unavailable, using simple shapes', err); }
+export const AIR = air;
+export const STRUCT = { ...buildings.structures, ...(air.structures || {}) };
 export const rubble = buildings.rubble;
 export const SIEGE = siegeMod.siege;
 export const craft = siegeMod.craft;

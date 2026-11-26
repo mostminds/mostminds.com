@@ -135,3 +135,23 @@ export function triangleStats(model) {
   if (lod.far) out.push(Math.round((lod.far.geometry.index ? lod.far.geometry.index.count : lod.far.geometry.attributes.position.count) / 3));
   return out;
 }
+
+/**
+ * One static geometry of a model as it is posed right now, at a coarse detail level. Used for
+ * the fallen: a body costs one draw call and every body of that unit type shares the geometry.
+ */
+export function bakePose(model, level = 2) {
+  const lod = model.userData.lod;
+  if (!lod || !lod.meshes.length) return null;
+  model.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const parts = [];
+  for (const { mesh, geos } of lod.meshes) {
+    const g = geos[Math.min(level, geos.length - 1)];
+    if (!g || g === EMPTY) continue;
+    const c = g.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld));
+    if (!(c.index.array instanceof Uint32Array)) c.setIndex(new THREE.BufferAttribute(Uint32Array.from(c.index.array), 1));
+    parts.push(c);
+  }
+  return parts.length ? mergeGeometries(parts, false) : null;
+}

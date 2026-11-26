@@ -14,6 +14,7 @@ import { addCustomModel, removeCustomModel, customModelList, restoreCustomModels
 import { PRESETS, DEFAULT_SCENARIOS } from './data/presets.js';
 import { castleKit } from './data/castle.js';
 import { generateScenario, SITES, FACTIONS } from './data/worldgen.js';
+import { AIRSHIPS } from './data/airships.js';
 
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -47,6 +48,7 @@ const isNaval = () => state.mode === 'naval';
 const scn = () => state.scn[state.mode];
 const defFor = (id) => {
   if (id?.startsWith?.('ship:')) return navalDefs().SHIPS[id.slice(5)];
+  if (id?.startsWith?.('air:')) return AIRSHIPS[id.slice(4)];
   return isNaval() ? (navalDefs().SHIPS[id] || navalDefs().CREATURES[id]) : roster()[id];
 };
 const fmtTime = (ticks) => { const s = Math.floor((ticks * TICK_MS) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -58,6 +60,7 @@ function matchup() {
   return scn().sides.map((s) => {
     const parts = (s.groups || []).filter((g) => g.count > 0).map((g) => `${g.count} ${defFor(g.unit)?.name || g.unit}`);
     if (!isNaval()) for (const g of s.ships || []) if (g.count > 0) parts.push(`${g.count} ${navalDefs().SHIPS[g.unit]?.name || g.unit}`);
+    if (!isNaval()) for (const g of s.airships || []) if (g.count > 0) parts.push(`${g.count} ${AIRSHIPS[g.unit]?.name || g.unit}`);
     const placed = (s.placed || []).length;
     if (placed) parts.push(`${placed} placed`);
     return parts.join(', ') || 'nobody';
@@ -302,6 +305,7 @@ function unitOptions(sel, withLevels = true, withShips = false) {
       groups.get(c).push(u);
     }
     if (withShips) groups.set('Fire-support ships', Object.values(navalDefs().SHIPS).map((x) => ({ ...x, id: `ship:${x.id}` })));
+    if (withShips) groups.set('Zeppelins', Object.values(AIRSHIPS).map((x) => ({ ...x, id: `air:${x.id}` })));
   }
   for (const [name, list] of groups) {
     const og = document.createElement('optgroup'); og.label = name;
@@ -320,7 +324,13 @@ function unitCard(def) {
   card.className = 'unitcard';
   if (!def) return card;
   const chips = (list) => `<div class="chips">${list.map((t) => `<span class="chip">${t}</span>`).join('')}</div>`;
-  if (def.hull) {
+  if (def.hangar) {
+    const c = def.cannons, u = roster();
+    card.innerHTML = `<div><b>${def.name}</b> · war zeppelin</div>
+      <div class="stats"><span>Hull ${def.hull}</span><span>Armour ${def.armour}</span><span>Crew ${def.crew}</span><span>Speed ${def.speed}</span>
+      <span>Guns ${c.perSide}×2</span><span>Dmg ${c.dmg[0]}–${c.dmg[1]}</span><span>Range ${c.range}</span><span>Bombs ${def.bombs.maxHit}</span></div>
+      ${chips([`hangar: ${def.hangar.count} ${u[def.hangar.unit]?.name || def.hangar.unit}s`, `${def.pods.pods} pods of ${def.pods.perPod} ${u[def.pods.unit]?.name || def.pods.unit}`, `ladders lift ${def.ladders.capacity}`, 'boards and can be boarded'])}`;
+  } else if (def.hull) {
     const c = def.cannons;
     card.innerHTML = `<div><b>${def.name}</b> · sailing level ${def.level}</div>
       <div class="stats"><span>Hull ${def.hull}</span><span>Armour ${def.armour}</span><span>Crew ${def.crew}</span><span>Speed ${def.speed}</span>
@@ -366,19 +376,20 @@ function renderSides() {
     el.append(head);
 
     const ul = document.createElement('ul'); ul.className = 'groups';
-    side.ships ||= [];
+    side.ships ||= []; side.airships ||= []; side.crafts ||= [];
     const rows = [...side.groups.map((g, gi) => ({ g, gi, arr: side.groups, ship: false })),
-      ...(isNaval() ? [] : side.ships.map((g, gi) => ({ g, gi, arr: side.ships, ship: true })))];
-    rows.forEach(({ g, gi, arr, ship }) => {
-      const def = ship ? navalDefs().SHIPS[g.unit] : defFor(g.unit);
+      ...(isNaval() ? [] : side.ships.map((g, gi) => ({ g, gi, arr: side.ships, ship: true }))),
+      ...(isNaval() ? [] : side.airships.map((g, gi) => ({ g, gi, arr: side.airships, ship: true, air: true })))];
+    rows.forEach(({ g, gi, arr, ship, air }) => {
+      const def = air ? AIRSHIPS[g.unit] : ship ? navalDefs().SHIPS[g.unit] : defFor(g.unit);
       const li = document.createElement('li');
-      if (ship) li.className = 'ship';
+      if (ship) li.className = air ? 'ship air' : 'ship';
       const nm = document.createElement('span'); nm.className = 'nm';
       nm.innerHTML = `${def?.name || g.unit} <span class="lv">lvl ${def ? levelOf(def) : '?'}</span>`;
       nm.onclick = () => { const old = el.querySelector('.unitcard'); old?.replaceWith(unitCard(def)); };
       const qty = document.createElement('input');
-      qty.type = 'number'; qty.min = 0; qty.max = isNaval() || ship ? (ship ? 30 : 60) : 500; qty.value = g.count;
-      qty.id = `qty${si}_${ship ? 's' : ''}${gi}`; qty.setAttribute('aria-label', `${def?.name} count`);
+      qty.type = 'number'; qty.min = 0; qty.max = air ? 6 : isNaval() || ship ? (ship ? 30 : 60) : 500; qty.value = g.count;
+      qty.id = `qty${si}_${air ? 'a' : ship ? 's' : ''}${gi}`; qty.setAttribute('aria-label', `${def?.name} count`);
       qty.onchange = () => { g.count = Math.max(0, Math.min(+qty.max, +qty.value || 0)); qty.value = g.count; renderTotals(); rebuildPreview(); };
       const rm = document.createElement('button'); rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', `Remove ${def?.name}`);
       rm.onclick = () => { arr.splice(gi, 1); renderSides(); rebuildPreview(); };
@@ -394,10 +405,11 @@ function renderSides() {
     const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Add';
     btn.onclick = () => {
       const n = Math.max(1, +qty.value || 1);
-      const isShip = sel.value.startsWith('ship:');
-      const arr = isShip ? side.ships : side.groups, id = isShip ? sel.value.slice(5) : sel.value;
+      const isShip = sel.value.startsWith('ship:'), isAir = sel.value.startsWith('air:');
+      const arr = isAir ? side.airships : isShip ? side.ships : side.groups, id = isAir ? sel.value.slice(4) : isShip ? sel.value.slice(5) : sel.value;
+      const cap = isAir ? 6 : isShip ? 30 : 500;
       const ex = arr.find((g) => g.unit === id);
-      if (ex) ex.count += n; else arr.push({ unit: id, count: isShip ? Math.min(n, 30) : n });
+      if (ex) ex.count = Math.min(cap, ex.count + (isAir ? 1 : n)); else arr.push({ unit: id, count: isAir ? 1 : Math.min(n, cap) });
       renderSides(); rebuildPreview();
     };
     add.append(sel, qty, btn);
@@ -420,7 +432,8 @@ function renderTotals() {
     const n = side.groups.reduce((a, g) => a + g.count, 0) + (side.placed?.length || 0);
     const ships = isNaval() ? 0 : (side.ships || []).reduce((a, g) => a + g.count, 0);
     const placed = side.placed?.length ? `, ${side.placed.length} hand-placed` : '';
-    el.textContent = `${n} ${isNaval() ? 'vessels and creatures' : 'units'}${placed}${ships ? `, ${ships} ship${ships > 1 ? 's' : ''} offshore` : ''}`;
+    const zeps = isNaval() ? 0 : (side.airships || []).reduce((a, g) => a + g.count, 0), boats = isNaval() ? 0 : (side.crafts || []).length;
+    el.textContent = `${n} ${isNaval() ? 'vessels and creatures' : 'units'}${placed}${ships ? `, ${ships} ship${ships > 1 ? 's' : ''} offshore` : ''}${zeps ? `, ${zeps} zeppelin${zeps > 1 ? 's' : ''}` : ''}${boats ? `, ${boats} landing craft` : ''}`;
   });
 }
 
@@ -460,13 +473,16 @@ function setTool(t) {
   $('kitLarge').classList.toggle('on', t?.id === 'kit24');
   $('seaErase').classList.toggle('on', t?.kind === 'seaErase');
   $('placeTool').classList.toggle('on', t?.kind === 'unit');
+  $('moveTool').classList.toggle('on', t?.kind === 'move');
+  $('deleteTool').classList.toggle('on', t?.kind === 'delUnit');
+  $('craftTool').classList.toggle('on', t?.kind === 'craft');
   view?.showGhost?.(null);
 }
 $('rotate').onclick = () => { state.rot = (state.rot + 1) % 2; };
 $('kitSmall').onclick = () => setTool(state.tool?.id === 'kit16' ? null : { kind: 'kit', id: 'kit16', size: 16 });
 $('kitLarge').onclick = () => setTool(state.tool?.id === 'kit24' ? null : { kind: 'kit', id: 'kit24', size: 24 });
 window.addEventListener('keydown', (e) => { if (e.key === 'r' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) state.rot = (state.rot + 1) % 2; if (e.key === 'Escape') setTool(null); });
-$('clearMap').onclick = () => { scn().structures = []; scn().sides.forEach((s) => (s.placed = [])); renderTotals(); rebuildPreview(); };
+$('clearMap').onclick = () => { scn().structures = []; scn().sides.forEach((s) => { s.placed = []; s.crafts = []; }); renderTotals(); rebuildPreview(); };
 $('mapSize').onchange = (e) => {
   const n = +e.target.value;
   scn().size = n;
@@ -476,9 +492,35 @@ $('mapSize').onchange = (e) => {
 };
 $('placeTool').onclick = () => {
   if (state.tool?.kind === 'unit') return setTool(null);
-  setTool({ kind: 'unit', id: 'unit', side: +$('placeSide').value, unit: $('placeUnit').value, brush: Math.max(1, Math.min(50, +$('placeBrush').value || 1)) });
+  setTool({ kind: 'unit', id: 'unit', side: +$('placeSide').value, unit: $('placeUnit').value, brush: Math.max(1, Math.min(200, +$('placeBrush').value || 1)), form: $('placeForm').value });
 };
-['placeSide', 'placeUnit', 'placeBrush'].forEach((id) => $(id).addEventListener('change', () => { if (state.tool?.kind === 'unit') { setTool(null); $('placeTool').click(); } }));
+const brushRadius = () => Math.max(1, Math.ceil(Math.sqrt(Math.max(1, +$('placeBrush').value || 1)) / 2) + 1);
+$('moveTool').onclick = () => setTool(state.tool?.kind === 'move' ? null : { kind: 'move', id: 'move', brush: +$('placeBrush').value || 1, held: null });
+$('deleteTool').onclick = () => setTool(state.tool?.kind === 'delUnit' ? null : { kind: 'delUnit', id: 'delUnit', brush: +$('placeBrush').value || 1 });
+$('craftTool').onclick = () => setTool(state.tool?.kind === 'craft' ? null : { kind: 'craft', id: 'craft', side: +$('placeSide').value });
+
+// Troops that deployed automatically become hand-placed where they stand, so they can be moved or removed one by one.
+function pinSide(si) {
+  const side = scn().sides[si], b = sim.b;
+  if (!b || !side.groups.some((g) => g.count > 0)) return;
+  const mine = b.units.filter((u) => u.side === si);
+  if (mine.some((u) => u.aboard >= 0)) return; // boat-borne troops stay with their boats
+  side.placed = mine.map((u) => ({ unit: u.def.id, x: u.x, y: u.y }));
+  side.groups = [];
+  renderSides();
+}
+// offsets for n soldiers in a formation facing the enemy (side A faces east)
+function formation(form, n, size, side) {
+  const f = side === 0 ? 1 : -1, out = [];
+  if (form === 'line') { const ranks = n > 24 ? 3 : n > 8 ? 2 : 1, w = Math.ceil(n / ranks); for (let i = 0; i < n; i++) out.push([-(Math.floor(i / w)) * f, (i % w) - Math.floor(w / 2)]); }
+  else if (form === 'column') { const files = n > 20 ? 3 : 2; for (let i = 0; i < n; i++) out.push([-Math.floor(i / files) * f, (i % files) - Math.floor(files / 2)]); }
+  else if (form === 'wedge') { for (let r = 0, i = 0; i < n; r++) for (let k = -r; k <= r && i < n; k++, i++) out.push([-r * f, k]); }
+  else if (form === 'circle') { const R = Math.max(1.5, (n * 1.15) / (2 * Math.PI)); for (let i = 0; i < n; i++) out.push([Math.round(Math.cos((i / n) * 2 * Math.PI) * R), Math.round(Math.sin((i / n) * 2 * Math.PI) * R)]); }
+  else if (form === 'square') { const w = Math.ceil(Math.sqrt(n)), h = Math.ceil(n / w); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x === 0 || y === 0 || x === w - 1 || y === h - 1 || out.length + (w - 2) * (h - 2) < n) out.push([x - (w >> 1), y - (h >> 1)]); out.length = Math.min(out.length, n); }
+  else return null; // 'block': fill outward from the tile
+  return out.map(([x, y]) => [x * size, y * size]);
+}
+['placeSide', 'placeUnit', 'placeBrush', 'placeForm'].forEach((id) => $(id).addEventListener('change', () => { if (state.tool?.kind === 'unit') { setTool(null); $('placeTool').click(); } }));
 
 function applyTool(tile) {
   const s = scn(), t = state.tool;
@@ -495,11 +537,55 @@ function applyTool(tile) {
     const i = s.structures.findIndex((st) => { const { w, h } = structureFootprint(st); return tile.x >= st.x && tile.y >= st.y && tile.x < st.x + w && tile.y < st.y + h; });
     if (i >= 0) s.structures.splice(i, 1);
     else for (const side of s.sides) side.placed = side.placed.filter((p) => Math.abs(p.x - tile.x) > 1 || Math.abs(p.y - tile.y) > 1);
+  } else if (t.kind === 'craft') {
+    if (sim.b.terrain[tile.y * sim.b.W + tile.x] !== 3) { $('placeHint').textContent = 'Landing craft go on open water.'; return; }
+    (s.sides[t.side].crafts ||= []).push({ x: tile.x, y: tile.y });
+    $('placeHint').textContent = 'Each craft carries the next six foot soldiers from that side\'s army list to the nearest enemy shore.';
+    renderTotals();
+  } else if (t.kind === 'delUnit') {
+    const r = brushRadius() - 1;
+    let hit = false;
+    s.sides.forEach((side, si) => {
+      if (sim.b.units.some((u) => u.side === si && u.aboard < 0 && Math.abs(u.x - tile.x) <= r && Math.abs(u.y - tile.y) <= r) && !side.placed.some((p) => Math.abs(p.x - tile.x) <= r && Math.abs(p.y - tile.y) <= r)) pinSide(si);
+      const n = side.placed.length + (side.crafts || []).length;
+      side.placed = side.placed.filter((p) => Math.abs(p.x - tile.x) > r || Math.abs(p.y - tile.y) > r);
+      side.crafts = (side.crafts || []).filter((c) => Math.abs(c.x - tile.x) > 1 || Math.abs(c.y - tile.y) > 1);
+      if (side.placed.length + side.crafts.length !== n) hit = true;
+    });
+    if (hit) renderSides();
+  } else if (t.kind === 'move') {
+    if (!t.held) {
+      const r = brushRadius() - 1;
+      s.sides.forEach((side, si) => { if (sim.b.units.some((u) => u.side === si && u.aboard < 0 && Math.abs(u.x - tile.x) <= r && Math.abs(u.y - tile.y) <= r)) pinSide(si); });
+      const held = [];
+      s.sides.forEach((side, si) => {
+        side.placed.forEach((p) => { if (Math.abs(p.x - tile.x) <= r && Math.abs(p.y - tile.y) <= r) held.push({ p, si }); });
+        (side.crafts || []).forEach((c) => { if (Math.abs(c.x - tile.x) <= 1 && Math.abs(c.y - tile.y) <= 1) held.push({ p: c, si, craft: true }); });
+      });
+      if (!held.length) { $('placeHint').textContent = 'Nothing to move there. Tap a group of troops, then tap where they should go.'; return; }
+      t.held = held; t.from = tile;
+      $('placeHint').textContent = `${held.length} picked up. Tap where they should go.`;
+      return;
+    }
+    const dx = tile.x - t.from.x, dy = tile.y - t.from.y;
+    for (const { p } of t.held) { p.x = Math.max(1, Math.min(s.size - 2, p.x + dx)); p.y = Math.max(1, Math.min(s.size - 2, p.y + dy)); }
+    $('placeHint').textContent = `${t.held.length} moved. Tap another group to move it.`;
+    t.held = null;
   } else if (t.kind === 'unit') {
     const def = prepareDef(roster()[t.unit]);
     const b = sim.b, taken = new Set();
     let placed = 0;
-    for (let r = 0; r < 12 && placed < t.brush; r++) {
+    const spots = formation(t.form, t.brush, def.size, t.side);
+    if (spots) {
+      for (const [dx, dy] of spots) {
+        const x = tile.x + dx, y = tile.y + dy;
+        if (taken.has(`${x},${y}`) || !canStand(b, x, y, def.size, -1)) continue;
+        taken.add(`${x},${y}`);
+        s.sides[t.side].placed.push({ unit: t.unit, x, y });
+        placed++;
+      }
+    }
+    for (let r = 0; !spots && r < 12 && placed < t.brush; r++) {
       for (let dy = -r; dy <= r && placed < t.brush; dy++) for (let dx = -r; dx <= r && placed < t.brush; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         const x = tile.x + dx * def.size, y = tile.y + dy * def.size;

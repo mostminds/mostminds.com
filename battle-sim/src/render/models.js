@@ -386,7 +386,47 @@ function cloneRigged(tpl) {
 const templates = new Map();
 const rigOf = new WeakMap();
 
+// ---------- airships, aircraft and drop pods ----------
+const slab = (w, h, d, c, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c)); m.position.set(x, y, z); return m; };
+export function buildAirship(def, sideColor) {
+  const sm = REG.AIR.airship && guarded(`airship:${def.id}`, () => REG.AIR.airship(def, sideColor));
+  if (sm) { sm.userData.sculpted = true; return sm; }
+  // simple stand-in: gas bag, gondola, a flag
+  const g = new THREE.Group(), L = def.len;
+  const bag = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), mat(def.envelope)); bag.scale.set(L / 2, L * 0.16, L * 0.16); bag.position.y = 2.6; g.add(bag);
+  g.add(slab(L * 0.55, 0.9, 1.4, def.color, 0, -0.45, 0));
+  const flag = slab(0.9, 0.5, 0.05, sideColor, -L * 0.3, 1.1, 0); g.add(flag);
+  const prop = new THREE.Group(); prop.add(slab(0.06, 1.2, 0.16, 0x333333)); prop.position.set(-L * 0.3, -0.3, 0); g.add(prop);
+  g.userData = { props: [prop], muzzles: Array.from({ length: def.cannons.perSide }, (_, i) => [(i / Math.max(1, def.cannons.perSide - 1) - 0.5) * L * 0.4, -0.3, 0.75]),
+    bombBay: [0, -0.9, 0], hangar: [-L * 0.3, -0.2, 0], pods: [[1, -0.5, 0.8], [1, -0.5, -0.8], [-1, -0.5, 0.8], [-1, -0.5, -0.8]], ladders: [[0, 0, -0.7], [0, 0, 0.7]], top: 4.2, radius: L / 2,
+    setSide: (hex) => flag.material.color.set(hex), setDamage: (lv) => { bag.material.color.set(def.envelope).multiplyScalar(1 - lv * 0.22); bag.scale.y = L * 0.16 * (lv === 3 ? 0.5 : 1); } };
+  return g;
+}
+export function buildAircraft(kind, sideColor, style) {
+  const sm = REG.AIR.aircraft && guarded(`aircraft:${kind}:${style}`, () => REG.AIR.aircraft(kind, sideColor, style));
+  if (sm) return sm;
+  const g = new THREE.Group();
+  g.add(slab(1.1, 0.14, 0.22, 0x6b4a2e));
+  if (kind === 'glider') g.add(slab(0.5, 0.04, 1.6, sideColor, 0.05, 0.2, 0));
+  else { const rotor = new THREE.Group(); rotor.add(slab(1.5, 0.03, 0.1, 0x333333)); rotor.position.y = 0.4; g.add(rotor); g.userData.rotor = rotor; }
+  return g;
+}
+export function buildDropPod(style, sideColor) {
+  const sm = REG.AIR.dropPod && guarded(`pod:${style}`, () => REG.AIR.dropPod(style, sideColor));
+  if (sm) return sm;
+  const g = new THREE.Group(); g.add(slab(0.7, 1.0, 0.7, 0x55504a, 0, 0.5, 0)); g.add(slab(0.74, 0.12, 0.74, sideColor, 0, 0.8, 0));
+  return g;
+}
+
 export function buildUnitModel(def) {
+  if (def.model?.body === 'aircraft' && !instantiateCustom(def.id, 1, 'unit')) {
+    // one-man flying machines: built nose toward +X, turned to face +Z like every other unit
+    const craft = buildAircraft(def.model.kind, 0xcfc9bb, def.model.style);
+    const g = new THREE.Group(), inner = new THREE.Group();
+    craft.rotation.y = -Math.PI / 2; inner.add(craft); g.add(inner);
+    g.userData = { rig: { kind: 'aircraft', height: 0.9 }, inner, rotor: craft.userData.rotor };
+    return g;
+  }
   const o = def.model || { body: 'humanoid' };
   const custom = instantiateCustom(def.id, 0.95 * (o.scale || 1) * Math.max(1, def.size * 0.8), 'unit');
   if (custom) return custom;
@@ -432,6 +472,13 @@ function buildTemplate(def, o) {
 export function animateUnit(model, t, moving, atk, dead, phase = 0, flying = false) {
   const r = model.userData.rig;
   if (!r) return;
+  if (r.kind === 'aircraft') {
+    const inner = model.userData.inner;
+    if (model.userData.rotor && dead <= 0) model.userData.rotor.rotation.y = t * 30;
+    if (dead > 0) { inner.rotation.z = Math.min(1, dead) * 1.9; inner.rotation.x = Math.min(1, dead) * 0.7; } // spins in and lies broken
+    else { inner.rotation.z = Math.sin(t * 1.7 + phase) * 0.12; inner.rotation.x = atk >= 0 ? Math.sin(atk * Math.PI) * 0.35 : 0; }
+    return;
+  }
   if (r.v2) { animateRig(model, { t, moving, atk, dead, phase, flying }); return; }
   if (r.kind === 'gltf') { animateCustom(model, t, moving, atk, dead); return; }
   const inner = model.userData.inner;

@@ -5,7 +5,7 @@
 //   hull: hit points      crew: hands aboard (they also fight boarders)   marines: boarding skill
 //   cannons: { perSide, dmg: [min, max], range, reload, acc }    bombs: { maxHit, radius, reload }
 //   hangar: { unit, count, every }     pods: { unit, pods, perPod }     ladders: { capacity, every }
-const ship = (o) => ({ len: 10, speed: 0.5, turn: 14, armour: 30, altitude: 5.6, ...o });
+const ship = (o) => ({ len: 10, speed: 0.5, turn: 14, armour: 30, altitude: 5.6, level: 85, ...o });
 
 export const AIRSHIPS = {
   kingdomZeppelin: ship({ name: 'Royal Zeppelin', faction: 'kingdom', style: 'kingdom', color: 0x7a5230, envelope: 0xd8c8a0, hull: 900, crew: 14, marines: 1.1,

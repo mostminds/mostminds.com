@@ -1,6 +1,9 @@
 // Renders a land/amphibious battle state produced by engine/battle.js.
 import * as THREE from 'three';
-import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
+import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
+import { bakePose } from './rigkit.js';
+import { sculptMaterial } from './sculpt.js';
+import { LIFTED } from '../engine/airship.js';
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
 import { structureFootprint } from '../engine/battle.js';
@@ -114,6 +117,9 @@ export class LandView {
       m.position.set(s.x + w / 2, base, s.y + h / 2);
       if ((s.rot || 0) % 2 && def.weapon) m.rotation.y = Math.PI / 2;
       this.structModels.push(m);
+      m.userData.meshes = [];
+      m.traverse((c) => { if (c.isMesh) m.userData.meshes.push(c); });
+      m.userData.tall = new THREE.Box3().setFromObject(m).max.y - base;
       if (def.hp && !def.weapon) {
         const bar = makeBar(0xd8b04a);
         bar.position.y = (def.level || def.losHeight || 1) * LEVEL_H + 0.7;
@@ -122,6 +128,7 @@ export class LandView {
         m.add(bar); m.userData.bar = bar;
       }
       if (s.destroyed) { m.visible = false; this.addRubble(s); }
+      else if (s.maxHp && s.hp < s.maxHp) this.pendingStages = (this.pendingStages || []).concat(this.structModels.length - 1);
       m.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
       this.structGroup.add(m);
     }
@@ -145,7 +152,31 @@ export class LandView {
     }
     for (const sh of b.ships) add(`h:${sh.def.id}:${sh.side}`, sh.def.name || sh.def.id, () => buildShip(sh.def, SIDE_COLORS[sh.side]));
     for (const c of b.crafts) add(`c:${c.side}`, 'Landing craft', () => buildCraft(SIDE_COLORS[c.side]));
+    for (const a of b.airships) {
+      add(`a:${a.def.id}`, a.def.name, () => buildAirship(a.def, SIDE_COLORS[a.side]));
+      add(`p:${a.def.style}`, 'Drop pod', () => buildDropPod(a.def.style, SIDE_COLORS[a.side]));
+      for (const id of [a.def.hangar.unit, a.def.pods.unit]) { const d = b.getDef(id); if (d) add(`u:${d.id}`, d.name, () => buildUnitModel(d)); }
+    }
     return out;
+  }
+
+  // one unit's model with its side disc and health bar (also used for units that arrive mid-battle)
+  addUnitModel(u) {
+    const m = buildUnitModel(u.def);
+    const disc = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ color: SIDE_COLORS[u.side], transparent: true, opacity: 0.55 }));
+    disc.scale.setScalar(u.def.size);
+    disc.position.y = 0.02;
+    m.add(disc);
+    const bar = makeBar(SIDE_COLORS[u.side] === SIDE_COLORS[0] ? 0x4fd36a : 0x4fd36a);
+    const top = m.userData.rig?.height ? m.userData.rig.height + 0.12 : 1.05 * (u.def.model?.scale || 1) + (u.def.model?.body === 'dragon' ? 0.4 : 0);
+    bar.position.y = top;
+    m.add(bar);
+    setBar(bar, 1, 0.5 + 0.3 * u.def.size);
+    m.userData.bar = bar; m.userData.disc = disc; m.userData.top = top;
+    m.userData.phase = (u.id * 1.7) % 6.28;
+    m.userData.rotY = Math.PI / 2 - u.face;
+    this.dynamic.add(m);
+    return m;
   }
 
   // Full rebuild for a fresh battle object
@@ -169,23 +200,7 @@ export class LandView {
     });
     this.stage.clear(this.dynamic);
     this.stage.clearFx();
-    this.models = b.units.map((u) => {
-      const m = buildUnitModel(u.def);
-      const disc = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ color: SIDE_COLORS[u.side], transparent: true, opacity: 0.55 }));
-      disc.scale.setScalar(u.def.size);
-      disc.position.y = 0.02;
-      m.add(disc);
-      const bar = makeBar(SIDE_COLORS[u.side] === SIDE_COLORS[0] ? 0x4fd36a : 0x4fd36a);
-      const top = m.userData.rig?.height ? m.userData.rig.height + 0.12 : 1.05 * (u.def.model?.scale || 1) + (u.def.model?.body === 'dragon' ? 0.4 : 0);
-      bar.position.y = top;
-      m.add(bar);
-      setBar(bar, 1, 0.5 + 0.3 * u.def.size);
-      m.userData.bar = bar; m.userData.disc = disc; m.userData.top = top;
-      m.userData.phase = (u.id * 1.7) % 6.28;
-      m.userData.rotY = Math.PI / 2 - u.face;
-      this.dynamic.add(m);
-      return m;
-    });
+    this.models = b.units.map((u) => this.addUnitModel(u));
     this.shipModels = b.ships.map((sh) => {
       const m = buildShip(sh.def, SIDE_COLORS[sh.side]);
       const bar = makeBar(0x4fd36a); bar.position.y = (m.userData.top ?? 1.7 + sh.def.len * 0.35) + 0.3; setBar(bar, 1, Math.min(3, sh.def.len * 0.4));
@@ -199,9 +214,43 @@ export class LandView {
       const m = buildCraft(SIDE_COLORS[c.side]);
       const bar = makeBar(0xd8b04a); bar.position.y = 1.1; setBar(bar, 1, 1.2);
       m.add(bar); m.userData.bar = bar;
+      // the bow gun and the boat's own crew
+      const gun = new THREE.Group();
+      gun.add(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.55, 8).rotateZ(-Math.PI / 2).translate(0.2, 0, 0), mat(0x2b2b2e, { metalness: 0.8, roughness: 0.4 })));
+      gun.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 6).translate(0, -0.15, 0), mat(0x5a4630)));
+      gun.position.set(0.8, 0.62, 0); m.add(gun); m.userData.gun = gun;
+      m.userData.pips = [-0.28, 0, 0.28].map((z) => {
+        const p = new THREE.Group();
+        p.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), mat(0xd9a77c)));
+        p.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(SIDE_COLORS[c.side])));
+        p.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.26, 8).translate(0, -0.2, 0), mat(0x6b4a2e)));
+        p.position.set(-0.85, 0.62, z); m.add(p);
+        return p;
+      });
+      m.rotation.y = -Math.atan2(c.ty - c.y, c.tx - c.x);
       this.dynamic.add(m);
       return m;
     });
+    this.airModels = b.airships.map((a) => {
+      const m = buildAirship(a.def, SIDE_COLORS[a.side]);
+      m.userData.setSide?.(SIDE_COLORS[a.side]);
+      const top = (m.userData.top ?? 4.2) + 0.5;
+      const bar = makeBar(0x4fd36a); bar.position.y = top; setBar(bar, 1, 3.2); m.add(bar);
+      const crew = makeBar(0xe8d8a0); crew.position.y = top - 0.24; setBar(crew, 1, 2.2); m.add(crew);
+      const lp = (m.userData.ladders || [[0, 0, 0.7]])[0];
+      const ladder = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1, 5).translate(0, -0.5, 0), mat(0xc8b48a));
+      ladder.position.set(lp[0], lp[1], lp[2]); ladder.visible = false; m.add(ladder);
+      const mark = new THREE.Mesh(new THREE.RingGeometry(a.radius * 0.5, a.radius * 0.5 + 0.25, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[a.side], transparent: true, opacity: 0.5 }));
+      this.dynamic.add(m, mark);
+      return { m, bar, crew, ladder, mark, side: a.side, dmg: 0, downAt: undefined, smoke: 0 };
+    });
+    this.falling = [];
+    this.corpseGeo = new Map();
+    this.noBody = new Set();
+    this.smokeT = 0;
+    this.stage.renderer.localClippingEnabled = true;
+    for (const i of this.pendingStages || []) this.structStage(i);
+    this.pendingStages = [];
     this.deathAt = new Map();
     this.shipSunkAt = new Map();
     this.timers = [];
@@ -219,8 +268,53 @@ export class LandView {
     return Math.max(h, -0.22); // wade, don't sink
   }
 
+  airPos(a, alpha, out) {
+    const m = this.airModels[a.id];
+    const x = a.px + (a.x - a.px) * alpha, y = a.py + (a.y - a.py) * alpha;
+    return out.set(x, m && m.m.position.y ? m.m.position.y : a.def.altitude, y);
+  }
+
+  // Buildings show their wounds: scorched and crumbling at two thirds, broken open and burning at one third.
+  structStage(i) {
+    const b = this.b, s = b.structures[i], m = this.structModels[i], def = STRUCTURES[s.type];
+    if (!m || !s.maxHp) return;
+    const g = def.weapon ? b.guns.find((x) => x.si === i) : null;
+    const r = g ? g.hp / g.maxHp : s.hp / s.maxHp;
+    const stage = r > 0.66 ? 0 : r > 0.33 ? 1 : 2;
+    if (m.userData.stage === stage || (!stage && m.userData.stage === undefined)) return;
+    m.userData.stage = stage;
+    if (m.userData.debris) { m.remove(m.userData.debris); m.userData.debris = null; }
+    // the top is knocked away on anything nobody stands on
+    const cut = stage && !def.level && !def.door && !def.weapon && def.blocksMove && m.userData.tall > 1.3;
+    let plane = null;
+    if (cut) {
+      const a = i * 2.4, n = new THREE.Vector3(Math.cos(a) * 0.45, -1, Math.sin(a) * 0.45).normalize();
+      const p0 = new THREE.Vector3(m.position.x, m.position.y + m.userData.tall * (stage === 1 ? 0.8 : 0.52), m.position.z);
+      plane = new THREE.Plane(n, -n.dot(p0));
+    }
+    for (const mesh of m.userData.meshes) {
+      mesh.userData.mat0 ||= mesh.material;
+      if (!stage) { mesh.material = mesh.userData.mat0; continue; }
+      const mt = mesh.userData.mat0.clone();
+      if (mt.color) mt.color.multiplyScalar(stage === 1 ? 0.78 : 0.5).multiply(new THREE.Color(1, 0.93, 0.86));
+      if (plane) { mt.clippingPlanes = [plane]; mt.clipShadows = true; }
+      mesh.material = mt;
+    }
+    if (stage && !def.weapon) {
+      const d = buildRubble(Math.max(1, s.w), Math.max(1, s.h), def.color, def.model);
+      d.scale.set(1.12, 0.4 + stage * 0.25, 1.12);
+      m.add(d); m.userData.debris = d;
+    }
+  }
+
   unitPos(u, alpha, out) {
     const s = u.def.size / 2;
+    if (u.aboard >= LIFTED) {
+      const a = this.b.airships[u.aboard - LIFTED], k = Math.max(0, a.cargo.indexOf(u.id));
+      this.airPos(a, alpha, out);
+      out.x += ((k % 4) - 1.5) * 0.42; out.z += (Math.floor(k / 4) % 2 - 0.5) * 0.5; out.y += 0.04;
+      return out;
+    }
     if (u.aboard >= 0) {
       const c = this.b.crafts[u.aboard];
       const k = c.passengers.indexOf(u.id);
@@ -242,18 +336,20 @@ export class LandView {
 
   onEvents(events) {
     const b = this.b, st = this.stage;
+    while (this.models.length < b.units.length) this.models.push(this.addUnitModel(b.units[this.models.length])); // launched aircraft, pod troops
     const v = new THREE.Vector3(), w = new THREE.Vector3();
     const msgs = [];
     for (const e of events) {
       if (e.type === 'attack') {
         const u = b.units[e.from];
-        if (e.style === 'melee') continue;
+        if (e.style === 'melee') { if (e.air !== undefined) { this.airPos(b.airships[e.air], 1, w); st.puff(w.clone(), 0xd8d0c0, 0.25, 0.5); } continue; }
         this.unitPos(u, 0, v); v.y += 0.6 * (u.def.model?.scale || 1);
         if (e.struct !== undefined) {
           if (e.style === 'melee') continue;
           const st = b.structures[e.struct]; w.set(st.x + st.w / 2, 1, st.y + st.h / 2);
         } else if (e.craft !== undefined) { const c = b.crafts[e.craft]; w.set(c.x + 0.5, 0.3, c.y + 0.5); }
         else if (e.ship !== undefined) { const sh = b.ships[e.ship]; w.set(sh.x, 0.8, sh.y); }
+        else if (e.air !== undefined) this.airPos(b.airships[e.air], 1, w);
         else { this.unitPos(b.units[e.to], 1, w); w.y += 0.5; }
         st.projectile(v.clone(), w.clone(), e.proj, (e.delay * TICK_MS) / 1000 / this.speed, e.proj === 'arrow' || e.proj === 'ranged' ? 0.8 : 0.2);
       } else if (e.type === 'gunFire') {
@@ -261,7 +357,7 @@ export class LandView {
         // a model may say where its muzzle is: userData.muzzle = [distance out along the barrel, height]
         const gmod = this.structModels[g.si], mz = gmod.userData.muzzle || [0.6, g.w > 1 ? 0.9 : 0.5], gs = gmod.scale.x;
         v.set(g.cx, gmod.position.y + mz[1] * gs, g.cy);
-        w.set(e.x1, 0.3, e.y1);
+        w.set(e.x1, e.h1 ?? 0.3, e.y1);
         st.puff(v.clone().add(new THREE.Vector3(Math.cos(g.aim) * mz[0] * gs, 0, Math.sin(g.aim) * mz[0] * gs)), 0xeeeeee, g.w > 1 ? 0.45 : 0.3, 0.9);
         st.projectile(v.clone(), w.clone(), e.shot, (e.delay * TICK_MS) / 1000 / this.speed, e.shot === 'shell' ? 2.4 : 0.4);
         if (e.shot !== 'bolt') this.later(e.delay, () => { st.puff(w.clone(), 0x8a7a6a, 0.4, 0.8); st.ring(w.clone().setY(0.05), b.guns[e.gun].wpn.splash || 0.4, 0xffb060, 0.5); });
@@ -294,6 +390,7 @@ export class LandView {
       } else if (e.type === 'structHit') {
         const st = b.structures[e.s], m = this.structModels[e.s];
         if (m?.userData.bar) { m.userData.bar.visible = true; setBar(m.userData.bar, st.hp / st.maxHp); }
+        this.structStage(e.s);
         if (e.dmg > 0) st && this.stage.splat(v.set(st.x + st.w / 2, (STRUCTURES[st.type].level || 1) * LEVEL_H + 0.9, st.y + st.h / 2), e.dmg);
         if (st && e.dmg >= 20) st && this.stage.puff(v.set(st.x + st.w / 2, 0.6, st.y + st.h / 2), 0xb0a898, 0.4, 0.7);
       } else if (e.type === 'structDestroyed') {
@@ -313,7 +410,8 @@ export class LandView {
         st.ring(v.setY(0.05), 0.4, 0x8ff0a0);
       } else if (e.type === 'death') {
         this.deathAt.set(e.id, this.time);
-        if (e.drowned) { this.unitPos(b.units[e.id], 1, v); st.puff(v, 0xffffff, 0.3); }
+        if (e.drowned) { this.unitPos(b.units[e.id], 1, v); st.puff(v, 0xffffff, 0.3); this.noBody.add(e.id); }
+        else if (b.units[e.id].aboard >= 0) this.noBody.add(e.id);
       } else if (e.type === 'craftHit') {
         const c = b.crafts[e.craft]; v.set(c.x + 0.5, 1.1, c.y + 0.5);
         st.splat(v, e.dmg, 'hit');
@@ -334,6 +432,80 @@ export class LandView {
           msgs.push({ side: u.side, text: `${u.def.name} breathes fire` });
         }
         if (e.name === 'charge') st.ring(v, 0.6, 0xffffff, 0.4);
+      } else if (e.type === 'gunHit') {
+        this.structStage(b.guns[e.gun].si);
+      } else if (e.type === 'repair') {
+        const si = e.gun !== undefined ? b.guns[e.gun].si : e.s, sm = this.structModels[si], sx = b.structures[si];
+        st.splat(v.set(sx.x + sx.w / 2, (sm?.userData.tall || 1) + 0.6, sx.y + sx.h / 2), '+', 'heal');
+        st.ring(v.set(sx.x + sx.w / 2, 0.05, sx.y + sx.h / 2), Math.max(sx.w, sx.h) * 0.3, 0xe8d070, 0.5);
+        if (sm?.userData.bar) { setBar(sm.userData.bar, sx.hp / sx.maxHp); sm.userData.bar.visible = sx.hp < sx.maxHp; }
+        this.structStage(si);
+      } else if (e.type === 'craftFire') {
+        const c = b.crafts[e.craft]; v.set(c.x + 0.5, 0.7, c.y + 0.5);
+        this.unitPos(b.units[e.to], 1, w); w.y += 0.5;
+        st.projectile(v.clone(), w.clone(), 'musket', (e.delay * TICK_MS) / 1000 / this.speed, 0.2);
+        st.puff(v.clone(), 0xeeeeee, 0.16, 0.5);
+      } else if (e.type === 'craftCrew') {
+        if (e.crew === 0) msgs.push({ side: b.crafts[e.craft].side, text: 'A landing craft loses its last crewman' });
+      } else if (e.type === 'airFire') {
+        const a = b.airships[e.air], am = this.airModels[e.air].m;
+        w.set(e.x1, e.h1 ?? 0.3, e.y1);
+        for (let i = 0; i < e.guns; i++) {
+          if (!shipMuzzle(am, e.x1, e.y1, i, v)) this.airPos(a, 1, v);
+          const to = w.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, 0, (Math.random() - 0.5) * 1.4));
+          st.projectile(v.clone(), to, 'cannon', (e.delay * TICK_MS) / 1000 / this.speed, 0.15);
+          st.puff(v.clone(), 0xeeeeee, 0.3, 0.8);
+        }
+        this.later(e.delay, () => st.puff(w.clone(), 0x8a7a6a, 0.45, 0.8));
+      } else if (e.type === 'bomb') {
+        const a = b.airships[e.air];
+        this.airPos(a, 1, v); v.y -= 0.9;
+        w.set(e.x, 0.1, e.y);
+        st.projectile(v.clone(), w.clone(), 'shell', (e.delay * TICK_MS) / 1000 / this.speed, 0);
+        const at = w.clone();
+        this.later(e.delay, () => {
+          st.ring(at.clone(), e.radius, 0xffa040, 0.7);
+          st.puff(at.clone().setY(0.5), 0xff8a30, 0.9, 0.5); st.puff(at.clone().setY(0.9), 0x4a4640, 1.1, 1.6);
+        });
+      } else if (e.type === 'podDrop') {
+        const a = b.airships[e.air];
+        const pod = buildDropPod(a.def.style, SIDE_COLORS[a.side]);
+        this.airPos(a, 1, v); v.y -= 0.6;
+        this.dynamic.add(pod);
+        this.falling.push({ obj: pod, from: v.clone(), to: new THREE.Vector3(e.x + 0.5, Math.max(0, this.groundY(e.x, e.y)), e.y + 0.5), t0: this.time, dur: (e.delay * TICK_MS) / 1000 / this.speed, stay: 30 });
+      } else if (e.type === 'podLand') {
+        v.set(e.x + 0.5, 0.1, e.y + 0.5);
+        st.ring(v.clone(), 1.4, 0xd8c8a0, 0.6); st.puff(v.clone().setY(0.4), 0xb0a898, 0.8, 1.1);
+        msgs.push({ side: e.side, text: `Drop pod lands: ${e.n} shock troops storm out` });
+      } else if (e.type === 'airLaunch') {
+        const a = b.airships[e.air];
+        this.airPos(a, 1, v); st.puff(v.clone(), 0xffffff, 0.3, 0.6);
+        if (b.tick % 3 === 0) msgs.push({ side: a.side, text: `${a.def.name} launches ${b.units[e.ids[0]].def.name}s` });
+      } else if (e.type === 'airHit') {
+        if (e.dmg > 0) { this.airPos(b.airships[e.air], 1, v); v.x += (Math.random() - 0.5) * 3; st.splat(v.clone(), e.dmg); st.puff(v.clone(), 0x55504a, 0.35, 0.8); }
+      } else if (e.type === 'airCaptured') {
+        const a = b.airships[e.air];
+        msgs.push({ side: e.side, text: `${a.def.name} is boarded and taken!` });
+      } else if (e.type === 'airGrapple') {
+        msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} grapples ${b.airships[e.other].def.name}` });
+      } else if (e.type === 'airBoard') {
+        this.airPos(b.airships[e.other], 1, v); st.puff(v.clone(), 0xd8d0c0, 0.3, 0.5);
+      } else if (e.type === 'airAdrift') {
+        msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} drifts with no crew` });
+      } else if (e.type === 'airRescue') {
+        msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} goes in to lift troops out` });
+      } else if (e.type === 'airLift') {
+        msgs.push({ side: b.airships[e.air].side, text: `${e.n} troops climb the ladders` });
+      } else if (e.type === 'airUnload') {
+        if (e.n) msgs.push({ side: b.airships[e.air].side, text: `${e.n} rescued troops set down behind the lines` });
+      } else if (e.type === 'airRefit') {
+        msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} runs for a mooring tower` });
+      } else if (e.type === 'airDown') {
+        const a = b.airships[e.air];
+        this.airModels[e.air].downAt = this.time;
+        this.airPos(a, 1, v);
+        for (let k = 0; k < 6; k++) st.puff(v.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 2, (Math.random() - 0.5) * 2)), k % 2 ? 0xff8a30 : 0x3a3632, 1.1, 1.8);
+        msgs.push({ side: 1 - a.side, text: `${a.def.name} is shot down!` });
       } else if (e.type === 'flank') {
         msgs.push({ side: e.side, text: `${e.name} squad swings wide to flank` });
       } else if (e.type === 'regroup') {
@@ -408,6 +580,7 @@ export class LandView {
     const v = new THREE.Vector3();
     const tickNow = b.tick + alpha;
     const cam = this.stage.camera.position;
+    while (this.models.length < b.units.length) this.models.push(this.addUnitModel(b.units[this.models.length]));
     b.units.forEach((u, i) => {
       const m = this.models[i];
       if (!m) return;
@@ -415,8 +588,9 @@ export class LandView {
       if (!u.alive && died === undefined) { m.visible = false; return; }
       let dead = 0;
       if (died !== undefined) {
-        dead = Math.min(1.5, (t - died) * speed / 1.2);
-        if (dead >= 1.5) { m.visible = false; return; }
+        if (this.noBody.has(i)) { m.visible = false; return; }
+        if (m.userData.corpse) return; // lying where it fell
+        dead = Math.min(1, (t - died) * speed / 1.2);
         m.userData.bar.visible = false; m.userData.disc.visible = false;
       }
       m.visible = true;
@@ -440,16 +614,95 @@ export class LandView {
       m.userData.rig?.mixer?.update(dt * speed);
       if (u.alive) { m.userData.bar.visible = u.hp < u.def.hp; if (u.hp < u.def.hp) setBar(m.userData.bar, u.hp / u.def.hp); }
       if (u.aboard >= 0) m.scale.setScalar(Math.min(0.75, 1 / u.def.size)); else m.scale.setScalar(1);
+      if (dead >= 1) this.layBody(u, m);
     });
+    this.updateAir(alpha, t, dt, speed);
+    // wounded buildings and guns smoke
+    if ((this.smokeT += dt) > 0.25) {
+      this.smokeT = 0;
+      for (let k = 0; k < 3; k++) {
+        const i = Math.floor(Math.random() * this.structModels.length), m = this.structModels[i];
+        if (!m || !m.userData.stage || !m.visible) continue;
+        const s = b.structures[i];
+        v.set(s.x + Math.random() * s.w, (m.userData.tall || 1) * (m.userData.stage === 2 ? 0.55 : 0.85), s.y + Math.random() * s.h);
+        this.stage.puff(v.clone(), m.userData.stage === 2 && Math.random() < 0.4 ? 0xff7a28 : 0x3e3a36, 0.3 + m.userData.stage * 0.12, 1.6);
+      }
+    }
     b.crafts.forEach((c, i) => {
       const m = this.crafts[i];
       if (c.sunk) { m.position.y -= dt * 0.5 * speed; if (m.position.y < -2) m.visible = false; return; }
       const x = c.px + (c.x - c.px) * alpha, y = c.py + (c.y - c.py) * alpha;
       m.position.set(x + 0.5, c.landed ? -0.12 : this.waveY(x, y) - 0.05, y + 0.5);
+      m.userData.gun.rotation.y = -c.aim - m.rotation.y; m.userData.gun.visible = c.crew > 0;
+      m.userData.pips.forEach((p, k) => { p.visible = k < c.crew; });
+      if (c.wrecked && !m.userData.wrecked) { m.userData.wrecked = true; m.traverse((o) => { if (o.isMesh && o.material.color) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.4); } }); }
       m.rotation.z = c.landed ? 0 : Math.sin(t * 1.3 + i) * 0.04;
       m.userData.ramp.rotation.z = c.landed ? -Math.min(1.4, (m.userData.rampT = (m.userData.rampT || 0) + dt * 2 * speed)) : 0;
       setBar(m.userData.bar, c.hp / c.maxHp);
       m.userData.bar.visible = !c.landed;
+    });
+  }
+
+  // A fallen unit becomes one static mesh in its last pose; every body of that type shares the geometry.
+  layBody(u, m) {
+    m.userData.corpse = true;
+    const key = u.def.id;
+    if (m.userData.lod && m.userData.rig?.v2) {
+      if (!this.corpseGeo.has(key)) { setLod(m, 0); setLod(m, 2); this.corpseGeo.set(key, bakePose(m, 2)); }
+      const geo = this.corpseGeo.get(key);
+      if (geo) {
+        const body = new THREE.Mesh(geo, sculptMaterial());
+        body.receiveShadow = true;
+        for (const c of [...m.children]) if (c !== m.userData.bar && c !== m.userData.disc) c.visible = false;
+        m.add(body);
+      }
+    }
+    m.updateMatrixWorld(true);
+  }
+
+  updateAir(alpha, t, dt, speed) {
+    const b = this.b, v = new THREE.Vector3();
+    b.airships.forEach((a, i) => {
+      const am = this.airModels[i], m = am.m;
+      const x = a.px + (a.x - a.px) * alpha, y = a.py + (a.y - a.py) * alpha;
+      let dh = a.heading - a.ph; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      const ground = Math.max(0, this.groundY(Math.round(x), Math.round(y)));
+      let alt = a.def.altitude + Math.sin(t * 0.9 + i * 2) * 0.12;
+      if (a.mode === 'rescue' || a.mode === 'ferry' || a.ladder > 0) alt -= 0.8;
+      am.alt = am.alt === undefined ? alt : am.alt + (alt - am.alt) * Math.min(1, dt * 1.5);
+      m.rotation.set(0, -(a.ph + dh * alpha), Math.sin(t * 0.7 + i) * 0.015);
+      const level = !a.alive ? 3 : a.hp > a.maxHp * 0.66 ? 0 : a.hp > a.maxHp * 0.33 ? 1 : 2;
+      if (level !== am.dmg) { am.dmg = level; m.userData.setDamage?.(level); }
+      if (am.side !== a.side) { am.side = a.side; m.userData.setSide?.(SIDE_COLORS[a.side]); am.mark.material.color.set(SIDE_COLORS[a.side]); }
+      if (am.downAt !== undefined) {
+        // she comes down burning and lies where she fell
+        const k = Math.min(1, ((t - am.downAt) * speed) / 3);
+        m.position.set(x, ground + 0.9 + (am.alt - 0.9) * (1 - k * k), y);
+        m.rotation.z = k * 0.35; m.rotation.x = k * 0.12;
+        am.bar.visible = am.crew.visible = am.ladder.visible = false; am.mark.visible = false;
+        if (k < 1 && Math.random() < 0.5) this.stage.puff(v.set(x + (Math.random() - 0.5) * 4, m.position.y + 1.5, y + (Math.random() - 0.5) * 2).clone(), Math.random() < 0.5 ? 0xff8030 : 0x2e2a28, 0.7, 1.4);
+        else if (k >= 1 && Math.random() < 0.04) this.stage.puff(v.set(x + (Math.random() - 0.5) * 4, ground + 1.2, y + (Math.random() - 0.5) * 2).clone(), 0x2e2a28, 0.6, 2);
+        return;
+      }
+      m.position.set(x, ground * 0.3 + am.alt, y);
+      am.mark.position.set(x, ground + 0.06, y);
+      for (const p of m.userData.props || []) p.rotation.x = t * (a.crew > 0 ? 22 : 2);
+      setBar(am.bar, a.hp / a.maxHp); setBar(am.crew, a.crew / a.def.crew);
+      const down = a.ladder > 0 || ((a.mode === 'rescue' || a.mode === 'ferry') && Math.hypot((a.pick || a.drop || a).x - a.x, (a.pick || a.drop || a).y - a.y) < 3);
+      am.ladder.visible = down; if (down) am.ladder.scale.y = Math.max(0.5, m.position.y - ground - 0.2);
+      if (m.userData.lod) { const ratio = this.stage.camera.position.distanceTo(m.position) / 2.5; let lv = 0; while (lv < 5 && ratio > [14, 30, 60, 110, 200][lv]) lv++; setLod(m, lv); }
+      // the worse the damage, the more she smokes
+      if (level && (am.smoke += dt) > (level === 1 ? 0.5 : 0.18)) {
+        am.smoke = 0;
+        this.stage.puff(v.set(x + (Math.random() - 0.5) * a.radius, m.position.y + 1.5 + Math.random() * 1.5, y + (Math.random() - 0.5) * 1.5).clone(), level === 2 && Math.random() < 0.35 ? 0xff7a28 : 0x35312e, 0.45, 1.5);
+      }
+    });
+    // drop pods on their way down, then standing where they landed
+    this.falling = this.falling.filter((f) => {
+      const k = Math.min(1, (t - f.t0) / f.dur);
+      f.obj.position.lerpVectors(f.from, f.to, k * k);
+      f.obj.rotation.y = k * 2;
+      return true;
     });
   }
 
@@ -468,12 +721,14 @@ export class LandView {
     if (!tool || !tile) return;
     let w = 1, h = 1, color = 0xffffff;
     if (tool.kind === 'structure') ({ w, h } = structureFootprint({ type: tool.id, rot }));
-    if (tool.kind === 'erase') color = 0xff4040;
+    if (tool.kind === 'erase' || tool.kind === 'delUnit') color = 0xff4040;
+    if (tool.kind === 'move') color = tool.held ? 0x60e080 : 0xf0d060;
+    if (tool.kind === 'craft') color = SIDE_COLORS[tool.side];
     if (tool.kind === 'unit') color = SIDE_COLORS[tool.side];
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, h), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthTest: false }));
     m.position.set(tile.x + w / 2, 0.08, tile.y + h / 2);
     m.renderOrder = 20;
-    if (tool.kind === 'unit' && tool.brush > 1) { const r = Math.ceil(Math.sqrt(tool.brush)); m.scale.set(r, 1, r); }
+    if ((tool.kind === 'unit' || tool.kind === 'move' || tool.kind === 'delUnit') && tool.brush > 1) { const r = Math.ceil(Math.sqrt(tool.brush)); m.scale.set(r, 1, r); }
     this.ghost = m;
     this.root.add(m);
   }
