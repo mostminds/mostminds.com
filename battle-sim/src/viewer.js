@@ -1,6 +1,6 @@
 // Model preview used while authoring models (see docs/MODELING.md).
 //   viewer.html?kind=unit&id=knight&pose=attack&lod=0&detail=high
-//   kind: unit | struct | ship | creature | craft      id: one id, or several separated by commas (shown side by side)
+//   kind: unit | struct | ship | creature | fort | craft | weapon     id: one id, or several separated by commas (shown side by side)
 //   pose: idle | walk | attack | death | fly           t: animation time in seconds (default picks a telling frame)
 //   lod: detail level to force (0 = closest)            detail: low | medium | high | ultra
 //   view: quad (default: front, side, back three-quarter, close-up) | single
@@ -8,7 +8,8 @@
 import * as THREE from 'three';
 import { Stage } from './render/stage.js';
 import { buildUnitModel, animateUnit, buildStructure, buildShip, buildCreature, animateCreature, buildCraft, setLod } from './render/models.js';
-import { setDetail, triangleStats } from './render/rigkit.js';
+import { setDetail, triangleStats, assemble, cloneRigged } from './render/rigkit.js';
+import { weapon as makeWeapon, shield as makeShield } from './render/bodies/weapons.js';
 import { prepareDef } from './engine/battle.js';
 import { UNITS as GAME_UNITS, EXAMPLE_UNIT } from './data/units.js';
 const UNITS = { ...GAME_UNITS, _example: EXAMPLE_UNIT };
@@ -61,6 +62,13 @@ for (const id of ids) {
     else if (kind === 'creature') { const def = CREATURES[id]; m = buildCreature(def); width = (def.size || 1) * 2.4 + 1; anim = () => animateCreature(m, T, 0); stats.models[id] = { triangles: triangleStats(m) }; }
     else if (kind === 'fort') { const def = FORTS[id]; const mod = await import('./render/models.js'); m = mod.buildWeapon(def.model, def.size, def.size, def); width = def.size * 2 + 1; }
     else if (kind === 'craft') { m = buildCraft(0x3d7bd9); width = 3; }
+    else if (kind === 'weapon') {
+      // id "sword", or "shield" / "shield:round" / "shield:tower"; shown standing on its grip, +Y up
+      const [name, variant] = id.split(':');
+      const part = name === 'shield' ? makeShield({ shape: variant || 'kite', color: 0x2f5aa8 }) : makeWeapon(name);
+      m = cloneRigged(assemble({ kind: 'float', nodes: [{ name: 'root', pos: [0, name === 'shield' ? 0.3 : 0.2, 0], prims: part.prims, hard: part.hard }] }));
+      width = 0.6; stats.models[id] = { triangles: triangleStats(m), hold: part.hold, attack: part.attack, length: part.length };
+    }
   } catch (err) { stats.errors.push(`${id}: ${err.stack || err}`); }
   if (!m) continue;
   m.position.x = x + width / 2; x += width;

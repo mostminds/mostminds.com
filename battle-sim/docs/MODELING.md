@@ -164,6 +164,7 @@ node tools/model-shot.cjs --kind unit --id militia,footman,knight --out sheet.pn
 node tools/model-shot.cjs --kind unit --id knight --lod 2 --out ...                   # a far detail level
 node tools/model-shot.cjs --kind struct --id castleTower --ref 1 --out ...            # with a footman for scale
 node tools/model-shot.cjs --kind ship --id frigate --out ...   (also: creature, fort, craft)
+node tools/model-shot.cjs --kind weapon --id sword,greataxe,shield:kite --out ...     # weapons on their own, +Y up
 node tools/smoke.cjs --preset highcrag --ticks 60 --zoom 0.5 --out /tmp/x/game.png    # the real game
 ```
 
