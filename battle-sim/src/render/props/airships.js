@@ -718,7 +718,8 @@ function snapHoles(hv, W, R, U, T, wrapV = false) {
 }
 function drawEnvelope(p, E, st, dm) {
   const nvMul = st.style === 'kingdom' ? 16 : 4;
-  const nu = seg(E.nu, 24), nv = Math.max(nvMul * 2, Math.round(seg(E.nv, 16) / nvMul) * nvMul), W = nu + 1, R = nv + 1, lvl = dm.lvl;
+  const qe = [1, 0.78, 0.56][TIER];   // the skin's pattern is most of what is seen from afar: it keeps more of its mesh than the fittings do
+  const nu = Math.round(E.nu * qe), nv = Math.max(nvMul * 2, Math.round((E.nv * qe) / nvMul) * nvMul), W = nu + 1, R = nv + 1, lvl = dm.lvl;
   const U = new Float32Array(W * R), T = new Float32Array(W * R), hv = new Float32Array(W * R);
   for (let j = 0; j < R; j++) for (let i = 0; i < W; i++) {
     const t = i / nu, u = lerp(t, 0.5 - 0.5 * Math.cos(PI * t), E.uBias), th = -PI + (TAU * j) / nv, a = j * W + i;
@@ -870,6 +871,7 @@ function planking(p, G, st, dm, side) {
       const rows = TIER >= 2 ? [[va, 0], [vb, 0]] : [[va, 1], [va + ev, 0], [vb - ev, 0], [vb, 1]];
       p.grid(cols.length - 1, rows.length - 1, (ci, ri, out) => { const q = G.pt(cols[ci][0], rows[ri][0], cols[ci][1] || rows[ri][1] ? -g : 0); out[0] = q[0]; out[1] = q[1]; out[2] = q[2]; },
         (ci, ri) => (cols[ci][1] || rows[ri][1] ? seamC : base), { away: [0, -0.3, 0] });
+      if (TIER < 1 && (st.style === 'goblin' || st.style === 'infernal') && sb - sa > 0.06) { const sh = p.fn; p.shade(null); const ink = [p.col, p.ro, p.me, p.gl]; p.ink(mul(IRON, 1.2), 0.5, 0.8); for (const [ss, vv] of [[sa + 0.03 / Lg * 1.4, va + 0.25 / n], [sb - 0.03 / Lg * 1.4, vb - 0.25 / n]]) { const q = G.pt(ss, vv, 0.004); p.T(q[0], q[1], q[2]).sphere(0.017, 5, 3); } p.ink(...ink); p.shade(sh); }
     }
   }
   // rune course of the stone hull
@@ -1513,12 +1515,17 @@ function runeCore(p, fp, E, G, st, dm) {
   const rings = [[0.2, 0.8], [0.5, 1], [0.8, 0.8]], NV = 18;
   const sect = [[-0.17, -0.1], [-0.15, -0.12], [0.15, -0.12], [0.17, -0.1], [0.17, 0.1], [0.15, 0.12], [0.06, 0.12], [0.05, 0.135], [-0.05, 0.135], [-0.06, 0.12], [-0.15, 0.12], [-0.17, 0.1]].map(([a, b]) => [a * k, b * k]);
   rings.forEach(([u, rf], ri) => {
-    const xr = E.x0 + (u - 0.5) * L, Rr = R * rf - 0.12 * k, nu = seg(NV * 5, NV * 2), ns = sect.length;
+    const xr = E.x0 + (u - 0.5) * L, Rr = R * rf - 0.12 * k, nu = seg(NV * 8, NV * 2), ns = sect.length;
     const gone = (a) => (lvl === 1 && ri === 0 && a > 0.2 && a < 0.5) || (lvl === 2 && ((ri === 2 && a > -0.4 && a < 2.4) || (ri === 0 && a > 0.2 && a < 0.5))) || (lvl >= 3 && ((ri !== 1 && Math.abs(a) < 2.3) || (ri === 1 && a > -1.2 && a < 0.9)));
     p.shade(mottle(0.22, 7)).ink(stone, 0.95);
     p.grid(nu, ns, (i, j, out) => { const a = -PI + (i / nu) * TAU, q = sect[j % ns], r = Rr + q[1]; out[0] = xr + q[0]; out[1] = cy + r * Math.cos(a); out[2] = r * Math.sin(a); },
       (i, j) => { const f = (i / nu) * NV, vi = Math.floor(f), fr = f - vi, jj = j % ns; if (jj >= 7 && jj <= 8 && vi % 2 === 0 && fr > 0.25 && fr < 0.75) return gcol; const c = vary(stone, vi * 7 + ri * 31, 0.12), d = fr < 0.06 || fr > 0.94 ? 0.45 : 1; return [c[0] * d, c[1] * d, c[2] * d, 0.95, 0, 0]; },
       { wrapV: true, away: [xr, cy, 0], skip: (i) => gone(-PI + ((i + 0.5) / nu) * TAU) });
+    if (TIER < 2) for (let v = 0; v < NV; v++) {
+      const a = -PI + ((v + 0.5) / NV) * TAU;
+      if (gone(a)) continue;
+      for (const sx of [1, -1]) { p.push(X(xr + sx * 0.172 * k, cy + Rr * Math.cos(a), Rr * Math.sin(a), a / DEG, 0, 0)); if (v % 2) { p.shade(null).ink(gcol, 0.3, 0, lit * 1.3).T(0, 0, 0, 0, 0, 90).cyl(0.05 * k, 0.05 * k, 0.012, 6); } else { p.shade(mottle(0.2, 9)).ink(mul(stone, 0.72), 0.95).box(0.012, 0.13 * k, 0.2 * k, 0.004); } p.pop(); }
+    }
   });
   // a spine over the top and two longerons below tie the rings together; an obelisk prow, stone vanes aft
   const yTop = (x) => cy + R * (0.8 + 0.2 * Math.cos(clamp((x - E.x0) / (0.3 * L), -1, 1) * PI * 0.5)) + 0.02 * k;
@@ -1687,3 +1694,596 @@ export function airship(def, sideColorHex = 0x3d7bd9) {
   };
   return g;
 }
+
+// =====================================================================================================
+// DROP POD (standalone) AND AIRCRAFT
+// =====================================================================================================
+const smallCache = new Map();
+/** two meshes sharing cached geometry: the model, and its parts in the side colour */
+function twoMesh(key, sideHex, make) {
+  const k = `${key}|${getDetail()}`;
+  if (!smallCache.has(k)) {
+    const p = new Pen(), fp = new Pen(), d = getDetail();
+    Q = d === 'low' ? 0.6 : d === 'medium' ? 0.8 : 1; TIER = 0;
+    let extra;
+    try { extra = make(p, fp); } finally { Q = 1; }
+    smallCache.set(k, { geo: p.toGeometry(), side: fp.n ? fp.toGeometry() : null, extra });
+  }
+  const c = smallCache.get(k), g = new THREE.Group(), m = new THREE.Mesh(c.geo, sculptMaterial());
+  m.castShadow = true; m.receiveShadow = true; g.add(m);
+  let sm = null;
+  if (c.side) { sm = new THREE.Mesh(c.side, sideMaterial(sideHex)); sm.castShadow = true; sm.receiveShadow = true; sm.name = 'colours'; g.add(sm); }
+  g.userData.setSide = (hexCol) => { if (sm) sm.material = sideMaterial(hexCol); };
+  return { g, c };
+}
+const styleKey = (style) => (STYLES.includes(style) ? style : 'kingdom');
+
+/** dropPod(style, sideColorHex) -> THREE.Group: an armoured pod 0.8 wide and 1.1 tall, origin at its base, fins and drogue pack in the side colour */
+export function dropPod(style, sideColorHex = 0x3d7bd9) {
+  const sk = styleKey(style);
+  return twoMesh(`pod|${sk}`, sideColorHex, (p, fp) => drawPod(p, fp, sk, false)).g;
+}
+
+const PILOT = {
+  kingdom: { skin: 0xd9a77c, cloth: 0x6a5238, cap: 0x7a4a2a, frame: OAK, metal: BRASS, body: hex(0x8a6238) },
+  goblin: { skin: 0x6f9a48, cloth: 0x5a3f2a, cap: 0x3a2a1c, frame: DARKWOOD, metal: RUST, body: hex(0x7a4a2c) },
+  undead: { skin: 0xd8cfb4, cloth: 0x2c2a34, cap: 0x35303c, frame: BONE, metal: hex(0x3a3a44), body: hex(0x2c2a34) },
+  infernal: { skin: 0xb0382a, cloth: 0x2a2022, cap: 0x1a1414, frame: IRON, metal: IRON, body: hex(0x2a2022) },
+  beasts: { skin: 0x8a6238, cloth: 0x6a4a2e, cap: 0x4a3524, frame: hex(0x6a4a2e), metal: hex(0x6a4a2e), body: hex(0xa88a5a) },
+  elemental: { skin: 0x8a8f9a, cloth: 0x4a5a7a, cap: 0x5a5e6c, frame: SLATE, metal: STEEL, body: hex(0x85838c) },
+  dragons: { skin: 0xa8482e, cloth: 0x5a2a22, cap: 0x3a1c18, frame: BONE, metal: BRASS, body: hex(0x7a2a22) },
+};
+/** a small airman: prone under a glider, or seated in a gyrocopter (craft frame: nose +X) */
+function pilotPart(pose, style) {
+  const c = PILOT[style], prone = pose === 'prone';
+  const J = prone
+    ? { hip: [-0.08, -0.3, 0], chest: [0.15, -0.275, 0], head: [0.3, -0.25, 0], sh: [0.17, -0.28, 0.1], el: [0.26, -0.38, 0.18], hand: [0.21, -0.455, 0.2], hj: [-0.08, -0.3, 0.06], knee: [-0.3, -0.3, 0.075], foot: [-0.52, -0.275, 0.07], toe: [-0.6, -0.3, 0.07] }
+    : { hip: [-0.03, 0.1, 0], chest: [-0.06, 0.32, 0], head: [-0.035, 0.475, 0], sh: [-0.055, 0.335, 0.1], el: [0.07, 0.23, 0.135], hand: [0.2, 0.25, 0.07], hj: [-0.01, 0.1, 0.06], knee: [0.2, 0.15, 0.085], foot: [0.36, 0.03, 0.075], toe: [0.43, 0.035, 0.075] };
+  const mz = (q) => [q[0], q[1], -q[2]], limbs = [];
+  for (const m of [(q) => q, mz]) {
+    limbs.push(...S.limb([m(J.sh), m(J.el), m(J.hand)], [0.042, 0.035, 0.03]).map((q) => q.color(c.cloth).blend(0.02)));
+    limbs.push(S.sphere(0.034).at(...m(J.hand)).color(c.skin).blend(0.01));
+    limbs.push(...S.limb([m(J.hj), m(J.knee), m(J.foot)], [0.055, 0.045, 0.038]).map((q) => q.color(c.cloth).blend(0.02)));
+    limbs.push(S.capsule(m(J.foot), m(J.toe), 0.04, 0.034).color(0x2a1c12).blend(0.01));
+  }
+  const up = prone ? [1, 0.12, 0] : [0.1, 1, 0], hd = J.head;
+  return {
+    prims: [
+      S.capsule(J.hip, J.chest, 0.085, 0.1).color(c.cloth).tint(0.15, 30),
+      S.sphere(0.086).at(...J.hip).color(c.cloth).blend(0.03),
+      S.capsule(J.chest, hd, 0.04, 0.04).color(c.skin).blend(0.02),
+      S.sphere(0.082).at(...hd).color(c.skin).blend(0.015),
+      S.ellipsoid(0.088, 0.075, 0.09).at(hd[0] - up[0] * 0.012 + (prone ? 0 : -0.012), hd[1] + (prone ? 0.02 : 0.025), 0).color(c.cap).blend(0.004),
+      S.capsule([J.chest[0] + up[0] * 0.1, J.chest[1] + up[1] * 0.1, -0.06], [J.chest[0] + up[0] * 0.1, J.chest[1] + up[1] * 0.1, 0.06], 0.048).color(0xe6dcc0).blend(0.01),
+      ...limbs,
+    ],
+    hard: [
+      ...[1, -1].flatMap((sg) => { const f = prone ? [hd[0] + 0.045, hd[1] - 0.055, sg * 0.034] : [hd[0] + 0.07, hd[1] + 0.01, sg * 0.034]; return [HP.cyl(0.026, 0.026, 0.03, 12).rot(0, 0, prone ? 40 : 90).at(...f).color(0xc9a04a).pbr(0.4, 0.85), HP.sphere(0.021, 10).at(f[0] + (prone ? 0.008 : 0.012), f[1] - (prone ? 0.01 : 0), f[2]).color(0x1a2a3a).pbr(0.15, 0.3)]; }),
+    ],
+  };
+}
+
+/** a one-man glider: a kite wing on spars, the pilot slung prone beneath; the sail and tail go to fp */
+function drawGlider(p, fp, style, pilot = true) {
+  const c = PILOT[style], bone = c.frame, me = c.frame === IRON || c.frame === SLATE ? 0.6 : 0;
+  const N = [0.52, 0, 0], K = [-0.5, -0.02, 0], tip = (sg) => [-0.22, 0.1, sg * 0.8];
+  p.shade(null).ink(bone, 0.6, me);
+  p.bar(K, N, 0.016, 0.016, 8);
+  p.T(N[0], N[1], N[2]).sphere(0.026, 8, 6);
+  for (const sg of [1, -1]) {
+    const T = tip(sg), mid = [lerp(N[0], T[0], 0.5) + 0.03, lerp(N[1], T[1], 0.5) + 0.02, lerp(N[2], T[2], 0.5)];
+    p.ink(bone, 0.6, me).tube([N, mid, T, [T[0] - 0.08, T[1] + 0.01, T[2] + sg * 0.03]], [0.017, 0.016, 0.012, 0.004], 7, 1);
+    p.bar([0.06, 0.0, 0], [0.085, 0.04, sg * 0.5], 0.012, 0.01, 6);
+    // the sail: three panels a side, scalloped between the battens, bellied by the wind
+    const nu = seg(12, 5), nv = seg(18, 6);
+    fp.shade(null).ink([1, 1, 1], 0.85).grid(nu, nv, (i, j, out) => {
+      const b = j / nv, a = (i / nu) * (1 - 0.13 * Math.abs(Math.sin(3 * PI * b)) * (i / nu)), kp = lerp3(N, K, a), sp = lerp3(N, [T[0], T[1], T[2]], a), bow = 0.03 * Math.sin(PI * a) * b;
+      out[0] = lerp(kp[0], sp[0], b) + bow; out[1] = lerp(kp[1], sp[1], b) + 0.075 * Math.sin(PI * b) * a + 0.012; out[2] = lerp(kp[2], sp[2], b);
+    }, (i, j) => { const b = j / nv, pn = Math.floor(b * 3), v = (pn % 2 ? 0.62 : 1) * (Math.abs(b * 3 - Math.round(b * 3)) < 0.04 ? 0.5 : 1) * (0.85 + 0.15 * (i / nu)); return [v, v, v]; }, { away: [0, -5, 0] });
+    for (let k = 1; k < 3; k++) { const b = k / 3; p.ink(mul(bone, 0.8), 0.7, me).bar([lerp(N[0], lerp(N[0], T[0], 0.2), b), 0.02, lerp(0, T[2] * 0.2, b)], [lerp(K[0], T[0], b), lerp(K[1], T[1], b) + 0.02, lerp(0, T[2], b)], 0.007, 0.006, 5); }
+    // tail vanes
+    fp.push(X(K[0] + 0.04, K[1], 0, sg * 38, 0, 0)); fp.ink([0.8, 0.8, 0.8], 0.85).extrude(rounded([[0.1, 0], [-0.05, 0.2], [-0.24, 0.26], [-0.22, 0.04], [-0.1, -0.01]], 3), 0.012, true); fp.pop();
+    // control frame: down-tubes to the bar the pilot holds
+    p.ink(bone, 0.6, me).bar([0.13, 0, 0], [0.21, -0.47, sg * 0.25], 0.012, 0.012, 6);
+    if (TIER < 2) { p.ink(TAR, 0.9).bar([0.03, 0.2, 0], [T[0] + 0.1, T[1] + 0.012, T[2] * 0.85], 0.004, 0.004, 4, 0); p.bar([0.21, -0.47, sg * 0.25], [T[0] + 0.2, T[1], T[2] * 0.7], 0.004, 0.004, 4, 0); }
+  }
+  p.ink(bone, 0.6, me).bar([0.21, -0.47, -0.27], [0.21, -0.47, 0.27], 0.013, 0.013, 6);
+  p.bar([0.03, 0, 0], [0.03, 0.21, 0], 0.012, 0.008, 6);
+  p.ink(TAR, 0.9).bar([0.03, 0.2, 0], N, 0.004, 0.004, 4, 0); p.bar([0.03, 0.2, 0], K, 0.004, 0.004, 4, 0);
+  if (pilot) {
+    p.T(0, 0, 0).geo(sculpted(`pilot-prone-${style}`, () => pilotPart('prone', style), 66));
+    p.shade(null).ink(HEMP, 0.95); p.bar([0.1, -0.2, 0], [0.06, 0, 0], 0.008, 0.008, 4, 0); p.bar([-0.06, -0.22, 0], [-0.02, 0, 0], 0.008, 0.008, 4, 0); p.bar([-0.42, -0.23, 0], [-0.3, -0.01, 0], 0.006, 0.006, 4, 0);
+    p.ink(hex(0x4a3524), 0.85).T(0.04, -0.285, 0, 0, 0, 90).cyl(0.105, 0.1, 0.07, 12, 0);
+  }
+}
+/** a one-man gyrocopter: an open tub, a rotor mast, a pusher screw and a little gun; returns nothing (the rotor is drawn by drawRotor) */
+function drawGyro(p, fp, style) {
+  const c = PILOT[style], me = style === 'goblin' || style === 'infernal' ? 0.6 : 0, wood = style === 'kingdom' || style === 'beasts' || style === 'dragons';
+  // the tub: lofted, open on top
+  const nu = seg(18, 8), nv = seg(14, 6), xr = (t) => lerp(-0.4, 0.5, t), rr = (t) => 0.2 * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(t - 0.45) / 0.56, 2.4)), 0.6);
+  p.shade(wood ? grainX(0.22, 2) : mottle(0.2, 12)).ink(c.body, wood ? 0.75 : 0.55, me);
+  p.grid(nu, nv, (i, j, out) => { const t = i / nu, a = lerp(-1.9, 1.9, j / nv), r = rr(t); out[0] = xr(t); out[1] = 0.1 - r * 1.05 * Math.cos(a) + 0.05 * Math.pow(t, 3); out[2] = r * Math.sin(a); },
+    (i, j) => { const pl = Math.floor((j / nv) * 7); return mul(vary(c.body, pl * 7, 0.1), Math.abs((j / nv) * 7 - Math.round((j / nv) * 7)) < 0.07 ? 0.5 : 1); }, { away: [0, 0.3, 0] });
+  for (const sg of [1, -1]) { const pts = []; for (let i = 0; i <= nu; i++) { const t = i / nu, r = rr(t); pts.push([xr(t), 0.1 - r * 1.05 * Math.cos(1.9) + 0.05 * Math.pow(t, 3), sg * r * Math.sin(1.9)]); } p.shade(null).ink(c.metal, 0.4, 0.85).tube(pts, 0.013, 6, 1); }
+  p.shade(null).ink(c.metal, 0.38, 0.85); p.push(X(0.47, 0.135, 0, 0, 0, -90)); p.lathe([[0.075, 0], [0.08, 0.02], [0.06, 0.06], [0.03, 0.1], [0, 0.12]], 12); p.pop();
+  p.ink(mul(c.body, 0.6), 0.85).T(-0.13, 0.2, 0, 0, 0, -12).box(0.03, 0.26, 0.24, 0.01);   // seat back
+  p.T(0, 0.0, 0).box(0.5, 0.02, 0.24, 0.006);
+  // engine behind the seat, its screw, and the tail
+  p.push(X(-0.3, 0.2, 0, 0, 0, -90)); p.shade(mottle(0.2, 14)).ink(style === 'kingdom' ? COPPER : c.metal, 0.45, 0.8).lathe([[0, -0.1], [0.07, -0.09], [0.085, -0.05], [0.085, 0.08], [0.06, 0.12], [0, 0.13]], 14); p.shade(null).ink(IRON, 0.5, 0.8); for (const y of [-0.04, 0.02, 0.07]) p.T(0, y, 0).ring(0.088, 0.008, 14, 4); p.pop();
+  p.ink(IRON, 0.6, 0.7).tube([[-0.3, 0.28, 0.05], [-0.34, 0.36, 0.08], [-0.44, 0.38, 0.09]], 0.016, 6, 1);
+  p.ink(style === 'undead' ? GHOST : EMBER, 0.5, 0, 1.4).T(-0.26, 0.2, 0.086).box(0.05, 0.03, 0.01, 0);
+  p.push(X(-0.43, 0.2, 0)); p.push(X(0, 0, 0, 0, 0, 90)); p.shade(null).ink(c.metal, 0.4, 0.85).lathe([[0.03, -0.03], [0.035, 0], [0.02, 0.05], [0, 0.07]], 10); p.pop();
+  for (let i = 0; i < 3; i++) { p.push(X(0, 0, 0, i * 120 + 20, 0, 0)); p.shade(wood ? grainY(0.2) : null).ink(wood ? OAK : c.metal, 0.6, wood ? 0 : 0.7).T(0, 0, 0, 0, 62, 0).extrude([[-0.012, 0.02], [0.012, 0.02], [0.035, 0.1], [0.03, 0.19], [0, 0.21], [-0.03, 0.19], [-0.035, 0.1]], 0.01, true); p.pop(); }
+  p.pop();
+  p.shade(null).ink(c.frame, 0.6, c.frame === IRON ? 0.6 : 0).tube([[-0.36, 0.08, 0], [-0.6, 0.1, 0], [-0.86, 0.2, 0]], [0.035, 0.026, 0.016], 8, 1);
+  fp.shade(null).ink([1, 1, 1], 0.85);
+  fp.push(X(-0.8, 0.2, 0)); fp.extrude(rounded([[0.14, -0.02], [0.06, 0.2], [-0.08, 0.3], [-0.16, 0.26], [-0.12, -0.04], [-0.02, -0.08]], 3), 0.014, true); fp.pop();
+  for (const sg of [1, -1]) { fp.push(X(-0.78, 0.2, 0, sg * 90, 0, 0)); fp.ink([0.75, 0.75, 0.75], 0.85).extrude(rounded([[0.1, 0], [0.04, 0.2], [-0.08, 0.23], [-0.1, 0]], 3), 0.012, true); fp.pop(); }
+  for (const sg of [1, -1]) fp.ink([1, 1, 1], 0.8).T(0.14, 0.02, sg * (rr(0.6) * Math.sin(1.25) + 0.004), 0, 0, 0).box(0.2, 0.07, 0.006, 0.002);
+  // mast and stays
+  p.ink(c.frame, 0.6, c.frame === IRON ? 0.6 : 0).bar([-0.15, 0.05, 0], [-0.1, 0.74, 0], 0.022, 0.016, 8);
+  p.bar([0.28, 0.14, 0.1], [-0.105, 0.66, 0], 0.008, 0.008, 5); p.bar([0.28, 0.14, -0.1], [-0.105, 0.66, 0], 0.008, 0.008, 5); p.bar([-0.38, 0.12, 0], [-0.105, 0.6, 0], 0.01, 0.01, 5);
+  // wheels and a tail skid
+  for (const sg of [1, -1]) {
+    p.ink(c.frame, 0.6, c.frame === IRON ? 0.6 : 0).bar([0.1, -0.02, sg * 0.1], [0.14, -0.2, sg * 0.24], 0.014, 0.012, 6); p.bar([-0.08, -0.04, sg * 0.1], [0.14, -0.2, sg * 0.24], 0.01, 0.01, 5);
+    p.push(X(0.14, -0.2, sg * 0.25, 90, 0, 0)); p.shade(null).ink(hex(0x2a221c), 0.9).ring(0.07, 0.022, 16, 6); p.ink(c.metal, 0.4, 0.85).cyl(0.02, 0.02, 0.05, 8); if (TIER < 2) for (let i = 0; i < 6; i++) p.bar([0, 0, 0], [Math.cos(i * 1.047) * 0.07, 0, Math.sin(i * 1.047) * 0.07], 0.005, 0.005, 4, 0); p.pop();
+  }
+  p.ink(c.frame, 0.6).tube([[-0.7, 0.13, 0], [-0.78, 0.0, 0], [-0.86, -0.04, 0]], 0.01, 5, 1);
+  // the gun under the nose, with its drum
+  gunBarrel(p, X(0.42, -0.03, 0, 0, 0, -90), 0.3, 0.03, IRON);
+  p.shade(null).ink(mul(c.metal, 0.8), 0.45, 0.8).T(0.33, -0.04, 0.05, 90, 0, 0).cyl(0.045, 0.045, 0.03, 12);
+  p.ink(IRON, 0.5, 0.8).bar([0.3, 0.02, 0], [0.34, -0.03, 0], 0.012, 0.012, 5);
+  // stick
+  p.ink(c.metal, 0.4, 0.85).bar([0.2, 0.01, 0], [0.2, 0.26, 0], 0.008, 0.008, 5); p.T(0.2, 0.26, 0).sphere(0.018, 8, 6);
+  p.T(0, 0, 0).geo(sculpted(`pilot-seat-${style}`, () => pilotPart('seated', style), 66));
+}
+/** the gyrocopter's rotor about the origin: hub and three blades in the XZ plane */
+function drawRotor(p, style) {
+  const c = PILOT[style], wood = style !== 'goblin' && style !== 'infernal' && style !== 'elemental';
+  p.shade(null).ink(c.metal, 0.4, 0.85).lathe([[0.02, -0.05], [0.05, -0.03], [0.055, 0.01], [0.03, 0.03], [0.012, 0.07], [0, 0.075]], 12);
+  for (let i = 0; i < 3; i++) {
+    p.push(X(0, 0.0, 0, 0, i * 120, 0));
+    p.shade(wood ? grainX(0.2, 2) : null).ink(wood ? (style === 'undead' ? BONE : PINE) : c.metal, 0.6, wood ? 0 : 0.7);
+    p.push(X(0, 0, 0, 90, 0, 0)); p.T(0, 0, 0, 0, 0, 0).extrude(rounded([[0.04, -0.02], [0.3, -0.05], [0.72, -0.045], [0.8, 0], [0.72, 0.04], [0.3, 0.035], [0.04, 0.02]], 3), 0.012, true); p.pop();
+    p.shade(null).ink(c.metal, 0.4, 0.85).T(0.09, 0, 0).box(0.1, 0.02, 0.05, 0.006);
+    p.pop();
+  }
+}
+
+/**
+ * aircraft(kind, sideColorHex, style) -> THREE.Group: 'glider' | 'gyro', nose toward +X, origin at the craft's centre.
+ * userData.rotor (gyro only): the main rotor, to spin about its local Y. Wings and tail are in the side colour.
+ */
+export function aircraft(kind, sideColorHex = 0x3d7bd9, style = 'kingdom') {
+  const sk = styleKey(style);
+  if (kind === 'gyro') {
+    const { g } = twoMesh(`gyro|${sk}`, sideColorHex, (p, fp) => drawGyro(p, fp, sk));
+    const rk = `rotor|${sk}`;
+    if (!smallCache.has(rk)) { const p = new Pen(); drawRotor(p, sk); smallCache.set(rk, p.toGeometry()); }
+    const rotor = new THREE.Group(), rm = new THREE.Mesh(smallCache.get(rk), sculptMaterial());
+    rm.castShadow = true; rotor.add(rm); rotor.position.set(-0.1, 0.75, 0); rotor.name = 'rotor';
+    g.add(rotor); g.userData.rotor = rotor;
+    return g;
+  }
+  return twoMesh(`glider|${sk}`, sideColorHex, (p, fp) => drawGlider(p, fp, sk, true)).g;
+}
+
+// =====================================================================================================
+// AIRFIELD BUILDINGS
+// =====================================================================================================
+const WEATHERED = hex(0x8f7a5c), TIMBER = hex(0x7a5a38), TIMBER_DK = hex(0x5a4028), VERDIGRIS = hex(0x5f9c8c), PLASTER = hex(0xd8ccb0), FLAG = hex(0x8a8478);
+/** a squared timber between two points, grain running along it */
+function timber(p, a, b, w, h = w, col = TIMBER, seed = 0, ch = 0.012) {
+  const d = [Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2])];
+  p.shade(d[0] >= d[1] && d[0] >= d[2] ? grainX(0.22) : d[1] >= d[2] ? grainY(0.22) : grainZ(0.22)).ink(vary(col, seed * 13 + 3, 0.1), 0.85);
+  p.beam(a, b, w, h, ch);
+}
+/** an iron strap plate with studs, lying in the local XY plane */
+function gusset(p, m, w, h, studsN = 4) {
+  p.push(m); p.shade(null).ink(IRON, 0.5, 0.8).box(w, h, 0.016, 0.004);
+  if (TIER < 1) for (let i = 0; i < studsN; i++) { const a = (i / studsN) * TAU + 0.78; p.T(Math.cos(a) * w * 0.33, Math.sin(a) * h * 0.33, 0.009).sphere(0.012, 5, 3); }
+  p.pop();
+}
+/**
+ * Coursed blocks on a surface S(a, b) -> [x, y, z] (a along 0..1, b up 0..1) with outward normal Nf(a, b):
+ * la, hb = its size in tiles. Every block is its own piece, sunk at the joints. o: { course, len, col, seed, closed, sub }
+ */
+function masonry(p, S, Nf, la, hb, o = {}) {
+  const courses = Math.max(1, Math.round(hb / (o.course || 0.2))), col = o.col || STONE, g = o.groove ?? 0.014, seed = o.seed || 0, sub = seg(o.sub || 1, 1);
+  p.shade(mottle(0.22, 11));
+  for (let c = 0; c < courses; c++) {
+    const b0 = c / courses, b1 = (c + 1) / courses, nb = Math.max(1, Math.round(la / (o.len || 0.4))), offs = (c % 2) * 0.5;
+    for (let k = 0; k < nb + (offs && !o.closed ? 1 : 0); k++) {
+      let a0 = (k - offs) / nb, a1 = (k + 1 - offs) / nb;
+      if (!o.closed) { a0 = Math.max(0, a0); a1 = Math.min(1, a1); if (a1 - a0 < 1e-4) continue; }
+      const base = vary(col, seed + c * 37 + k * 11, o.vary ?? 0.13), dark = mul(base, 0.38), ea = Math.min(0.022 / la, (a1 - a0) * 0.2), eb = Math.min(0.022 / hb, (b1 - b0) * 0.2);
+      const as = [[a0, 1], [a0 + ea, 0]];
+      for (let i = 1; i < sub; i++) as.push([lerp(a0, a1, i / sub), 0]);
+      as.push([a1 - ea, 0], [a1, 1]);
+      const bs = [[b0, 1], [b0 + eb, 0], [b1 - eb, 0], [b1, 1]];
+      p.ink(base, 0.95).grid(as.length - 1, 3, (i, j, out) => { const a = as[i][0], b = bs[j][0], q = S(a, b); if (as[i][1] || bs[j][1]) { const n = Nf(a, b); q[0] -= n[0] * g; q[1] -= n[1] * g; q[2] -= n[2] * g; } out[0] = q[0]; out[1] = q[1]; out[2] = q[2]; },
+        (i, j) => (as[i][1] || bs[j][1] ? dark : base), o.flip ? { flip: true } : null);
+    }
+  }
+}
+/** a flat wall of blocks from corner o along ux (length la) and up (height hb), facing n */
+function stoneWall(p, o, ux, la, hb, n, opt = {}) {
+  masonry(p, (a, b) => [o[0] + ux[0] * a * la, o[1] + b * hb, o[2] + ux[2] * a * la], () => n, la, hb, { ...opt, flip: cross(ux, [0, 1, 0])[0] * n[0] + cross(ux, [0, 1, 0])[2] * n[2] < 0 });
+}
+/** a cask standing on the local origin */
+function barrel(p, r, h, seed = 0) {
+  const prof = []; for (let i = 0; i <= 8; i++) { const t = i / 8; prof.push([r * (0.82 + 0.18 * Math.sin(PI * t)), t * h]); }
+  p.shade((x, y, z, nx, ny, nz, c) => mul(c, (0.8 + 0.3 * noise3(x * 30, y * 2, z * 30)) * (Math.abs(Math.sin(Math.atan2(nz, nx) * 7)) < 0.12 ? 0.55 : 1))).ink(vary(OAK, seed, 0.12), 0.8);
+  p.lathe([[0, 0], [prof[0][0], 0], ...prof, [prof[8][0], h], [prof[8][0] - 0.02, h], [prof[8][0] - 0.025, h - 0.03], [0, h - 0.03]], 16);
+  p.shade(null).ink(IRON, 0.5, 0.8);
+  for (const t of [0.12, 0.36, 0.64, 0.88]) p.T(0, t * h, 0).lathe([[r * (0.82 + 0.18 * Math.sin(PI * t)) + 0.006, -0.02], [r * (0.82 + 0.18 * Math.sin(PI * t)) + 0.01, 0], [r * (0.82 + 0.18 * Math.sin(PI * t)) + 0.006, 0.02]], 16);
+}
+/** rows of shingles on a slope: o = eave corner, ux along the eave (length w), uy up the slope (length len) */
+function shingles(p, o, ux, uy, w, len, col, seed = 0) {
+  const n = norm3(cross(ux, uy)), up = n[1] < 0 ? [-n[0], -n[1], -n[2]] : n, rows = Math.max(2, Math.round(len / 0.2)), rh = len / rows, t = 0.035;
+  const P = (a, b, h) => [o[0] + ux[0] * a + uy[0] * b + up[0] * h, o[1] + ux[1] * a + uy[1] * b + up[1] * h, o[2] + ux[2] * a + uy[2] * b + up[2] * h];
+  p.shade(mottle(0.25, 14));
+  for (let r = 0; r < rows; r++) {
+    const cnt = Math.max(2, Math.round(w / 0.18)), offs = (r % 2) * 0.5;
+    for (let k = -1; k < cnt; k++) {
+      const a0 = Math.max(0, ((k + offs) / cnt) * w + 0.006), a1 = Math.min(w, ((k + 1 + offs) / cnt) * w - 0.006);
+      if (a1 - a0 < 0.02) continue;
+      const b0 = r * rh - (r ? 0.02 : 0.05) - 0.03 * hash2(r * 31 + k, seed), b1 = Math.min(len, (r + 1.25) * rh);
+      const c = vary(col, seed + r * 53 + k * 7, 0.16), f = mul(c, 0.55);
+      p.ink(c, 0.9).poly([P(a0, b0, t), P(a1, b0, t), P(a1, b1, 0.004), P(a0, b1, 0.004)]);
+      p.ink(f, 0.9).poly([P(a0, b0, 0), P(a1, b0, 0), P(a1, b0, t), P(a0, b0, t)]);
+      if (TIER < 1) { p.poly([P(a0, b0, 0), P(a0, b0, t), P(a0, b1, 0.004)]); p.poly([P(a1, b0, 0), P(a1, b1, 0.004), P(a1, b0, t)]); }
+    }
+  }
+}
+/** a pole with a pennant in the side colour at its head */
+function pennantPole(p, fp, foot, head, len = 0.7, hgt = 0.26) {
+  staff(p, foot, head, 0.02, TIMBER_DK, BRASS);
+  fp.push(X(head[0], head[1] - 0.03, head[2])); flag(fp, len, hgt, { tail: 0.45 }); fp.pop();
+}
+/** a coil of rope lying flat on the local origin */
+function coil(p, R = 0.12, turns = 3, r = 0.018) {
+  p.shade(null).ink(HEMP, 0.95);
+  for (let i = 0; i < turns; i++) p.T(0, r + i * r * 1.7, 0).ring(R - (i % 2) * r * 0.6, r, 16, 5);
+}
+
+// ---------- the dock: a timber pier, its walk exactly one level up ----------
+function buildDock(p, fp, L, D) {
+  const hw = D / 2, Y = 0.8, zp = hw - 0.1, ze = hw - 0.205, np = Math.max(2, Math.round(L / 1.45) + 1);
+  // the walk: planks athwart, all dead level at Y
+  const n = Math.round(L / 0.2), pw = L / n;
+  for (let i = 0; i < n; i++) {
+    const x = -L / 2 + (i + 0.5) * pw, c = vary(WEATHERED, i * 17 + 3, 0.14), h1 = hash1(i * 7 + 1);
+    p.shade(grainZ(0.24)).ink(c, 0.9).T(x, Y - 0.03, (h1 - 0.5) * 0.02).box(pw - 0.012, 0.06, 2 * ze - 0.02 * h1, 0.01);
+    if (TIER < 1) { p.shade(null).ink(IRON, 0.55, 0.8); for (const z of [-ze + 0.1, 0, ze - 0.1]) p.T(x, Y - 0.001, z + (hash1(i * 3 + 5) - 0.5) * 0.02).sphere(0.011, 5, 3); }
+  }
+  for (const z of [-ze + 0.1, 0, ze - 0.1]) timber(p, [-L / 2 + 0.05, 0.68, z], [L / 2 - 0.05, 0.68, z], 0.1, 0.12, TIMBER_DK, z * 10);
+  const xs = Array.from({ length: np }, (_, k) => lerp(-L / 2 + 0.3, L / 2 - 0.3, k / (np - 1)));
+  xs.forEach((x, k) => {
+    timber(p, [x, 0.56, -hw + 0.03], [x, 0.56, hw - 0.03], 0.14, 0.12, TIMBER, k);
+    for (const sg of [1, -1]) {
+      // piles: round logs driven into the ground; every other one stands proud as a bollard
+      const tall = (k + (sg > 0 ? 0 : 1)) % 2 === 0, top = tall ? 1.14 : 0.74, nu = seg(14, 7), nvv = seg(7, 3), sd = k * 5 + (sg > 0 ? 1 : 2);
+      p.shade(grainY(0.3)).ink(vary(TIMBER_DK, sd * 9, 0.12), 0.92);
+      p.grid(nu, nvv, (i, j, out) => { const a = (i / nu) * TAU, y = lerp(-0.06, top, j / nvv), r = 0.1 * (1.08 - 0.1 * (j / nvv)) * (0.94 + 0.12 * noise3(Math.cos(a) * 2 + sd, y * 1.5, Math.sin(a) * 2)); out[0] = x + Math.cos(a) * r; out[1] = y; out[2] = sg * zp + Math.sin(a) * r; }, null, { wrapU: true, away: [x, 0.4, sg * zp] });
+      p.T(x, top, sg * zp).lathe([[0.092, 0], [0.085, 0.02], [0, 0.03]], 12);
+      p.shade(null).ink(IRON, 0.5, 0.8).T(x, top - 0.06, sg * zp).ring(0.1, 0.012, 14, 4);
+      if (tall) { p.ink(HEMP, 0.95); for (let i = 0; i < 3; i++) p.T(x, 0.9 + i * 0.03, sg * zp).ring(0.108, 0.016, 14, 5); }
+      timber(p, [x, 0.12, sg * (zp - 0.02)], [x, 0.5, -sg * (zp - 0.3)], 0.05, 0.08, TIMBER, sd);
+      if (k < np - 1) { const x2 = xs[k + 1], up = (k + (sg > 0 ? 0 : 1)) % 2; timber(p, [x + 0.06, up ? 0.14 : 0.52, sg * (zp + 0.02)], [x2 - 0.06, up ? 0.52 : 0.14, sg * (zp + 0.02)], 0.05, 0.08, TIMBER, sd + 3); }
+      if (k < np - 1 && TIER < 2) {   // the rope along the edge, bollard to pile
+        const x2 = xs[k + 1], y0 = tall ? 0.96 : 0.76, y1 = tall ? 0.76 : 0.96;
+        rope(p, [x, y0, sg * zp], [x2, y1, sg * zp], 0.017, HEMP, 0.07);
+      }
+    }
+  });
+  // rope fenders down the sides and a ladder at the landward end
+  for (const sg of [1, -1]) for (let k = 0; k < np - 1; k++) { const x = (xs[k] + xs[k + 1]) / 2; p.shade(null).ink(mul(HEMP, 0.8), 0.95).T(x, 0.5, sg * (hw - 0.03)).lathe([[0, -0.14], [0.045, -0.12], [0.06, 0], [0.045, 0.12], [0, 0.14]], 10); rope(p, [x, 0.62, sg * (hw - 0.03)], [x, 0.76, sg * (ze + 0.0)], 0.01); }
+  const xl = -L / 2 + 0.75;
+  for (const dx of [-0.16, 0.16]) timber(p, [xl + dx, 0, hw + 0.03], [xl + dx, 0.84, hw - 0.14], 0.05, 0.06, TIMBER, 4);
+  for (let i = 1; i <= 5; i++) timber(p, [xl - 0.16, i * 0.135, hw + 0.03 - i * 0.027], [xl + 0.16, i * 0.135, hw + 0.03 - i * 0.027], 0.035, 0.045, TIMBER, i);
+  // the crane at the seaward end: post, jib, brace, tackle and hook, a pennant at its head
+  const cx = L / 2 - 0.3, cz = -zp;
+  timber(p, [cx, 0.55, cz + 0.02], [cx, 2.55, cz + 0.02], 0.13, 0.13, TIMBER_DK, 9);
+  const jib = [cx - 1.05, 2.72, cz + 0.62];
+  timber(p, [cx, 2.2, cz], jib, 0.09, 0.11, TIMBER, 10);
+  timber(p, [cx, 1.55, cz], lerp3([cx, 2.2, cz], jib, 0.55), 0.06, 0.08, TIMBER, 11);
+  gusset(p, X(cx, 2.2, cz + 0.07), 0.2, 0.2); gusset(p, X(cx, 1.55, cz + 0.07), 0.16, 0.16);
+  p.shade(null).ink(IRON, 0.5, 0.8).T(jib[0], jib[1] - 0.06, jib[2], 0, 30, 90).ring(0.05, 0.014, 12, 5);
+  rope(p, [cx, 2.5, cz], jib, 0.012, HEMP, 0.03); rope(p, [jib[0], jib[1] - 0.1, jib[2]], [jib[0], 1.95, jib[2]], 0.012);
+  p.shade(null).ink(OAK, 0.8).T(jib[0], 1.9, jib[2]).box(0.07, 0.12, 0.05, 0.015);
+  p.ink(IRON, 0.5, 0.8).tube([[jib[0], 1.84, jib[2]], [jib[0], 1.76, jib[2]], [jib[0] + 0.05, 1.71, jib[2]], [jib[0] + 0.06, 1.78, jib[2]]], 0.012, 6, 1);
+  p.T(cx, 1.5, cz + 0.1, 90, 0, 0).cyl(0.07, 0.07, 0.1, 12); p.bar([cx, 1.5, cz + 0.15], [cx + 0.14, 1.5, cz + 0.17], 0.01, 0.01, 5);
+  pennantPole(p, fp, [cx, 2.5, cz], [cx, 3.1, cz], 0.7, 0.26);
+  // a lantern post on the opposite corner, and coils on the bollards
+  const lx = -L / 2 + 0.3, lz = zp;
+  timber(p, [lx, 0.5, lz], [lx, 2.0, lz], 0.09, 0.09, TIMBER_DK, 12);
+  p.shade(null).ink(IRON, 0.5, 0.8).tube([[lx, 1.9, lz], [lx + 0.08, 2.02, lz - 0.1], [lx + 0.2, 1.98, lz - 0.2]], 0.012, 5, 1);
+  p.push(X(lx + 0.2, 1.98, lz - 0.2)); lantern(p, 1.5); p.pop();
+}
+
+// ---------- the mooring mast ----------
+function buildTower(p, fp) {
+  // stone base: a battered drum on a plinth, capped with flags, steps up one side
+  const r0 = 1.34, r1 = 1.22, hB = 0.9;
+  masonry(p, (a, b) => { const r = lerp(r0, r1, b), t = a * TAU; return [Math.cos(t) * r, 0.1 + b * (hB - 0.16), Math.sin(t) * r]; }, (a) => [Math.cos(a * TAU), 0.1, Math.sin(a * TAU)], TAU * 1.28, hB - 0.16, { course: 0.185, len: 0.46, closed: true, sub: 4, seed: 3, col: hex(0x9a958a) });
+  p.shade(mottle(0.2, 9)).ink(hex(0x86827a), 0.95).lathe([[0, 0], [1.42, 0], [1.42, 0.07], [1.36, 0.11], [1.34, 0.11]], 40);
+  p.ink(hex(0xa39e92), 0.95).lathe([[1.2, hB - 0.07], [1.29, hB - 0.06], [1.3, hB - 0.02], [1.27, hB], [0, hB]], 40);
+  if (TIER < 2) for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU; p.shade(null).ink(mul(STONE, 0.5), 1).T(Math.cos(a) * 0.9, hB + 0.001, Math.sin(a) * 0.9, 0, -a / DEG, 0).box(0.74, 0.004, 0.012, 0); }
+  for (let i = 0; i < 4; i++) { p.shade(mottle(0.2, 9)).ink(vary(hex(0x9a958a), i * 7, 0.1), 0.95).T(-1.22 - (3 - i) * 0.09 + 0.1, (i + 0.5) * 0.225, 0).box(0.5 + (3 - i) * 0.18, 0.225, 0.7, 0.015); }
+  // the lattice: four posts leaning in, girts, crossed braces, iron at every joint
+  const yT = 5.05, post = (sx, sz, y) => { const t = (y - hB) / (yT - hB), h = lerp(0.84, 0.54, t); return [sx * h, y, sz * h]; };
+  const corners = [[1, 1], [-1, 1], [-1, -1], [1, -1]], lv = [hB + 0.02, 1.75, 2.55, 3.3, 4.0, 4.62, yT];
+  corners.forEach(([sx, sz], i) => {
+    timber(p, post(sx, sz, hB), post(sx, sz, yT), 0.14, 0.14, TIMBER_DK, i);
+    p.shade(mottle(0.2, 9)).ink(hex(0x8a857a), 0.95).T(sx * 0.84, hB + 0.05, sz * 0.84).box(0.26, 0.1, 0.26, 0.02);
+    p.shade(null).ink(IRON, 0.5, 0.8).T(sx * 0.836, hB + 0.16, sz * 0.836).box(0.16, 0.08, 0.16, 0.01);
+  });
+  for (let f = 0; f < 4; f++) {
+    const [ax, az] = corners[f], [bx, bz] = corners[(f + 1) % 4], out = [(ax + bx) / 2, 0, (az + bz) / 2];
+    for (let k = 1; k < lv.length; k++) {
+      const a0 = post(ax, az, lv[k - 1]), b0 = post(bx, bz, lv[k - 1]), a1 = post(ax, az, lv[k]), b1 = post(bx, bz, lv[k]);
+      timber(p, a1, b1, 0.085, 0.1, TIMBER, f * 7 + k);
+      if (k === lv.length - 1) continue;
+      if (lv[k] - lv[k - 1] > 0.5) { timber(p, add3(a0, out, 0.02), add3(b1, out, 0.02), 0.045, 0.07, TIMBER, f * 9 + k); timber(p, add3(b0, out, -0.02), add3(a1, out, -0.02), 0.045, 0.07, TIMBER, f * 9 + k + 3); }
+      const ry = out[0] ? (out[0] > 0 ? 90 : -90) : out[2] > 0 ? 0 : 180;
+      gusset(p, X(a1[0] + out[0] * 0.08, a1[1], a1[2] + out[2] * 0.08, 0, ry, 0), 0.17, 0.17); gusset(p, X(b1[0] + out[0] * 0.08, b1[1], b1[2] + out[2] * 0.08, 0, ry, 0), 0.17, 0.17);
+      if (lv[k] - lv[k - 1] > 0.5) { const c = lerp3(lerp3(a0, b0, 0.5), lerp3(a1, b1, 0.5), 0.5); gusset(p, X(c[0] + out[0] * 0.05, c[1], c[2] + out[2] * 0.05, 0, ry, 45), 0.12, 0.12, 1); }
+    }
+  }
+  // the spiral stair round a newel, with a handrail
+  const yP = 4.62, ns = 31, rise = (yP - hB - 0.02) / ns, rail = [];
+  p.shade(grainY(0.2)).ink(TIMBER_DK, 0.85).T(0, (hB + 6.05) / 2, 0).cyl(0.065, 0.075, 6.05 - hB, 12);
+  for (let i = 0; i < ns; i++) {
+    const a = i * 31 * DEG + 0.6, y = hB + (i + 1) * rise, rr = Math.min(0.5, post(1, 1, y)[0] - 0.07);
+    p.push(X(0, y - 0.018, 0, 0, -a / DEG, 0));
+    p.shade(grainX(0.22)).ink(vary(PINE, i * 5, 0.12), 0.85).T(rr / 2 + 0.03, 0, 0).box(rr, 0.035, 0.17, 0.008);
+    if (TIER < 2) p.shade(null).ink(IRON, 0.5, 0.8).T(0.08, -0.03, 0).box(0.12, 0.03, 0.05, 0.004);
+    p.shade(null).ink(IRON, 0.5, 0.8).bar([rr - 0.01, 0.01, 0], [rr - 0.01, 0.52, 0], 0.01, 0.01, 6, 0); p.T(rr - 0.01, 0.26, 0).sphere(0.018, 6, 4);
+    p.pop();
+    rail.push([Math.cos(a) * (rr - 0.01), y + 0.5, Math.sin(a) * (rr - 0.01)]);
+  }
+  p.shade(null).ink(mul(BRASS, 0.8), 0.45, 0.8).tube(spline(rail, seg(3, 1)).pts, 0.016, 6, 1);
+  // the docking platform: joists on brackets, a planked deck with a stair well, rails with a boarding gap toward the arm
+  const hp = 1.12;
+  for (const z of [-0.62, 0.62]) timber(p, [-hp, yP - 0.1, z], [hp, yP - 0.1, z], 0.09, 0.12, TIMBER_DK, z * 5);
+  for (const x of [-0.62, 0.62]) timber(p, [x, yP - 0.2, -hp], [x, yP - 0.2, hp], 0.09, 0.1, TIMBER_DK, x * 3);
+  corners.forEach(([sx, sz], i) => { const q = post(sx, sz, 3.95); timber(p, q, [sx * (hp - 0.08), yP - 0.2, sz * (hp - 0.08)], 0.07, 0.09, TIMBER, i + 20); });
+  const npk = 11, pwk = (2 * hp) / npk;
+  for (let i = 0; i < npk; i++) {
+    const x = -hp + (i + 0.5) * pwk, c = vary(WEATHERED, i * 13 + 1, 0.13), well = x > -0.52 && x < 0.2;
+    p.shade(grainZ(0.24)).ink(c, 0.9);
+    if (well) { p.T(x, yP - 0.02, (hp + 0.5) / 2).box(pwk - 0.012, 0.045, hp - 0.5, 0.008); p.T(x, yP - 0.02, -(hp + 0.5) / 2).box(pwk - 0.012, 0.045, hp - 0.5, 0.008); }
+    else p.T(x, yP - 0.02, 0).box(pwk - 0.012, 0.045, 2 * hp, 0.008);
+  }
+  const rp = [];
+  for (let i = 0; i < 16; i++) { const t = i / 16, s4 = Math.floor(t * 4), f = t * 4 - s4, c0 = corners[s4], c1 = corners[(s4 + 1) % 4]; rp.push([lerp(c0[0], c1[0], f) * (hp - 0.05), lerp(c0[1], c1[1], f) * (hp - 0.05)]); }
+  rp.forEach(([x, z], i) => { if (x > hp - 0.2 && Math.abs(z) < 0.3) return; timber(p, [x, yP, z], [x, yP + 0.5, z], 0.055, 0.055, TIMBER, i); p.shade(null).ink(BRASS, 0.4, 0.85).T(x, yP + 0.52, z).sphere(0.03, 8, 6); });
+  for (const [a, b] of [[[hp - 0.05, hp - 0.05], [-hp + 0.05, hp - 0.05]], [[-hp + 0.05, hp - 0.05], [-hp + 0.05, -hp + 0.05]], [[-hp + 0.05, -hp + 0.05], [hp - 0.05, -hp + 0.05]], [[hp - 0.05, -hp + 0.05], [hp - 0.05, -0.53]], [[hp - 0.05, 0.53], [hp - 0.05, hp - 0.05]]]) {
+    timber(p, [a[0], yP + 0.47, a[1]], [b[0], yP + 0.47, b[1]], 0.05, 0.045, TIMBER_DK, a[0] * 3 + b[1]);
+    rope(p, [a[0], yP + 0.26, a[1]], [b[0], yP + 0.26, b[1]], 0.014, HEMP, 0.04);
+  }
+  // the mast head: mooring arm with its brace and ring, a coiled line, a lantern, and the windsock
+  const yA = 5.5, tip = [1.72, yA + 0.12, 0];
+  timber(p, [-0.35, yA - 0.04, 0], tip, 0.1, 0.12, TIMBER_DK, 31);
+  timber(p, [0.04, yT + 0.02, 0], [1.05, yA + 0.02, 0], 0.06, 0.08, TIMBER, 32);
+  gusset(p, X(0.02, yA, 0.065), 0.24, 0.2); gusset(p, X(1.05, yA + 0.06, 0.065), 0.16, 0.14);
+  p.shade(null).ink(IRON, 0.45, 0.85).T(tip[0] - 0.02, tip[1] - 0.02, 0, 0, 0, 90).ring(0.075, 0.016, 14, 5);
+  p.T(tip[0] + 0.02, tip[1] - 0.24, 0, 90, 0, 0).ring(0.16, 0.028, 22, 7);
+  p.ink(IRON, 0.5, 0.8).tube([[0.62, yA - 0.02, 0.07], [0.62, yA - 0.12, 0.1], [0.62, yA - 0.1, 0.16]], 0.014, 5, 1);
+  p.shade(null).ink(HEMP, 0.95); for (let i = 0; i < 4; i++) p.T(0.62, yA - 0.27 - i * 0.012, 0.12 + i * 0.008, 90, 0, 8 * i).ring(0.15 - i * 0.008, 0.018, 18, 5);
+  rope(p, [tip[0] + 0.02, tip[1] - 0.4, 0], [hp - 0.05, yP + 0.5, 0.53], 0.016, HEMP, 0.22);
+  p.push(X(1.2, yA - 0.03, 0)); lantern(p, 1.5); p.pop();
+  p.shade(null).ink(BRASS, 0.4, 0.85).T(0, 6.06, 0).sphere(0.05, 10, 7);
+  const ys = 5.9;
+  p.shade(null).ink(IRON, 0.5, 0.8).T(-0.2, ys, 0, 0, 0, 90).ring(0.13, 0.012, 16, 5); p.bar([0, ys + 0.1, 0], [-0.2, ys + 0.13, 0], 0.008, 0.008, 4, 0); p.bar([0, ys - 0.1, 0], [-0.2, ys - 0.13, 0], 0.008, 0.008, 4, 0);
+  const nu = seg(16, 6), nvv = seg(12, 6);
+  fp.shade(null).ink([1, 1, 1], 0.9).grid(nu, nvv, (i, j, out) => { const t = i / nu, a = (j / nvv) * TAU, r = lerp(0.13, 0.055, t) * (1 + 0.06 * Math.sin(t * 9)); out[0] = -0.2 - t * 0.95; out[1] = ys - 0.16 * t * t + Math.cos(a) * r; out[2] = Math.sin(a) * r + 0.05 * Math.sin(t * 5) * t; },
+    (i) => { const v = Math.floor((i / nu) * 5) % 2 ? 0.5 : 1; return [v, v, v]; }, { wrapV: true });
+}
+
+// ---------- the hangar: an arched shed, open along its front ----------
+function buildHangar(p, fp, W, Dp) {
+  const a = W / 2 - 0.15, Ht = 2.75, zb = -Dp / 2 + 0.06, zf = Dp / 2 - 0.46, wallH = 0.42;
+  const arch = (t, off = 0) => { const c = Math.cos(t), s = Math.sin(t), x = a * Math.sign(c) * Math.pow(Math.abs(c), 0.82), y = Ht * Math.pow(s, 0.9), l = Math.hypot(Ht * c, a * s) || 1; return [x + (off * Ht * c) / l, y + (off * a * s) / l]; };
+  const t0 = Math.asin(Math.pow(wallH / Ht, 1 / 0.9));   // where the vault lands on the knee walls
+  const yAt = (x) => { const c = clamp(Math.abs(x) / a, 0, 1), t = Math.acos(Math.pow(c, 1 / 0.82)); return Ht * Math.pow(Math.sin(t), 0.9); };
+  // floor: boards laid front to back on a packed pad
+  p.shade(mottle(0.2, 6)).ink(hex(0x7a6a52), 1).T(0, 0.012, (zb + zf) / 2).box(W - 0.3, 0.024, zf - zb + 0.2, 0);
+  const nf = Math.round((2 * a - 0.5) / 0.24);
+  for (let i = 0; i < nf; i++) p.shade(grainZ(0.22)).ink(vary(WEATHERED, i * 11, 0.12), 0.9).T(-a + 0.25 + (i + 0.5) * ((2 * a - 0.5) / nf), 0.035, (zb + zf) / 2 + 0.1).box((2 * a - 0.5) / nf - 0.012, 0.03, zf - zb + 0.25, 0.006);
+  // knee walls of dressed stone down both sides
+  for (const sg of [1, -1]) {
+    const xo = sg * (a + 0.1), xi = sg * (a - 0.16), la = zf - zb + 0.1;
+    stoneWall(p, [xo, 0, zb - 0.02], [0, 0, 1], la, wallH, [sg, 0, 0], { len: 0.48, course: 0.21, seed: sg * 5 + 9 });
+    stoneWall(p, [xi, 0, zb - 0.02], [0, 0, 1], la, wallH, [-sg, 0, 0], { len: 0.48, course: 0.21, seed: sg * 5 + 19 });
+    p.shade(mottle(0.2, 9)).ink(hex(0x9a958a), 0.95).T((xo + xi) / 2, wallH + 0.02, zb - 0.02 + la / 2).box(0.32, 0.05, la + 0.04, 0.012);
+    p.T((xo + xi) / 2, wallH / 2, zf + 0.08).box(0.26, wallH, 0.04, 0.01);
+  }
+  // ribs: laminated arches, strapped with iron
+  const nr = 5, zs = Array.from({ length: nr }, (_, i) => lerp(zb + 0.07, zf, i / (nr - 1))), na = seg(60, 16);
+  const sect = [[-0.08, -0.07], [-0.07, -0.08], [0.07, -0.08], [0.08, -0.07], [0.08, 0.07], [0.07, 0.08], [-0.07, 0.08], [-0.08, 0.07]];
+  zs.forEach((z, ri) => {
+    const big = ri === nr - 1 ? 1.25 : 1;
+    p.shade(mottle(0.18, 10)).ink(vary(TIMBER_DK, ri * 7, 0.08), 0.85);
+    p.grid(na, sect.length, (i, j, out) => { const t = lerp(t0 * 0.6, PI - t0 * 0.6, i / na), q = sect[j % sect.length], pt = arch(t, q[1] * big - 0.02); out[0] = pt[0]; out[1] = pt[1]; out[2] = z + q[0] * big; },
+      (i, j) => mul(vary(TIMBER_DK, ri * 7 + Math.floor((i / na) * 7), 0.12), (i % Math.round(na / 7) === 0 ? 0.55 : 1)), { wrapV: true });
+    if (TIER < 2) for (let k = 1; k < 7; k++) { const t = lerp(t0, PI - t0, k / 7), q = arch(t, 0.065 * big), q2 = arch(t + 0.01, 0.065 * big); p.push(frame([q[0], q[1], z], [q2[0] - q[0], q2[1] - q[1], 0], [0, 0, 1])); p.shade(null).ink(IRON, 0.5, 0.8).box(0.09, 0.19 * big, 0.016, 0.004); if (TIER < 1) for (const s2 of [-1, 1]) p.T(0, s2 * 0.06, 0.01).sphere(0.012, 5, 3); p.pop(); }
+  });
+  // the roof: copper sheets lapped like clinker between the ribs, green with weather
+  const nsr = seg(34, 14), nz = seg(8, 3);
+  for (let k = 0; k < nsr; k++) {
+    const ta = lerp(t0 * 0.75, PI - t0 * 0.75, k / nsr), tb = lerp(t0 * 0.75, PI - t0 * 0.75, (k + 1) / nsr), up = (ta + tb) / 2 < PI / 2;
+    const c = vary(VERDIGRIS, k * 23 + 5, 0.13), lo = up ? ta : tb, hi = up ? tb : ta;
+    p.shade(mottle(0.3, 5)).ink(c, 0.6, 0.35);
+    p.grid(nz, 2, (i, j, out) => { const z = lerp(zb + 0.02, zf - 0.02, i / nz), q = arch(j === 0 ? lerp(lo, hi, -0.22) : j === 1 ? lerp(lo, hi, 0.5) : hi, j === 0 ? 0.066 : j === 1 ? 0.052 : 0.04); out[0] = q[0]; out[1] = q[1]; out[2] = z; },
+      (i, j) => { const k2 = (j === 0 ? 0.6 : 1) * (0.82 + 0.3 * noise3(i * 0.9 + k, k * 0.7, 3)) * (i > 0 && i < nz && i % 2 === 0 ? 0.72 : 1); return [c[0] * k2 + 0.02 * (j === 2 ? 1 : 0), c[1] * k2, c[2] * k2, 0.6, 0.35, 0]; }, { away: [0, 0.5, 0] });
+  }
+  if (TIER < 1) { p.shade(null).ink(mul(COPPER, 0.8), 0.45, 0.8); zs.forEach((z, ri) => { for (let k = 0; k < nsr; k++) for (const dz of ri === 0 ? [0.13] : ri === nr - 1 ? [-0.14] : [-0.13, 0.13]) { const q = arch(lerp(t0 * 0.75, PI - t0 * 0.75, (k + 0.5) / nsr), 0.062); p.T(q[0], q[1], z + dz).sphere(0.014, 5, 3); } }); }
+  for (const sg of [1, -1]) for (const tq of [0.62, 1.05]) { const q = arch(sg > 0 ? tq : PI - tq, -0.13); timber(p, [q[0], q[1], zb + 0.1], [q[0], q[1], zf], 0.07, 0.09, TIMBER, tq * 10 + sg); }
+  for (const sg of [1, -1]) for (const z of [zs[1], zs[3]]) { const q = arch(sg > 0 ? 0.55 : PI - 0.55, -0.2); p.push(X(q[0], q[1], z)); lantern(p, 1.3); p.pop(); }
+  // a ridge board, and the back wall: upright boards under the arch, a round window
+  timber(p, [0, Ht + 0.07, zb], [0, Ht + 0.07, zf + 0.12], 0.1, 0.08, TIMBER_DK, 3);
+  const yIn = (x) => Math.max(0, yAt(Math.min(a, (Math.abs(x) * a) / (a - 0.1))) - 0.09), zw = zb + 0.07;
+  const nb = Math.round((2 * a - 0.2) / 0.23);
+  for (let i = 0; i < nb; i++) {
+    const x0 = -a + 0.1 + (i * (2 * a - 0.2)) / nb + 0.006, x1 = -a + 0.1 + ((i + 1) * (2 * a - 0.2)) / nb - 0.006, c = vary(WEATHERED, i * 19 + 7, 0.14);
+    p.shade(grainY(0.24)).ink(c, 0.9).T(0, 0, zw).extrude([[x0, 0.02], [x1, 0.02], [x1, yIn(x1)], [(x0 + x1) / 2, yIn((x0 + x1) / 2)], [x0, yIn(x0)]], 0.05);
+  }
+  p.shade(null).ink(hex(0x24384a), 0.2, 0.3).T(0, 1.55, zw, 90, 0, 0).cyl(0.44, 0.44, 0.07, 24);
+  p.ink(TIMBER_DK, 0.85).T(0, 1.55, zw, 90, 0, 0).ring(0.45, 0.06, 28, 7); p.T(0, 1.55, zw).box(0.9, 0.045, 0.09, 0.008); p.T(0, 1.55, zw).box(0.045, 0.9, 0.09, 0.008);
+  timber(p, [-a + 0.1, 0.98, zw], [a - 0.1, 0.98, zw], 0.08, 0.12, TIMBER_DK, 5);
+  // the front: a header beam, boards in the gable above it, folding doors standing open at both sides
+  const yH = 2.12, zd = zf + 0.1;
+  timber(p, [-arch(Math.asin(Math.pow(yH / Ht, 1 / 0.9)))[0] - 0.05, yH, zd], [arch(Math.asin(Math.pow(yH / Ht, 1 / 0.9)))[0] + 0.05, yH, zd], 0.14, 0.16, TIMBER_DK, 6);
+  const xg = arch(Math.asin(Math.pow((yH + 0.2) / Ht, 1 / 0.9)))[0] - 0.12, ng = Math.round((2 * xg) / 0.24);
+  for (let i = 0; i < ng; i++) { const x0 = -xg + (i * 2 * xg) / ng + 0.006, x1 = -xg + ((i + 1) * 2 * xg) / ng - 0.006; p.shade(grainY(0.24)).ink(vary(WEATHERED, i * 29 + 3, 0.14), 0.9).T(0, 0, zd - 0.05).extrude([[x0, yH + 0.05], [x1, yH + 0.05], [x1, Math.max(yH + 0.06, yIn(x1) - 0.02)], [(x0 + x1) / 2, yIn((x0 + x1) / 2) - 0.02], [x0, Math.max(yH + 0.06, yIn(x0) - 0.02)]], 0.045); }
+  p.push(X(0, yH - 0.08, zd + 0.02)); lantern(p, 1.7); p.pop();
+  for (const sg of [1, -1]) {
+    const hx = sg * (a - 0.2), leaf = (m, w, seed) => { p.push(m); for (let i = 0; i < 3; i++) p.shade(grainY(0.24)).ink(vary(TIMBER, seed + i * 7, 0.12), 0.88).T((i + 0.5) * (w / 3), 1.0, 0).box(w / 3 - 0.01, 1.96, 0.05, 0.008); p.shade(null).ink(IRON, 0.5, 0.8); for (const y of [0.3, 1.0, 1.7]) { p.T(w / 2, y, 0.03).box(w - 0.04, 0.06, 0.014, 0.004); p.T(w / 2, y, -0.03).box(w - 0.04, 0.06, 0.014, 0.004); } p.pop(); };
+    timber(p, [hx, 0, zd], [hx, yH, zd], 0.14, 0.14, TIMBER_DK, sg + 8);
+    leaf(X(hx, 0.04, zd + 0.06, 0, sg > 0 ? -72 : -108, 0), 0.5, 3);
+    const e = [hx + Math.cos(sg > 0 ? 72 * DEG : 108 * DEG) * 0.5, zd + 0.06 + Math.sin(72 * DEG) * 0.5];
+    leaf(X(e[0], 0.04, e[1], 0, sg > 0 ? 112 : 68, 0), 0.46, 11);
+  }
+  // inside: a glider on trestles, a bench, casks and a spare screw on the wall
+  const gz = (zb + zf) / 2 - 0.25;
+  for (const dx of [-0.42, 0.3]) { for (const dz of [-0.5, 0.5]) { timber(p, [dx - 0.16, 0.05, gz + dz], [dx, 0.72, gz + dz], 0.05, 0.05, TIMBER, 3); timber(p, [dx + 0.16, 0.05, gz + dz], [dx, 0.72, gz + dz], 0.05, 0.05, TIMBER, 4); } timber(p, [dx, 0.72, gz - 0.56], [dx, 0.72, gz + 0.56], 0.06, 0.06, TIMBER_DK, 5); }
+  const wing = new Pen(), q0 = Q; drawGlider(p.push(X(0.12, 0.79, gz, 0, 0, 0, 1.25)), wing, 'kingdom', false); p.pop(); Q = q0;
+  p.T(0.12, 0.79, gz, 0, 0, 0, 1.25).geo(wing.toGeometry(), mul(CREAM, 0.95));
+  const bx = -a + 0.5;
+  timber(p, [bx, 0.62, zb + 0.35], [bx, 0.62, zb + 1.6], 0.42, 0.05, PINE, 2, 0.006);
+  for (const z of [zb + 0.42, zb + 1.53]) for (const dx of [-0.17, 0.17]) timber(p, [bx + dx, 0.04, z], [bx + dx, 0.6, z], 0.05, 0.05, TIMBER, 6);
+  p.shade(null).ink(IRON, 0.5, 0.8).T(bx, 0.69, zb + 0.6).box(0.12, 0.09, 0.14, 0.01); p.ink(OAK, 0.8).T(bx + 0.05, 0.67, zb + 1.2, 0, 30, 0).box(0.06, 0.05, 0.3, 0.01);
+  p.push(X(a - 0.55, 0.04, zb + 0.45)); barrel(p, 0.2, 0.52, 3); p.pop(); p.push(X(a - 0.52, 0.04, zb + 0.95)); barrel(p, 0.18, 0.48, 5); p.pop();
+  p.push(X(a - 0.5, 0.05, zb + 1.5)); coil(p, 0.16, 4, 0.022); p.pop();
+  p.push(X(1.25, 1.3, zb + 0.24, 0, 90, 0, 0.8)); drawProp(p, styleOf({ style: 'kingdom' }), false); p.pop();
+  for (const [x, z, w, s2] of [[-a + 0.55, zf - 0.5, 0.42, 3], [-a + 0.5, zf - 1.0, 0.36, 5], [a - 0.6, zf - 0.45, 0.4, 7]]) { p.shade(grainX(0.24)).ink(vary(PINE, s2, 0.12), 0.88).T(x, 0.05 + w * 0.4, z, 0, s2 * 9, 0).box(w, w * 0.8, w, 0.012); p.shade(null).ink(TIMBER_DK, 0.9); for (const sy of [-1, 1]) for (const sz of [-1, 1]) p.T(x, 0.05 + w * 0.4 + sy * w * 0.33, z, 0, s2 * 9, 0).box(w + 0.02, 0.05, w + 0.02, 0.006); void 0; }
+  // the pennant over the doors
+  pennantPole(p, fp, [0, Ht + 0.05, zf + 0.1], [0, Ht + 0.95, zf + 0.16], 0.85, 0.3);
+}
+
+// ---------- the workshop: a forge under a shingled roof ----------
+function buildWorkshop(p, fp) {
+  const hp = 1.2, yE = 1.78, yR = 2.78, ov = 1.46;
+  // flagged floor
+  for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) { const w = 2.8 / 7, o = (j % 2) * 0.12; p.shade(mottle(0.25, 9)).ink(vary(FLAG, i * 7 + j * 31, 0.13), 0.95).T(clamp(-1.4 + (i + 0.5) * w + o, -1.4 + w / 2, 1.4 - w / 2), 0.025, -1.4 + (j + 0.5) * w).box(w - 0.02, 0.05, w - 0.02, 0.012); }
+  // frame: posts on pads, plates, braces, tie beams, king posts, ridge and rafters
+  const posts = [[hp, hp], [-hp, hp], [-hp, -hp], [hp, -hp], [0, -hp]];
+  posts.forEach(([x, z], i) => { p.shade(mottle(0.2, 9)).ink(hex(0x8a857a), 0.95).T(x, 0.1, z).box(0.3, 0.12, 0.3, 0.02); timber(p, [x, 0.16, z], [x, yE, z], 0.16, 0.16, TIMBER_DK, i); });
+  for (const z of [hp, -hp]) { timber(p, [-ov + 0.05, yE + 0.06, z], [ov - 0.05, yE + 0.06, z], 0.15, 0.14, TIMBER_DK, z + 7); for (const sx of [1, -1]) timber(p, [sx * hp, yE - 0.55, z], [sx * (hp - 0.5), yE, z], 0.08, 0.1, TIMBER, sx + 9); }
+  for (const x of [hp, -hp]) {
+    timber(p, [x, yE + 0.06, -hp], [x, yE + 0.06, hp], 0.13, 0.14, TIMBER_DK, x + 11);
+    timber(p, [x, yE + 0.12, 0], [x, yR - 0.05, 0], 0.11, 0.11, TIMBER_DK, x + 12);
+    for (const sz of [1, -1]) { timber(p, [x, yE - 0.5, sz * hp], [x, yE, sz * (hp - 0.45)], 0.08, 0.1, TIMBER, sz + 13); timber(p, [x, yE + 0.14, sz * 0.75], [x, yR - 0.4, 0], 0.07, 0.08, TIMBER, sz + 15); }
+  }
+  timber(p, [-ov, yR, 0], [ov, yR, 0], 0.11, 0.13, TIMBER_DK, 17);
+  for (let i = 0; i < 7; i++) { const x = lerp(-ov + 0.06, ov - 0.06, i / 6); for (const sz of [1, -1]) timber(p, [x, yR + 0.02, 0], [x, yE + 0.02 - 0.2, sz * (ov + 0.02)], 0.06, 0.08, TIMBER, i + sz * 3 + 20); }
+  // the roof: two slopes of shingles, a ridge roll
+  const sl = Math.hypot(ov + 0.06, yR - yE + 0.26) + 0.02, uy = [0, (yR - yE + 0.26) / sl, -(ov + 0.06) / sl];
+  shingles(p, [-ov - 0.04, yE - 0.2 + 0.14, ov + 0.06], [1, 0, 0], uy, 2 * ov + 0.08, sl, hex(0x7a4a34), 3);
+  shingles(p, [ov + 0.04, yE - 0.2 + 0.14, -ov - 0.06], [-1, 0, 0], [0, uy[1], -uy[2]], 2 * ov + 0.08, sl, hex(0x7a4a34), 41);
+  p.shade(mottle(0.2, 12)).ink(hex(0x5a3626), 0.9).T(0, yR + 0.2, 0, 0, 0, 90).cyl(0.065, 0.065, 2 * ov + 0.1, 10);
+  // back wall: half-timber and plaster with a shuttered window; a boarded half wall on the left
+  for (const [x0, x1] of [[-hp + 0.08, -0.08], [0.08, hp - 0.08]]) {
+    p.shade(mottle(0.14, 8)).ink(PLASTER, 0.95).T((x0 + x1) / 2, (0.16 + yE) / 2, -hp).box(x1 - x0, yE - 0.16, 0.08, 0.004);
+    timber(p, [x0, 0.95, -hp], [x1, 0.95, -hp], 0.09, 0.13, TIMBER_DK, x0 + 30);
+    timber(p, [x0 + 0.02, 0.2, -hp], [x1 - 0.02, 0.9, -hp], 0.07, 0.125, TIMBER, x0 + 31);
+    timber(p, [x0, 0.19, -hp], [x1, 0.19, -hp], 0.09, 0.13, TIMBER_DK, x0 + 32);
+  }
+  p.shade(null).ink(hex(0x22303c), 0.3, 0.2).T(-0.62, 1.36, -hp + 0.045).box(0.46, 0.5, 0.02, 0);
+  for (const dx of [-0.25, 0, 0.25]) timber(p, [-0.62 + dx, 1.1, -hp + 0.06], [-0.62 + dx, 1.62, -hp + 0.06], 0.045, 0.04, TIMBER_DK, dx + 33);
+  timber(p, [-0.9, 1.09, -hp + 0.06], [-0.34, 1.09, -hp + 0.06], 0.06, 0.06, TIMBER_DK, 34); timber(p, [-0.9, 1.63, -hp + 0.06], [-0.34, 1.63, -hp + 0.06], 0.05, 0.05, TIMBER_DK, 35);
+  for (let i = 0; i < 9; i++) p.shade(grainY(0.24)).ink(vary(WEATHERED, i * 13 + 2, 0.13), 0.9).T(-hp, 0.55, -hp + 0.16 + (i + 0.5) * ((2 * hp - 0.32) / 9)).box(0.05, 0.85, (2 * hp - 0.32) / 9 - 0.012, 0.008);
+  timber(p, [-hp, 1.0, -hp + 0.1], [-hp, 1.0, hp - 0.1], 0.1, 0.07, TIMBER_DK, 36);
+  // the forge: a stone hearth with an arched mouth full of fire, a hood and a stack through the roof
+  const fx = 0.62, fz = -0.72, fw = 0.98, fd = 0.8, fh = 0.78;
+  const faces = [[[fx - fw / 2, 0.05, fz + fd / 2], [1, 0, 0], fw, [0, 0, 1]], [[fx + fw / 2, 0.05, fz + fd / 2], [0, 0, -1], fd, [1, 0, 0]], [[fx - fw / 2, 0.05, fz - fd / 2], [0, 0, 1], fd, [-1, 0, 0]]];
+  faces.forEach(([o, ux, la, n], i) => stoneWall(p, o, ux, la, fh, n, { len: 0.3, course: 0.195, seed: i * 9 + 50, col: hex(0x8f8a80) }));
+  p.shade(mottle(0.2, 9)).ink(hex(0x9a958a), 0.95).T(fx, 0.05 + fh + 0.03, fz).box(fw + 0.08, 0.07, fd + 0.08, 0.015);
+  p.shade(null).ink(hex(0x0a0706), 1).T(fx, 0.05 + fh + 0.068, fz + 0.02).box(fw - 0.24, 0.006, fd - 0.26, 0);
+  p.ink(hex(0x070505), 1).T(fx, 0.42, fz + fd / 2 + 0.006).box(0.44, 0.4, 0.012, 0);
+  p.ink(EMBER, 0.7, 0, 1.7).T(fx, 0.3, fz + fd / 2 + 0.012).box(0.36, 0.14, 0.012, 0);
+  p.ink(hex(0xffa040), 0.7, 0, 1.8); for (let i = 0; i < 9; i++) p.T(fx - 0.26 + (i % 5) * 0.13 + (i > 4 ? 0.06 : 0), 0.05 + fh + 0.09, fz - 0.08 + (i > 4 ? 0.16 : 0)).sphere(0.055 + 0.02 * hash1(i), 7, 5);
+  p.ink(EMBER, 0.7, 0, 1.4); for (let i = 0; i < 6; i++) p.T(fx - 0.2 + i * 0.085, 0.05 + fh + 0.1, fz + 0.2 - (i % 2) * 0.1).sphere(0.05, 7, 5);
+  // the hood, of riveted iron, drawing up into a stone stack
+  p.shade(mottle(0.25, 8)).ink(hex(0x3a3836), 0.55, 0.7);
+  const hb = 0.05 + fh + 0.55, ht = 1.75, sw = 0.25;
+  p.grid(4, 1, (i, j, out) => { const cnr = [[1, 1], [-1, 1], [-1, -1], [1, -1], [1, 1]][i], w = j ? sw : fw / 2 + 0.02, d = j ? sw : fd / 2 + 0.02; out[0] = fx + cnr[0] * w; out[1] = j ? ht : hb; out[2] = fz - (j ? 0.12 : 0) + cnr[1] * d; });
+  const sx0 = fx - sw - 0.03, sz0 = fz - 0.12, sH = 3.42 - ht;
+  [[[sx0, ht, sz0 + sw + 0.03], [1, 0, 0], [0, 0, 1]], [[sx0 + 2 * sw + 0.06, ht, sz0 + sw + 0.03], [0, 0, -1], [1, 0, 0]], [[sx0 + 2 * sw + 0.06, ht, sz0 - sw - 0.03], [-1, 0, 0], [0, 0, -1]], [[sx0, ht, sz0 - sw - 0.03], [0, 0, 1], [-1, 0, 0]]].forEach(([o, ux, n], i) => stoneWall(p, o, ux, 2 * sw + 0.06, sH, n, { len: 0.28, course: 0.19, seed: i * 7 + 80, col: hex(0x8f8a80) }));
+  p.shade(mottle(0.2, 9)).ink(hex(0x9a958a), 0.95).T(fx, 3.45, sz0).box(2 * sw + 0.2, 0.08, 2 * sw + 0.2, 0.015);
+  p.shade(null).ink(hex(0x050404), 1).T(fx, 3.492, sz0).box(2 * sw - 0.1, 0.004, 2 * sw - 0.1, 0); p.ink(EMBER, 0.8, 0, 0.9).T(fx, 3.47, sz0).box(0.2, 0.004, 0.2, 0);
+  // bellows beside the hearth
+  p.push(X(fx - fw / 2 - 0.32, 0.5, fz + 0.1, 0, 0, 0));
+  p.shade(grainX(0.2)).ink(OAK, 0.8).T(0, 0.09, 0, 0, 0, 8).box(0.5, 0.03, 0.3, 0.01); p.T(0, -0.09, 0, 0, 0, -8).box(0.5, 0.03, 0.3, 0.01);
+  p.shade(null).ink(hex(0x5a3a26), 0.9).grid(6, 4, (i, j, out) => { const t = i / 6, a = (j / 4) * TAU, w = 0.22 - 0.2 * t; out[0] = -0.22 + t * 0.46; out[1] = Math.cos(a) * (0.085 - 0.07 * t) * (1 + 0.15 * (i % 2)); out[2] = Math.sin(a) * w * 0.62 * (1 + 0.1 * (i % 2)); }, null, { wrapV: true });
+  p.ink(IRON, 0.5, 0.8).bar([0.22, 0, 0], [0.4, -0.04, 0.02], 0.022, 0.014, 6);
+  for (const dz of [-0.1, 0.1]) timber(p, [-0.05, -0.45, dz], [-0.05, -0.1, dz], 0.05, 0.05, TIMBER, 3);
+  p.pop();
+  // the anvil on its block, a hammer lying on it; a quench tub
+  const ax = 0.15, az = 0.35;
+  p.shade(grainY(0.3)).ink(vary(TIMBER_DK, 3, 0.1), 0.9).T(ax, 0.05 + 0.2, az).cyl(0.2, 0.23, 0.4, 14);
+  p.shade(null).ink(IRON, 0.5, 0.8).T(ax, 0.38, az).ring(0.215, 0.014, 18, 4);
+  p.push(X(ax, 0.45, az)); p.shade(mottle(0.2, 16)).ink(hex(0x3c3d42), 0.38, 0.85).extrude(rounded([[-0.16, 0], [0.16, 0], [0.13, 0.05], [0.07, 0.08], [0.07, 0.15], [0.2, 0.17], [0.36, 0.22], [0.2, 0.25], [-0.2, 0.25], [-0.2, 0.18], [-0.07, 0.15], [-0.07, 0.08], [-0.13, 0.05]], 2), 0.15, true); p.pop();
+  p.shade(grainX(0.2)).ink(OAK, 0.8).T(ax - 0.02, 0.725, az + 0.02, 0, 35, 0).box(0.3, 0.025, 0.03, 0.008); p.shade(null).ink(IRON, 0.45, 0.85).T(ax + 0.1, 0.735, az - 0.065, 0, 35, 0).box(0.06, 0.055, 0.12, 0.012);
+  p.push(X(ax + 0.52, 0.05, az + 0.22)); barrel(p, 0.17, 0.34, 9); p.shade(null).ink(hex(0x1c2c34), 0.15, 0.2).T(0, 0.3, 0).cyl(0.14, 0.14, 0.01, 14); p.pop();
+  // the grindstone in its frame, with crank and trough
+  const gx = -0.62, gzz = 0.55;
+  for (const dz of [-0.14, 0.14]) { timber(p, [gx - 0.26, 0.05, gzz + dz], [gx - 0.04, 0.6, gzz + dz], 0.05, 0.05, TIMBER, 5); timber(p, [gx + 0.26, 0.05, gzz + dz], [gx + 0.04, 0.6, gzz + dz], 0.05, 0.05, TIMBER, 6); timber(p, [gx - 0.2, 0.2, gzz + dz], [gx + 0.2, 0.2, gzz + dz], 0.04, 0.05, TIMBER, 7); }
+  p.push(X(gx, 0.6, gzz, 90, 0, 0)); p.shade(mottle(0.25, 12)).ink(hex(0xb0a898), 0.95).lathe([[0, -0.05], [0.05, -0.05], [0.27, -0.045], [0.285, -0.03], [0.285, 0.03], [0.27, 0.045], [0.05, 0.05], [0, 0.05]], 26); p.shade(null).ink(IRON, 0.5, 0.8).cyl(0.022, 0.022, 0.42, 8); p.pop();
+  p.ink(IRON, 0.5, 0.8).tube([[gx, 0.6, gzz + 0.2], [gx, 0.6, gzz + 0.26], [gx + 0.02, 0.5, gzz + 0.26], [gx + 0.02, 0.5, gzz + 0.34]], 0.012, 5, 1);
+  p.shade(grainX(0.2)).ink(OAK, 0.8).T(gx, 0.27, gzz).box(0.5, 0.1, 0.16, 0.012); p.shade(null).ink(hex(0x1c2c34), 0.15, 0.2).T(gx, 0.321, gzz).box(0.44, 0.004, 0.1, 0);
+  // a bench along the left wall with a vice and a saw
+  timber(p, [-hp + 0.3, 0.72, -hp + 0.25], [-hp + 0.3, 0.72, -0.1], 0.4, 0.06, PINE, 2, 0.006);
+  for (const z of [-hp + 0.32, -0.17]) for (const dx of [-0.15, 0.15]) timber(p, [-hp + 0.3 + dx, 0.05, z], [-hp + 0.3 + dx, 0.7, z], 0.06, 0.06, TIMBER, 8);
+  p.shade(null).ink(IRON, 0.5, 0.8).T(-hp + 0.42, 0.8, -0.3).box(0.1, 0.1, 0.14, 0.012); p.bar([-hp + 0.42, 0.8, -0.22], [-hp + 0.42, 0.8, -0.1], 0.01, 0.01, 5);
+  p.ink(STEEL, 0.35, 0.85).T(-hp + 0.26, 0.757, -0.75, 0, 12, 0).box(0.09, 0.006, 0.42, 0); p.shade(null).ink(OAK, 0.8).T(-hp + 0.3, 0.765, -0.5, 0, 12, 0).box(0.1, 0.03, 0.1, 0.01);
+  // outside, in front: boards stacked on stickers, and casks at the corner
+  for (let l = 0; l < 4; l++) { for (let i = 0; i < 4; i++) p.shade(grainX(0.24)).ink(vary(PINE, l * 9 + i * 3, 0.13), 0.88).T(-0.72 + (hash2(l, i) - 0.5) * 0.06, 0.09 + l * 0.075, 1.02 + i * 0.105).box(1.25, 0.04, 0.095, 0.006); if (l < 3) for (const dx of [-0.45, 0.1, 0.5]) p.shade(null).ink(TIMBER_DK, 0.9).T(-0.72 + dx, 0.127 + l * 0.075, 1.18).box(0.04, 0.03, 0.44, 0.004); }
+  p.push(X(1.05, 0.05, 1.22)); barrel(p, 0.19, 0.5, 2); p.pop(); p.push(X(0.62, 0.05, 1.28)); barrel(p, 0.17, 0.46, 6); p.pop();
+  p.push(X(0.9, 0.05 + 0.17, 0.86, 90, 0, 35)); barrel(p, 0.17, 0.44, 8); p.pop();
+  p.push(X(hp + 0.02, 1.25, 0.6, 0, 90, 0)); lantern(p, 1.5); p.pop(); p.shade(null).ink(IRON, 0.5, 0.8).bar([hp, 1.3, hp - 0.05], [hp + 0.02, 1.26, 0.6], 0.01, 0.01, 5);
+  for (const [x, z] of [[-0.2, 0.9], [0.9, 0.1], [-0.9, -0.3]]) { p.push(X(x, 0.05, z)); p.shade(grainY(0.2)).ink(vary(OAK, x * 9, 0.1), 0.85).lathe([[0, 0], [0.1, 0], [0.12, 0.22], [0.11, 0.22], [0.095, 0.02], [0, 0.02]], 14); p.shade(null).ink(IRON, 0.5, 0.8).T(0, 0.08, 0).ring(0.108, 0.008, 14, 4); p.T(0, 0.19, 0).ring(0.119, 0.008, 14, 4); p.tube([[0.11, 0.2, 0], [0.06, 0.34, 0], [-0.06, 0.34, 0], [-0.11, 0.2, 0]], 0.007, 5); p.pop(); }
+  // tools on a rack on the back wall, a cart wheel against the side, a heap of coal by the hearth
+  timber(p, [-0.28, 1.52, -hp + 0.07], [0.02, 1.52, -hp + 0.07], 0.05, 0.035, TIMBER_DK, 41);
+  for (let i = 0; i < 3; i++) { const x = -0.24 + i * 0.11; p.shade(grainY(0.2)).ink(OAK, 0.8).T(x, 1.3, -hp + 0.09).box(0.022, 0.4, 0.022, 0.005); p.shade(null).ink(IRON, 0.45, 0.85).T(x, 1.12 - (i % 2) * 0.03, -hp + 0.09).box(i === 1 ? 0.03 : 0.085, i === 1 ? 0.12 : 0.05, 0.04, 0.008); }
+  p.push(X(-hp - 0.1, 0.42, 0.55, 0, 0, 78)); p.shade(grainX(0.2)).ink(OAK, 0.8).ring(0.36, 0.035, 26, 7); p.T(0, 0, 0).cyl(0.07, 0.07, 0.1, 10); for (let i = 0; i < 8; i++) p.bar([0, 0, 0], [Math.cos(i * 0.785) * 0.35, 0, Math.sin(i * 0.785) * 0.35], 0.02, 0.016, 5, 0); p.shade(null).ink(IRON, 0.5, 0.8).ring(0.385, 0.012, 26, 4); p.pop();
+  for (let i = 0; i < 7; i++) { p.push(X(fx + 0.72 + (hash1(i) - 0.5) * 0.3, 0.07 + 0.05 * (i % 3), fz + 0.55 + (hash1(i + 9) - 0.5) * 0.3)); boulder(p, 0.07 + 0.03 * hash1(i * 3), i + 20, hex(0x1c1a1c)); p.pop(); }
+  pennantPole(p, fp, [ov - 0.12, yR + 0.1, 0], [ov - 0.05, yR + 0.95, 0], 0.75, 0.28);
+}
+
+const structCache = new Map();
+const SIDE_HEX = [0x3d7bd9, 0xd9463d], NEUTRAL = 0xcdbf9a;
+/** build once (per size and detail), hand out a group of two meshes sharing the geometry: the building, and its pennant in the side colour */
+function structure(key, turn, place, make) {
+  const k = `${key}|${getDetail()}`;
+  if (!structCache.has(k)) {
+    const p = new Pen(), fp = new Pen(), d = getDetail();
+    Q = d === 'low' ? 0.6 : d === 'medium' ? 0.8 : 1; TIER = 0;
+    try { make(p, fp); } finally { Q = 1; TIER = 0; }
+    structCache.set(k, { geo: p.toGeometry(), side: fp.n ? fp.toGeometry() : null, turned: null, sideTurned: null });
+  }
+  const c = structCache.get(k);
+  if (turn && !c.turned) { c.turned = c.geo.clone().rotateY(PI / 2); c.sideTurned = c.side ? c.side.clone().rotateY(PI / 2) : null; }
+  const g = new THREE.Group(), m = new THREE.Mesh(turn ? c.turned : c.geo, sculptMaterial());
+  m.castShadow = true; m.receiveShadow = true; g.add(m);
+  const sg = turn ? c.sideTurned : c.side;
+  if (sg) { const sm = new THREE.Mesh(sg, sideMaterial(place && SIDE_HEX[place.side] !== undefined ? SIDE_HEX[place.side] : NEUTRAL)); sm.castShadow = true; sm.receiveShadow = true; sm.name = 'colours'; g.add(sm); }
+  return g;
+}
+
+/**
+ * structures[def.model](def, w, h, place) -> Object3D centred on its footprint, resting on y = 0.
+ * place = { x, y, side } or null; side 0 / 1 flies the pennant (or windsock) in that side's colour.
+ */
+export const structures = {
+  /** a timber pier, 6 x 2 (or 2 x 6): its plank walk is flat, clear and exactly at y = 0.8 */
+  dock: (def, w, h, place) => { const L = Math.max(w, h), D = Math.min(w, h); return structure(`dock|${L}|${D}`, h > w, place, (p, fp) => buildDock(p, fp, L, D)); },
+  /** a mooring mast for airships, 3 x 3: stone base, lattice tower with a spiral stair, platform, mooring arm (toward +X), windsock */
+  zeppelinTower: (def, w, h, place) => structure('zeppelinTower', false, place, (p, fp) => buildTower(p, fp)),
+  /** an arched airship shed, 5 x 4 (or 4 x 5): the doors stand open on the +Z long side (+X when turned) */
+  hangar: (def, w, h, place) => { const L = Math.max(w, h), D = Math.min(w, h); return structure(`hangar|${L}|${D}`, h > w, place, (p, fp) => buildHangar(p, fp, L, D)); },
+  /** a repair workshop and forge, 3 x 3, open to the front (+Z) */
+  workshop: (def, w, h, place) => structure('workshop', false, place, (p, fp) => buildWorkshop(p, fp)),
+};

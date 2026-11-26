@@ -1064,6 +1064,13 @@ function attack(b, u, t) {
   const delay = hitDelay(style, dist);
   queueHit(b, u, t, dmg, delay, style, hit);
   b.events.push({ type: 'attack', from: u.id, to: t.id, style, delay, proj: u.def.projectile || style });
+  // matched combat: two melee fighters of a size, toe to toe, play the blow out together
+  if (style === 'melee' && dist <= 1 && t.def.style === 'melee' && t.def.size === u.def.size && t.aboard < 0 && !isAirborne(b, t) && !isAirborne(b, u)
+    && !(t.duelUntil > b.tick) && !(u.duelUntil > b.tick) && b.rng.chance(0.45)) {
+    u.duelUntil = t.duelUntil = b.tick + 2;
+    face(t, u.x, u.y); face(u, t.x, t.y);
+    b.events.push({ type: 'duel', a: u.id, d: t.id, kind: t.hp - t.pending <= 0 ? 'kill' : dmg > 0 ? 'hit' : 'parry', delay });
+  }
 
   const splash = ability(u, 'cleave') || ability(u, 'splash');
   if (splash) {
@@ -1076,11 +1083,12 @@ function attack(b, u, t) {
   u.cd = u.def.speed; u.lastAttack = b.tick;
 }
 
-export function queueHit(b, u, t, dmg, delay, style, hit = dmg > 0) {
+// src: where the blow came from when no unit dealt it ({ x, y, blast }), so the fallen lie the right way
+export function queueHit(b, u, t, dmg, delay, style, hit = dmg > 0, src = null) {
   const prot = t.def.abilities.find((a) => a.type === 'protect' && a.style === style);
   if (prot) dmg = Math.floor(dmg * (1 - prot.reduction));
   t.pending += dmg;
-  b.pending.push({ tick: b.tick + delay, from: u.id, to: t.id, dmg, style, hit });
+  b.pending.push({ tick: b.tick + delay, from: u.id, to: t.id, dmg, style, hit, src });
 }
 
 function attackCraft(b, u, c, dist) {
@@ -1125,7 +1133,7 @@ function resolvePending(b) {
     const t = b.units[p.to];
     t.pending -= p.dmg;
     if (!t.alive) continue;
-    damage(b, t, p.dmg, from, p.style, p.hit);
+    damage(b, t, p.dmg, from, p.style, p.hit, p.src);
     if (from && p.dmg > 0 && t.alive) {
       const psn = ability(from, 'poison');
       if (psn && !t.poison && b.rng.chance(psn.chance || 0.25)) t.poison = { dmg: psn.damage, left: 5, next: b.tick + 5 };
@@ -1134,7 +1142,7 @@ function resolvePending(b) {
   b.pending = keep;
 }
 
-export function damage(b, t, dmg, from, style, hit = true) {
+export function damage(b, t, dmg, from, style, hit = true, src = null) {
   if (!t.alive) return;
   dmg = Math.min(dmg, t.hp);
   t.hp -= dmg;
@@ -1144,7 +1152,8 @@ export function damage(b, t, dmg, from, style, hit = true) {
     t.alive = false;
     occupy(b, t, 0);
     if (from) from.kills++;
-    b.events.push({ type: 'death', id: t.id, by: from ? from.id : -1 });
+    const o = from || src;
+    b.events.push({ type: 'death', id: t.id, by: from ? from.id : -1, style, ax: o ? o.x : undefined, ay: o ? o.y : undefined, blast: !!(src && src.blast) });
     onUnitDeath(b, t, from);
   }
 }

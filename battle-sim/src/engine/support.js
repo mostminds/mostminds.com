@@ -164,7 +164,7 @@ function blast(b, side, aRoll, max, t, splash, delay, accMul = 1) {
     if (v === t || !v.alive || v.side === side || v.aboard >= 0) return;
     if (Math.max(Math.abs(v.x - t.x), Math.abs(v.y - t.y)) > splash) return;
     const h2 = b.rng.next() < hitChance(aRoll, defenceRoll(v.def, 'ranged'));
-    queueHit(b, NOBODY, v, h2 ? Math.floor(b.rng.int(0, max) * 0.5) : 0, delay, 'ranged', h2);
+    queueHit(b, NOBODY, v, h2 ? Math.floor(b.rng.int(0, max) * 0.5) : 0, delay, 'ranged', h2, { x: t.x, y: t.y, blast: true });
   });
 }
 

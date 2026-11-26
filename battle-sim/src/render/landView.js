@@ -454,8 +454,13 @@ export class LandView {
         st.ring(v.setY(0.05), 0.4, 0x8ff0a0);
       } else if (e.type === 'death') {
         this.deathAt.set(e.id, this.time);
+        this.howDied(e);
         if (e.drowned) { this.unitPos(b.units[e.id], 1, v); st.puff(v, 0xffffff, 0.3); this.noBody.add(e.id); }
         else if (b.units[e.id].aboard >= 0) this.noBody.add(e.id);
+      } else if (e.type === 'duel') {
+        // a matched exchange: both fighters play the same blow, facing one another
+        const dur = 0.62;
+        for (const [id, role] of [[e.a, 'a'], [e.d, 'd']]) { const m = this.models[id]; if (m) m.userData.duel = { role, kind: e.kind, t0: this.time + (role === 'd' ? 0.12 : 0), dur, other: role === 'a' ? e.d : e.a }; }
       } else if (e.type === 'craftHit') {
         const c = b.crafts[e.craft]; v.set(c.x + 0.5, 1.1, c.y + 0.5);
         st.splat(v, e.dmg, 'hit');
@@ -672,12 +677,23 @@ export class LandView {
       if (died !== undefined) {
         if (this.noBody.has(i)) { m.visible = false; return; }
         if (m.userData.corpse) return; // lying where it fell
-        dead = Math.min(1, (t - died) * speed / 1.2);
+        // the pose is complete at 0.5; past that the family animators sink the body, which we no longer want
+        const dd = m.userData.death;
+        dead = Math.min(0.5, ((t - died) * speed) / (dd ? dd.dur : 1.2) / 2);
         m.userData.bar.visible = false; m.userData.disc.visible = false;
       }
       m.visible = true;
       this.unitPos(u, died !== undefined ? 1 : alpha, m.position);
-      const want = Math.PI / 2 - u.face;
+      const dth = m.userData.death;
+      if (dth && dth.fling && dead > 0) {
+        // thrown by the blast: out along its line, up and down again
+        const k = Math.min(1, dead * 2);
+        m.position.x += dth.fling.x * k; m.position.z += dth.fling.z * k; m.position.y += Math.sin(k * Math.PI) * dth.fling.h;
+      }
+      let duel = m.userData.duel;
+      if (duel) { const k = (t - duel.t0) * speed / duel.dur; if (k >= 1 || !u.alive) { m.userData.duel = null; duel = null; } else duel.k = Math.max(0, k); }
+      const facing = dth ? dth.face : duel && b.units[duel.other] ? Math.atan2(b.units[duel.other].y - u.y, b.units[duel.other].x - u.x) : u.face;
+      const want = Math.PI / 2 - facing;
       let d = want - m.userData.rotY; d = Math.atan2(Math.sin(d), Math.cos(d));
       m.userData.rotY += d * Math.min(1, dt * 10);
       m.rotation.y = m.userData.rotY;
@@ -689,9 +705,10 @@ export class LandView {
         // detail follows how large the unit is on screen
         const ratio = cam.distanceTo(m.position) / Math.max(1, u.def.size * 0.8);
         let lv = 0; while (lv < LOD_STEPS.length && ratio > LOD_STEPS[lv]) lv++;
+        if (dead > 0 || duel) lv = Math.min(lv, m.userData.lod.levels - 2); // the far level cannot bend, and these must
         setLod(m, lv);
       }
-      animateUnit(m, t, moving || airborne, atk, dead, m.userData.phase, airborne);
+      animateUnit(m, t, moving || airborne, duel && duel.role === 'a' && atk < 0 ? duel.k : atk, dead, m.userData.phase, airborne, dth || duel ? { death: dth, duel } : null);
       if (u.def.fly) m.userData.disc.position.y = -(m.position.y - Math.max(0, this.groundY(u.x, u.y))) + 0.02;
       m.userData.rig?.mixer?.update(dt * speed);
       if (u.alive) { m.userData.bar.visible = u.hp < u.def.hp; if (u.hp < u.def.hp) setBar(m.userData.bar, u.hp / u.def.hp); }
@@ -700,7 +717,7 @@ export class LandView {
         if (!m.userData.load) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.26), mat(0xa07a48)); l.position.set(0, m.userData.top - 0.02, 0.05); m.add(l); m.userData.load = l; }
         m.userData.load.visible = !!u.carry && u.alive;
       }
-      if (dead >= 1) this.layBody(u, m);
+      if (dead >= 0.5) this.layBody(u, m);
     });
     this.updateAir(alpha, t, dt, speed);
     // wounded buildings and guns smoke
@@ -729,10 +746,35 @@ export class LandView {
     });
   }
 
+  // How a soldier falls depends on what killed him and from where.
+  howDied(e) {
+    const u = this.b.units[e.id], m = this.models[e.id];
+    if (!m) return;
+    const seed = (e.id * 2654435761) >>> 8;
+    const pick = (seed % 100) / 100;
+    const from = e.ax !== undefined ? Math.atan2(e.ay - u.y, e.ax - u.x) : u.face; // bearing to whatever struck him
+    let rel = from - u.face; rel = Math.abs(Math.atan2(Math.sin(rel), Math.cos(rel)));
+    let style, face = u.face, fling = null;
+    if (e.blast) {
+      style = 'blast'; face = from;
+      const d = 0.9 + pick * 1.6;
+      fling = { x: -Math.cos(from) * d, z: -Math.sin(from) * d, h: 0.5 + pick * 0.6 };
+    } else if (m.userData.duel && m.userData.duel.kind === 'kill') { style = 'kneel'; face = from; }
+    else if (e.style === 'fall' || e.style === 'poison') style = pick < 0.5 ? 'front' : 'kneel';
+    else if (e.style === 'melee' || e.style === 'stomp') {
+      if (rel > 2.0) style = 'front';            // cut down from behind: pitches forward
+      else if (rel > 0.9) style = 'side';         // taken in the flank
+      else { style = pick < 0.3 ? 'kneel' : 'back'; face = from; }
+    } else { style = pick < 0.6 ? 'back' : pick < 0.85 ? 'side' : 'kneel'; if (style !== 'side') face = from; } // shot or blasted by magic
+    m.userData.death = { style, seed, face, fling, dur: 1.0 + pick * 0.5 };
+    m.userData.duel = null;
+  }
+
   // A fallen unit becomes one static mesh in its last pose; every body of that type shares the geometry.
   layBody(u, m) {
     m.userData.corpse = true;
-    const key = u.def.id;
+    const dd = m.userData.death;
+    const key = `${u.def.id}:${dd ? `${dd.style}:${dd.seed & 7}` : ''}`; // a few shared poses per kind of fall
     if (m.userData.lod && m.userData.rig?.v2) {
       if (!this.corpseGeo.has(key)) { setLod(m, 0); setLod(m, 2); this.corpseGeo.set(key, bakePose(m, 2)); }
       const geo = this.corpseGeo.get(key);

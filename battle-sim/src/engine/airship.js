@@ -59,7 +59,7 @@ export function airTick(b) {
     addSquad(b, fresh);
     b.events.push({ type: 'podLand', x: q.x, y: q.y, side: q.side, n: fresh.length });
     // the pod hits like a boulder
-    near(b, q.x, q.y, 2, (v) => { if (v.alive && v.side !== q.side && v.aboard < 0 && unitHeight(b, v) < 4 && Math.hypot(v.x - q.x, v.y - q.y) <= 1.5) queueHit(b, NOBODY, v, b.rng.int(4, 14), 0, 'ranged', true); });
+    near(b, q.x, q.y, 2, (v) => { if (v.alive && v.side !== q.side && v.aboard < 0 && unitHeight(b, v) < 4 && Math.hypot(v.x - q.x, v.y - q.y) <= 1.5) queueHit(b, NOBODY, v, b.rng.int(4, 14), 0, 'ranged', true, { x: q.x, y: q.y, blast: true }); });
   }
   b.airQueue = keep;
 }
@@ -258,7 +258,7 @@ function shipTick(b, a) {
         if (!v.alive || v.side === a.side || v.aboard >= 0 || unitHeight(b, v) === 4) return;
         const dd = Math.hypot(ucx(v) - bx, ucy(v) - by);
         if (dd > B.radius + 0.5) return;
-        queueHit(b, NOBODY, v, Math.round(b.rng.int(Math.floor(B.maxHit / 4), B.maxHit) * (1 - 0.5 * (dd / (B.radius + 0.5)))), delay, 'ranged', true);
+        queueHit(b, NOBODY, v, Math.round(b.rng.int(Math.floor(B.maxHit / 4), B.maxHit) * (1 - 0.5 * (dd / (B.radius + 0.5)))), delay, 'ranged', true, { x: bx, y: by, blast: true });
       });
       b.airQueue.push({ tick: b.tick + delay, bomb: true, x: bx, y: by, r: B.radius, dmg: B.maxHit * 3, side: a.side, unit: null, n: 0 });
     } else if (a.run && d < 0.8) a.run = false;
@@ -341,7 +341,7 @@ function fireAtGround(b, a, C) {
     const roll = b.rng.int(C.dmg[0], C.dmg[1]);
     if (kind === 'unit') {
       const hit = b.rng.next() < acc(0.45) && b.rng.next() < hitChance((60 + 9) * (60 + 64), defenceRoll(best.def, 'ranged')) + 0.25;
-      queueHit(b, NOBODY, best, hit ? roll : 0, delay, 'ranged', hit);
+      queueHit(b, NOBODY, best, hit ? roll : 0, delay, 'ranged', hit, { x: a.x, y: a.y });
       if (!hit) stray += Math.round(roll * 0.6);
       near(b, best.x, best.y, 3, (v) => { if (v !== best && v.alive && v.side !== a.side && v.aboard < 0 && Math.max(Math.abs(v.x - best.x), Math.abs(v.y - best.y)) <= 1 && b.rng.chance(0.15)) queueHit(b, NOBODY, v, Math.floor(roll * 0.5), delay, 'ranged', true); });
     } else if (kind === 'gun') { const hit = b.rng.next() < acc(1.1); b.pending.push({ tick: b.tick + delay, gun: best.id, dmg: hit ? roll : 0, hit }); }
@@ -366,7 +366,7 @@ export function resolveAirHit(b, p) {
   for (const id of a.cargo) { const u = b.units[id]; if (u.alive) { u.alive = false; u.hp = 0; u.aboard = -1; u.x = clamp(Math.round(a.x), 0, b.W - 1); u.y = clamp(Math.round(a.y), 0, b.H - 1); b.events.push({ type: 'death', id, by: -1 }); } }
   a.cargo = [];
   // the wreck comes down on whoever is underneath
-  near(b, a.x, a.y, 4, (v) => { if (v.alive && v.aboard < 0 && unitHeight(b, v) < 4 && Math.hypot(ucx(v) - a.x, ucy(v) - a.y) <= 2.5) queueHit(b, NOBODY, v, b.rng.int(8, 36), 5, 'ranged', true); });
+  near(b, a.x, a.y, 4, (v) => { if (v.alive && v.aboard < 0 && unitHeight(b, v) < 4 && Math.hypot(ucx(v) - a.x, ucy(v) - a.y) <= 2.5) queueHit(b, NOBODY, v, b.rng.int(8, 36), 5, 'ranged', true, { x: a.x, y: a.y, blast: true }); });
   hitStructuresAt(b, a.x, a.y, 2.5, 160);
 }
 

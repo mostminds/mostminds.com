@@ -469,7 +469,7 @@ function buildTemplate(def, o) {
 }
 
 // t: seconds, moving: bool, atk: 0..1 progress of an attack swing (or -1), dead: 0..1
-export function animateUnit(model, t, moving, atk, dead, phase = 0, flying = false) {
+export function animateUnit(model, t, moving, atk, dead, phase = 0, flying = false, fx = null) {
   const r = model.userData.rig;
   if (!r) return;
   if (r.kind === 'aircraft') {
@@ -479,7 +479,7 @@ export function animateUnit(model, t, moving, atk, dead, phase = 0, flying = fal
     else { inner.rotation.z = Math.sin(t * 1.7 + phase) * 0.12; inner.rotation.x = atk >= 0 ? Math.sin(atk * Math.PI) * 0.35 : 0; }
     return;
   }
-  if (r.v2) { animateRig(model, { t, moving, atk, dead, phase, flying }); return; }
+  if (r.v2) { animateRig(model, { t, moving, atk, dead, phase, flying, fx }); return; }
   if (r.kind === 'gltf') { animateCustom(model, t, moving, atk, dead); return; }
   const inner = model.userData.inner;
   const sw = moving ? Math.sin(t * 10 + phase) * 0.6 : 0;

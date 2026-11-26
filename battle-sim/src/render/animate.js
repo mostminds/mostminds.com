@@ -184,4 +184,57 @@ Object.assign(ANIMATORS, { biped, quad, spider, float, ram });
 export function animateRig(model, ctx) {
   const rig = model.userData.rig, inner = model.userData.inner;
   (ANIMATORS[rig.kind] || biped)(rig, inner, ctx, BASE);
+  if (ctx.fx) applyFx(rig, inner, ctx);
+}
+
+// Layered on top of every family's own animation:
+//  fx.death = { style: 'back' | 'front' | 'side' | 'kneel' | 'blast', seed }  how this one falls
+//  fx.duel  = { role: 'a' | 'd', kind: 'parry' | 'hit' | 'kill', k: 0..1 }     a matched exchange with an opponent
+const bell = (k) => Math.sin(Math.max(0, Math.min(1, k)) * Math.PI);
+function applyFx(rig, inner, c) {
+  const fx = c.fx;
+  if (c.dead > 0 && fx.death) {
+    const d = fx.death, s = d.seed | 0, e = ease(Math.min(1, c.dead * 2));
+    const rx = inner.rotation.x, rz = inner.rotation.z, backFaller = Math.abs(rx) >= Math.abs(rz);
+    if (!backFaller) inner.rotation.z = rz * (s & 1 ? 1 : -1); // four-legged and long bodies roll onto either flank
+    else if (d.style === 'front') inner.rotation.x = Math.abs(rx) * 0.97; // on its face
+    else if (d.style === 'side') { inner.rotation.x = 0; inner.rotation.z = Math.abs(rx) * (s & 1 ? 1 : -1); }
+    else if (d.style === 'kneel') {
+      // sinks to the knees, hangs there, then pitches forward
+      const k1 = ease(Math.min(1, c.dead * 5)), k2 = ease(Math.max(0, Math.min(1, (c.dead * 2 - 0.45) / 0.55)));
+      inner.rotation.x = k2 * Math.PI / 2 * 0.97;
+      const kneel = k1 * (1 - k2);
+      for (const sh of rig.shins || []) sh.rotation.x += 1.5 * kneel;
+      for (const lg of rig.legs || []) lg.rotation.x -= 0.35 * kneel;
+      inner.position.y -= 0.2 * kneel * (inner.scale.y || 1);
+      if (rig.head) rig.head.rotation.x += 0.5 * k1;
+    } else if (d.style === 'blast') inner.rotation.x = rx - Math.sin(Math.min(1, c.dead * 2) * Math.PI) * 0.8; // tumbles through the air
+    // no two bodies lie alike: limbs sprawl by seed
+    const sp = (i, amp) => (((s >> (i * 2)) & 3) - 1.5) * amp * e;
+    (rig.arms || []).forEach((a, i) => { if (i < 2) { a.rotation.z += sp(i, 0.45); a.rotation.x += sp(i + 2, 0.35); } });
+    (rig.forearms || []).forEach((a, i) => { if (i < 2) a.rotation.x += sp(i + 4, 0.4) - 0.2 * e; });
+    if (backFaller) (rig.legs || []).forEach((a, i) => { if (i < 2) { a.rotation.z += sp(i + 6, 0.22); a.rotation.x += sp(i + 8, 0.3); } });
+    if (rig.head) rig.head.rotation.y += sp(10, 0.5);
+    return;
+  }
+  if (fx.duel && c.dead <= 0) {
+    const d = fx.duel, w = bell(d.k), sc = inner.scale.z || 1;
+    if (d.role === 'a') {
+      // the attacker steps into the blow; a killing stroke is driven right through
+      inner.position.z += (d.kind === 'kill' ? 0.3 : 0.2) * w * sc;
+      if (rig.torso) { rig.torso.rotation.x += (d.kind === 'kill' ? 0.3 : 0.16) * w; rig.torso.rotation.y += (d.kind === 'kill' ? -0.35 : -0.15) * w; }
+    } else if (d.kind === 'parry') {
+      // the defender gives a half step and throws the guard up
+      inner.position.z -= 0.12 * w * sc;
+      const guard = rig.arms && (rig.shield ? rig.arms[0] : rig.arms[1]);
+      if (guard) { guard.rotation.x -= 1.1 * w; guard.rotation.z += (rig.shield ? 0.5 : -0.3) * w; }
+      if (rig.torso) rig.torso.rotation.x -= 0.12 * w;
+    } else {
+      // struck: the body jerks back from the blow
+      const late = bell(Math.max(0, d.k - 0.35) / 0.65);
+      inner.position.z -= 0.2 * late * sc;
+      if (rig.torso) { rig.torso.rotation.x -= 0.4 * late; rig.torso.rotation.y += 0.25 * late; }
+      if (rig.head) rig.head.rotation.x -= 0.35 * late;
+    }
+  }
 }

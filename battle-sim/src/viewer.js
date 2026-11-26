@@ -66,6 +66,8 @@ for (const spec of ids) {
         if (pose === 'walk') animateUnit(m, T, true, -1, 0, 0, false);
         else if (pose === 'attack') animateUnit(m, 0.4, false, T, 0, 0, false);
         else if (pose === 'death') animateUnit(m, 0.4, false, -1, T, 0, false);
+        else if (['back', 'front', 'side', 'kneel', 'blast'].includes(pose)) animateUnit(m, 0.4, false, -1, T, 0, false, { death: { style: pose, seed: (id.length * 7919 + Math.round(T * 100) * 31) >>> 0 } }); // death variants
+        else if (pose.startsWith('duel')) { const [, role, kind] = pose.split('-'); animateUnit(m, 0.4, false, role === 'a' ? T : -1, 0, 0, false, { duel: { role, kind, k: T } }); } // knight@duel-a-kill:0.5
         else if (pose === 'fly') animateUnit(m, T, true, -1, 0, 0, true);
         else animateUnit(m, T, false, -1, 0, 0, false);
       };
