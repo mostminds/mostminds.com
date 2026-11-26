@@ -1,6 +1,6 @@
 // Renders a land/amphibious battle state produced by engine/battle.js.
 import * as THREE from 'three';
-import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, mat, LEVEL_H } from './models.js';
+import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, setLod, mat, LEVEL_H } from './models.js';
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
 import { structureFootprint } from '../engine/battle.js';
@@ -8,6 +8,8 @@ import { GRASS, DEEP, SHALLOW, SAND, BIOMES } from '../engine/terrain.js';
 import { TICK_MS } from '../engine/combat.js';
 
 export const SIDE_COLORS = [0x3d7bd9, 0xd9463d];
+// camera distance (in unit sizes) beyond which a model drops to the next detail level
+const LOD_STEPS = [9, 20, 40, 75, 130];
 
 export class LandView {
   constructor(stage) {
@@ -160,7 +162,7 @@ export class LandView {
       disc.position.y = 0.02;
       m.add(disc);
       const bar = makeBar(SIDE_COLORS[u.side] === SIDE_COLORS[0] ? 0x4fd36a : 0x4fd36a);
-      const top = 1.05 * (u.def.model?.scale || 1) + (u.def.model?.body === 'dragon' ? 0.4 : 0);
+      const top = m.userData.rig?.height ? m.userData.rig.height + 0.12 : 1.05 * (u.def.model?.scale || 1) + (u.def.model?.body === 'dragon' ? 0.4 : 0);
       bar.position.y = top;
       m.add(bar);
       setBar(bar, 1, 0.5 + 0.3 * u.def.size);
@@ -384,6 +386,7 @@ export class LandView {
     if (this.grid) this.grid.visible = b.tick === 0;
     const v = new THREE.Vector3();
     const tickNow = b.tick + alpha;
+    const cam = this.stage.camera.position;
     b.units.forEach((u, i) => {
       const m = this.models[i];
       if (!m) return;
@@ -404,7 +407,14 @@ export class LandView {
       const moving = u.alive && (u.x !== u.px || u.y !== u.py) && u.aboard < 0;
       const since = (tickNow - u.lastAttack) * 0.6 * 1.6;
       const atk = since >= 0 && since < 1 ? since : -1;
-      animateUnit(m, t, moving || (u.def.fly && u.alive), atk, dead, m.userData.phase);
+      const airborne = !!u.def.fly && u.alive && !(u.landedUntil > b.tick);
+      if (m.userData.lod) {
+        // detail follows how large the unit is on screen
+        const ratio = cam.distanceTo(m.position) / Math.max(1, u.def.size * 0.8);
+        let lv = 0; while (lv < LOD_STEPS.length && ratio > LOD_STEPS[lv]) lv++;
+        setLod(m, lv);
+      }
+      animateUnit(m, t, moving || airborne, atk, dead, m.userData.phase, airborne);
       if (u.def.fly) m.userData.disc.position.y = -(m.position.y - Math.max(0, this.groundY(u.x, u.y))) + 0.02;
       m.userData.rig?.mixer?.update(dt * speed);
       if (u.alive) { m.userData.bar.visible = u.hp < u.def.hp; if (u.hp < u.def.hp) setBar(m.userData.bar, u.hp / u.def.hp); }

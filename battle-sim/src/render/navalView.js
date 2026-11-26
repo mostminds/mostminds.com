@@ -1,6 +1,6 @@
 // Renders naval battles from engine/naval.js. Engine (x, y) maps to world (x, 0, y).
 import * as THREE from 'three';
-import { buildShip, buildCreature, animateCreature, buildWeapon, mat } from './models.js';
+import { buildShip, buildCreature, animateCreature, buildWeapon, setLod, mat } from './models.js';
 import { makeBar, setBar } from './stage.js';
 import { SIDE_COLORS } from './landView.js';
 import { TICK_MS } from '../engine/combat.js';
@@ -140,6 +140,11 @@ export class NavalView {
       m.position.set(x, this.waveH(x, y, t) * 0.8, y);
       m.rotation.y = -hd;
       m.rotation.z = Math.sin(t * 1.1 + i) * 0.04;
+      if (m.userData.lod) {
+        const ratio = this.stage.camera.position.distanceTo(m.position) / Math.max(1, (e.def.size || 1) * 1.5);
+        let lv = 0; while (lv < 5 && ratio > [14, 30, 60, 110, 200][lv]) lv++;
+        setLod(m, lv);
+      }
       if (!e.ship) animateCreature(m, t, m.userData.phase);
       m.userData.rig?.mixer?.update(dt * speed);
       const sub = !e.ship && b.tick < e.subUntil;

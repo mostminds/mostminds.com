@@ -5,6 +5,21 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { instantiateCustom, animateCustom } from './customModels.js';
 import { tmat } from './textures.js';
+import { assemble, cloneRigged as cloneSculpted, getDetail, setLod } from './rigkit.js';
+import { animateRig } from './animate.js';
+import * as REG from './registry.js';
+
+// Sculpted models come from the family modules gathered in registry.js. Each
+// lookup falls back to the older primitive-built model below if a family has
+// nothing registered for it, or if its builder throws.
+const sculptTpl = new Map(), sculptFailed = new Set();
+function guarded(label, fn) {
+  if (sculptFailed.has(label)) return null;
+  try { return fn() || null; } catch (err) { console.warn(`[models] ${label} failed, using the fallback model`, err); sculptFailed.add(label); return null; }
+}
+/** drop cached sculpts (call after the detail preset changes) */
+export function resetModelCache() { sculptTpl.clear(); sculptFailed.clear(); }
+export { setLod };
 export const LEVEL_H = 0.8; // world height of one walkable level
 
 const matCache = new Map();
@@ -376,6 +391,15 @@ export function buildUnitModel(def) {
   const custom = instantiateCustom(def.id, 0.95 * (o.scale || 1) * Math.max(1, def.size * 0.8), 'unit');
   if (custom) return custom;
   const key = `${def.id}:${JSON.stringify(o)}`;
+  const body = REG.BODIES[o.body || 'humanoid'];
+  if (body) {
+    const k2 = `${key}:${getDetail()}`;
+    const tpl = guarded(`unit:${k2}`, () => {
+      if (!sculptTpl.has(k2)) { const desc = body(def, o); sculptTpl.set(k2, desc ? assemble(desc, o.scale || 1) : null); }
+      return sculptTpl.get(k2);
+    });
+    if (tpl) return cloneSculpted(tpl);
+  }
   if (!templates.has(key)) templates.set(key, buildTemplate(def, o));
   return cloneRigged(templates.get(key));
 }
@@ -405,9 +429,10 @@ function buildTemplate(def, o) {
 }
 
 // t: seconds, moving: bool, atk: 0..1 progress of an attack swing (or -1), dead: 0..1
-export function animateUnit(model, t, moving, atk, dead, phase = 0) {
+export function animateUnit(model, t, moving, atk, dead, phase = 0, flying = false) {
   const r = model.userData.rig;
   if (!r) return;
+  if (r.v2) { animateRig(model, { t, moving, atk, dead, phase, flying }); return; }
   if (r.kind === 'gltf') { animateCustom(model, t, moving, atk, dead); return; }
   const inner = model.userData.inner;
   const sw = moving ? Math.sin(t * 10 + phase) * 0.6 : 0;
@@ -445,6 +470,8 @@ export function animateUnit(model, t, moving, atk, dead, phase = 0) {
 export function buildStructure(def, w, h) {
   const custom = def.id && instantiateCustom(`struct:${def.id}`, Math.max(w, h), 'struct');
   if (custom) return custom;
+  if (def.weapon) { const sg = buildWeapon(def.model, w, h, def); if (sg.userData.sculpted) return sg; }
+  else if (REG.STRUCT[def.model]) { const sm = guarded(`struct:${def.model}:${w}x${h}`, () => REG.STRUCT[def.model](def, w, h)); if (sm) return sm; }
   const g = new THREE.Group();
   const TEXKIND = { wall: 'stone', castleWall: 'stone', castleTower: 'stone', keep: 'stone', bastion: 'stone', gate: 'stone', pillar: 'stone', statue: 'stone', stairs: 'stone',
     palisade: 'bark', barricade: 'wood', tower: 'wood', deck: 'wood', crates: 'wood', hut: 'wood', castleGate: 'wood', house: 'plaster', tent: 'canvas', sandbags: 'canvas' };
@@ -588,7 +615,11 @@ function carriage(g, wood) {
     const w = mesh(cyl(0.14, 0.14, 0.06, 8), mat(0x3a2a1a), x, 0.14, z); w.rotation.x = Math.PI / 2; g.add(w);
   }
 }
-export function buildWeapon(model, w = 1, h = 1) {
+export function buildWeapon(model, w = 1, h = 1, def = null) {
+  if (REG.SIEGE[model]) {
+    const sm = guarded(`siege:${model}:${w}x${h}`, () => REG.SIEGE[model](w, h, def));
+    if (sm) { sm.userData.sculpted = true; return sm; }
+  }
   const g = new THREE.Group();
   const turret = new THREE.Group();
   const iron = mat(0x2a2a2c), wood = mat(0x6b4a2e), stone = mat(0x8a8a86), rope = mat(0xb8a070);
@@ -649,6 +680,8 @@ export function buildWeapon(model, w = 1, h = 1) {
 
 // ---------- landing craft ----------
 export function buildCraft(color) {
+  const sc = guarded('craft', () => REG.craft(color));
+  if (sc) return sc;
   const g = new THREE.Group();
   const wood = mat(0x6b4a2e), side = mat(color);
   g.add(mesh(box(2.2, 0.35, 1.5), wood, 0, 0.05, 0));
@@ -662,6 +695,7 @@ export function buildCraft(color) {
 
 // ---------- ships ----------
 export function buildShip(def, sideColor) {
+  if (!instantiateCustom(def.id, def.len, 'ship')) { const ss = guarded(`ship:${def.id}`, () => REG.ship(def, sideColor)); if (ss) return ss; }
   const custom = instantiateCustom(def.id, def.len, 'ship');
   if (custom) {
     custom.add(mesh(box(0.02, 0.3, 0.5), mat(sideColor, { side: THREE.DoubleSide }), 0, 1.4 + def.len * 0.35, 0));
@@ -701,6 +735,7 @@ export function buildShip(def, sideColor) {
 }
 
 export function buildCreature(def) {
+  if (!instantiateCustom(def.id, 1, 'creature') && REG.CREATURES[def.model]) { const sc = guarded(`creature:${def.id}`, () => REG.CREATURES[def.model](def)); if (sc) return sc; }
   const custom = instantiateCustom(def.id, (def.size || 1) * 1.6, 'creature');
   if (custom) { custom.userData.rig.segs = []; return custom; }
   const g = new THREE.Group();
@@ -765,6 +800,7 @@ export function buildCreature(def) {
 
 export function animateCreature(g, t, phase) {
   const r = g.userData.rig;
+  if (r && r.v2) { const fn = REG.CREATURE_ANIM[r.kind]; if (fn) fn(g, { t, phase }); return; }
   if (r.kind === 'gltf') { animateCustom(g, t, true, -1, 0); return; }
   if (r.kind === 'serpent' || r.kind === 'eel') r.segs.forEach((s, i) => { s.position.z = Math.sin(t * 3 - i * 0.7 + phase) * 0.25 * (i / 3); s.position.y = Math.sin(t * 2 - i * 0.9 + phase) * 0.25; });
   else if (r.kind === 'kraken') r.segs.forEach((s, i) => { s.rotation.z = Math.sin(t * 1.5 + i + phase) * 0.35 + 0.1; });
@@ -774,6 +810,8 @@ export function animateCreature(g, t, phase) {
 
 // Heap of broken stone and timber left where a structure fell
 export function buildRubble(w, h, color) {
+  const sr = guarded('rubble', () => REG.rubble(w, h, color));
+  if (sr) return sr;
   const g = new THREE.Group();
   const m = mat(color), d = mat(0x4a4540);
   const n = Math.min(24, 3 + w * h * 2);

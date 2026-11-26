@@ -1,4 +1,5 @@
 import { Stage } from './render/stage.js';
+import { resetModelCache } from './render/models.js';
 import { LandView } from './render/landView.js';
 import { NavalView } from './render/navalView.js';
 import { createBattle, stepBattle, prepareDef, canStand, structureFootprint } from './engine/battle.js';
@@ -180,6 +181,7 @@ $('speed').onchange = (e) => { state.speed = +e.target.value; };
 $('speed').value = String(state.speed);
 $('quality').value = store.get('tb.quality') || 'auto';
 stage.setQuality($('quality').value);
+stage.onDetailChange = () => { resetModelCache(); if (sim.b && !sim.started) buildSim(sim.seed); };
 $('quality').onchange = (e) => { stage.setQuality(e.target.value); store.set('tb.quality', e.target.value); };
 
 function lockEditing(on) {

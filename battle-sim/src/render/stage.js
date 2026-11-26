@@ -2,9 +2,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { skyTexture } from './textures.js';
+import { setDetail } from './rigkit.js';
 
 // pixel density and shadow resolution per quality level
-const QUALITY = { low: { px: 1, shadow: 0 }, medium: { px: 1.5, shadow: 2048 }, high: { px: 2, shadow: 4096 }, ultra: { px: 3, shadow: 4096 } };
+const QUALITY = { low: { px: 1, shadow: 0, detail: 'low' }, medium: { px: 1.5, shadow: 2048, detail: 'medium' }, high: { px: 2, shadow: 4096, detail: 'high' }, ultra: { px: 3, shadow: 4096, detail: 'ultra' } };
 
 export class Stage {
   constructor(container) {
@@ -24,8 +25,8 @@ export class Stage {
     this.controls.enableDamping = true;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.screenSpacePanning = false;
-    const hemi = new THREE.HemisphereLight(0xdfeaff, 0x6a5a40, 1.5);
-    const sun = new THREE.DirectionalLight(0xfff0d8, 3.2);
+    const hemi = new THREE.HemisphereLight(0xdfeaff, 0x6a5a40, 0.35);
+    const sun = new THREE.DirectionalLight(0xfff0d8, 3.4);
     sun.castShadow = true;
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
     const fill = new THREE.DirectionalLight(0xbcd0ff, 0.5);
@@ -33,6 +34,7 @@ export class Stage {
     this.sun = sun;
     this.scene.add(hemi, sun, sun.target, fill);
     this.setQuality('auto');
+    this.buildEnvironment();
     this.fx = [];
     this.splatTex = new Map();
     window.addEventListener('resize', () => this.resize());
@@ -40,8 +42,11 @@ export class Stage {
   }
   setQuality(q) {
     if (q === 'auto' || !QUALITY[q]) q = window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 820 ? 'medium' : 'high';
+    const changed = this.quality && this.quality !== q;
     this.quality = q;
     const cfg = QUALITY[q];
+    setDetail(cfg.detail);
+    if (changed) this.onDetailChange?.();
     this.renderer.setPixelRatio(Math.min(cfg.px, window.devicePixelRatio || 1));
     this.sun.castShadow = cfg.shadow > 0;
     if (cfg.shadow && this.sun.shadow.mapSize.x !== cfg.shadow) {
@@ -49,6 +54,19 @@ export class Stage {
       this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
     }
     this.resize?.();
+  }
+  // Image-based light so metal has something to reflect: a sky dome, a ground and a bright sun patch
+  buildEnvironment() {
+    const env = new THREE.Scene();
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), new THREE.MeshBasicMaterial({ map: skyTexture(0xa9c4dc), side: THREE.BackSide }));
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(50, 24), new THREE.MeshBasicMaterial({ color: 0x6a6450 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -2;
+    const sun = new THREE.Mesh(new THREE.SphereGeometry(6, 16, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 13, 11) }));
+    sun.position.set(-18, 34, 20);
+    env.add(sky, ground, sun);
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pm.fromScene(env, 0.03).texture;
+    pm.dispose();
   }
   setSky(color) {
     if (this.skyColor === color) return;
