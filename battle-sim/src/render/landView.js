@@ -4,6 +4,7 @@ import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, bui
 import { bakePose } from './rigkit.js';
 import { sculptMaterial } from './sculpt.js';
 import { LIFTED } from '../engine/airship.js';
+import { loadFracture, fractureModel } from './fracture.js';
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
 import { structureFootprint } from '../engine/battle.js';
@@ -13,6 +14,8 @@ import { TICK_MS } from '../engine/combat.js';
 export const SIDE_COLORS = [0x3d7bd9, 0xd9463d];
 // camera distance (in unit sizes) beyond which a model drops to the next detail level
 const LOD_STEPS = [9, 20, 40, 75, 130];
+const NOTHING = new THREE.BufferGeometry();
+NOTHING.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
 
 export class LandView {
   constructor(stage) {
@@ -26,6 +29,8 @@ export class LandView {
     this.ray = new THREE.Raycaster();
     this.ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.discGeo = new THREE.CircleGeometry(0.42, 12).rotateX(-Math.PI / 2);
+    this.tumbling = [];
+    loadFracture();
   }
 
   dispose() { this.stage.scene.remove(this.root); }
@@ -327,20 +332,20 @@ export class LandView {
     if (m.userData.stage === stage || (!stage && m.userData.stage === undefined)) return;
     m.userData.stage = stage;
     if (m.userData.debris) { m.remove(m.userData.debris); m.userData.debris = null; }
-    // the top is knocked away on anything nobody stands on
-    const cut = stage && !def.level && !def.door && !def.weapon && def.blocksMove && m.userData.tall > 1.3;
-    let plane = null;
-    if (cut) {
-      const a = i * 2.4, n = new THREE.Vector3(Math.cos(a) * 0.45, -1, Math.sin(a) * 0.45).normalize();
-      const p0 = new THREE.Vector3(m.position.x, m.position.y + m.userData.tall * (stage === 1 ? 0.8 : 0.52), m.position.z);
-      plane = new THREE.Plane(n, -n.dot(p0));
+    // real masonry and timber break into chunks; anything that cannot be split is darkened and gets rubble at its foot
+    const fr = def.weapon ? null : this.fracture(i);
+    if (fr) {
+      fr.mat.color.setScalar(1).multiplyScalar(stage === 0 ? 1 : stage === 1 ? 0.85 : 0.62);
+      // walls and decks people stand on lose pieces of their faces; everything else loses its top first
+      const share = def.level ? [0, 0.12, 0.28][stage] : [0, 0.22, 0.5][stage];
+      this.dropChunks(fr, Math.round(fr.chunks.length * share));
+      return;
     }
     for (const mesh of m.userData.meshes) {
       mesh.userData.mat0 ||= mesh.material;
       if (!stage) { mesh.material = mesh.userData.mat0; continue; }
       const mt = mesh.userData.mat0.clone();
       if (mt.color) mt.color.multiplyScalar(stage === 1 ? 0.78 : 0.5).multiply(new THREE.Color(1, 0.93, 0.86));
-      if (plane) { mt.clippingPlanes = [plane]; mt.clipShadows = true; }
       mesh.material = mt;
     }
     if (stage && !def.weapon) {
@@ -348,6 +353,54 @@ export class LandView {
       d.scale.set(1.12, 0.4 + stage * 0.25, 1.12);
       m.add(d); m.userData.debris = d;
     }
+  }
+
+  // Split a structure's model into chunks the first time it is hurt. Returns null if it cannot be split.
+  fracture(i) {
+    const m = this.structModels[i], s = this.b.structures[i], def = STRUCTURES[s.type];
+    if (m.userData.frac !== undefined) return m.userData.frac;
+    m.userData.frac = null;
+    const count = Math.max(8, Math.min(26, Math.round(6 + s.w * s.h * 1.4 + (m.userData.tall || 1) * 2)));
+    const parts = fractureModel(m, m.userData.meshes, count, 1 + i * 7919);
+    if (!parts) return null;
+    const mat = sculptMaterial().clone();
+    const coreMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(def.color).multiplyScalar(0.7), roughness: 1, flatShading: true });
+    const group = new THREE.Group();
+    const chunks = parts.map((p, k) => {
+      const g = new THREE.Group();
+      const shell = new THREE.Mesh(p.shell, mat); shell.castShadow = true; shell.receiveShadow = true; g.add(shell);
+      let core = null;
+      if (p.core) { core = new THREE.Mesh(p.core, coreMat); core.visible = false; core.castShadow = true; g.add(core); }
+      g.position.copy(p.c);
+      group.add(g);
+      return { g, core, home: p.c.clone(), fallen: false, k };
+    });
+    // which go first: the highest, or for walkable works the outer faces low down
+    const order = chunks.slice().sort(def.level ? (a, c) => (a.home.y - c.home.y) + (((a.k * 37) % 7) - ((c.k * 37) % 7)) * 0.2 : (a, c) => c.home.y - a.home.y);
+    // the whole model gives way to its chunks (a model may itself be the mesh, so it is emptied, not hidden)
+    for (const mesh of m.userData.meshes) { mesh.userData.geo0 = mesh.geometry; mesh.geometry = NOTHING; }
+    m.add(group);
+    m.userData.frac = { chunks, order, mat, group };
+    return m.userData.frac;
+  }
+
+  // The first n chunks in falling order come down (or go back up, when repairs have been made).
+  dropChunks(fr, n) {
+    fr.order.forEach((c, idx) => {
+      if (idx < n && !c.fallen) {
+        c.fallen = true;
+        if (c.core) c.core.visible = true;
+        const out = new THREE.Vector3(c.home.x, 0, c.home.z);
+        if (out.lengthSq() < 0.01) out.set(Math.sin(c.k * 2.4), 0, Math.cos(c.k * 2.4));
+        out.normalize().multiplyScalar(0.6 + ((c.k * 53) % 10) / 9);
+        this.tumbling.push({ c, v: new THREE.Vector3(out.x, 0.6 + ((c.k * 31) % 10) / 8, out.z), w: new THREE.Vector3(((c.k * 17) % 9) - 4, ((c.k * 29) % 7) - 3, ((c.k * 13) % 9) - 4).multiplyScalar(0.7), wait: idx * 0.05, rest: 0.12 + ((c.k * 41) % 10) / 34 });
+      } else if (idx >= n && c.fallen) {
+        // mended: the piece is set back in place
+        c.fallen = false; if (c.core) c.core.visible = false;
+        c.g.position.copy(c.home); c.g.rotation.set(0, 0, 0);
+        this.tumbling = this.tumbling.filter((t) => t.c !== c);
+      }
+    });
   }
 
   unitPos(u, alpha, out) {
@@ -439,8 +492,9 @@ export class LandView {
         if (st && e.dmg >= 20) st && this.stage.puff(v.set(st.x + st.w / 2, 0.6, st.y + st.h / 2), 0xb0a898, 0.4, 0.7);
       } else if (e.type === 'structDestroyed') {
         const st = b.structures[e.s], m = this.structModels[e.s];
-        if (m) m.visible = false;
-        this.addRubble(st);
+        const fr = m && !STRUCTURES[st.type].weapon ? this.fracture(e.s) : null;
+        if (fr) { fr.mat.color.setScalar(0.55); this.dropChunks(fr, fr.chunks.length); if (m.userData.bar) m.userData.bar.visible = false; m.userData.stage = 3; } // it comes down in pieces and lies there
+        else { if (m) m.visible = false; this.addRubble(st); }
         for (let k = 0; k < 4; k++) st && this.stage.puff(v.set(st.x + Math.random() * st.w, 0.5 + Math.random(), st.y + Math.random() * st.h).clone(), 0xb0a898, 0.8, 1.6);
         msgs.push({ side: e.side >= 0 ? e.side : 0, text: `${STRUCTURES[st.type].name} ${STRUCTURES[st.type].door ? 'is broken open' : 'collapses'}` });
       } else if (e.type === 'hit') {
@@ -720,12 +774,29 @@ export class LandView {
       if (dead >= 0.5) this.layBody(u, m);
     });
     this.updateAir(alpha, t, dt, speed);
+    // masonry in the air
+    if (this.tumbling.length) {
+      const h = Math.min(0.05, dt) * Math.max(1, Math.min(3, speed));
+      this.tumbling = this.tumbling.filter((q) => {
+        if (q.wait > 0) { q.wait -= h; return true; }
+        q.v.y -= 9.8 * h;
+        q.c.g.position.addScaledVector(q.v, h);
+        q.c.g.rotation.x += q.w.x * h; q.c.g.rotation.y += q.w.y * h; q.c.g.rotation.z += q.w.z * h;
+        if (q.c.g.position.y <= q.rest) {
+          q.c.g.position.y = q.rest;
+          if (Math.abs(q.v.y) < 1.2) return false; // settled
+          q.v.y *= -0.25; q.v.x *= 0.5; q.v.z *= 0.5; q.w.multiplyScalar(0.4);
+          if (Math.random() < 0.3) { const wp = q.c.g.getWorldPosition(new THREE.Vector3()); this.stage.puff(wp, 0xb0a898, 0.3, 0.8); }
+        }
+        return true;
+      });
+    }
     // wounded buildings and guns smoke
     if ((this.smokeT += dt) > 0.25) {
       this.smokeT = 0;
       for (let k = 0; k < 3; k++) {
         const i = Math.floor(Math.random() * this.structModels.length), m = this.structModels[i];
-        if (!m || !m.userData.stage || !m.visible) continue;
+        if (!m || !m.userData.stage || m.userData.stage > 2 || !m.visible) continue;
         const s = b.structures[i];
         v.set(s.x + Math.random() * s.w, (m.userData.tall || 1) * (m.userData.stage === 2 ? 0.55 : 0.85), s.y + Math.random() * s.h);
         this.stage.puff(v.clone(), m.userData.stage === 2 && Math.random() < 0.4 ? 0xff7a28 : 0x3e3a36, 0.3 + m.userData.stage * 0.12, 1.6);

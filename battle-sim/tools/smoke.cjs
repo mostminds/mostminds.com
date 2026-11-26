@@ -49,11 +49,12 @@ server.listen(0, async () => {
         const naval = window.__tb.state.mode === 'naval';
         const m = await import(naval ? './src/engine/naval.js' : './src/engine/battle.js');
         const b = window.__tb.sim.b;
-        for (let i = 0; i < n && b.winner === null; i++) (naval ? m.stepNaval : m.stepBattle)(b);
+        for (let i = 0; i < n && b.winner === null; i++) { (naval ? m.stepNaval : m.stepBattle)(b); window.__tb.view?.onEvents?.(b.events); } // the view hears every event, as in normal play
       }, ticks);
       await page.waitForTimeout(2500);
       await page.click('#play');
     }
+    if (args.post) { await page.evaluate(args.post); await page.waitForTimeout(3500); } // --post "js" runs after the battle has been advanced
     if (args.zoom) await page.evaluate((k) => { const st = window.__tb.stage; st.camera.position.lerp(st.controls.target, k); }, +args.zoom);
     await page.waitForTimeout(2500);
     const info = await page.evaluate(() => { const r = window.__tb.stage.renderer.info.render; const b = window.__tb.sim.b; return { drawCalls: r.calls, triangles: r.triangles, entities: (b.units || b.ents).length, tick: b.tick }; });

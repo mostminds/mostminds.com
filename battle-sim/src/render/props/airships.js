@@ -8,7 +8,8 @@
 // Everything is drawn with a pen (class Pen) straight into one vertex-coloured geometry for the shared sculpt
 // shader: lofted skins, lathed metalwork, bevelled timber, laid ropes; the few organic pieces (skulls, pilots)
 // are sculpted with the kit and merged in. An airship is two meshes (the ship, and everything dyed in the side
-// colour) plus one small mesh per propeller. Seven faction designs share one construction: an envelope lofted
+// colour: that geometry is baked in greys and drawn with a clone of the shared material tinted to the side, so
+// changing sides swaps a material, not geometry) plus one small mesh per propeller. Seven faction designs share one construction: an envelope lofted
 // from a profile, an inner frame, a planked gondola with guns, bomb bay, stern hangar, pod racks and ladders.
 // Each design is built per damage level (0..3) and per detail tier, on first use, and cached per class.
 import * as THREE from 'three';
@@ -504,7 +505,7 @@ function styleOf(def) {
 function damageOf(lvl, st, E, G) {
   const dm = { lvl, blobs: [], chars: [], patches: [] };
   const L = E.L, R = E.R;
-  if (lvl === 1) { dm.blobs = [[0.62, 0.55, 0.03, 0.26], [0.36, -0.95, 0.028, 0.24], [0.76, -0.35, 0.022, 0.2]]; dm.patches = [[0.5, -0.5, 0.035, 0.26], [0.28, 0.5, 0.03, 0.22], [0.7, 1.1, 0.03, 0.22]]; }
+  if (lvl === 1) { dm.blobs = [[0.62, 0.55, 0.046, 0.38], [0.36, -0.95, 0.04, 0.34], [0.77, -0.4, 0.032, 0.28], [0.22, 0.25, 0.03, 0.3]]; dm.patches = [[0.5, -0.5, 0.035, 0.26], [0.28, 0.5, 0.03, 0.22], [0.7, 1.1, 0.03, 0.22]]; }
   if (lvl === 2) { dm.blobs = [[0.6, 0.6, 0.085, 0.75], [0.33, -0.7, 0.1, 0.8], [0.8, -1.2, 0.05, 0.42], [0.46, -0.1, 0.045, 0.34], [0.18, 0.9, 0.05, 0.5]]; dm.patches = [[0.7, 1.4, 0.03, 0.22]]; }
   if (lvl === 3) dm.blobs = [[0.82, 0.5, 0.06, 0.5], [0.72, -0.9, 0.07, 0.6], [0.9, -1.6, 0.04, 0.4]];
   /** > 0 inside a hole; climbs from about -1 well outside it */
@@ -521,7 +522,8 @@ function damageOf(lvl, st, E, G) {
   const tmp = [0, 0, 0];
   for (const b of dm.blobs) { E.pt(b[0], b[1], 0, tmp); dm.chars.push([tmp[0], tmp[1], tmp[2], (b[2] * L + b[3] * R) * 1.25 + 0.3, 0.9]); }
   const Lg = G.Lg;
-  if (lvl >= 1) dm.chars.push([Lg * 0.2, -0.3, 0.7, 0.55, 0.85], [-Lg * 0.3, -0.5, -0.7, 0.6, 0.85], [E.L * 0.1, E.cy, R, 0.7, 0.6]);
+  if (lvl >= 1 && !E.skinned) dm.chars.push([E.x0 - 0.3 * L, E.cy + 0.6 * R, 0.5 * R, 1.5, 0.95], [E.x0 + 0.12 * L, E.cy + R, -0.2, 1.5, 0.95], [E.x0 + 0.3 * L, E.cy - 0.3 * R, 0.7 * R, 1.3, 0.9], [E.x0, E.cy + 0.2 * R, 0.4 * R, 1.0, 0.8]);
+  if (lvl >= 1) dm.chars.push([Lg * 0.2, -0.2, 0.7, 0.95, 0.9], [-Lg * 0.3, -0.3, -0.7, 0.95, 0.9], [-Lg * 0.05, 0, 0.1, 0.75, 0.8], [E.L * 0.1, E.cy, R, 1.0, 0.7]);
   if (lvl >= 2) dm.chars.push([Lg * 0.05, -0.2, -0.7, 0.9, 0.95], [-Lg * 0.36, -0.2, 0.75, 1.0, 0.95], [Lg * 0.38, -0.3, 0.3, 0.7, 0.9], [-Lg * 0.1, 0, 0, 0.8, 0.8]);
   if (lvl >= 3) dm.chars.push([-Lg * 0.1, -0.4, 0, 1.5, 1], [-E.L * 0.25, E.cy, 0, R * 2.6, 1], [Lg * 0.3, -0.3, -0.5, 1.1, 0.95]);
   dm.char = (x, y, z) => {
@@ -580,7 +582,7 @@ function makeEnv(st) {
   const two = (um2, fn, ft) => (u) => (u >= um2 ? fn((u - um2) / (1 - um2)) : ft((um2 - u) / um2));
   switch (style) {
     case 'goblin': {
-      E.R = 0.15 * len; E.L = 0.9 * len;
+      E.R = 0.15 * len; E.L = 0.9 * len; E.nu = 136; E.nv = 92;
       const lobe = (t) => Math.sqrt(Math.max(0, 1 - t * t));
       prof = (u) => { const a = lobe((u - 0.655) / 0.345), b = 0.8 * lobe((u - 0.26) / 0.26), k = 0.14, h = clamp(0.5 + (0.5 * (a - b)) / k, 0, 1); return (lerp(b, a, h) + k * h * (1 - h)) * Math.sqrt(clamp(u / 0.03, 0, 1) * clamp((1 - u) / 0.03, 0, 1)); };
       yc = (u) => -0.1 * E.R * smooth(0.5, 0.2, u);
@@ -590,7 +592,7 @@ function makeEnv(st) {
       skin = (u, th) => {
         const c = cell(u, th), h = hash1(c[2]), edge = c[1] - c[0];
         const plate = h > 0.84, col = plate ? vary(RUST, c[2], 0.25) : vary(PAL[Math.floor(h * 9.5) % PAL.length], c[2], 0.12);
-        const k = (0.82 + 0.3 * fbm3(u * 30, th * 6, 3, 2)) * (0.06 + 0.94 * smooth(0.03, 0.2, edge));
+        const k = (0.82 + 0.3 * fbm3(u * 30, th * 6, 3, 2)) * (0.08 + 0.92 * smooth(0.02, 0.4, edge));
         return [col[0] * k, col[1] * k, col[2] * k, plate ? 0.6 : 0.9, plate ? 0.7 : 0, 0];
       };
       break;
@@ -634,7 +636,7 @@ function makeEnv(st) {
       break;
     }
     case 'beasts': {
-      um = 0.52; E.R = 0.165 * len; E.L = 0.8 * len; E.nu = 104;
+      um = 0.52; E.R = 0.165 * len; E.L = 0.8 * len; E.nu = 128; E.nv = 96;
       prof = two(um, (t) => nose(t, 2.3), (t) => nose(t, 2.1));
       const NU = 8, NT = 10;
       E.net = { NU, NT };
@@ -644,13 +646,13 @@ function makeEnv(st) {
         const c = cell(u, th), h = hash1(c[2]), edge = c[1] - c[0];
         let col = h > 0.75 ? mul(envC, 0.62) : h > 0.5 ? mix(envC, hex(0x8a5a36), 0.5) : h > 0.2 ? envC : mix(envC, CREAM, 0.4);
         if (h > 0.9) col = mul(col, noise3(u * 60, th * 14, 5) > 0.62 ? 0.35 : 1.1);   // a spotted pelt
-        const k = (0.8 + 0.34 * fbm3(u * 26, th * 6, 7, 3)) * (0.12 + 0.88 * smooth(0.02, 0.17, edge));
+        const k = (0.8 + 0.34 * fbm3(u * 26, th * 6, 7, 3)) * (0.14 + 0.86 * smooth(0.02, 0.42, edge));
         return [col[0] * k, col[1] * k, col[2] * k, 0.92, 0, 0];
       };
       break;
     }
     case 'dragons': {
-      um = 0.7; E.L = 0.9 * len; E.R = 0.138 * len; E.x0 = -0.01 * len; E.nu = 150; E.nv = 104; E.uBias = 0.25;
+      um = 0.7; E.L = 0.9 * len; E.R = 0.138 * len; E.x0 = -0.01 * len; E.nu = 140; E.nv = 96; E.uBias = 0.25;
       prof = two(um, (t) => nose(t, 2.3), (t) => Math.pow(Math.max(0, 1 - Math.pow(t, 1.2)), 1.3) * 0.94 + 0.06 * (1 - t) * (1 - t));
       yc = (u) => 0.5 * E.R * Math.pow(Math.max(0, (0.34 - u) / 0.34), 2);
       const NU = Math.round(E.L / 0.3), NT = 26;
@@ -876,10 +878,9 @@ function planking(p, G, st, dm, side) {
   }
   // rune course of the stone hull
   if (st.style === 'elemental' && TIER < 2) {
-    const v = 0.8, gc = null;
+    const v = 0.8;
     p.shade(null).ink(st.glowC, 0.4, 0, 1.6);
     for (let i = 0; i < 26; i++) { const s = 0.06 + i * 0.034, q = G.pt(s, v, 0.006), h = hash2(i, 7); if (h < 0.25) continue; p.T(q[0], q[1], q[2], 0, 0, h * 90 - 45).box(0.05 + 0.05 * h, 0.018, 0.012, 0); if (h > 0.6) p.T(q[0], q[1] + 0.03, q[2], 0, 0, 90 - h * 60).box(0.045, 0.016, 0.012, 0); }
-    void gc;
   }
 }
 /** woven basket side: weavers passing over and under upright stakes */
@@ -1148,11 +1149,9 @@ const POD_PROF = [[0.2, 0.06], [0.31, 0.12], [0.385, 0.3], [0.4, 0.5], [0.365, 0
 function drawPod(p, fp, style, rack = false) {
   const P = POD[style] || POD.kingdom, f = P.f, lite = rack || TIER >= 1;
   const prof = POD_PROF.map(([r, y]) => [r * (y < 0.25 ? f[0] : y < 0.6 ? f[1] : f[2]), y]);
-  const rAt = (y) => { for (let i = 0; i < prof.length - 1; i++) if (y <= prof[i + 1][1]) return lerp(prof[i][0], prof[i + 1][0], (y - prof[i][1]) / (prof[i + 1][1] - prof[i][1])); return prof[prof.length - 1][0]; };
   const sm = [];   // the profile, rounded
-  for (let i = 0; i <= 14; i++) { const y = lerp(0.06, 0.92, i / 14), t = (i / 14) * (prof.length - 1), a = Math.min(prof.length - 2, Math.floor(t)), w = t - a; void y; const q0 = prof[Math.max(0, a - 1)], q1 = prof[a], q2 = prof[a + 1], q3 = prof[Math.min(prof.length - 1, a + 2)]; const cr = (k) => 0.5 * (2 * q1[k] + (q2[k] - q0[k]) * w + (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * w * w + (3 * q1[k] - q0[k] - 3 * q2[k] + q3[k]) * w * w * w); sm.push([cr(0), cr(1)]); }
+  for (let i = 0; i <= 14; i++) { const t = (i / 14) * (prof.length - 1), a = Math.min(prof.length - 2, Math.floor(t)), w = t - a; const q0 = prof[Math.max(0, a - 1)], q1 = prof[a], q2 = prof[a + 1], q3 = prof[Math.min(prof.length - 1, a + 2)]; const cr = (k) => 0.5 * (2 * q1[k] + (q2[k] - q0[k]) * w + (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * w * w + (3 * q1[k] - q0[k] - 3 * q2[k] + q3[k]) * w * w * w); sm.push([cr(0), cr(1)]); }
   const rs = (y) => { for (let i = 0; i < sm.length - 1; i++) if (y <= sm[i + 1][1]) return lerp(sm[i][0], sm[i + 1][0], (y - sm[i][1]) / (sm[i + 1][1] - sm[i][1])); return sm[sm.length - 1][0]; };
-  void rAt;
   const stone = style === 'elemental', hide = style === 'beasts';
   p.shade(mottle(stone ? 0.25 : 0.18, 9)).ink(P.body, stone || hide ? 0.9 : 0.5, P.me);
   p.lathe([[0, 0.05], [0.12, 0.045], ...sm, [0.2, 0.93], [0.13, 0.945], [0, 0.95]], rack ? 14 : 28);
@@ -1443,9 +1442,9 @@ const DECOR = {
     for (const [a, b] of sp) p.tube([a, lerp3(a, b, 0.5).map((v, j) => v + (j === 0 ? 0.06 * k : 0)), b], [0.055 * k, 0.04 * k, 0.008], 7, 1);
     for (let i = 0; i < ns - 1; i++) {
       if (lvl >= 3 && i > 2) continue;
-      const nu = seg(8, 3), nw = seg(6, 2);
-      fp.shade(null).ink([1, 1, 1], 0.85).grid(nu, nw, (ii, j, out) => { const t = ii / nu, w = j / nw, te = t * (1 - 0.2 * Math.sin(PI * w) * t), a = lerp3(sp[i][0], sp[i][1], te), b = lerp3(sp[i + 1][0], sp[i + 1][1], te); out[0] = lerp(a[0], b[0], w); out[1] = lerp(a[1], b[1], w); out[2] = 0.03 * k * Math.sin(PI * w) * t * (i % 2 ? 1 : -1); },
-        (ii) => { const v = 0.62 + 0.38 * (ii / nu); return [v, v, v]; }, lvl >= 2 ? { skip: (ii, j) => noise3(ii * 0.9 + i * 3, j, 4.4) > 0.62 } : null);
+      const nu = seg(8, 3), nw = seg(lvl >= 2 ? 10 : 6, 2);
+      fp.shade(null).ink([1, 1, 1], 0.85).grid(nu, nw, (ii, j, out) => { const t = ii / nu, w = j / nw, te = t * (1 - (lvl >= 2 ? 0.35 + 0.5 * noise3(i * 1.7 + w * 3, 2.2, 0.4) : 0.2) * Math.sin(PI * w) * t), a = lerp3(sp[i][0], sp[i][1], te), b = lerp3(sp[i + 1][0], sp[i + 1][1], te); out[0] = lerp(a[0], b[0], w); out[1] = lerp(a[1], b[1], w); out[2] = 0.03 * k * Math.sin(PI * w) * t * (i % 2 ? 1 : -1); },
+        (ii) => { const v = 0.62 + 0.38 * (ii / nu); return [v, v, v]; });
     }
     // wing fins amidships: membranes in the side's colours, seen plainly from above
     for (const sg of [1, -1]) {
@@ -1460,7 +1459,7 @@ const DECOR = {
     for (const [th, sg] of [[0, 1], [PI, -1]]) {
       p.push(onBag(E, 0.07, th, -0.03).multiply(X(0, 0, 0, 0, 180, 0)));
       batWing(p, p, [[12, 1.0 * k], [40, 1.05 * k], [72, 0.8 * k]], { r: 0.035 * k, dish: 0, scallop: 0.2, col: (t) => mul(st.envC, 0.6 + 0.4 * t), torn: lvl >= 2 ? 2 : 0 });
-      p.pop(); void sg;
+      p.pop();
     }
     // horn crown at the nose
     for (let i = 0; i < 5; i++) { const th = (i - 2) * 0.55, a = E.pb(0.9, th, -0.04); p.shade(null).ink(mul(BONE, 0.85), 0.5).tube([a, [a[0] + 0.3 * k, a[1] + 0.35 * k * Math.cos(th), a[2] + 0.35 * k * Math.sin(th)], [a[0] - 0.1 * k, a[1] + 0.8 * k * Math.cos(th), a[2] + 0.8 * k * Math.sin(th)]], [0.08 * k, 0.055 * k, 0.008], 8, 1); }
@@ -1505,7 +1504,7 @@ function runeCore(p, fp, E, G, st, dm) {
     p.push(X(E.x0 + fwd * 0.05 * L, cy, 0, a, 0, 0).multiply(X(0, 0.3 * R, 0, 0, 0, -fwd * 52))); crystal(p, (0.75 + 0.3 * hash1(i)) * R, 0.17 * R, 6, 0.36, cA, cB); p.pop();
   }
   const sats = [[0.31, 0.4, 0.3, 0.5, 40], [0.3, -0.34, -0.36, 0.42, -30], [-0.31, 0.34, -0.3, 0.46, 15], [-0.3, -0.38, 0.34, 0.4, -50], [0.4, -0.05, 0.1, 0.36, 10], [-0.4, 0.02, -0.06, 0.34, -8]];
-  sats.forEach(([fx, fy, fz, sz, tilt], i) => { if (lvl >= 2 && i % 2) return; p.push(X(E.x0 + fx * L, cy + fy * R, fz * R, tilt, i * 37, -90 + tilt * 0.4)); crystal(p, sz * R * 1.5, sz * R * 0.3, 6, 0.36, cA, cB); p.pop(); });
+  sats.forEach(([fx, fy, fz, sz, tilt], i) => { if ((lvl >= 2 && i % 2) || (lvl === 1 && i === 0)) return; p.push(X(E.x0 + fx * L, cy + fy * R, fz * R, tilt, i * 37, -90 + tilt * 0.4)); crystal(p, sz * R * 1.5, sz * R * 0.3, 6, 0.36, cA, cB); p.pop(); });
   if (lvl < 3) { p.shade(null).ink(BRASS, 0.35, 0.9); p.T(E.x0, cy, 0, 0, 0, 90 - 28).ring(0.6 * R, 0.035 * k, 48, 7); p.T(E.x0, cy, 0, 62, 0, 90 + 24).ring(0.66 * R, 0.03 * k, 48, 7); }
   // boulders caught in the field, each with a shard of the crystal in it
   if (TIER < 2 && lvl < 3) [[-0.43, -0.3, 0.5, 0.2], [-0.47, 0.25, -0.45, 0.15], [0.44, -0.45, -0.4, 0.17], [-0.38, 0.75, 0.35, 0.12], [0.33, -0.8, 0.5, 0.13]].forEach(([fx, fy, fz, r], i) => {
@@ -1516,7 +1515,7 @@ function runeCore(p, fp, E, G, st, dm) {
   const sect = [[-0.17, -0.1], [-0.15, -0.12], [0.15, -0.12], [0.17, -0.1], [0.17, 0.1], [0.15, 0.12], [0.06, 0.12], [0.05, 0.135], [-0.05, 0.135], [-0.06, 0.12], [-0.15, 0.12], [-0.17, 0.1]].map(([a, b]) => [a * k, b * k]);
   rings.forEach(([u, rf], ri) => {
     const xr = E.x0 + (u - 0.5) * L, Rr = R * rf - 0.12 * k, nu = seg(NV * 8, NV * 2), ns = sect.length;
-    const gone = (a) => (lvl === 1 && ri === 0 && a > 0.2 && a < 0.5) || (lvl === 2 && ((ri === 2 && a > -0.4 && a < 2.4) || (ri === 0 && a > 0.2 && a < 0.5))) || (lvl >= 3 && ((ri !== 1 && Math.abs(a) < 2.3) || (ri === 1 && a > -1.2 && a < 0.9)));
+    const gone = (a) => (lvl === 1 && ri === 0 && a > -0.25 && a < 0.6) || (lvl === 2 && ((ri === 2 && a > -0.4 && a < 2.4) || (ri === 0 && a > 0.2 && a < 0.5))) || (lvl >= 3 && ((ri !== 1 && Math.abs(a) < 2.3) || (ri === 1 && a > -1.2 && a < 0.9)));
     p.shade(mottle(0.22, 7)).ink(stone, 0.95);
     p.grid(nu, ns, (i, j, out) => { const a = -PI + (i / nu) * TAU, q = sect[j % ns], r = Rr + q[1]; out[0] = xr + q[0]; out[1] = cy + r * Math.cos(a); out[2] = r * Math.sin(a); },
       (i, j) => { const f = (i / nu) * NV, vi = Math.floor(f), fr = f - vi, jj = j % ns; if (jj >= 7 && jj <= 8 && vi % 2 === 0 && fr > 0.25 && fr < 0.75) return gcol; const c = vary(stone, vi * 7 + ri * 31, 0.12), d = fr < 0.06 || fr > 0.94 ? 0.45 : 1; return [c[0] * d, c[1] * d, c[2] * d, 0.95, 0, 0]; },
@@ -1533,6 +1532,9 @@ function runeCore(p, fp, E, G, st, dm) {
   p.shade(mottle(0.22, 7)).ink(mul(stone, 0.9), 0.95);
   if (lvl < 3) p.tube(line((x) => [x, yTop(x), 0]), 0.1 * k, 8, 1);
   for (const sg of [1, -1]) p.tube(line((x) => { const r = yTop(x) - cy - 0.1 * k; return [x, cy - r * 0.72, sg * r * 0.69]; }, 16, lvl >= 3 ? -0.05 : -0.36), 0.085 * k, 8, 1);
+  // stone collars where the beams pass through the rings, a gem in each; runes cut along the spine
+  rings.forEach(([u]) => { const x = E.x0 + (u - 0.5) * L, r = yTop(x) - cy - 0.1 * k; for (const [yy, zz] of lvl >= 3 ? [[cy - r * 0.72, r * 0.69], [cy - r * 0.72, -r * 0.69]] : [[yTop(x), 0], [cy - r * 0.72, r * 0.69], [cy - r * 0.72, -r * 0.69]]) { p.shade(mottle(0.22, 7)).ink(vary(mul(stone, 0.8), u * 40 + zz, 0.1), 0.95).T(x, yy, zz).box(0.46 * k, 0.3 * k, 0.3 * k, 0.03); if (TIER < 2) for (const sx of [1, -1]) { p.shade(null).ink(gcol, 0.3, 0, lit * 1.3).T(x + sx * 0.235 * k, yy, zz, 0, 0, 90).cyl(0.06 * k, 0.06 * k, 0.014, 8); } } });
+  if (TIER < 2 && lvl < 3) for (let i = 0; i < 22; i++) { const x = E.x0 + lerp(-0.33, 0.3, i / 21) * L, h = hash2(i, 3); if (h < 0.3 || Math.abs(Math.abs(x - E.x0) - 0.3 * L) < 0.3 * k || Math.abs(x - E.x0) < 0.3 * k) continue; for (const sg of [1, -1]) p.shade(null).ink(gcol, 0.3, 0, lit * 1.3).T(x, yTop(x) + 0.02, sg * 0.097 * k, sg * 75, 0, h * 80 - 40).box(0.035 + 0.05 * h, 0.012, 0.09 * k, 0); }
   p.push(X(E.x0 + 0.385 * L, yTop(E.x0 + 0.36 * L) - 0.12 * k, 0, 0, 0, -84)); p.shade(mottle(0.2, 6)).ink(vary(stone, 5, 0.1), 0.95); crystal(p, 0.17 * L, 0.2 * k, 4, 0.42); p.pop();
   p.push(X(E.x0 + 0.33 * L, yTop(E.x0 + 0.33 * L), 0)); p.shade(null).ink(gcol, 0.3, 0, lit * 1.5).box(0.5 * k, 0.03, 0.22 * k, 0.004); p.pop();
   if (lvl < 3) {
@@ -1557,9 +1559,9 @@ function runeCore(p, fp, E, G, st, dm) {
   // banners in the side colour draped over the spine between the rings, and a standard on the vane
   if (lvl < 3) for (const [x0, x1] of [[-0.24, -0.06], [0.06, 0.24]]) {
     const nu = seg(14, 5), nv = seg(14, 5), w = 0.62 * R;
-    fp.shade(null).ink([1, 1, 1], 0.88).grid(nu, nv, (i, j, out) => { const x = E.x0 + lerp(x0, x1, i / nu) * L, t = (j / nv) * 2 - 1, a = Math.abs(t); out[0] = x; out[1] = yTop(x) + 0.115 * k - (a < 0.25 ? a * a * 0.6 : 0.0375 + (a - 0.25) * 0.95) * w * 1.1; out[2] = t * w * (a < 0.25 ? 1 : 0.25 / a + 0.5 * (a - 0.25)); },
+    fp.shade(null).ink([1, 1, 1], 0.88).grid(nu, nv, (i, j, out) => { const x = E.x0 + lerp(x0, x1, i / nu) * L, t = (j / nv) * 2 - 1, a = Math.abs(t); out[0] = x; const fr = lvl ? 1 - (lvl >= 2 ? 0.6 : 0.3) * noise3(i * 0.9 + x0 * 7, t > 0 ? 1.5 : 4.5, 0.3) * smooth(0.3, 1, a) : 1, ae = a < 0.25 ? a : 0.25 + (a - 0.25) * fr; out[1] = yTop(x) + 0.115 * k - (ae < 0.25 ? ae * ae * 0.6 : 0.0375 + (ae - 0.25) * 0.95) * w * 1.1; out[2] = Math.sign(t) * w * (ae < 0.25 ? ae : 0.25 + 0.125 * (ae - 0.25) * (ae + 0.75)); },
       (i, j) => { const e = Math.min(i, nu - i) / nu, t = Math.abs((j / nv) * 2 - 1), v = (e < 0.08 || t > 0.9 ? 0.5 : 1) * (0.85 + 0.15 * Math.cos(j * 0.9)); return [v, v, v]; },
-      { skip: lvl >= 2 ? (i, j) => noise3(i * 0.8, j * 0.8, x0 * 9) > 0.64 : null });
+      null);
   }
   const xs = -G.Lg / 2;
   if (lvl < 3) { staff(p, [xs + 0.1, 0, 0], [xs - 0.28, 1.0, 0], 0.024, SLATE, glowC); fp.push(X(xs - 0.27, 0.98, 0)); flag(fp, 0.95, 0.5, { torn: lvl >= 2 ? 3 : 0, tail: 0.3, band: true }); fp.pop(); }
@@ -1578,7 +1580,6 @@ function buildAirship(def, lvl, tier) {
     const p = new Pen(), fp = new Pen(), o = G.o;
     p.warp = fp.warp = dm.warp; p.post = dm.post;
     fp.post = dm.post ? (x, y, z, col, ro, me, gl) => { const k = dm.char(x, y, z); return k < 0.02 ? null : [col[0] * (1 - 0.88 * k), col[1] * (1 - 0.88 * k), col[2] * (1 - 0.88 * k), ro, me, gl]; } : null;
-    let extra = null;
     // the bag (or the rune core) and its frame
     if (E.skinned) {
       drawEnvelope(p, E, st, dm);
@@ -1608,7 +1609,6 @@ function buildAirship(def, lvl, tier) {
     if (lvl < 3) bothSides(p, () => { p.push(X(0, yl, hl + 0.01)); ladderRoll(p, st); p.pop(); if (TIER < 2) for (const dx of [-0.1, 0.1]) rope(p, [dx, yl + 0.13, hl], [dx, 0.01, hl - 0.16], 0.01, HEMP); });
     const r = DECOR[st.style] ? DECOR[st.style](p, fp, E, G, st, dm) : null;
     if (r && r.hubs) hubs.push(...r.hubs);
-    void extra;
     // where things are, for the game (hub positions follow the bend of a damaged ship)
     const wp = (q) => { const t = q.slice(); if (dm.warp) dm.warp(t); return t.map((v) => +v.toFixed(3)); };
     const geo = p.toGeometry(), side = fp.n ? fp.toGeometry() : null;
@@ -2158,7 +2158,7 @@ function buildHangar(p, fp, W, Dp) {
   p.push(X(a - 0.55, 0.04, zb + 0.45)); barrel(p, 0.2, 0.52, 3); p.pop(); p.push(X(a - 0.52, 0.04, zb + 0.95)); barrel(p, 0.18, 0.48, 5); p.pop();
   p.push(X(a - 0.5, 0.05, zb + 1.5)); coil(p, 0.16, 4, 0.022); p.pop();
   p.push(X(1.25, 1.3, zb + 0.24, 0, 90, 0, 0.8)); drawProp(p, styleOf({ style: 'kingdom' }), false); p.pop();
-  for (const [x, z, w, s2] of [[-a + 0.55, zf - 0.5, 0.42, 3], [-a + 0.5, zf - 1.0, 0.36, 5], [a - 0.6, zf - 0.45, 0.4, 7]]) { p.shade(grainX(0.24)).ink(vary(PINE, s2, 0.12), 0.88).T(x, 0.05 + w * 0.4, z, 0, s2 * 9, 0).box(w, w * 0.8, w, 0.012); p.shade(null).ink(TIMBER_DK, 0.9); for (const sy of [-1, 1]) for (const sz of [-1, 1]) p.T(x, 0.05 + w * 0.4 + sy * w * 0.33, z, 0, s2 * 9, 0).box(w + 0.02, 0.05, w + 0.02, 0.006); void 0; }
+  for (const [x, z, w, s2] of [[-a + 0.55, zf - 0.5, 0.42, 3], [-a + 0.5, zf - 1.0, 0.36, 5], [a - 0.6, zf - 0.45, 0.4, 7]]) { p.shade(grainX(0.24)).ink(vary(PINE, s2, 0.12), 0.88).T(x, 0.05 + w * 0.4, z, 0, s2 * 9, 0).box(w, w * 0.8, w, 0.012); p.shade(null).ink(TIMBER_DK, 0.9); for (const sy of [-1, 1]) for (const sz of [-1, 1]) p.T(x, 0.05 + w * 0.4 + sy * w * 0.33, z, 0, s2 * 9, 0).box(w + 0.02, 0.05, w + 0.02, 0.006); }
   // the pennant over the doors
   pennantPole(p, fp, [0, Ht + 0.05, zf + 0.1], [0, Ht + 0.95, zf + 0.16], 0.85, 0.3);
 }

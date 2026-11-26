@@ -894,4 +894,4 @@ const syncSize = () => { if (!isNaval()) $('mapSize').value = String(scn().size)
 new MutationObserver(syncSize).observe($('sides'), { childList: true });
 setMode(state.mode);
 requestAnimationFrame(frame);
-window.__tb = { state, sim, stage };
+window.__tb = { state, sim, stage, get view() { return view; } };
