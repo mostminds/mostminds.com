@@ -48,6 +48,19 @@
         <button type="button" id="loadPreset">Load</button>
       </div>
       <p class="hint" id="modeHint"></p>
+      <h3>Generate a scenario</h3>
+      <div class="row wrap">
+        <label class="inline">Place <select id="genSite"></select></label>
+        <label class="inline">Map <select id="genSize"><option value="0">Auto</option><option>64</option><option>80</option><option>96</option><option>128</option></select></label>
+      </div>
+      <div class="row wrap">
+        <label class="inline">Held by <select id="genDef"></select></label>
+        <label class="inline">Attacked by <select id="genAtt"></select></label>
+      </div>
+      <div class="row">
+        <button type="button" id="generate" class="brass">Generate</button>
+        <span class="hint" id="genName" role="status">Builds a new map in the defending faction's style each time.</span>
+      </div>
     </section>
 
     <section class="block" id="armies">
@@ -62,7 +75,7 @@
         <label class="inline">Land <select id="mapBiome"></select></label>
       </div>
       <div class="row wrap">
-        <label class="inline">Size <select id="mapSize"><option>32</option><option>40</option><option>48</option><option>64</option><option>80</option><option>96</option></select></label>
+        <label class="inline">Size <select id="mapSize"><option>32</option><option>40</option><option>48</option><option>64</option><option>80</option><option>96</option><option>128</option></select></label>
         <button type="button" id="reshape" title="Generate a new coastline with the same shape">New coastline</button>
       </div>
       <div class="row wrap">

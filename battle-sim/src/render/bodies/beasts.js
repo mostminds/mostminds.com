@@ -26,7 +26,8 @@
 // Fliers (griffon, bat) are built with their wings spread; the animators fold them on the ground and blend
 // between the two as `flying` changes.
 import * as THREE from 'three';
-import { S, H, rgb, noise3, distanceField } from '../sculpt.js';
+import { S, H, rgb, noise3, distanceField, buildPartGeometry } from '../sculpt.js';
+import { DETAIL, getDetail } from '../rigkit.js';
 import { proportions } from './anatomy.js';
 import { humanoid, poseCarried } from './humanoid.js';
 
@@ -120,8 +121,43 @@ function finish(nodes, s = 1) {
     if (n.rot) out.rot = n.rot;
     if (n.detail) out.detail = n.detail;
     if (n.minRes) out.minRes = n.minRes;
+    if (n.bake && prims.length) bakeLevels(out, n.bake, n.detail || 1, n.o, s);
     return out;
   });
+}
+/** a prim that only adds fine relief (a fur tongue, a toe, a knuckle): left out of the coarse levels of a baked node */
+const fine = (q) => { q.fine = true; return q; };
+/** a prim that stands in for fine relief on the coarse levels only (a few big tufts for a mane of many small ones) */
+const coarse = (q) => { q.coarse = true; return q; };
+/**
+ * Mesh a node's sculpt here, once per detail level of the current preset, instead of leaving it to rigkit. Coarse
+ * levels (fewer than `clean` cells per unit) get a CLEAN sculpt: no fur tongues or other `fine` prims and no surface
+ * relief, which at that resolution only alias into lumps and facets; a clean level that is not the last one is also
+ * sampled up to 1.4x finer (never past `clean`). Each level becomes one hard piece flagged for that level alone, so the
+ * node keeps no prims. Per-vertex colour (with its baked creases) is kept; roughness is one value, `rough`.
+ */
+function bakeLevels(out, b, det, o = [0, 0, 0], s = 1) {
+  const L = DETAIL[getDetail()], lim = b.clean ?? 36;
+  const clean = out.prims.filter((q) => !q.fine).map((q) => (q.bAmp ? q.clone().bump(0) : q)), full = out.prims.filter((q) => !q.coarse);
+  const baked = [];
+  for (let li = 0; li < L.length; li++) {
+    const last = li === L.length - 1;
+    let res = Math.max(L[li] * det, out.minRes || 0);
+    const cl = li > 0 && res < lim;
+    if (cl && !last) res = Math.min(lim, res * (b.boost ?? 1.4));
+    if (last && b.farRes) res = Math.max(res, b.farRes);                                       // a node that must hold its shape (and colours) from afar
+    // `stand(level, last)` may add hard stand-ins of its own to a clean level (authored like the node's other pieces);
+    // with `farOnly` they serve the last level alone and replace its sculpt
+    if (cl && b.stand && (!b.farOnly || last)) for (const h of flat(b.stand(li, last))) { h.at(-o[0], -o[1], -o[2]); if (s !== 1) h.scale(s); baked.push(last ? h.far() : h.from(li).lod(li)); }
+    if (last && b.farOnly) continue;
+    const g = buildPartGeometry({ prims: cl ? clean : full }, { res });
+    if (!g) continue;
+    const col = g.attributes.color.array;
+    const h = H.geo(g).shade((x, y, z, nx, ny, nz, i) => [col[i * 3], col[i * 3 + 1], col[i * 3 + 2]]).pbr(b.rough ?? 0.9, 0);
+    baked.push(last ? h.far() : h.from(li).lod(li));
+  }
+  out.hard = [...out.hard, ...baked];
+  out.prims = [];
 }
 const mirrorAll = (list) => flat(list).map((p) => p.mirrorX());
 
@@ -209,7 +245,7 @@ function clump(part, df, from, ray, flow, o) {
   const L = o.L, W = o.W, T = o.T ?? W * 0.5;
   if (!o.lockOnly) {
     // a tapering tongue of fur: its root sunk in the coat, its point lying along the body
-    part.prims.push(o.style(bone(add3(root, mul3(n, -W * 0.45)), add3(root, mul3(dir, L * 0.92)), W * 0.8, 0.0035)).blend(o.blend ?? 0.014));
+    part.prims.push(fine(o.style(bone(add3(root, mul3(n, -W * 0.45)), add3(root, mul3(dir, L * 0.92)), W * 0.8, 0.0035)).blend(o.blend ?? 0.014)));
   }
   if (o.lock || o.lockOnly) {
     const base = add3(root, add3(mul3(dir, L * 0.18), mul3(n, -T * 0.3)));
@@ -266,19 +302,19 @@ function buildWolf(def, base, opt = {}) {
   const TL = [[0, 0.548, -0.425], [0, 0.515, -0.535], [0, 0.45, -0.635], [0, 0.385, -0.72], [0, 0.345, -0.8]];
 
   // ---------------- torso ----------------
-  const torso = node('torso', 'root', [0, 0.5, 0], { rig: K.body, detail: 0.95 * D }); nodes.push(torso);
+  const torso = node('torso', 'root', [0, 0.5, 0], { rig: K.body, detail: 0.95 * D, bake: { farRes: 15 } }); nodes.push(torso);
   {
     const p = torso.prims;
-    p.push(fur(lay(0.126, 0.154, 0.215).rot(-5, 0, 0).at(0, 0.482, 0.15)));                            // rib cage: deep and narrow
-    p.push(fur(lay(0.08, 0.075, 0.135).at(0, 0.58, 0.165).blend(0.05)));                               // shoulder hump
-    p.push(fur(lay(0.096, 0.098, 0.2).at(0, 0.52, -0.12).blend(0.06)));                                // loin, tucked up
+    p.push(fur(lay(0.14, 0.162, 0.215).rot(-5, 0, 0).at(0, 0.48, 0.15)));                              // rib cage: deep, and broad enough for a killer
+    p.push(fur(lay(0.092, 0.08, 0.14).at(0, 0.58, 0.165).blend(0.05)));                                // shoulder hump
+    p.push(fur(lay(0.104, 0.1, 0.2).at(0, 0.52, -0.12).blend(0.06)));                                  // loin, tucked up
     p.push(fur(lay(0.11, 0.116, 0.14).rot(8, 0, 0).at(0, 0.512, -0.31).blend(0.05)));                  // pelvis
-    p.push(fur(lay(0.09, 0.1, 0.09).at(0, 0.462, 0.315).blend(0.05)));                                 // breast
+    p.push(fur(lay(0.102, 0.106, 0.095).at(0, 0.462, 0.315).blend(0.05)));                             // breast
     p.push(fur(lay(0.058, 0.07, 0.12).at(0, 0.39, 0.235).blend(0.04)));                                // keel of the chest
     p.push(fur(bone([0, 0.525, 0.27], [0, 0.6, 0.395], 0.124, 0.108).blend(0.05)));                    // root of the neck
     p.push(fur(bone([0, 0.54, -0.37], [0, 0.545, -0.45], 0.062, 0.046).blend(0.04)));                  // root of the tail
     p.push(...S.mirrorX([
-      fur(S.ellipsoid(0.048, 0.1, 0.078).rot(-14, 0, -8).at(0.1, 0.522, 0.225).blend(0.03)),           // shoulder blade
+      fur(S.ellipsoid(0.054, 0.104, 0.082).rot(-14, 0, -8).at(0.108, 0.522, 0.225).blend(0.03)),       // shoulder blade
       fur(S.ellipsoid(0.05, 0.1, 0.1).rot(20, 0, -6).at(0.09, 0.505, -0.3).blend(0.035)),              // haunch
       fur(lay(0.04, 0.045, 0.2).at(0.05, 0.572, -0.1).blend(0.04)),                                    // long back muscles
     ]));
@@ -304,6 +340,17 @@ function buildWolf(def, base, opt = {}) {
           { L, W: L * 0.3, T: L * 0.17, lift: 0.3 + rnd() * 0.18, colA: C.mane, colB: vary(mix(C.mane, C.fur, 0.4)), style: furC(vary(C.mane), 0.004, 60), curl: 0.3, lock: r === 0 || i % 2 === 0 });
       }
     }
+    // from afar the coarse levels show a few big tufts instead: the mane still breaks the line of the back, the bib still hangs
+    for (let i = 0; i < 8; i++) {
+      const z = 0.31 - i * 0.075;
+      if (opt.saddle && z < opt.saddle[1] + 0.03 && z > opt.saddle[0] - 0.03) continue;
+      const r = surfHit(df, [0, 0.85, z], [0, -1, 0]), L = lerp(0.14, 0.075, i / 7);
+      p.push(coarse(bone(add3(r, [0, -0.03, 0.015]), add3(r, [0, L * 0.3, -L * 0.95]), L * 0.4, 0.01).color(C.mane).pbr(0.93).blend(0.04)));
+    }
+    for (let j = 0; j < 3; j++) {
+      const x = (j - 1) * 0.045, r = surfHit(df, [x, 0.44, 0.7], [0, 0, -1]);
+      p.push(coarse(bone(add3(r, [0, 0.02, -0.02]), add3(r, [x * 0.5, -0.1, -0.02]), 0.032, 0.008).color(C.pale).pbr(0.93).blend(0.03)));
+    }
     // the bib: clumps cascading down the breast
     for (let r = 0; r < 4; r++) for (let j = 0; j < 4 + (r % 2); j++) {
       const a = ((j + 0.5) / (4 + (r % 2)) - 0.5) * 1.7, y = 0.5 - r * 0.045;
@@ -319,7 +366,7 @@ function buildWolf(def, base, opt = {}) {
   }
 
   // ---------------- neck: a heavy ruff ----------------
-  const neck = node('neck', 'torso', NB, { rig: K.neck, detail: 0.92 * D }); nodes.push(neck);
+  const neck = node('neck', 'torso', NB, { rig: K.neck, detail: 0.92 * D, bake: { farRes: 15 } }); nodes.push(neck);
   {
     const p = neck.prims, ax = norm3(sub3(HJ, NB));
     p.push(fur(bone(add3(NB, mul3(ax, -0.03)), HJ, 0.116, 0.088)));
@@ -328,6 +375,13 @@ function buildWolf(def, base, opt = {}) {
     p.push(bone(add3(NB, [0, 0.085, -0.02]), add3(HJ, [0, 0.075, -0.03]), 0.065, 0.055).color(C.mane).pbr(0.93).tint(0.22, 26).paint(0.035));
     p.push(bone([0, 0.44, 0.37], [0, 0.585, 0.5], 0.075, 0.06).color(C.pale).pbr(0.93).tint(0.16, 26).paint(0.04));
     const df = distanceField(p);
+    // the coarse levels: one collar of big tufts in place of the four rows of small ones
+    for (let j = 0; j < 9; j++) {
+      const a = (j / 9) * Math.PI * 2, sx = Math.sin(a), cy = Math.cos(a), out = norm3([sx, cy * ax[2], -cy * ax[1]]);
+      const c = lerp3(NB, HJ, 0.62), r = surfHit(df, add3(c, mul3(out, 0.35)), mul3(out, -1)), L = 0.12 + 0.03 * Math.abs(cy);
+      const col = cy > 0.4 ? C.mane : cy < -0.25 ? C.pale : C.fur;
+      p.push(coarse(bone(add3(r, mul3(out, -0.02)), add3(r, add3(mul3(ax, -L * 0.85), mul3(out, L * 0.35 + 0.01))), 0.04, 0.009).color(col).pbr(0.93).blend(0.04)));
+    }
     // collars of clumps, each row overlapping the one behind it
     for (let r = 0; r < 4; r++) {
       const f = 0.92 - r * 0.25, c = lerp3(NB, HJ, f), n = 8 + (r % 2);
@@ -345,7 +399,7 @@ function buildWolf(def, base, opt = {}) {
 
   // ---------------- head and jaw ----------------
   const hd = wolfHead(C, rnd, war);
-  const head = node('head', 'neck', [0, 0, 0], { rig: K.head, pos: sub3(HJ, NB), rot: [14, 0, 0], detail: 1.42 * D });
+  const head = node('head', 'neck', [0, 0, 0], { rig: K.head, pos: sub3(HJ, NB), rot: [14, 0, 0], detail: 1.42 * D, bake: { clean: 44, farRes: 21 } });
   head.prims = hd.p; head.hard = hd.hard; nodes.push(head);
   const jaw = node('jaw', 'head', hd.hinge, { rig: K.jaw, pos: hd.hinge, rot: [7, 0, 0], detail: 1.35 * D });
   jaw.prims = hd.jp; jaw.hard = hd.jhard; nodes.push(jaw);
@@ -357,27 +411,28 @@ function buildWolf(def, base, opt = {}) {
     for (let i = 0; i < 4; i++) {
       const a = (i - 1.5) * 0.3, dx = Math.sin(a), dz = Math.cos(a), mid = i === 1 || i === 2;
       const t = [c[0] + dx * 0.02 + (i - 1.5) * 0.016, 0.022, c[2] + dz * (mid ? 0.052 : 0.038)];
-      part.prims.push(col(S.ellipsoid(0.0165, 0.02, 0.027).rot(0, a / DEG, 0).at(t[0], t[1], t[2]).blend(0.007)));
+      part.prims.push(fine(col(S.ellipsoid(0.0165, 0.02, 0.027).rot(0, a / DEG, 0).at(t[0], t[1], t[2]).blend(0.007))));
       part.hard.push(spike([t[0] + dx * 0.016, 0.025, t[2] + dz * 0.019], [dx * 0.8, -0.5, dz], 0.021, 0.0075, C.claw, [0, -1, 0], 0.4).lod(1));
     }
   };
   const fl = { up: { prims: [], hard: [] }, lo: { prims: [], hard: [] }, paw: { prims: [], hard: [] } };
   {
     const u = fl.up.prims, l = fl.lo.prims, w = fl.paw.prims;
-    u.push(fur(bone([0.11, 0.5, 0.25], EL, 0.064, 0.05)));
-    u.push(fur(S.ellipsoid(0.052, 0.088, 0.072).rot(-18, 0, -4).at(0.114, 0.45, 0.228).blend(0.03)));   // shoulder muscle
-    u.push(fur(S.ellipsoid(0.042, 0.06, 0.052).rot(25, 0, 0).at(0.12, 0.405, 0.185).blend(0.02)));      // triceps
-    u.push(fur(S.sphere(0.048).at(EL[0], EL[1], EL[2]).blend(0.02)));
-    l.push(fur(S.sphere(0.046).at(EL[0], EL[1], EL[2])));
-    l.push(legCol(bone(EL, CA, 0.044, 0.031).blend(0.03)));
-    l.push(legCol(S.ellipsoid(0.033, 0.062, 0.04).at(EL[0], lerp(EL[1], CA[1], 0.28), EL[2] - 0.004).blend(0.02)));
-    l.push(legCol(S.sphere(0.034).at(CA[0], CA[1] + 0.004, CA[2]).blend(0.012)));
+    u.push(fur(bone([0.11, 0.5, 0.25], EL, 0.072, 0.056)));
+    u.push(fur(S.ellipsoid(0.06, 0.094, 0.078).rot(-18, 0, -4).at(0.118, 0.45, 0.228).blend(0.03)));   // shoulder muscle
+    u.push(fur(S.ellipsoid(0.048, 0.066, 0.058).rot(25, 0, 0).at(0.122, 0.405, 0.18).blend(0.02)));      // triceps
+    u.push(fur(S.sphere(0.053).at(EL[0], EL[1], EL[2]).blend(0.02)));
+    l.push(fur(S.sphere(0.051).at(EL[0], EL[1], EL[2])));
+    l.push(legCol(bone(EL, CA, 0.05, 0.036).blend(0.03)));
+    l.push(legCol(S.ellipsoid(0.039, 0.066, 0.045).at(EL[0], lerp(EL[1], CA[1], 0.28), EL[2] - 0.004).blend(0.02)));   // the forearm's muscle
+    l.push(legCol(S.sphere(0.038).at(CA[0], CA[1] + 0.004, CA[2]).blend(0.012)));
     l.push(bone(add3(EL, [0, -0.02, 0.034]), add3(CA, [0, 0.01, 0.025]), 0.016, 0.012).color(C.back).pbr(0.93).paint(0.012));  // the dark stripe down the foreleg
-    w.push(legCol(S.sphere(0.033).at(CA[0], CA[1], CA[2])));
-    w.push(sockCol(bone(CA, [0.12, 0.055, 0.232], 0.031, 0.031).blend(0.02)));
+    w.push(legCol(S.sphere(0.037).at(CA[0], CA[1], CA[2])));
+    w.push(sockCol(bone(CA, [0.12, 0.055, 0.232], 0.035, 0.034).blend(0.02)));
     w.push(sockCol(S.ellipsoid(0.046, 0.031, 0.05).at(0.12, 0.033, 0.25).blend(0.018)));
     w.push(S.ellipsoid(0.02, 0.014, 0.018).at(0.12, 0.08, 0.196).color(C.pad).pbr(0.7).blend(0.006));   // carpal pad
     toes(fl.paw, [0.12, 0, 0.266], sockCol);
+    w.push(coarse(S.ellipsoid(0.05, 0.04, 0.066).at(0.12, 0.036, 0.262).color(C.sock).pbr(0.93).blend(0.02)));   // a whole paw for the coarse levels
     const dfu = distanceField(u), dfl = distanceField(l);
     for (let i = 0; i < 5; i++) {                                                                       // layered coat over the shoulder
       const L = 0.085 + rnd() * 0.02;
@@ -395,18 +450,19 @@ function buildWolf(def, base, opt = {}) {
   const bl = { up: { prims: [], hard: [] }, lo: { prims: [], hard: [] }, paw: { prims: [], hard: [] } };
   {
     const u = bl.up.prims, l = bl.lo.prims, w = bl.paw.prims;
-    u.push(fur(bone(HP, ST, 0.076, 0.053)));
-    u.push(fur(S.ellipsoid(0.052, 0.115, 0.1).rot(26, 0, -5).at(0.107, 0.43, -0.28).blend(0.03)));      // the broad thigh
-    u.push(fur(S.sphere(0.05).at(ST[0], ST[1], ST[2]).blend(0.02)));
-    l.push(fur(S.sphere(0.048).at(ST[0], ST[1], ST[2])));
-    l.push(legCol(bone(ST, HK, 0.047, 0.028).blend(0.03)));
+    u.push(fur(bone(HP, ST, 0.082, 0.058)));
+    u.push(fur(S.ellipsoid(0.059, 0.12, 0.106).rot(26, 0, -5).at(0.11, 0.43, -0.28).blend(0.03)));      // the broad thigh
+    u.push(fur(S.sphere(0.055).at(ST[0], ST[1], ST[2]).blend(0.02)));
+    l.push(fur(S.sphere(0.053).at(ST[0], ST[1], ST[2])));
+    l.push(legCol(bone(ST, HK, 0.053, 0.032).blend(0.03)));
     l.push(legCol(S.ellipsoid(0.03, 0.056, 0.038).rot(-40, 0, 0).at(ST[0], lerp(ST[1], HK[1], 0.3), lerp(ST[2], HK[2], 0.3) - 0.014).blend(0.02)));   // gaskin
-    l.push(legCol(S.sphere(0.03).at(HK[0], HK[1], HK[2]).blend(0.012)));
+    l.push(legCol(S.sphere(0.034).at(HK[0], HK[1], HK[2]).blend(0.012)));
     l.push(legCol(S.ellipsoid(0.019, 0.028, 0.022).at(HK[0], HK[1] + 0.012, HK[2] - 0.022).blend(0.01)));  // point of the hock
-    w.push(legCol(S.sphere(0.03).at(HK[0], HK[1], HK[2])));
-    w.push(sockCol(bone(HK, [0.12, 0.055, -0.362], 0.028, 0.029).blend(0.02)));
+    w.push(legCol(S.sphere(0.034).at(HK[0], HK[1], HK[2])));
+    w.push(sockCol(bone(HK, [0.12, 0.055, -0.362], 0.032, 0.033).blend(0.02)));
     w.push(sockCol(S.ellipsoid(0.044, 0.031, 0.05).at(0.12, 0.033, -0.345).blend(0.018)));
     toes(bl.paw, [0.12, 0, -0.329], sockCol);
+    w.push(coarse(S.ellipsoid(0.048, 0.04, 0.064).at(0.12, 0.036, -0.333).color(C.sock).pbr(0.93).blend(0.02)));
     const dfu = distanceField(u);
     for (let i = 0; i < 4; i++) {                                                                       // layered coat over the haunch
       const L = 0.085 + rnd() * 0.02;
@@ -417,13 +473,18 @@ function buildWolf(def, base, opt = {}) {
       clump(bl.up, dfu, [0.1 + (i % 2 ? 0.02 : -0.012), 0.5 - i * 0.026, -0.7], [0, 0, 1], [0, -0.85, -0.5], { L, W: L * 0.3, T: L * 0.16, lift: 0.28, colA: C.fur, colB: vary(C.flank), style: furC(vary(C.flank), 0.004, 60), lock: i % 2 === 0 });
     }
   }
+  // the far level: each leg segment is a plain tapered tube in its own colour (the merged far mesh is tiny on screen)
+  const tube = (pts, r, col) => H.tube(pts, r, 3, 7).color(col).pbr(0.93);
+  fl.far = [tube([[0.11, 0.52, 0.25], EL], [0.066, 0.05], C.fur), tube([EL, CA], [0.046, 0.034], C.leg), tube([CA, [0.12, 0.045, 0.24], [0.12, 0.03, 0.28]], [0.034, 0.04, 0.03], C.sock)];
+  bl.far = [tube([[0.1, 0.53, -0.3], ST], [0.08, 0.055], C.fur), tube([ST, HK], [0.048, 0.031], C.leg), tube([HK, [0.12, 0.045, -0.35], [0.12, 0.03, -0.31]], [0.031, 0.04, 0.03], C.sock)];
   const legDefs = [['FL', fl, 1, SH, EL, CA], ['FR', fl, -1, SH, EL, CA], ['BL', bl, 1, HP, ST, HK], ['BR', bl, -1, HP, ST, HK]];
   for (const [nm, part, side, J0, J1, J2] of legDefs) {
     const cp = (list) => (side > 0 ? flat(list).map((q) => q.clone()) : mirrorAll(list));
     const m = (v) => (side > 0 ? v : mirX(v));
-    const up = node(`leg${nm}`, 'torso', m(J0), { rig: 'legs', detail: 0.86 * D, minRes: 16 });
-    const lo = node(`shin${nm}`, `leg${nm}`, m(J1), { rig: 'shins', detail: 0.96 * D, minRes: 19 });
-    const pw = node(`paw${nm}`, `shin${nm}`, m(J2), { rig: 'paws', detail: 1.08 * D, minRes: 17 });
+    const far = (i) => ({ farOnly: true, stand: () => cp([part.far[i]]) });
+    const up = node(`leg${nm}`, 'torso', m(J0), { rig: 'legs', detail: 0.86 * D, minRes: 16, bake: far(0) });
+    const lo = node(`shin${nm}`, `leg${nm}`, m(J1), { rig: 'shins', detail: 0.96 * D, minRes: 19, bake: far(1) });
+    const pw = node(`paw${nm}`, `shin${nm}`, m(J2), { rig: 'paws', detail: 1.08 * D, minRes: 17, bake: far(2) });
     up.prims = cp(part.up.prims); up.hard = cp(part.up.hard);
     lo.prims = cp(part.lo.prims); lo.hard = cp(part.lo.hard);
     pw.prims = cp(part.paw.prims); pw.hard = cp(part.paw.hard);
@@ -433,9 +494,10 @@ function buildWolf(def, base, opt = {}) {
   // ---------------- tail: a heavy brush ----------------
   const tr = [0.04, 0.05, 0.052, 0.04, 0.008];
   for (let i = 0; i < 4; i++) {
-    const n = node(`tail${i}`, i === 0 ? 'torso' : `tail${i - 1}`, TL[i], { rig: 'tail', detail: 0.82 * D, minRes: 16 });
-    nodes.push(n);
     const a = TL[i], b = TL[i + 1], t = norm3(sub3(b, a)), col = i === 3 ? C.mane : i === 2 ? C.back : C.fur;
+    const br = (r) => r * 1.45 + (r > 0.02 ? 0.012 : 0.004);                                   // the brush, from afar
+    const n = node(`tail${i}`, i === 0 ? 'torso' : `tail${i - 1}`, TL[i], { rig: 'tail', detail: 0.82 * D, minRes: 16, bake: { farOnly: true, stand: () => [H.tube([a, b], [br(tr[i]), br(tr[i + 1])], 2, 8).color(col).pbr(0.93)] } });
+    nodes.push(n);
     n.prims.push(furC(col, 0.009, 34)(bone(a, b, tr[i], tr[i + 1])));
     n.prims.push(furC(col, 0.009, 34)(S.sphere(tr[i] * 0.98).at(a[0], a[1], a[2]).blend(0.02)));
     n.prims.push(bone(add3(a, [0, -tr[i] * 0.6, 0]), add3(b, [0, -tr[i + 1] * 0.6, 0]), tr[i] * 0.7, tr[i + 1] * 0.7).color(i === 3 ? C.back : C.flank).pbr(0.93).tint(0.16, 26).paint(0.02));
@@ -447,6 +509,7 @@ function buildWolf(def, base, opt = {}) {
       const L = (0.08 + rnd() * 0.03) * (i === 3 ? 0.8 : 1), top = Math.cos(ang) > 0;
       clump(n, df, add3(c, mul3(out, 0.3)), mul3(out, -1), t, { L: L * 1.2, W: L * 0.3, T: L * 0.17, lift: 0.2 + rnd() * 0.12, colA: top ? C.back : C.fur, colB: vary(top ? col : C.flank), style: furC(vary(top ? col : C.flank), 0.004, 60), lock: j % 2 === 0 || i === 3 });
     }
+    n.prims.push(coarse(bone(a, b, br(tr[i]), br(tr[i + 1])).color(col).pbr(0.93).blend(0.02)));
   }
 
   return { nodes, C, rnd, pts: { NB, HJ, SH, HP } };
@@ -517,6 +580,14 @@ function wolfHead(C, rnd, war) {
     clump(cheek, df, [sx * 0.3, y, 0.045 - Math.abs(i - 2.5) * 0.008], [-sx, 0, 0], [sx * 0.55, -0.2 - i * 0.12, -1],
       { L, W: L * 0.3, T: L * 0.17, lift: 0.3, colA: i < 2 ? C.fur : C.belly, colB: vary(i < 2 ? C.flank : C.pale), style: furC(vary(i < 2 ? C.fur : C.pale)), curl: 0.25, lock: i % 2 === 1 });
   }
+  // the coarse levels: the cheek ruff as three big tufts a side, and eyes that still catch the light
+  for (const sx of [1, -1]) for (let i = 0; i < 3; i++) {
+    const r = surfHit(df, [sx * 0.3, 0.03 - i * 0.03, 0.05], [-sx, 0, 0]), L = 0.075 + (i === 1 ? 0.015 : 0);
+    p.push(coarse(bone(add3(r, [-sx * 0.015, 0, 0.01]), add3(r, [sx * L * 0.45, -0.012 - i * 0.022, -L * 0.85]), 0.024, 0.007).color(i ? C.pale : C.fur).pbr(0.93).blend(0.025)));
+  }
+  hard.push(...H.mirrorX([H.sphere(er * 0.98, 10).at(ex + 0.002, ey, ez + 0.002).color(C.eye.iris).glow(C.eye.glow).pbr(0.3).from(2)]));
+  const earC = coarse(S.capsule([0, -0.01, -0.004], [0, 0.088, -0.006], 0.04, 0.011).color(C.fur).pbr(0.93).blend(0.012).rot(-10, 22, -24).at(0.05, 0.082, 0.014));
+  p.push(earC, coarse(earC.mirrorX()));                                                                     // ears solid enough for them too
   if (war) {   // an old wound across the left eye and muzzle
     p.push(S.ellipsoid(0.005, 0.05, 0.02).rot(24, 0, 18).at(0.038, 0.04, 0.125).color(C.scar).pbr(0.6).paint(0.003, -0.003));
     p.push(S.ellipsoid(0.004, 0.012, 0.045).rot(0, 24, 0).at(-0.029, 0.02, 0.2).color(C.scar).pbr(0.6).paint(0.003, -0.0025));
@@ -552,9 +623,14 @@ function wolfHead(C, rnd, war) {
   return { p, hard, jp, jhard, hinge };
 }
 
+/** where each foot meets the ground, from its paw node's pivot ([front y, z, hind y, z], authoring units): the animator
+ *  keeps the lowest foot planted with them, so a gait neither floats nor sinks */
+const WOLF_FEET = [-0.14, 0.05, -0.172, 0.056];
+const feet = (f, s) => ({ footFy: f[0] * s, footFz: f[1] * s, footBy: f[2] * s, footBz: f[3] * s, footS: s });
+
 function quadruped(def, o = {}) {
   const w = buildWolf(def, o.fur ?? o.mount ?? 0x5b5b5b, { detail: 0.83 });
-  return { kind: 'beast.quad', attack: 'bite', gait: 'wolf', nodes: finish(w.nodes, 1.12) };
+  return { kind: 'beast.quad', attack: 'bite', gait: 'wolf', ...feet(WOLF_FEET, 1.12), nodes: finish(w.nodes, 1.12) };
 }
 
 // =====================================================================================
@@ -679,6 +755,7 @@ function wolfRider(def, o) {
   for (const sx of [1, -1]) neck.hard.push(spike(add3(cc, [sx * 0.085, -0.09, 0.03]), [sx * 0.4, -1, 0.2], 0.036, 0.007, BONE, [0, 0, 1], 0.3).lod(1));
   const reinA = add3(cc, [0, 0.105, -0.06]);
   neck.hard.push(H.tube([reinA, [0, 0.665, 0.25]], 0.006, 6, 6).color(ROPE).pbr(0.9).near());
+  for (const nd of [neck, tack]) nd.hard.push(H.sphere(0.0125, 10).scale(1, 0.8, 1.2).at(0, 0.665, 0.25).color(tone(ROPE, 0, 0, -0.08)).pbr(0.9).near());   // a knot hides the joint in the rope
   h.push(H.tube([[0, 0.665, 0.25], [0, 0.648, 0.19], [0, 0.668, 0.14]], 0.006, 8, 6).color(ROPE).pbr(0.9).near());
   h.push(H.sphere(0.012, 10).at(0, 0.672, 0.137).color(tone(ROPE, 0, 0, -0.08)).pbr(0.9).lod(1));
   // a second trophy: a string of teeth behind the saddle
@@ -687,7 +764,7 @@ function wolfRider(def, o) {
 
   const nodes = finish(w.nodes, s);
   seatRider(nodes, R, 'torso', [0, 0.5, 0], seatA, s);
-  return { kind: 'beast.rider', attack: R.desc.attack, hold: R.desc.hold || 'none', gait: 'wolf', mount: 'wolf', nodes };
+  return { kind: 'beast.rider', attack: R.desc.attack, hold: R.desc.hold || 'none', gait: 'wolf', mount: 'wolf', ...feet(WOLF_FEET, s), nodes };
 }
 
 // =====================================================================================
@@ -739,16 +816,16 @@ function gridLines(n, edges = [], sym = false) {
 function buildHorse(def, o) {
   const C = horsePalette(tone(o.mount ?? 0x6b4a2e, 0.005, 0.1, 0.02));
   const rnd = rng(hashStr((def?.id || 'horse') + ':horse'));
-  const coatC = (col) => (q) => q.color(col).tint(0.14, 11).pbr(0.63);
+  const coatC = (col) => (q) => q.color(col).tint(0.16, 11).bump(0.0022, 22, 'fur').pbr(0.76);   // a short coat: matte, with a faint grain along each form
   const coat = coatC(C.coat), dark = coatC(C.point);
-  const hair = (q, col = C.mane) => q.color(col).tint(0.25, 30).bump(0.0055, 46, 'fur').pbr(0.7);
+  const hair = (q, col = C.mane) => q.color(col).tint(0.25, 30).bump(0.006, 28, 'fur').pbr(0.72);
   const nodes = [];
   nodes.push(node('root', null, [0, 0, 0]));
   const BO = [0, 0.68, 0];
   const NB = [0, 0.78, 0.33], PJ = [0, 1.19, 0.515], headPitch = 58;
 
   // ---------------- torso ----------------
-  const torso = node('torso', 'root', BO, { rig: 'body', detail: 0.66 }); nodes.push(torso);
+  const torso = node('torso', 'root', BO, { rig: 'body', detail: 0.66, bake: { rough: 0.74 } }); nodes.push(torso);
   {
     const p = torso.prims;
     p.push(coat(lay(0.18, 0.192, 0.3).at(0, 0.662, 0.0)));                                         // barrel
@@ -775,13 +852,13 @@ function buildHorse(def, o) {
       S.ellipsoid(0.03, 0.14, 0.01).rot(28, 0, 0).at(0.178, 0.67, -0.165).color(C.shade).pbr(0.63).paint(0.012, -0.005),    // the line of the flank
       S.ellipsoid(0.03, 0.16, 0.009).rot(-14, 0, 0).at(0.176, 0.68, -0.37).color(C.shade).pbr(0.63).paint(0.01, -0.004),    // between the muscles of the quarter
     ]));
-    p.push(lay(0.15, 0.06, 0.4).at(0, 0.49, 0.0).color(C.belly).pbr(0.6).tint(0.1, 12).paint(0.05));
-    p.push(lay(0.2, 0.2, 0.5).at(0, 1.03, -0.1).color(C.shade).pbr(0.56).tint(0.1, 12).paint(0.1));
-    p.push(...S.mirrorX([S.ellipsoid(0.06, 0.09, 0.11).at(0.16, 0.76, -0.3).color(C.light).pbr(0.5).tint(0.3, 30).paint(0.05)]));   // dappled sheen on the quarters
+    p.push(lay(0.15, 0.06, 0.4).at(0, 0.49, 0.0).color(C.belly).pbr(0.76).tint(0.1, 12).paint(0.05));
+    p.push(lay(0.2, 0.2, 0.5).at(0, 1.03, -0.1).color(C.shade).pbr(0.74).tint(0.1, 12).paint(0.1));
+    p.push(...S.mirrorX([S.ellipsoid(0.06, 0.09, 0.11).at(0.16, 0.76, -0.3).color(C.light).pbr(0.7).tint(0.3, 30).paint(0.05)]));   // dappled sheen on the quarters
   }
 
   // ---------------- neck: arched, with a mane falling to both sides ----------------
-  const neck = node('neck', 'torso', NB, { rig: 'mneck', detail: 0.74 }); nodes.push(neck);
+  const neck = node('neck', 'torso', NB, { rig: 'mneck', detail: 0.74, bake: { rough: 0.74 } }); nodes.push(neck);
   const NC = [[0, 0.77, 0.36], [0, 0.915, 0.452], [0, 1.055, 0.502], [0, 1.165, 0.512]];        // centres up the neck
   const crest = curve([[0, 0.87, 0.2], [0, 0.995, 0.33], [0, 1.13, 0.412], [0, 1.228, 0.462], [0, 1.275, 0.51]], 20);
   {
@@ -821,17 +898,17 @@ function buildHorse(def, o) {
   const fl = { up: { prims: [], hard: [] }, lo: { prims: [], hard: [] }, paw: { prims: [], hard: [] } };
   {
     const u = fl.up.prims, l = fl.lo.prims, w = fl.paw.prims;
-    u.push(coat(bone(EL, KN, 0.07, 0.046)));
+    u.push(coat(bone(EL, KN, 0.075, 0.05)));
     u.push(coat(S.ellipsoid(0.062, 0.1, 0.092).rot(-30, 0, 0).at(0.13, 0.575, 0.243).blend(0.03)));             // elbow and upper arm
     u.push(coat(S.ellipsoid(0.046, 0.095, 0.056).at(0.136, 0.455, 0.254).blend(0.02)));                          // forearm muscle
     u.push(coat(S.sphere(0.048).at(KN[0], KN[1], KN[2]).blend(0.02)));
     u.push(S.cyl(0.09, 0.12, 0.01).at(KN[0], KN[1] + 0.03, KN[2]).color(C.point).pbr(0.58).tint(0.1, 12).paint(0.05));   // black points creep up from the knee
-    l.push(dark(S.ellipsoid(0.046, 0.05, 0.047).at(KN[0], KN[1], KN[2])));
-    l.push(dark(bone(KN, FF, 0.036, 0.032).blend(0.02)));
-    l.push(dark(bone(add3(KN, [0, -0.04, -0.027]), add3(FF, [0, 0.03, -0.023]), 0.014, 0.014).blend(0.012)));    // tendon
-    l.push(dark(S.sphere(0.042).at(FF[0], FF[1], FF[2]).blend(0.014)));
-    w.push(dark(S.sphere(0.041).at(FF[0], FF[1], FF[2])));
-    w.push(dark(bone(FF, [0.12, 0.062, 0.27], 0.036, 0.042).blend(0.014)));
+    l.push(dark(S.ellipsoid(0.05, 0.054, 0.051).at(KN[0], KN[1], KN[2])));
+    l.push(dark(bone(KN, FF, 0.041, 0.037).blend(0.02)));
+    l.push(dark(bone(add3(KN, [0, -0.04, -0.03]), add3(FF, [0, 0.03, -0.027]), 0.017, 0.017).blend(0.012)));    // tendon
+    l.push(dark(S.sphere(0.047).at(FF[0], FF[1], FF[2]).blend(0.014)));
+    w.push(dark(S.sphere(0.046).at(FF[0], FF[1], FF[2])));
+    w.push(dark(bone(FF, [0.12, 0.062, 0.27], 0.04, 0.046).blend(0.014)));
     hoof(fl.paw, [0.12, 0, 0.282], false);
     for (let i = 0; i < 5; i++) {
       const L = 0.075 + rnd() * 0.02;
@@ -846,14 +923,14 @@ function buildHorse(def, o) {
     u.push(coat(S.sphere(0.064).at(ST[0], ST[1], ST[2]).blend(0.03)));                                           // stifle
     u.push(coat(S.sphere(0.045).at(HK[0], HK[1], HK[2]).blend(0.02)));
     u.push(S.cyl(0.09, 0.1, 0.01).at(HK[0], HK[1] + 0.02, HK[2]).color(C.point).pbr(0.58).tint(0.1, 12).paint(0.05));
-    l.push(dark(S.ellipsoid(0.042, 0.054, 0.05).at(HK[0], HK[1], HK[2])));
-    l.push(dark(S.ellipsoid(0.022, 0.038, 0.025).at(HK[0], HK[1] + 0.024, HK[2] - 0.036).blend(0.012)));         // point of the hock
-    l.push(dark(bone(HK, FH, 0.037, 0.033).blend(0.02)));
-    l.push(dark(bone(add3(HK, [0, -0.04, -0.03]), add3(FH, [0, 0.03, -0.024]), 0.014, 0.014).blend(0.012)));
-    l.push(dark(S.sphere(0.043).at(FH[0], FH[1], FH[2]).blend(0.014)));
+    l.push(dark(S.ellipsoid(0.046, 0.058, 0.054).at(HK[0], HK[1], HK[2])));
+    l.push(dark(S.ellipsoid(0.024, 0.04, 0.027).at(HK[0], HK[1] + 0.024, HK[2] - 0.038).blend(0.012)));         // point of the hock
+    l.push(dark(bone(HK, FH, 0.042, 0.038).blend(0.02)));
+    l.push(dark(bone(add3(HK, [0, -0.04, -0.033]), add3(FH, [0, 0.03, -0.027]), 0.017, 0.017).blend(0.012)));
+    l.push(dark(S.sphere(0.048).at(FH[0], FH[1], FH[2]).blend(0.014)));
     l.push(S.cyl(0.07, 0.1, 0.01).at(FH[0], FH[1] + 0.02, FH[2]).color(C.sock).pbr(0.6).paint(0.014));            // white socks behind
-    w.push(coatC(C.sock)(S.sphere(0.042).at(FH[0], FH[1], FH[2])));
-    w.push(coatC(C.sock)(bone(FH, [0.126, 0.062, -0.332], 0.037, 0.043).blend(0.014)));
+    w.push(coatC(C.sock)(S.sphere(0.047).at(FH[0], FH[1], FH[2])));
+    w.push(coatC(C.sock)(bone(FH, [0.126, 0.062, -0.332], 0.041, 0.047).blend(0.014)));
     hoof(bl.paw, [0.126, 0, -0.32], true);
     for (let i = 0; i < 5; i++) {
       const L = 0.075 + rnd() * 0.02;
@@ -880,12 +957,20 @@ function buildHorse(def, o) {
     nodes.push(n);
     const a = TL[i], b = TL[i + 1], r0 = [0.036, 0.056, 0.064][i], r1 = [0.056, 0.064, 0.012][i];
     n.prims.push(hair(S.sphere(r0 * 0.9).at(a[0], a[1], a[2])));
-    const ns = i === 2 ? 8 : 6;
+    const ns = i === 2 ? 11 : 7, shine = mix(C.mane, C.maneTip, 0.7);
     for (let j = 0; j < ns; j++) {
-      const ang = (j / ns) * Math.PI * 2 + i * 0.6, ox = Math.cos(ang), oz = Math.sin(ang);
-      const e = i === 2 ? [b[0] + ox * 0.07, b[1] + rnd() * 0.17 - 0.05, b[2] + oz * 0.05] : [b[0] + ox * r1 * 0.45, b[1], b[2] + oz * r1 * 0.4];
-      if (i === 2 && j % 2 === 0) n.hard.push(lock(lerp3([a[0] + ox * r0 * 0.45, a[1], a[2] + oz * r0 * 0.4], e, 0.55), [ox * 0.25, -1, oz * 0.2 - 0.1], 0.13 + rnd() * 0.05, 0.022, 0.014, C.mane, C.maneTip, [0, 0, -1], 0.12).lod(1));
-      n.prims.push(hair(bone([a[0] + ox * r0 * 0.45, a[1], a[2] + oz * r0 * 0.4], e, r0 * 0.58, i === 2 ? 0.005 : r1 * 0.58).blend(0.012), j % 2 ? C.mane : tone(C.mane, 0, 0, 0.035)));
+      const ang = (j / ns) * Math.PI * 2 + i * 0.6, ox = Math.cos(ang), oz = Math.sin(ang), col = j % 3 === 0 ? shine : j % 3 === 1 ? C.mane : tone(C.mane, 0, 0, 0.05);
+      const a0 = [a[0] + ox * r0 * 0.45, a[1], a[2] + oz * r0 * 0.4];
+      if (i === 2) {
+        // the fall of the tail: long locks swinging in an S, spreading toward the ends
+        const e = [b[0] + ox * 0.075, b[1] + rnd() * 0.15 - 0.06, b[2] + oz * 0.055], wv = (j % 2 ? 1 : -1) * 0.022;
+        const mid = add3(lerp3(a0, e, 0.5), [wv * Math.abs(oz) + ox * 0.012, 0, wv * Math.abs(ox) + oz * 0.012]);
+        n.prims.push(hair(bone(a0, mid, r0 * 0.5, r0 * 0.38).blend(0.012), col), hair(bone(mid, e, r0 * 0.38, 0.005).blend(0.01), col));
+        if (j % 2 === 0) n.hard.push(lock(lerp3(mid, e, 0.3), norm3([ox * 0.25, -1, oz * 0.2 - 0.1]), 0.12 + rnd() * 0.05, 0.02, 0.013, C.mane, C.maneTip, [0, 0, -1], 0.12).lod(1));
+      } else {
+        const e = [b[0] + ox * r1 * 0.45, b[1], b[2] + oz * r1 * 0.4];
+        n.prims.push(hair(bone(a0, e, r0 * 0.58, r1 * 0.58).blend(0.012), col));
+      }
     }
   }
   return { nodes, C, rnd, NB, PJ, headPitch, BO, crest };
@@ -894,7 +979,7 @@ function buildHorse(def, o) {
 /** horse head in its own frame: the poll at the origin, the face running along +Z, the jaw on the -Y side */
 function horseHead(C, rnd, o) {
   const p = [], hard = [];
-  const coatC = (col) => (q) => q.color(col).tint(0.1, 18).pbr(0.58);
+  const coatC = (col) => (q) => q.color(col).tint(0.12, 18).bump(0.0016, 30, 'fur').pbr(0.72);
   const coat = coatC(C.coat), mz = coatC(C.muzzle);
   const hair = (q) => q.color(C.mane).tint(0.25, 30).bump(0.005, 50, 'fur').pbr(0.7);
   const cloth = o.cloth ?? 0x2f5aa8, steel = o.armor ?? 0x9aa3ad, gold = BRASS;
@@ -1030,6 +1115,10 @@ function horseTack(hs, R, seatA, o) {
   for (const sg of [1, -1]) {
     const a = toRest([sg * 0.064, -0.085, -0.02]), b = [sg * 0.085, 0.98, 0.37], c = [sg * 0.08, 0.9, 0.27];
     neck.hard.push(H.tube([a, lerp3(a, b, 0.5), b, c], 0.005, 10, 5).color(cloth).pbr(0.8).near());
+    // where the head's share of the rein meets the neck's, a ring on each side of the joint hides the break when the head turns
+    const rd = norm3(sub3(b, a));
+    neck.hard.push(ringAt(a, rd, 0.012, 0.0042, BRASS).near());
+    hs.nodes.find((n) => n.name === 'head').hard.push(ringAt([sg * 0.064, -0.085, -0.02], [0, -0.3, -1], 0.012, 0.0042, BRASS).near());
     h.push(H.tube([c, [sg * 0.06, 0.925, 0.21], [0.045 + sg * 0.012, 0.985, 0.17]], 0.005, 6, 5).color(cloth).pbr(0.8).near());
   }
   return tack;
@@ -1043,7 +1132,7 @@ function lancer(def, o) {
   horseTack(hs, R, seatA, o);
   const nodes = finish(hs.nodes, s);
   seatRider(nodes, R, 'torso', hs.BO, seatA, s);
-  return { kind: 'beast.rider', attack: R.desc.attack, hold: R.desc.hold || 'none', gait: 'horse', mount: 'horse', nodes };
+  return { kind: 'beast.rider', attack: R.desc.attack, hold: R.desc.hold || 'none', gait: 'horse', mount: 'horse', ...feet([-0.11, 0.03, -0.11, 0.03], s), nodes };
 }
 
 // =====================================================================================
@@ -1140,9 +1229,10 @@ function griffonWing(C, rnd) {
 function buildGriffon(def, o) {
   const C = griffonPalette(o.mount ?? 0xc8a050);
   const rnd = rng(hashStr((def?.id || 'griffon') + ':griffon'));
-  const furC = (col, amp = 0.0085, f = 26) => (q) => q.color(col).tint(0.24, 14).bump(amp, f, 'fur').pbr(0.85);
+  const furC = (col, amp = 0.0085, f = 18) => (q) => q.color(col).tint(0.26, 14).bump(amp, f, 'fur').pbr(0.86);   // a lion's short coat: a grain you can see, combed along each form
   const fur = furC(C.fur);
   const vary = (col) => tone(col, 0, 0, (rnd() - 0.5) * 0.05);
+  const groove = (q) => q.color(C.furDark).pbr(0.86).paint(0.012, -0.0045);                                    // the lines between the lion's muscles
   const plC = (col, amp = 0.006, f = 30) => (q) => q.color(col).tint(0.2, 26).bump(amp, f, 'scales').pbr(0.85);
   const plume = plC(C.chest), white = plC(C.white, 0.005, 36);
   const nodes = [];
@@ -1169,8 +1259,14 @@ function buildGriffon(def, o) {
     p.push(lay(0.09, 0.1, 0.1).at(0, 0.56, 0.37).color(C.cream).pbr(0.85).tint(0.14, 22).paint(0.05));        // pale bib
     p.push(lay(0.2, 0.2, 0.4).at(0, 0.98, -0.2).color(C.furDark).pbr(0.85).tint(0.2, 16).paint(0.12));         // darker along the spine
     const df = distanceField(p);
-    // the lion half: a fringe under the belly and a darker flank
+    // the lion half: a fringe under the belly, a darker flank and saddle, the muscles of the loin and quarter drawn in
     p.push(...S.mirrorX([lay(0.03, 0.09, 0.16).at(0.15, 0.71, -0.2).color(C.furDark).pbr(0.85).tint(0.2, 16).paint(0.05)]));
+    p.push(lay(0.045, 0.04, 0.3).at(0, 0.86, -0.28).color(tone(C.furDark, 0, 0.04, -0.06)).pbr(0.86).tint(0.2, 16).paint(0.035));       // dark line down the spine
+    p.push(...S.mirrorX([
+      groove(S.ellipsoid(0.03, 0.13, 0.01).rot(24, 0, -6).at(0.17, 0.66, -0.17)),                         // the line of the flank
+      groove(S.ellipsoid(0.03, 0.15, 0.01).rot(-12, 0, -4).at(0.2, 0.66, -0.4)),                         // between the muscles of the quarter
+      groove(S.ellipsoid(0.03, 0.1, 0.009).rot(70, 0, 0).at(0.16, 0.6, -0.06)),                          // the last rib
+    ]));
     for (const sx of [1, -1]) for (let i = 0; i < 7; i++) {
       const L = 0.06 + rnd() * 0.025;
       clump(torso, df, [sx * 0.055, 0.2, -0.05 - i * 0.05], [0, 1, 0], [sx * 0.25, -0.6, -1], { L, W: L * 0.28, T: L * 0.15, lift: 0.4, colA: C.fur, colB: vary(C.furPale), lockOnly: true });
@@ -1256,10 +1352,7 @@ function buildGriffon(def, o) {
     u.push(fur(S.sphere(0.072).at(ST[0], ST[1], ST[2]).blend(0.02)));
     u.push(S.ellipsoid(0.03, 0.1, 0.08).rot(26, 0, 0).at(0.185, 0.56, -0.29).color(C.furPale).pbr(0.85).tint(0.2, 16).paint(0.05));    // sheen on the great muscle of the thigh
     const dfu = distanceField(u);
-    for (let i = 0; i < 6; i++) {                                                                            // the coat lies in heavy overlapping locks over the quarter
-      const L = 0.1 + rnd() * 0.025;
-      clump(bl.up, dfu, [0.5, 0.7 - (i % 3) * 0.075, -0.24 - Math.floor(i / 3) * 0.085 - (i % 3) * 0.02], [-1, 0, 0], [0, -0.75, -1], { L, W: L * 0.27, T: L * 0.14, lift: 0.03, colA: C.furDark, colB: C.fur, style: furC(vary(C.furDark), 0.005, 50) });
-    }
+    u.push(groove(S.ellipsoid(0.028, 0.12, 0.009).rot(-30, 0, -4).at(0.21, 0.53, -0.25)), groove(S.ellipsoid(0.028, 0.09, 0.009).rot(40, 0, -6).at(0.2, 0.5, -0.36)));   // the muscles of the thigh
     for (let i = 0; i < 7; i++) {                                                                            // feathering down the back of the thigh
       const L = 0.07 + rnd() * 0.025;
       clump(bl.up, dfu, [0.125 + (i % 2 ? 0.022 : -0.014), 0.66 - i * 0.034, -0.8], [0, 0, 1], [0, -0.85, -0.5], { L, W: L * 0.3, T: L * 0.16, lift: 0.3, colA: C.furDark, colB: vary(C.fur), style: furC(vary(C.furDark), 0.004, 60), lock: i % 2 === 0 });
@@ -1311,8 +1404,10 @@ function buildGriffon(def, o) {
     n.prims.push(fur(S.sphere(tr[i]).at(a[0], a[1], a[2])), fur(bone(a, b, tr[i], tr[i + 1]).blend(0.01)));
     if (i === 3) {
       const t = norm3(sub3(b, a));
-      n.prims.push(furC(C.tuft, 0.008, 40)(orient(S.ellipsoid(0.04, 0.075, 0.04), add3(b, mul3(t, 0.035)), t).blend(0.015)));
-      for (let j = 0; j < 6; j++) { const ang = (j / 6) * Math.PI * 2, out = [Math.cos(ang), Math.sin(ang) * t[2], -Math.sin(ang) * t[1]]; n.hard.push(lock(add3(b, add3(mul3(t, 0.03), mul3(out, 0.02))), norm3(add3(t, mul3(out, 0.35))), 0.09 + rnd() * 0.03, 0.02, 0.014, C.tuft, C.umber, out, 0.2).lod(1)); }
+      n.prims.push(furC(C.tuft, 0.008, 24)(orient(S.ellipsoid(0.042, 0.075, 0.042), add3(b, mul3(t, 0.025)), t).blend(0.015)));
+      n.prims.push(furC(C.tuft, 0.006, 24)(orient(S.capsule([0, 0, 0], [0, 0.1, 0], 0.03, 0.006), add3(b, mul3(t, 0.05)), t).blend(0.02)));   // drawn to a point
+      // the tuft: a brush of locks streaming back from the tip, not a starburst
+      for (let j = 0; j < 7; j++) { const ang = (j / 7) * Math.PI * 2, out = [Math.cos(ang), Math.sin(ang) * t[2], -Math.sin(ang) * t[1]]; n.hard.push(lock(add3(b, add3(mul3(t, 0.055), mul3(out, 0.022))), norm3(add3(t, mul3(out, 0.22))), 0.1 + rnd() * 0.03, 0.026, 0.018, C.tuft, mix(C.tuft, C.chest, 0.5), mul3(out, -1), 0.14).lod(1)); }
     }
   }
   return { nodes, C, rnd, BO, NB, HJ, headPitch };
@@ -1409,12 +1504,12 @@ function griffonRider(def, o) {
   const R = makeRider(def, o, 1);
   const gs = buildGriffon(def, o);
   const torso = gs.nodes.find((n) => n.name === 'torso');
-  const z0 = -0.1, top = surfHit(distanceField(torso.prims), [0, 1.4, z0], [0, -1, 0])[1];
+  const z0 = -0.16, top = surfHit(distanceField(torso.prims), [0, 1.4, z0], [0, -1, 0])[1];       // well behind the wing roots
   const seatA = [0, top + 0.085, z0];
   griffonTack(gs, R, seatA, o, s);
   const nodes = finish(gs.nodes, s);
   seatRider(nodes, R, 'torso', gs.BO, seatA, s);
-  return { kind: 'beast.rider', attack: R.desc.attack, hold: R.desc.hold || 'none', gait: 'griffon', mount: 'griffon', feathered: true, nodes };
+  return { kind: 'beast.rider', attack: R.desc.attack, hold: R.desc.hold || 'none', gait: 'griffon', mount: 'griffon', feathered: true, ...feet([-0.072, 0.03, -0.235, 0.06], s), footToe: 0.12, nodes };
 }
 
 function rider(def, o = {}) {
@@ -1495,20 +1590,20 @@ function spider(def, o = {}) {
 
   // ---------------- abdomen ----------------
   const AO = [0, 0.31, -0.07];
-  const abd = node('abdomen', 'torso', AO, { rig: 'abdomen', detail: 0.9 }); nodes.push(abd);
+  const abd = node('abdomen', 'torso', AO, { rig: 'abdomen', detail: 0.9, bake: { rough: 0.85 } }); nodes.push(abd);
   {
     const p = abd.prims, c = [0, 0.39, -0.3];
-    p.push(hairy(lay(0.205, 0.19, 0.25).rot(-8, 0, 0).at(c[0], c[1], c[2]), C.hairDark, 0.007, 40));
-    p.push(hairy(lay(0.12, 0.12, 0.14).at(0, 0.34, -0.12).blend(0.05), C.hairDark, 0.006, 44));
-    p.push(hairy(lay(0.11, 0.1, 0.1).at(0, 0.33, -0.5).blend(0.06), C.hairDark, 0.006, 44));                // the tapering tip
+    p.push(hairy(lay(0.205, 0.19, 0.25).rot(-8, 0, 0).at(c[0], c[1], c[2]), C.hairDark, 0.0095, 21));      // a velvet pile combed nose to tail
+    p.push(hairy(lay(0.12, 0.12, 0.14).at(0, 0.34, -0.12).blend(0.05), C.hairDark, 0.008, 24));
+    p.push(hairy(lay(0.11, 0.1, 0.1).at(0, 0.33, -0.5).blend(0.06), C.hairDark, 0.008, 24));                // the tapering tip
     p.push(lay(0.16, 0.08, 0.2).at(0, 0.24, -0.3).color(C.belly).pbr(0.85).tint(0.2, 30).paint(0.04));
     // the marking: a spine of flame down the back with barbs sweeping out and back, and a row of pale spots along each side
     const top = (z) => 0.39 + 0.19 * Math.sqrt(Math.max(0, 1 - Math.pow((z + 0.3) / 0.25, 2))) * 0.99;
-    p.push(lay(0.022, 0.06, 0.2).at(0, 0.56, -0.29).color(C.flame).pbr(0.8).tint(0.14, 40).paint(0.008));
+    p.push(lay(0.022, 0.06, 0.2).at(0, 0.56, -0.29).color(C.flame).pbr(0.8).tint(0.06, 40).paint(0.004, 0.002));
     for (let i = 0; i < 5; i++) {
       const z = -0.13 - i * 0.075, y = top(z), w = 0.085 - i * 0.008;
-      p.push(...S.mirrorX([S.ellipsoid(w, 0.05, 0.017).rot(0, 34, -20 - i * 3).at(w * 0.72, y - 0.018 - i * 0.004, z - 0.03).color(i % 2 ? C.gold : C.flame).pbr(0.8).tint(0.12, 40).paint(0.006)]));
-      p.push(S.ellipsoid(0.02, 0.04, 0.014).at(0, y, z + 0.012).color(C.cream).pbr(0.8).paint(0.005));
+      p.push(...S.mirrorX([S.ellipsoid(w, 0.05, 0.017).rot(0, 34, -20 - i * 3).at(w * 0.72, y - 0.018 - i * 0.004, z - 0.03).color(i % 2 ? C.gold : C.flame).pbr(0.8).tint(0.06, 40).paint(0.0035, 0.002)]));
+      p.push(S.ellipsoid(0.02, 0.04, 0.014).at(0, y, z + 0.012).color(C.cream).pbr(0.8).paint(0.003, 0.002));
     }
     for (let i = 0; i < 5; i++) {
       const z = -0.12 - i * 0.085, r = 0.205 * Math.sqrt(Math.max(0, 1 - Math.pow((z + 0.3) / 0.25, 2)));
@@ -1518,12 +1613,13 @@ function spider(def, o = {}) {
     p.push(...S.mirrorX([chitin(S.cone(0.018, 0.006, 0.05, 0.004).rot(-115, 0, 0).at(0.022, 0.3, -0.585), C.rustDark).blend(0.008)]));
     // long bristles standing out of the velvet
     const df = distanceField(p);
-    for (let j = 0; j < 46; j++) {
+    for (let j = 0; j < 96; j++) {
       const u = (j * 0.618) % 1, v = (j * 0.371 + 0.13) % 1, th = u * Math.PI * 2, ph = 0.25 + v * 1.9;
       const d = [Math.sin(ph) * Math.sin(th), Math.cos(ph) * 0.9 + 0.1, Math.sin(ph) * Math.cos(th)];
       if (d[1] < -0.3 || (d[1] > 0.8 && Math.abs(d[0]) < 0.3)) continue;
-      const root = surfHit(df, add3(c, mul3(d, 0.6)), mul3(d, -1)), n = gradAt(df, root), L = 0.05 + rnd() * 0.035;
-      abd.hard.push(lock(add3(root, mul3(n, -0.006)), norm3(add3(n, [0, -0.1, -0.7])), L, 0.008, 0.006, C.hairDark, j % 4 === 0 ? C.rust : tone(C.hairDark, 0, 0, 0.1), [0, -1, 0], 0.3).lod(j % 2 ? 0 : 1));
+      const root = surfHit(df, add3(c, mul3(d, 0.6)), mul3(d, -1)), n = gradAt(df, root), L = 0.045 + rnd() * 0.035;
+      const back = norm3(sub3([0, -0.15, -1], mul3(n, -0.15 * n[1] - n[2])));               // combed back toward the spinnerets, lying close
+      abd.hard.push(lock(add3(root, mul3(n, -0.009)), norm3(add3(mul3(n, 0.32), back)), L, 0.0075, 0.0055, C.hairDark, j % 5 === 0 ? C.rust : tone(C.hairDark, 0.01, 0.1, 0.12), mul3(n, -1), 0.25).lod(j % 3 ? 0 : 1));
     }
   }
 
@@ -1537,39 +1633,73 @@ function spider(def, o = {}) {
     const g = LEG[li], k = g.k;
     // authored for the left side in the leg's own frame: it reaches out along +X in the XY plane
     const K = [0.27 * k, 0.29 * k, 0], Jn = [0.52 * k, 0.1 + 0.02 * k, 0], Mt = [0.64 * k, -0.14, 0], F = [0.7 * k, -0.285, 0];
-    const band = (q, at, r) => S.torus(r, r * 0.5).rot(0, 0, 90).at(at[0], at[1], at[2]).color(C.rust).pbr(0.85).tint(0.2, 40).paint(0.008, 0.002);
+    const band = (q, at, r) => S.torus(r, r * 0.5).rot(0, 0, 90).at(at[0], at[1], at[2]).color(C.rust).pbr(0.85).tint(0.08, 40).paint(0.004, 0.002);
+    // the legs are furred like a hunting spider's: a pile that resolves at the closest level, then long setae over it
+    const leg = (q, col = C.hairDark) => fine(q.color(col).tint(0.18, 30).bump(0.0085, 24, 'fur').pbr(0.85));
+    const shell = (q, col) => fine(chitin(q, col));
+    const P0 = [0.085, 0.045, 0];
     const up = [
-      chitin(S.sphere(0.052), C.shellDark),                                                               // coxa
-      hairy(bone([0.02, 0.0, 0], [0.085, 0.045, 0], 0.046, 0.043).blend(0.012)),                          // trochanter
-      hairy(bone([0.085, 0.045, 0], K, 0.046, 0.037).blend(0.012)),                                       // femur
-      hairy(S.ellipsoid(0.1 * k, 0.036, 0.042).rot(0, 0, 48).at(lerp(0.085, K[0], 0.45), lerp(0.045, K[1], 0.45) + 0.012, 0).blend(0.02)),   // its swell of muscle
-      chitin(S.sphere(0.043).at(K[0], K[1], K[2]).blend(0.008), C.rustDark),                              // knee
-      band(null, lerp3([0.085, 0.045, 0], K, 0.86), 0.039),
+      shell(S.sphere(0.052), C.shellDark),                                                                // coxa
+      leg(bone([0.02, 0.0, 0], P0, 0.046, 0.043).blend(0.012)),                                           // trochanter
+      leg(bone(P0, K, 0.046, 0.037).blend(0.012)),                                                        // femur
+      leg(S.ellipsoid(0.1 * k, 0.036, 0.042).rot(0, 0, 48).at(lerp(0.085, K[0], 0.45), lerp(0.045, K[1], 0.45) + 0.012, 0).blend(0.02)),   // its swell of muscle
+      shell(S.sphere(0.043).at(K[0], K[1], K[2]).blend(0.008), C.rustDark),                               // knee
+      fine(band(null, lerp3(P0, K, 0.86), 0.039)),
     ];
-    const KL = sub3(Jn, K), ML = sub3(Mt, K), FL = sub3(F, K);
+    const KL = sub3(Jn, K), ML = sub3(Mt, K), FL = sub3(F, K), O = [0, 0, 0];
     const lo = [
-      chitin(S.sphere(0.041), C.rustDark),
-      hairy(bone([0, 0, 0], KL, 0.038, 0.031).blend(0.01)),                                               // tibia
-      chitin(S.sphere(0.033).at(KL[0], KL[1], 0).blend(0.006), C.rustDark),
-      hairy(bone(KL, ML, 0.03, 0.022).blend(0.008)),                                                      // metatarsus
-      hairy(bone(ML, FL, 0.022, 0.009).blend(0.006), C.shellDark),                                        // tarsus
-      band(null, lerp3([0, 0, 0], KL, 0.85), 0.032), band(null, lerp3(KL, ML, 0.86), 0.024),
+      shell(S.sphere(0.041), C.rustDark),
+      leg(bone(O, KL, 0.038, 0.031).blend(0.01)),                                                         // tibia
+      shell(S.sphere(0.033).at(KL[0], KL[1], 0).blend(0.006), C.rustDark),
+      leg(bone(KL, ML, 0.03, 0.022).blend(0.008)),                                                        // metatarsus
+      leg(bone(ML, FL, 0.022, 0.009).blend(0.006), C.shellDark),                                          // tarsus
+      fine(band(null, lerp3(O, KL, 0.85), 0.032)), fine(band(null, lerp3(KL, ML, 0.86), 0.024)),
     ];
-    const upH = [H.tube([[0, 0, 0], [0.085, 0.045, 0], K], [0.03, 0.03, 0.026], 4, 4).color(C.hairDark).pbr(0.8).far()];
-    const loH = [
-      H.tube([[0, 0, 0], KL, ML, FL], [0.026, 0.02, 0.014, 0.006], 6, 4).color(C.hairDark).pbr(0.8).far(),
-      spike(add3(FL, [0, 0.012, 0]), [0.3, -1, 0], 0.03, 0.007, C.fang, [1, 0, 0], 0.4).lod(1),
-    ];
-    for (let j = 0; j < 5; j++) {                                                                          // bristles
-      const t = 0.15 + j * 0.17, q = lerp3([0.085, 0.045, 0], K, t), q2 = j < 3 ? lerp3([0, 0, 0], KL, 0.2 + j * 0.3) : lerp3(KL, ML, 0.3 + (j - 3) * 0.4);
-      upH.push(lock(add3(q, [0, 0.02, (j % 2 ? 1 : -1) * 0.018]), norm3([0.5, 0.7, (j % 2 ? 1 : -1) * 0.6]), 0.045 + rnd() * 0.02, 0.008, 0.006, C.hairDark, C.rust, [1, 0, 0], 0.3).lod(j % 2));
-      loH.push(lock(add3(q2, [0.012, 0.012, (j % 2 ? 1 : -1) * 0.014]), norm3([0.7, 0.3, (j % 2 ? 1 : -1) * 0.7]), 0.04 + rnd() * 0.02, 0.007, 0.005, C.hairDark, C.rust, [0, -1, 0], 0.3).lod(j % 2));
-    }
+    const upH = [], loH = [spike(add3(FL, [0, 0.012, 0]), [0.3, -1, 0], 0.03, 0.007, C.fang, [1, 0, 0], 0.4).lod(1)];
+    // setae: rows of long hairs lying toward the foot, all round each segment, tipped with rust
+    const setae = (list, a, b, ra, rb, n, L0) => {
+      const ax = norm3(sub3(b, a)), side2 = [0, 0, 1], up2 = norm3([-ax[1], ax[0], 0]);
+      for (let j = 0; j < n; j++) {
+        const t = (j + 0.5) / n, th = (j * 2.4 + rnd() * 0.6) % (Math.PI * 2), r = lerp(ra, rb, t) * 0.82;
+        const rad = add3(mul3(up2, Math.cos(th)), mul3(side2, Math.sin(th)));
+        const base = add3(lerp3(a, b, t), mul3(rad, r));
+        const long = j % 4 === 0, tipC = long ? mix(C.rust, C.cream, 0.35) : mix(C.hairDark, C.rust, 0.55);
+        list.push(lock(base, norm3(add3(mul3(rad, long ? 0.75 : 0.42), mul3(ax, 0.9))), L0 * (long ? 1.3 : 0.75 + rnd() * 0.3), long ? 0.0075 : 0.0065, long ? 0.0055 : 0.0045, C.hairDark, tipC, mul3(ax, 1), 0.2).lod(long ? 1 : 0));
+      }
+    };
+    setae(upH, P0, K, 0.046, 0.037, 10, 0.05);
+    setae(loH, O, KL, 0.038, 0.031, 8, 0.045);
+    setae(loH, KL, ML, 0.03, 0.022, 5, 0.038);
+    // a shaggy coat: tufts of hair in staggered rings, lying toward the foot (the closest levels only)
+    const tufts = (part, a, b, n, rings, L0, W0, bandT) => {
+      const dfp = distanceField(part.prims), ax = norm3(sub3(b, a)), up2 = norm3([-ax[1], ax[0], 0]);
+      for (let r = 0; r < rings; r++) for (let j = 0; j < n; j++) {
+        const t = 0.12 + 0.8 * (r + 0.5) / rings, th = ((j + (r % 2) * 0.5) / n) * Math.PI * 2, rad = add3(mul3(up2, Math.cos(th)), [0, 0, Math.sin(th)]);
+        const L = L0 * (0.85 + rnd() * 0.3);
+        const col = Math.abs(t + 0.08 - bandT) < 0.09 ? C.rust : r % 2 ? C.hairDark : tone(C.hairDark, 0.01, 0.06, 0.05);   // tufts on a band take its colour
+        clump(part, dfp, add3(lerp3(a, b, t), mul3(rad, 0.2)), mul3(rad, -1), ax, { L, W: W0, T: W0 * 0.6, lift: 0.25, colA: C.hairDark, colB: C.rust, style: (q) => q.color(col).tint(0.15, 30).pbr(0.85), blend: 0.01 });
+      }
+    };
+    const upP = { prims: up, hard: [] }, loP = { prims: lo, hard: [] };
+    tufts(upP, P0, K, 6, 3, 0.075, 0.022, 0.86);
+    tufts(loP, O, KL, 6, 3, 0.065, 0.019, 0.85);
+    tufts(loP, KL, ML, 5, 2, 0.055, 0.016, 0.86);
+    // stand-ins for the coarse levels: smooth banded tubes (the sculpted leg would only come out lumpy there)
+    const tubeShade = (bands, base) => (x, y, z) => {
+      for (const bd of bands) { const d = sub3([x, y, z], bd.c); if (Math.abs(d[0] * bd.a[0] + d[1] * bd.a[1] + d[2] * bd.a[2]) < bd.hw) return bd.col; }
+      return base;
+    };
+    const axU = norm3(sub3(K, P0)), axT = norm3(KL), axM = norm3(sub3(ML, KL));
+    const upBands = [{ c: K, a: axU, hw: 0.03, col: C.rustDark }, { c: lerp3(P0, K, 0.86), a: axU, hw: 0.017, col: C.rust }];
+    const loBands = [{ c: O, a: axT, hw: 0.028, col: C.rustDark }, { c: lerp3(O, KL, 0.85), a: axT, hw: 0.016, col: C.rust }, { c: KL, a: axM, hw: 0.02, col: C.rustDark }, { c: lerp3(KL, ML, 0.86), a: axM, hw: 0.013, col: C.rust }];
+    const upStand = (lv, last) => [H.tube([[0.01, 0, 0], P0, K], last ? [0.04, 0.04, 0.035] : [0.046, 0.045, 0.039], last ? 4 : 10, last ? 5 : 8).shade(tubeShade(upBands, C.hairDark)).color(C.hairDark).pbr(0.8)];
+    const loStand = (lv, last) => [H.tube([O, KL, ML, FL], last ? [0.033, 0.026, 0.018, 0.007] : [0.037, 0.03, 0.021, 0.008], last ? 6 : 14, last ? 5 : 8).shade(tubeShade(loBands, C.hairDark)).color(C.hairDark).pbr(0.8)];
     const nm = `${side > 0 ? 'L' : 'R'}${li + 1}`;
     const cp = (list) => (side > 0 ? flat(list) : mirrorAll(list));
     const A0 = [side * 0.116, 0.285, g.z];
-    const un = node(`leg${nm}`, 'torso', [0, 0, 0], { rig: 'legs', pos: sub3(A0, CO), rot: [0, -side * g.az, 0], detail: 0.8, minRes: 13 });
-    const ln = node(`shin${nm}`, `leg${nm}`, [0, 0, 0], { rig: 'shins', pos: [side * K[0], K[1], 0], detail: 0.8, minRes: 13 });
+    const mir = (f) => (lv, last) => cp(f(lv, last));
+    const un = node(`leg${nm}`, 'torso', [0, 0, 0], { rig: 'legs', pos: sub3(A0, CO), rot: [0, -side * g.az, 0], detail: 0.7, minRes: 13, bake: { stand: mir(upStand), rough: 0.85, clean: 33 } });
+    const ln = node(`shin${nm}`, `leg${nm}`, [0, 0, 0], { rig: 'shins', pos: [side * K[0], K[1], 0], detail: 0.7, minRes: 13, bake: { stand: mir(loStand), rough: 0.85, clean: 33 } });
     un.prims = cp(up); un.hard = cp(upH); ln.prims = cp(lo); ln.hard = cp(loH);
     nodes.push(un, ln);
   }
@@ -1599,7 +1729,7 @@ function spiderAnim(rig, inner, c, base) {
       lift += rear * front * 0.95 - strike * front * 0.35; curl += -rear * front * 0.5 + strike * front * 0.5; sweep += (rear - strike) * front * -0.25;
       if (i >= 4) { lift -= rear * 0.12; curl -= rear * 0.1; }
     }
-    if (deadF) { lift = lerp(lift, -0.55, deadF) + deadF * 0.9; curl = lerp(curl, 1.25, deadF); sweep *= 1 - deadF; }
+    if (deadF) { lift = lerp(lift, -0.42 - (i >= 4 ? 0.12 : 0), deadF); curl = lerp(curl, 1.75, deadF); sweep = lerp(sweep, (i < 2 ? -0.25 : i >= 6 ? 0.3 : 0) * sg, deadF); }   // on its back, legs folded over the belly
     R(l, 0, -sg * sweep, sg * lift);
     R(Sn[i], 0, 0, -sg * curl);
   });
@@ -1731,8 +1861,8 @@ function bat(def, o = {}) {
     // thumb: a hooked claw on the wrist, the bat's crampon when it crawls
     arm.prims.push(skin(bone(WR, add3(WR, [0.02, -0.005, 0.05]), 0.016, 0.011).blend(0.006), C.skinDark));
     arm.hard.push(spike(add3(WR, [0.02, -0.005, 0.05]), [0.25, -0.5, 0.85], 0.07, 0.012, C.claw, [0, -1, 0], 0.5).pbr(0.25).near());
-    // fifth finger: the strut the hand folds about
-    arm.hard.push(...fingerTube([WR, lerp3(WR, D5, 0.5), D5], 0.014, 2));
+    // fifth finger: the strut the hand folds about. It rides with the skin it stiffens, so it closes up with it on the ground
+    skinN.hard.push(...fingerTube([WR, lerp3(WR, D5, 0.5), D5], 0.014, 2));
     // membrane from the arm back to the flank and the ankle
     const m = membrane(lineFn(WR, D5), lineFn(PIT, ANK, [0, 0.0, 0]), { nu: 12, nv: 12, scallop: 0.3, billow: 0.03, col: webCol(3), archPow: 0.9 });
     skinN.hard.push(m.near(), membrane(lineFn(WR, D5), lineFn(PIT, ANK), { nu: 3, nv: 3, scallop: 0.3, billow: 0.02, col: () => mixRgb(cA, cB, 0.4) }).far());
@@ -1858,7 +1988,21 @@ function batHead(C, rnd) {
   return { p, hard, jp, jhard, hinge };
 }
 
-const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _ax = new THREE.Vector3();
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _ax = new THREE.Vector3(), _fp = new THREE.Vector3();
+/** the lowest of the bat's toes (inner units) once the body is pitched by `pitch`, in the pose the legs are in now */
+function batFoot(rig, pitch) {
+  const L = rig.legs || [], Sn = rig.shins || [], T = rig.torso;
+  let m = Infinity;
+  if (T) T.updateMatrix();
+  for (let i = 0; i < L.length; i++) {
+    if (!Sn[i]) continue;
+    L[i].updateMatrix(); Sn[i].updateMatrix();
+    _fp.set(0, -0.015, -0.185).applyMatrix4(Sn[i].matrix).applyMatrix4(L[i].matrix);
+    if (T) _fp.applyMatrix4(T.matrix);
+    m = Math.min(m, _fp.y * Math.cos(pitch) - _fp.z * Math.sin(pitch));
+  }
+  return m === Infinity ? 0.185 : m;
+}
 function batAnim(rig, inner, c, base) {
   const { R, keys } = base;
   const s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
@@ -1877,7 +2021,7 @@ function batAnim(rig, inner, c, base) {
     if (deadF) { wingQ(w, sg, -0.1, 0.1, lerp(-0.6, -0.42 + (sg > 0 ? -0.1 : 0.1), deadF)); fold = 0.45; }
     else {
       const step = c.moving ? Math.sin(t * 9 + ph + (sg > 0 ? 0 : Math.PI)) : 0;
-      wingQ(w, sg, -0.3 + step * 0.22 - biteF * 0.25, 0.25, -0.66 + Math.max(0, step) * 0.14 + idle * 0.01 + coil * 0.12);
+      wingQ(w, sg, -0.3 + step * 0.22 - biteF * 0.25, 0.25, -0.86 + Math.max(0, step) * 0.16 + idle * 0.01 + coil * 0.12);   // propped on its wrists
       if (air > 0.001) { _qf.copy(w.quaternion); wingQ(w, sg, 0.02 + 0.12 * g - biteF * 0.35, 0.16 * g + biteF * 0.2, 0.14 + f * 0.58 + coil * 0.3); if (air < 0.999) w.quaternion.slerp(_qf, 1 - air); }
       fold = 1 - air;
     }
@@ -1885,21 +2029,26 @@ function batAnim(rig, inner, c, base) {
       // in the air the hand hinges about the fifth finger and lags the arm; folded, the fingers close like a fan and lie back along the forearm
       _ax.set(sg * (rig.hingeX || 0), rig.hingeY || 0, rig.hingeZ || -1);
       _qa.setFromAxisAngle(_ax, -sg * (Math.sin(beat - 1.0) * 0.5 - 0.05) * (1 - fold));
-      _qb.setFromEuler(_ew.set(0.5 * fold, sg * 1.12 * fold, 0, 'YXZ'));
+      // folded, the hand turns right back so the fingers lie along the top of the forearm, and the fan closes across
+      // its spread (local Z) only: the finger bones keep their length
+      _qb.setFromEuler(_ew.set(-0.22 * fold, sg * 2.72 * fold, 0, 'YXZ'));
       tp.quaternion.copy(_qb).multiply(_qa);
-      tp.scale.set(lerp(1, 0.2, fold), 1, lerp(1, 0.8, fold));
+      tp.scale.set(1, 1, lerp(1, 0.3, fold));
     }
     if (sk) sk.scale.set(1, 1, lerp(1, 0.34, fold));
   });
   // legs: trailing in flight, planted under the rump on the ground
   for (let i = 0; i < L.length; i++) {
     const sg = sideOf(L[i], i), step = c.moving ? Math.sin(t * 9 + ph + (sg > 0 ? Math.PI : 0)) : 0, gr = 1 - air;
-    R(L[i], lerp(Math.sin(t * 2.3 + i) * 0.08 - biteF * 0.9, -1.25 + step * 0.25 + deadF * 1.0, gr), sg * 0.35 * (1 - deadF) * gr, sg * (0.25 + deadF * 0.5) * gr);
-    R(Sn[i], lerp(biteF * -0.5, -0.55 - Math.max(0, step) * 0.3 + deadF * 0.4, gr));
+    R(L[i], lerp(Math.sin(t * 2.3 + i) * 0.08 - biteF * 0.9, -0.8 + step * 0.25 + deadF * 0.55, gr), sg * 0.35 * (1 - deadF) * gr, sg * (0.25 + deadF * 0.5) * gr);   // crouched
+    R(Sn[i], lerp(biteF * -0.5, -1.05 - Math.max(0, step) * 0.3 + deadF * 0.9, gr));
   }
   if (!deadF) {
-    pitch = lerp(-0.52 + idle * 0.015 + 0.12 * bite, -0.2 + 0.03 * g - 0.25 * biteF + 0.3 * coil, air);
-    py = lerp(-0.185 + idle * 0.004 + (c.moving ? Math.abs(Math.sin(t * 9 + ph)) * 0.015 : 0), g * 0.05 - 0.02, air);
+    const gPitch = -0.38 + idle * 0.015 + 0.12 * bite;
+    // on the ground the body sits as low as its hind feet allow: they rest on the ground, they do not sink into it
+    const gPy = (air < 0.999 ? -batFoot(rig, gPitch) : -0.185) + idle * 0.004 + (c.moving ? Math.abs(Math.sin(t * 9 + ph)) * 0.015 : 0);
+    pitch = lerp(gPitch, -0.2 + 0.03 * g - 0.25 * biteF + 0.3 * coil, air);
+    py = lerp(gPy, g * 0.05 - 0.02, air);
     hx += lerp(0.34, 0.12, air);
   }
   R(rig.head, hx, hy, hy * 0.2); R(rig.jaw, jw);
@@ -1964,18 +2113,34 @@ function airBlend(rig, c) {
 }
 /** point a wing node: sweep it back (yaw), roll it about its own span, raise it (dihedral). sg = +1 left, -1 right */
 function wingQ(n, sg, yaw, roll, dihedral) { if (n) n.quaternion.setFromEuler(_ew.set(roll, sg * yaw, sg * dihedral, 'YXZ')); }
+const _wm = new THREE.Matrix4(), _wx = new THREE.Vector3(), _wy = new THREE.Vector3(), _wz = new THREE.Vector3();
+/** point a wing node by directions (authored for the left wing, mirrored for the right): its span along `span`, its
+ *  feathers trailing toward `trail` (made square to the span) */
+function wingFrame(n, sg, span, trail) {
+  if (!n) return;
+  _wx.set(span[0], span[1], span[2]).normalize();
+  _wz.set(-trail[0], -trail[1], -trail[2]);
+  _wz.addScaledVector(_wx, -_wz.dot(_wx)).normalize();
+  _wy.crossVectors(_wz, _wx);
+  n.quaternion.setFromRotationMatrix(_wm.makeBasis(_wx, _wy, _wz));
+  if (sg < 0) { n.quaternion.y *= -1; n.quaternion.z *= -1; }
+}
 const sideOf = (n, i) => ((n.userData.rest?.[3] ?? (i ? -1 : 1)) >= 0 ? 1 : -1);
 
-/** feathered wings: beating in the air; on the ground raised over the back with the hands folded in, heraldry's way */
+/** feathered wings: beating in the air; on the ground folded up and back over the rider's legs */
 function poseFeatherWings(rig, c, s, beat, flare, deadF) {
   const W = rig.wings || [], WT = rig.wingtips || [];
   const idle = Math.sin(c.t * 1.3 + (c.phase || 0)), air = airBlend(rig, c);
   W.forEach((w, i) => {
     const sg = sideOf(w, i), tp = WT[i];
-    if (deadF > 0) { wingQ(w, sg, 0.75 * deadF, -0.3 * deadF, lerp(0.9, sg > 0 ? -0.5 : 0.15, deadF)); wingQ(tp, sg, 1.5, 0, -0.1); return; }
+    if (deadF > 0) { wingQ(w, sg, 0.75 * deadF, -0.3 * deadF, lerp(0.9, sg > 0 ? -0.5 : 0.15, deadF)); wingQ(tp, sg, 1.5, 0, -0.1); w.scale.set(1, 1, 1); return; }
     const open = flare;                                                       // the wings mantle open when it strikes
-    wingQ(w, sg, lerp(0.72, 0.3, open), lerp(0.28, -0.1, open), lerp(1.02, 0.7, open) + idle * 0.025);
-    wingQ(tp, sg, lerp(1.75, 0.5, open), 0, lerp(-0.12, -0.05, open));
+    // folded: the arm swept up and back over the rider's knee, the flight feathers draped out and down past his leg
+    // and the hand turned back along them; the feathers' spread is squeezed (scale) as a folded wing stacks them
+    wingFrame(w, sg, [0.38, 0.5 + idle * 0.012, -0.78], [0.45, -0.6, -0.65]);
+    if (open > 0.001) { _qf.copy(w.quaternion); wingQ(w, sg, 0.3, -0.1, 0.7); w.quaternion.slerp(_qf, 1 - open); }
+    wingQ(tp, sg, lerp(1.0, 0.5, open), 0, -0.05);
+    w.scale.set(1, 1, lerp(0.6, 1, Math.max(open, air)));
     if (air > 0.001) {
       const f = Math.sin(beat), g = Math.cos(beat);
       _qf.copy(w.quaternion); wingQ(w, sg, 0.06 + 0.1 * g + flare * 0.25, 0.1 * g - flare * 0.3, 0.2 + f * 0.5); if (air < 0.999) w.quaternion.slerp(_qf, 1 - air);
@@ -2056,8 +2221,33 @@ function beastMotion(rig, inner, c, base, mounted) {
     return true;
   }
   inner.rotation.x = pitch;
+  if (!fly && rig.footFy !== undefined) py = plantFeet(rig, body, pitch);
   inner.position.y = py * s;
   return false;
+}
+
+/** the height (inner units) that puts the lowest foot on the ground, measured against the rest pose so standing still is unchanged */
+function plantFeet(rig, body, pitch) {
+  const L = rig.legs || [], Sn = rig.shins || [], Pw = rig.paws || [];
+  const low = (useRest) => {
+    let m = Infinity;
+    for (let i = 0; i < L.length; i++) {
+      if (!Sn[i] || !Pw[i]) continue;
+      for (const dz of [rig.footHeel ?? -0.045, rig.footToe ?? 0.055]) {                       // heel and toe
+        let y = i < 2 ? rig.footFy : rig.footBy, z = (i < 2 ? rig.footFz : rig.footBz) + dz * (rig.footS || 1);
+        for (const n of [Pw[i], Sn[i], L[i]]) {
+          const a = useRest ? n.userData.rest[0] : n.rotation.x, c = Math.cos(a), sn = Math.sin(a), r = n.userData.rest;
+          const y2 = y * c - z * sn; z = y * sn + z * c + r[5]; y = y2 + r[4];
+        }
+        y += body.userData.rest[4]; z += body.userData.rest[5];
+        const p = useRest ? 0 : pitch, h = y * Math.cos(p) - z * Math.sin(p);
+        if (h < m) m = h;
+      }
+    }
+    return m;
+  };
+  if (rig._foot0 === undefined) rig._foot0 = low(true);
+  return rig._foot0 - low(false);
 }
 
 function quadAnim(rig, inner, c, base) { beastMotion(rig, inner, c, base, false); }

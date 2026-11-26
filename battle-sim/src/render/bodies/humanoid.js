@@ -9,6 +9,14 @@
 //   weaponR         child of handR at the grip, in the weapon frame (rig list `weapon`)
 //   shieldL         child of foreL, in the shield frame (rig list `shield`)
 //   wingL, wingR    children of torso (rig list `wings`); tail0..tail2 chained from torso (rig list `tail`)
+//   stringU, stringL, arrow   longbow only: children of weaponR (rig lists `string`, `arrow`); the bow's rigid string is
+//                   replaced by two hinged halves and a nocked arrow so the archer can draw and loose
+// Rig values on the description (rigkit copies them to the rig): hold, reach (weapon length), butt (how far the weapon
+// runs back past the grip), lie (how high a corpse's back lifts it), pass (arrow offset), build (arm length against a
+// man's), wscale (weapon scale), handR.
+// Far level: every limb has a `.far()` stand-in at its real thickness (a six-sided CylinderGeometry tagged 'limbRod',
+// which gear.js recolours to the garment), hands and feet seven-sided spindles tagged 'handRod' / 'footRod' that take
+// the colour of whatever covers them after gear.dress(), and blade ears flat spikes. Human ear prims are tagged 'ear'.
 // Joint positions come from proportions(o) in anatomy.js. Every part is built for the LEFT side
 // (lateral = +X, medial = -X) and mirrored for the right.
 //
@@ -31,6 +39,7 @@ const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2],
 const len3 = (a) => Math.hypot(a[0], a[1], a[2]);
 const norm3 = (a) => mul3(a, 1 / (len3(a) || 1e-9));
 const flat = (x) => [x].flat(Infinity).filter(Boolean);
+const tagged = (x, tag) => { x.tag = tag; return x; };
 const mirrorAll = (list) => flat(list).map((p) => p.mirrorX());
 
 // ---------- deterministic variation ----------
@@ -181,12 +190,12 @@ const SPECIES = {
   human: { muscle: 0.5, fingers: 4, feet: 'shoe', det: 1, armOut: 4, tint: [0.07, 26] },
   goblin: { muscle: 0.3, gut: 0.22, fingers: 3, feet: 'bare', toes: 3, claws: 0.45, det: 1, armOut: 6, tint: [0.13, 15] },
   hobgoblin: { muscle: 0.85, gut: 0.12, fingers: 4, feet: 'bare', toes: 4, claws: 0.36, det: 1, armOut: 7, tint: [0.1, 16] },
-  ogre: { muscle: 0.2, gut: 1, fingers: 4, feet: 'bare', toes: 4, claws: 0.2, det: 1.08, armOut: 15, tint: [0.09, 13] },
+  ogre: { muscle: 0.42, gut: 1, fingers: 4, feet: 'bare', toes: 4, claws: 0.2, det: 1.08, armOut: 15, tint: [0.12, 13], hide: ['noise', 0.0022, 46] },
   troll: { muscle: 0.5, gut: 0.24, fingers: 3, feet: 'bare', toes: 3, claws: 0.6, det: 1.0, armOut: 8, tint: [0.15, 11], hide: ['noise', 0.0035, 30] },
   cyclops: { muscle: 0.8, gut: 0.15, fingers: 4, feet: 'bare', toes: 4, claws: 0.2, det: 1.08, armOut: 9, tint: [0.08, 16] },
   minotaur: { muscle: 1, fingers: 3, feet: 'hoof', claws: 0.2, det: 1.0, armOut: 9, tint: [0.12, 14], tail: 'bull' },
-  demon: { muscle: 1, fingers: 4, feet: 'bare', toes: 3, claws: 1, det: 1.08, armOut: 9, tint: [0.14, 12], tail: 'barb', wings: 'bat' },
-  imp: { muscle: 0.3, gut: 0.35, fingers: 3, feet: 'bare', toes: 3, claws: 0.7, det: 1, armOut: 6, tint: [0.12, 16], tail: 'spade', wings: 'bat' },
+  demon: { muscle: 1, fingers: 4, feet: 'bare', toes: 3, claws: 1, det: 1.08, armOut: 9, tint: [0.14, 12], tail: 'barb', wings: 'bat', hide: ['noise', 0.0018, 58] },
+  imp: { muscle: 0.45, gut: 0.3, fingers: 3, feet: 'bare', toes: 3, claws: 0.7, det: 1, armOut: 6, tint: [0.16, 16], tail: 'spade', wings: 'bat', hide: ['noise', 0.0016, 64] },
   ghoul: { muscle: 0.2, fingers: 4, feet: 'bare', toes: 4, claws: 1, det: 1, armOut: 5, tint: [0.15, 13], gaunt: 1 },
   harpy: { muscle: 0.3, fingers: 3, feet: 'talon', claws: 0.9, det: 1, armOut: 6, tint: [0.07, 26], female: 1, noWrap: 1, tail: 'fan', wings: 'feather' },
 };
@@ -208,8 +217,9 @@ function palette(def, o, sp) {
   if (sp === 'goblin' || sp === 'hobgoblin') Object.assign(C, { lip: tone(skin, -0.02, 0, -0.17), blush: tone(skin, -0.04, 0.05, -0.05), nail: 0x3a3424, claw: 0x2c2a1c, linen: 0x5b4630, light: tone(skin, 0.02, -0.06, 0.07), white: 0xe6dfa8, tooth: 0xe3d9a8 });
   if (sp === 'ghoul') Object.assign(C, { lip: tone(skin, 0, -0.02, -0.25), blush: tone(skin, 0.3, 0, -0.08), claw: 0x23201c, nail: 0x3a3832, linen: 0x4a463c, tooth: 0xcfc59e, light: tone(skin, 0.02, -0.03, 0.08), mouth: 0x1e1412 });
   if (sp === 'troll' || sp === 'ogre' || sp === 'cyclops') Object.assign(C, { lip: tone(skin, -0.02, 0.02, -0.2), nail: tone(skin, 0, -0.1, -0.25), claw: tone(skin, 0, -0.12, -0.34), linen: mix(o.cloth ?? 0x5a4630, 0x3a2e22, 0.5) });
-  if (sp === 'minotaur') Object.assign(C, { lip: 0x2a1c18, nail: 0x1c1614, claw: 0x1c1614, linen: 0x2c2018, light: tone(skin, 0.015, -0.06, 0.16), fur: tone(skin, 0, -0.04, -0.09), horn: 0xd8cba6 });
-  if (sp === 'demon' || sp === 'imp') Object.assign(C, { lip: tone(skin, 0, 0, -0.16), blush: tone(skin, 0.02, 0.05, 0.04), nail: 0x141012, claw: 0x141012, linen: 0x1e1614, tooth: 0xf0e6c8, light: tone(skin, 0.015, 0.02, 0.06), horn: 0x1a1416, mouth: 0x2a0a08, ember: 0xff7a1e });
+  if (sp === 'minotaur') Object.assign(C, { skin: tone(skin, 0.005, 0.05, 0.075), lip: 0x2a1c18, nail: 0x1c1614, claw: 0x1c1614, linen: 0x2c2018, light: tone(skin, 0.02, -0.04, 0.24), fur: tone(skin, -0.005, -0.02, -0.07), horn: 0xd8cba6, sheen: tone(skin, 0.01, 0.02, 0.17) });
+  if (sp === 'demon' || sp === 'imp') Object.assign(C, { lip: tone(skin, 0, 0, -0.16), blush: tone(skin, 0.02, 0.05, 0.04), nail: 0x141012, claw: 0x141012, linen: 0x1e1614, tooth: 0xf0e6c8, light: tone(skin, 0.015, 0.02, 0.06), horn: 0x1a1416, mouth: 0x2a0a08, ember: 0xff7a1e,
+    scorch: tone(skin, -0.012, -0.08, -0.1), scorch2: tone(skin, -0.02, -0.16, -0.2) });
   if (sp === 'harpy') Object.assign(C, { claw: 0x2a2622, nail: 0x2a2622, plume: o.cloth ?? 0x6a5a8a, scale: 0xc79a3e });
   C.fur ??= tone(skin, 0, -0.05, -0.12);
   C.horn ??= 0xd8cba6;
@@ -222,11 +232,14 @@ function palette(def, o, sp) {
 // =====================================================================================
 
 /**
- * A plain tapered rod hidden inside a limb, from y = 0 down to y = -len. Up close it is buried in the sculpt;
- * on the farthest detail level, where a thin limb can fall between the sculpt's sample points, it is what
- * keeps the limb there at all.
+ * The limb's stand-in for the farthest detail level, from y = 0 down to y = -len, at the limb's real thickness: there a
+ * thin limb falls between the sculpt's sample points, and this is what keeps it solid and correctly proportioned.
+ * It exists only on that level (.far()). gear.js recolours it to the garment by recognising an un-flagged six-sided
+ * CylinderGeometry (keep those three things), and it is tagged `limbRod` so that can be done by tag instead.
  */
-const core = (rTop, rBottom, len, color) => H.cyl(rTop, rBottom, len, 6).at(0, -len / 2, 0).color(color).pbr(0.8);
+const core = (rTop, rBottom, len, color) => { const h = H.cyl(rTop, rBottom, len, 6).at(0, -len / 2, 0).color(color).pbr(0.8).far(); h.tag = 'limbRod'; return h; };
+/** far-level stand-in for a hand or foot: a flattened seven-sided spindle (seven sides, so gear's rod recolouring passes it by) */
+const knob = (rTop, rBottom, len, color, tag) => { const h = H.cyl(rTop, rBottom, len, 7).color(color).pbr(0.75).far(); h.tag = tag; return h; };
 
 function buildTorso(B) {
   const { P, st, C, sk, sp } = B;
@@ -323,6 +336,11 @@ function buildTorso(B) {
     for (let i = 0; i < 7; i++) { const a = rr() * 6.28, y = T * (0.3 + rr() * 0.6); p.push(S.sphere(0.008 + rr() * 0.005).at(Math.cos(a) * cw * 0.95, y, Math.sin(a) * cd * 0.95).color(tone(C.skin, 0, 0.02, -0.1)).paint(0.004, 0.004)); }
   }
   if (sp === 'ogre') {
+    // folds of fat: rolls at the back of the neck, a crease under the chest and under the overhang of the gut
+    const fold = (a, b, r) => S.capsule(a, b, r).color(tone(C.skin, -0.01, 0.02, -0.16)).paint(0.008, -0.004);
+    p.push(fold([-cw * 0.62, T - 0.17 * k, cd * 0.6], [cw * 0.62, T - 0.17 * k, cd * 0.6], 0.006 * k));
+    p.push(...S.mirrorX([fold([0.02, 0.03 * k, wd * 1.25], [ww * 0.95, 0.07 * k, wd * 0.5], 0.007 * k), fold([0.02, T + 0.005, -cd * 0.75], [cw * 0.5, T - 0.01, -cd * 0.7], 0.005 * k)]));
+    p.push(...S.mirrorX([S.ellipsoid(cw * 0.42, 0.05 * k, cd * 0.4).at(cw * 0.46, T - 0.12 * k, cd * 0.86).color(tone(C.skin, 0, 0, 0.06)).paint(0.03, 0)]));   // light on the slabs of the chest
     // old scar across the gut, a patch of chest hair
     p.push(stroke(-ww * 0.2, 0.15 * k, wd * 1.5, 0.085, 0.005, 0.2, 0, 24).color(tone(C.skin, -0.02, -0.08, 0.1)).paint(0.004, 0.0015));
     p.push(S.ellipsoid(cw * 0.45, 0.04 * k, 0.06).at(0, T - 0.085 * k, cd * 0.95).color(tone(C.skin, -0.01, -0.1, -0.22)).paint(0.02, 0));
@@ -349,6 +367,7 @@ function buildTorso(B) {
     p.push(fur(S.ellipsoid(cw * 0.26, 0.06 * k, 0.026).at(0, T - 0.1 * k, cd * 0.9).blend(0.016), 0.008));               // chest tuft
     p.push(fur(S.ellipsoid(hw * 1.05, 0.08, wd * 1.16).at(0, -0.012, -0.002).blend(0.03), 0.009));
     p.push(S.ellipsoid(cw * 0.7, 0.13 * k, 0.05).at(0, 0.16 * k, wd * 0.98).color(C.light).paint(0.04, 0));               // paler belly
+    p.push(...S.mirrorX([S.ellipsoid(cw * 0.36, 0.035 * k, cd * 0.4).rot(0, 0, 12).at(cw * 0.48, T - 0.08 * k, cd * 0.86).color(C.sheen).paint(0.03, 0)]));   // light on the chest
   }
   if (sp === 'demon' || sp === 'imp') {
     const big = sp === 'demon';
@@ -416,13 +435,13 @@ function buildArm(B) {
   p.push(sk(S.ellipsoid(r * 0.66, U * 0.34, r * (0.54 + 0.22 * m)).at(r * 0.18, -U * 0.46, -r * 0.46).blend(mb)));      // triceps
   p.push(sk(S.sphere(r * 0.86).at(0, -U, 0).blend(0.02)));                                                              // elbow
   p.push(sk(S.sphere(r * 0.4).at(0, -U + r * 0.05, -r * 0.64).blend(0.014)));                                            // point of the elbow
-  if (sp === 'minotaur') p.push(B.fur(S.ellipsoid(r * 1.2, r * 1.0, r * 1.2).at(r * 0.15, -r * 0.1, -r * 0.1).blend(0.03), 0.01));
+  if (sp === 'minotaur') p.push(B.fur(S.ellipsoid(r * 1.2, r * 1.0, r * 1.2).at(r * 0.15, -r * 0.1, -r * 0.1).blend(0.03), 0.01), S.ellipsoid(r * 0.7, U * 0.26, r * 0.6).at(-r * 0.05, -U * 0.55, r * 0.6).color(C.sheen).paint(0.025, 0));
   if (sp === 'harpy') p.push(B.plume(S.ellipsoid(r * 1.25, r * 1.5, r * 1.25).at(r * 0.15, -r * 0.5, 0).blend(0.014)));
   if (sp === 'hobgoblin') p.push(S.cyl(r * 2, 0.016, 0.004).at(0, -U * 0.42, 0).color(0x6e1c14).pbr(0.85).paint(0.004, 0));     // war paint band
   if (sp === 'demon') hard.push(spike([0, -U + r * 0.1, -r * 0.8], [0, 0.35, -1], r * 1.5, r * 0.34, C.horn, [0, 1, 0], 0.3));   // elbow spur
   if (B.lord) p.push(S.capsule([r * 0.9, -r * 0.6, r * 0.5], [r * 0.6, -U * 0.5, r * 0.8], 0.005).color(C.ember).glow(1.7).paint(0.004, 0), S.capsule([r * 0.6, -U * 0.5, r * 0.8], [r * 0.9, -U * 0.8, r * 0.3], 0.005).color(C.ember).glow(1.7).paint(0.004, 0));
   if (sp === 'ghoul') p.push(S.capsule([-r * 0.3, -r, r * 0.8], [r * 0.1, -U * 0.9, r * 0.75], 0.004).color(0x3c4250).paint(0.004, 0.001));
-  hard.push(core(r * 0.7, r * 0.58, U, C.skin));
+  hard.push(core(r * 1.0, r * 0.84, U, sp === 'harpy' ? C.plume : sp === 'minotaur' ? C.fur : C.skin));
   return { prims: p, hard };
 }
 
@@ -437,9 +456,10 @@ function buildForearm(B) {
   p.push(sk(S.sphere(rw * 0.5).at(rw * 0.62, -F + rw * 0.25, -rw * 0.5).blend(0.01)));                               // wrist bone
   p.push(sk(S.sphere(rw * 1.0).at(0, -F, 0).blend(0.012)));                                                          // wrist ball hides the seam
   if (sp === 'demon') for (let i = 0; i < 3; i++) hard.push(spike([r * 0.75, -F * (0.2 + i * 0.22), -r * 0.35], [1, -0.5, -0.5], r * (1.1 - i * 0.2), r * 0.24, C.horn, [0, -1, 0], 0.3));
+  if (C.scorch) p.push(S.capsule([0, -F * 0.55, 0], [0, -F * 1.3, 0], r * 1.8).color(C.scorch).paint(0.035, 0), S.capsule([0, -F * 0.85, 0], [0, -F * 1.3, 0], r * 1.8).color(C.scorch2).paint(0.03, 0));
   if (sp === 'minotaur') p.push(S.cyl(r * 2, F * 0.5, 0.004).at(0, -F * 0.3, 0).color(C.fur).paint(0.03, 0));
   if (sp === 'ghoul') p.push(S.capsule([r * 0.5, -F * 0.1, r * 0.6], [r * 0.2, -F * 0.9, rw * 0.9], 0.004).color(0x3c4250).paint(0.004, 0.001));
-  hard.push(core(r * 0.68, rw * 0.7, F, C.skin));
+  hard.push(core(r * 0.96, rw * 1.0, F, C.skin));
   return { prims: p, hard };
 }
 
@@ -481,6 +501,7 @@ function openHand(B) {
   const t0 = [-hr * 0.1, -hr * 0.5, hr * 0.66], t1 = [-hr * 0.34, -hr * 1.12, hr * 1.02], t2 = [-hr * 0.52, -hr * 1.62, hr * 1.04];
   p.push(sk(S.capsule(t0, t1, fr * 1.22, fr * 1.1).blend(0.01)), sk(S.capsule(t1, t2, fr * 1.08, fr * 0.95).blend(0.004)));
   fingertip(B, p, hard, t1, t2, fr * 0.95, [0.5, 0, 0.86]);
+  if (B.C.scorch) p.push(S.sphere(hr * 3).at(0, -hr, 0).color(B.C.scorch2).paint(0.02, 0));
   return { prims: p, hard };
 }
 
@@ -515,6 +536,7 @@ function gripHand(B, gr, rot, pos) {
   const palm = new THREE.Vector3(px, 0, -hr * 0.35).applyEuler(new THREE.Euler(rot[0] * DEG, rot[1] * DEG, rot[2] * DEG, 'XYZ'));
   p.push(sk(S.capsule([0, -P.rWrist * 0.2, 0], [pos[0] + palm.x, pos[1] + palm.y, pos[2] + palm.z], P.rWrist * 0.95, hr * 0.44).blend(0.014)));
   for (const x of q) p.push(place(x));
+  if (B.C.scorch) p.push(S.sphere(hr * 3).at(pos[0], pos[1], pos[2]).color(B.C.scorch2).paint(0.02, 0));
   return { prims: p, hard: qh.map(place) };
 }
 
@@ -540,7 +562,7 @@ function buildLeg(B) {
     p.push(S.cyl(r * 1.7, L * (hem + 0.2), 0.01).at(0, -L * (hem - 0.2) / 2, 0).color(C.linen).tint(0.1, 60).pbr(0.92).paint(0.004, 0));
     p.push(S.cyl(r * 1.25, 0.012, 0.003).at(0, -L * (hem - 0.02), 0).color(tone(C.linen, 0, 0, -0.1)).pbr(0.92).paint(0.003, 0.0035));
   }
-  hard.push(core(r * 0.76, rc * 0.68, L, sp === 'harpy' ? C.plume : C.skin));
+  hard.push(core(r * 1.0, rc * 0.96, L, sp === 'harpy' ? C.plume : sp === 'minotaur' ? C.fur : C.skin));
   return { prims: p, hard };
 }
 
@@ -563,7 +585,7 @@ function buildShin(B) {
     }
     p.push(...[1, -1].map((s) => S.sphere(ra * 0.34).at(s * ra * 0.6, gy + hh * 1.0, -ra * 0.9).color(hc).pbr(0.4).blend(0.006)));  // dew claws
     p.push(S.box(0.4, 0.1, 0.5, 0).at(0, gy - 0.05, 0.05).cut(0.003).color(hc));
-    hard.push(core(rc * 0.7, ra * 0.9, L * 0.92, C.fur));
+    hard.push(core(rc * 0.96, ra * 1.2, L * 0.92, C.fur), knob(ra * 0.95, ra * 1.05, P.footH + L * 0.1, 0x1e1814, 'footRod').at(0, gy + (P.footH + L * 0.1) / 2, FL * 0.16));
     return { prims: p, hard };
   }
   if (st.feet === 'talon') {
@@ -581,7 +603,7 @@ function buildShin(B) {
     };
     const tr = ra * 0.42;
     toe(norm3([-0.42, 0, 1]), FL * 0.56, tr); toe([0, 0, 1], FL * 0.66, tr * 1.05); toe(norm3([0.46, 0, 1]), FL * 0.54, tr); toe(norm3([-0.1, 0, -1]), FL * 0.36, tr);
-    hard.push(core(ra * 0.66, ra * 0.58, L, C.scale));
+    hard.push(core(ra * 0.95, ra * 0.8, L, C.scale), knob(ra * 0.5, ra * 0.9, FL * 0.85, C.scale, 'footRod').rot(90, 0, 0).scale(1.6, 0.5, 1).at(0, gy + ra * 0.5, FL * 0.22));
     return { prims: p, hard };
   }
   p.push(sk(S.sphere(rc * 0.98)));
@@ -590,6 +612,7 @@ function buildShin(B) {
   p.push(sk(S.ellipsoid(rc * 0.54, L * 0.24, rc * 0.64).at(rc * 0.34, -L * 0.3, -rc * 0.42).blend(0.018)));             // calf: outer head
   p.push(sk(S.capsule([0, -L * 0.1, rc * 0.5], [0, -L * 0.9, ra * 0.55], rc * 0.3, ra * 0.4).blend(0.016)));            // shin bone
   p.push(...[1, -1].map((s) => sk(S.sphere(ra * 0.5).at(s * ra * 0.78, -L + ra * 0.1, -ra * 0.1).blend(0.01))));        // ankle bones
+  const scorchLeg = () => { if (C.scorch) p.push(S.capsule([0, -L * 0.5, 0], [0, gy - 0.05, FL * 0.3], rc * 2.4).color(C.scorch).paint(0.04, 0), S.capsule([0, -L * 0.88, 0], [0, gy - 0.05, FL * 0.3], rc * 2.4).color(C.scorch2).paint(0.03, 0)); };
   if (st.feet === 'shoe') {
     // neutral foot in a soft turnshoe, for species that are normally booted
     const sc = C.shoe;
@@ -616,8 +639,9 @@ function buildShin(B) {
       fingertip(B, p, hard, a, b, tr * 0.85, [0, 1, 0], 0.62);
     }
   }
+  scorchLeg();
   p.push(S.box(0.4, 0.1, 0.5, 0).at(0, gy - 0.05, 0.05).cut(0.003));                                                   // flat sole on the ground
-  hard.push(core(rc * 0.66, ra * 0.7, L, st.feet === 'shoe' ? C.skin : C.skin));
+  hard.push(core(rc * 0.96, ra * 1.0, L, C.skin), knob(fw * 0.42, fw * 0.5, FL * 1.08, st.feet === 'shoe' ? C.shoe : C.skin, 'footRod').rot(90, 0, 0).scale(1, 0.62, 1).at(0, gy + 0.02, FL * 0.2));
   return { prims: p, hard };
 }
 
@@ -633,7 +657,7 @@ const FACES = {
   halberdier: { hair: 'crop', hairCol: 0x8a4a22, beard: 'moustache', jaw: 1.04, nose: 1.12, brow: 1.05, eye: 0x6a5a3a },
   lancer: { hair: 'swept', hairCol: 0x4a3220, beard: 'moustache', jaw: 1.0, nose: 1.0, brow: 1.0, eye: 0x5a4a2e },
   longbow: { hair: 'swept', hairCol: 0xb08a4e, beard: 'short', jaw: 0.96, nose: 1.06, brow: 0.95, eye: 0x5a7a4a },
-  crossbow: { hair: 'crop', hairCol: 0x1e1814, beard: 'goatee', jaw: 1.02, nose: 0.96, brow: 1.15, eye: 0x4a3a2a, scar: 1 },
+  crossbow: { hair: 'crop', hairCol: 0x3a2618, beard: 'short', jaw: 1.02, nose: 0.96, brow: 1.15, eye: 0x4a3a2a, scar: 1 },
   battlemage: { hair: 'long', hairCol: 0x8c8880, beard: 'long', jaw: 0.98, nose: 1.15, brow: 1.2, eye: 0x7a5a2a },
   cleric: { hair: 'tonsure', hairCol: 0xd8d4c8, beard: 'none', jaw: 1.0, nose: 1.04, brow: 0.9, eye: 0x4a6a8a, old: 1 },
   paladin: { hair: 'swept', hairCol: 0xc09a58, beard: 'short', jaw: 1.1, nose: 1.0, brow: 1.1, eye: 0x4a7a9a },
@@ -682,16 +706,27 @@ function humanHead(B) {
   // mouth mound
   const my = -R * 0.66, mz = R * 0.875;
   p.push(sk(S.ellipsoid(R * 0.3, R * 0.2, R * 0.2).at(0, my + R * 0.01, R * 0.69).blend(0.018)));
-  // ears
+  // ears (tagged 'ear' so gear can take them off under a hood or coif)
   p.push(...S.mirrorX([
-    sk(S.ellipsoid(R * 0.07, R * 0.23, R * 0.16).rot(-12, 22, 0).at(R * 0.86, -R * 0.08, -R * 0.06).blend(0.01)),
-    S.ellipsoid(R * 0.045, R * 0.14, R * 0.085).rot(-12, 22, 0).at(R * 0.935, -R * 0.07, -R * 0.03).cut(0.006).color(C.shade),
+    tagged(sk(S.ellipsoid(R * 0.07, R * 0.23, R * 0.16).rot(-12, 22, 0).at(R * 0.86, -R * 0.08, -R * 0.06).blend(0.01)), 'ear'),
+    tagged(S.ellipsoid(R * 0.045, R * 0.14, R * 0.085).rot(-12, 22, 0).at(R * 0.935, -R * 0.07, -R * 0.03).cut(0.006).color(C.shade), 'ear'),
   ]));
   p.push(neckStub(B, R));
+  // a harpy's raptor mask: a hooked tip on the nose, dark plumage round the eyes running down the cheeks in malar stripes
+  const harpy = B.sp === 'harpy', mask = harpy ? tone(C.plume, 0, 0.06, -0.24) : 0;
+  if (harpy) {
+    p.push(sk(S.ellipsoid(R * 0.075, R * 0.11, R * 0.07).rot(-30, 0, 0).at(0, -R * 0.44, R * 1.0).blend(0.008)));
+    p.push(...S.mirrorX([sk(S.ellipsoid(R * 0.16, R * 0.08, R * 0.12).rot(0, 0, -20).at(R * 0.5, R * 0.3, R * 0.66).blend(0.012))]));   // a fiercer, swept brow
+  }
   // eyes
   const er = R * (fem ? 0.185 : 0.168);
-  eyeSet(p, hard, C, { x: R * 0.38, y: 0, r: er, z0: R * 2, look: { iris: f.eye, glow: f.glowEyes }, lash: fem ? 0x1c1014 : 0x2a1c14,
-    lidCol: tone(C.skin, -0.005, -0.08, gauntF ? -0.26 : -0.2), socket: gauntF ? C.deep : undefined, lid: { upper: old ? 44 : 37, roll: -4 * (bh - 0.9) * 2.5 } });
+  eyeSet(p, hard, C, { x: R * 0.38, y: 0, r: er, z0: R * 2, look: { iris: f.eye, glow: f.glowEyes, ring: harpy ? 0x3a2408 : undefined, pupilSize: harpy ? 0.8 : 1 }, lash: fem ? 0x1c1014 : 0x2a1c14,
+    lidCol: harpy ? tone(mask, 0, 0, -0.04) : tone(C.skin, -0.005, -0.08, gauntF ? -0.26 : -0.2), socket: gauntF ? C.deep : undefined, lid: { upper: old ? 44 : harpy ? 44 : 37, roll: harpy ? -16 : -4 * (bh - 0.9) * 2.5, lower: harpy ? 14 : 0 } });
+  if (harpy) p.push(...S.mirrorX([
+    S.ellipsoid(R * 0.27, R * 0.17, R * 0.22).rot(0, 0, -16).at(R * 0.42, R * 0.04, R * 0.74).color(mask).pbr(0.85).paint(0.018, 0),
+    stroke(R * 0.44, -R * 0.36, R * 0.74, R * 0.055, R * 0.24, R * 0.28, 0, 10).color(mask).pbr(0.85).paint(0.012, 0),
+    stroke(R * 0.62, R * 0.08, R * 0.6, R * 0.2, R * 0.045, R * 0.3, 30, 18).color(mask).pbr(0.85).paint(0.008, 0),
+  ]));
   // paint: lips, mouth line, nostrils, cheeks, eyebrows, marks
   const lip = fem ? mix(C.lip, 0xa83a44, 0.5) : C.lip;
   p.push(S.ellipsoid(R * 0.21, R * 0.04, R * 0.14).at(0, my + R * 0.045, mz).color(mix(C.skin, lip, fem ? 0.9 : 0.6)).paint(0.004, 0));
@@ -703,7 +738,7 @@ function humanHead(B) {
   ]));
   if (old || gauntF) p.push(...S.mirrorX([S.capsule([R * 0.19, -R * 0.42, R * 0.9], [R * 0.33, -R * 0.68, R * 0.78], R * 0.02).color(C.shade).paint(0.005, -0.003)]));
   const hc = f.hairCol ?? 0x3a2a1c;
-  p.push(...S.mirrorX([stroke(R * 0.36, R * (0.3 + 0.015 * bh), R * 0.84, R * 0.24, R * 0.05 * bh * (fem ? 0.7 : 1), R * 0.2, 24, 5 - 8 * (bh - 1)).color(old ? 0xcfcac0 : fem ? 0x2a2030 : tone(hc, 0, 0, -0.06)).pbr(0.9).paint(0.004, 0.0028)]));
+  p.push(...S.mirrorX([stroke(R * 0.36, R * (0.3 + 0.015 * bh), R * 0.84, R * 0.24, R * 0.05 * bh * (fem ? 0.7 : 1), R * 0.2, 24, harpy ? 22 : 5 - 8 * (bh - 1)).color(old ? 0xcfcac0 : harpy ? mask : fem ? 0x2a2030 : tone(hc, 0, 0, -0.06)).pbr(0.9).paint(0.004, 0.0028)]));
   if (f.freckles) for (let i = 0; i < 9; i++) p.push(S.sphere(R * 0.022).at((noise3(i * 3.1, 2, 5) - 0.5) * R * 0.9, -R * 0.24 - noise3(i * 1.7, 9, 1) * R * 0.14, R * 0.84).color(tone(C.skin, -0.02, 0.1, -0.14)).paint(0.004, 0));
   if (f.scar) p.push(stroke(R * 0.52, R * 0.0, R * 0.7, R * 0.016, R * 0.4, R * 0.3, 0, -8).color(tone(C.skin, -0.02, -0.05, 0.1)).paint(0.004, 0.0012));
   if (f.beard === 'stubble') p.push(S.ellipsoid(R * 0.72, R * 0.4, R * 0.62).at(0, -R * 0.8, R * 0.32).color(mix(C.skin, hc, 0.4)).paint(0.02, 0));
@@ -751,7 +786,7 @@ function humanHair(B, f, hc) {
     case 'crest': {
       // harpy: a cap of small feathers and a crest of long plumes swept back from the brow
       const cols = B.featherCols, pl = B.plume;
-      p.push(pl(S.ellipsoid(R * 0.92, R * 0.96 * L, R * 1.04).at(0, R * 0.22, -R * 0.1)), faceCut(-0.42, 0.7, 0.98), napeCut(-30, -1.2));
+      p.push(pl(S.ellipsoid(R * 0.92, R * 0.96 * L, R * 1.04).at(0, R * 0.22, -R * 0.1)).bump(0.0032, 78, 'scales'), faceCut(-0.42, 0.7, 0.98), napeCut(-30, -1.2));
       for (let i = -3; i <= 3; i++) {
         const a = i / 3;
         hard.push(feather([R * a * 0.4, R * (0.86 - a * a * 0.16), R * (0.5 - Math.abs(a) * 0.1)], [a * 0.5, 0.7 - Math.abs(a) * 0.15, -1], R * (1.5 - Math.abs(a) * 0.5), R * 0.36, [a * 0.6, 1, 0.5], cols));
@@ -792,6 +827,9 @@ function earBlade(B, p, root, dir, len, width, thick, inner) {
   const e = frameEuler(u, face);
   const off = new THREE.Vector3(0, -len * 0.08, t * 0.95).applyEuler(new THREE.Euler(e[0] * DEG, e[1] * DEG, e[2] * DEG, 'XYZ'));
   p.push(S.ellipsoid(width * 0.6, len * 0.74, t * 0.9).rot(e[0], e[1], e[2]).at(c[0] + off.x, c[1] + off.y, c[2] + off.z).color(inner).paint(0.004, -0.003));
+  // the blade is too thin for the farthest level: a flat four-sided spike keeps the ear's silhouette there (both sides)
+  const far = orient(H.cone(width * 0.9, len * 1.72, 4).at(0, len * 0.86, 0).scale(1, 1, 0.34), root, u, face).color(B.C.skin).pbr(0.75).far();
+  (B.farHard ||= []).push(far, far.mirrorX());
   return { c, u, tip: add3(c, mul3(u, len)) };
 }
 /** a row of teeth along the mouth: xs = positions across, dir +1 = lower teeth pointing up */
@@ -986,16 +1024,23 @@ function giantHead(B) {
     p.push(wart([R * 0.1, -R * 0.4, R * 1.36], R * 0.05, wc), wart([-R * 0.14, -R * 0.2, R * 1.12], R * 0.04, wc), wart([R * 0.46, -R * 0.4, R * 0.74], R * 0.045, wc), wart([-R * 0.3, R * 0.5, R * 0.78], R * 0.05, wc), wart([R * 0.2, -R * 1.0, R * 0.86], R * 0.04, wc));
     for (let i = 0; i < 5; i++) p.push(S.sphere(R * (0.14 + r() * 0.1)).at((r() - 0.5) * R * 1.4, R * (0.6 + r() * 0.6), (r() - 0.7) * R * 1.4).color(0x4f6a2e).pbr(0.95).paint(0.014, 0));
     if (hairOk) {
-      // a mossy mane straggling down from the crown in ropes
-      const hc = 0x2c3620, hp = [];
-      const hair = (x) => x.color(hc).tint(0.3, 20).pbr(0.9).bump(0.006, 40, 'fur');
-      hp.push(hair(S.ellipsoid(R * 0.3, R * 0.14, R * 0.4).at(0, R * 1.28, -R * 0.3)));
-      for (let i = 0; i < 9; i++) {
-        const a = (i - 4) * 0.38, len = 0.9 + 0.5 * ((i * 7) % 3) / 2;
-        const top = [Math.sin(a) * R * 0.22, R * 1.3, -R * 0.34], mid = [Math.sin(a) * R * 0.7, R * (0.95 - Math.cos(a) * 0.1), -R * (0.3 + Math.cos(a) * 0.7)], end = [Math.sin(a) * R * 0.86, R * (0.95 - len), -R * (0.26 + Math.cos(a) * 0.84)];
-        hp.push(hair(bone(top, mid, R * 0.1, R * 0.085).blend(0.01)), hair(bone(mid, end, R * 0.085, R * 0.035).blend(0.008)));
+      // a shock of mossy dreadlocks: they spring from a matted crown, arch out over the skull and fall to the shoulders,
+      // a few strung with bone beads; three greasy strands hang from the chin
+      const hcs = [0x34401f, 0x4a5428, 0x2a3218], hp = [], hh = [];
+      const hair = (x, j, amp = 0.0055) => x.color(hcs[j % 3]).tint(0.32, 18).pbr(0.88).bump(amp, 46, 'fur');
+      hp.push(hair(S.ellipsoid(R * 0.62, R * 0.3, R * 0.7).at(0, R * 1.18, -R * 0.24), 0, 0.008));
+      const bead = (q, r, col) => H.cyl(r, r, r * 1.3, 8).color(col).pbr(0.5).lod(1).at(q[0], q[1], q[2]);
+      for (let i = 0; i < 13; i++) {
+        const t = i / 12, a = (t - 0.5) * 3.9, sa = Math.sin(a), ca = Math.cos(a), len = 0.95 + 0.6 * (((i * 5) % 4) / 3);
+        const root = [sa * R * 0.4, R * (1.32 - 0.1 * Math.abs(sa)), -R * 0.24 - ca * R * 0.42];
+        const arch = [sa * R * 0.98, R * (1.08 - 0.12 * Math.abs(sa)), -R * 0.14 - ca * R * 1.0];
+        const fall = [sa * R * 1.12, R * (0.6 - len * 0.4), -R * 0.12 - ca * R * 1.12];
+        const end = [sa * R * 1.18 + Math.sin(i * 2.1) * R * 0.08, R * (0.6 - len), -R * 0.08 - ca * R * 1.2];
+        hp.push(hair(bone(root, arch, R * 0.1, R * 0.095).blend(0.01), i), hair(bone(arch, fall, R * 0.095, R * 0.08).blend(0.006), i), hair(bone(fall, end, R * 0.08, R * 0.035).blend(0.004), i));
+        if (i % 3 === 1) hh.push(bead(lerp3(fall, end, 0.35), R * 0.1, i % 2 ? 0xd8cba6 : 0x6a4a2a));
       }
-      hairPart = { prims: hp, hard: [] };
+      for (let i = -1; i <= 1; i++) hp.push(hair(bone([i * R * 0.14, -R * 1.06, R * 0.7], [i * R * 0.22, -R * (1.5 + Math.abs(i) * -0.1), R * 0.62], R * 0.06, R * 0.02).blend(0.008), 2));
+      hairPart = { prims: hp, hard: hh };
     }
   } else if (sp === 'ogre') {
     // small skull lost in jowls and chins
@@ -1019,6 +1064,10 @@ function giantHead(B) {
     for (const s of [1, -1]) { const q = hit(base, [s * R * 0.24, -R * 0.6, R * 2], [0, 0, -1]); hard.push(spike([q[0], q[1] - R * 0.03, q[2] - R * 0.06], [s * 0.1, 1, 0.1], R * 0.22, R * 0.075, C.tooth, [0, 0, -1], 0.1).lod(99)); }
     eyeSet(p, hard, C, { x: R * 0.32, y: R * 0.08, r: R * 0.115, z0: R * 2, look: { iris: 0x5a4020, pupilSize: 0.9 }, lash: 0x1e1610, lidCol: tone(C.skin, 0, 0.02, -0.12), lid: { upper: 48, roll: 3, lower: 28 } });
     p.push(S.ellipsoid(R * 0.86, R * 0.4, R * 0.7).at(0, -R * 0.78, R * 0.4).color(mix(C.skin, 0x2a2018, 0.3)).paint(0.03, 0));       // stubble
+    const crease = (a, b, r) => S.capsule(a, b, R * r).color(tone(C.skin, -0.01, 0.03, -0.2)).paint(0.006, -0.0045);
+    p.push(crease([-R * 0.3, R * 0.52, R * 0.84], [R * 0.3, R * 0.52, R * 0.84], 0.022), crease([-R * 0.22, R * 0.62, R * 0.8], [R * 0.22, R * 0.62, R * 0.8], 0.018));   // furrowed brow
+    p.push(...S.mirrorX([crease([R * 0.26, -R * 0.2, R * 0.98], [R * 0.4, -R * 0.6, R * 0.86], 0.024), crease([R * 0.5, R * 0.1, R * 0.74], [R * 0.62, R * 0.04, R * 0.6], 0.016)]));   // folds beside the nose, crow's feet
+    p.push(crease([-R * 0.22, -R * 0.96, R * 0.92], [R * 0.22, -R * 0.96, R * 0.92], 0.022));                                      // chin
     p.push(stroke(-R * 0.34, R * 0.34, R * 0.8, R * 0.018, R * 0.26, R * 0.3, 0, 12).color(tone(C.skin, -0.02, -0.06, 0.1)).paint(0.004, 0.0012));
     if (hairOk) {
       // greasy top-knot bound with a thong
@@ -1056,10 +1105,21 @@ function giantHead(B) {
     p.push(...S.mirrorX([stroke(R * 0.3, R * 0.5, R * 0.86, R * 0.36, R * 0.06, R * 0.24, 22, -18).color(hc).pbr(0.9).paint(0.005, 0.003)]));   // the brow hair
     p.push(S.ellipsoid(R * 0.76, R * 0.4, R * 0.62).at(0, -R * 0.84, R * 0.34).color(mix(C.skin, hc, 0.3)).paint(0.025, 0));
     if (hairOk) {
-      // bald crown with a shaggy fringe behind the ears
-      const hp = [];
-      const hair = (x) => x.color(0x3a2a1e).tint(0.25, 22).pbr(0.75).bump(0.011, 32, 'fur');
-      for (let i = 0; i < 9; i++) { const a = (i - 4) * 0.36; hp.push(hair(bone([Math.sin(a) * R * 0.8, R * 0.24, -R * (0.08 + Math.cos(a) * 0.86)], [Math.sin(a) * R * (1.0 + 0.08 * (i % 2)), -R * (0.2 + 0.14 * (i % 3)), -R * (0.1 + Math.cos(a) * 0.98)], R * 0.2, R * 0.08).blend(0.02))); }
+      // bald crown ringed by a horseshoe of shaggy locks from ear to ear, with bushy sideburns down to the jaw
+      const hp = [], hc = 0x4a2e1c;
+      const hair = (x, amp = 0.0075) => x.color(hc).tint(0.3, 24).pbr(0.82).bump(amp, 44, 'fur');
+      hp.push(hair(S.ellipsoid(R * 0.96, R * 1.02, R * 1.05).at(0, R * 0.2, -R * 0.1), 0.006));        // the mat the locks grow from
+      hp.push(S.ellipsoid(R * 0.86, R * 0.62, R * 1.0).at(0, R * 0.86, -R * 0.02).cut(0.02).color(hc));     // the bald crown
+      hp.push(S.box(R * 3, R * 3, R * 2, 0).at(0, 0, R * 1.02).cut(0.016).color(hc));                     // nothing in front of the ears
+      hp.push(S.box(R * 3, R * 2, R * 3, 0).rot(-14, 0, 0).at(0, -R * 1.42, 0).cut(0.02).color(hc));      // nape
+      for (let i = 0; i < 15; i++) {
+        const t = i / 14, a = (t - 0.5) * 4.3, sa = Math.sin(a), ca = Math.cos(a), lk = 0.42 + 0.3 * (((i * 7) % 5) / 4);
+        const y0 = R * (0.36 - 0.12 * Math.abs(sa)), out = 1.06 + 0.05 * (i % 2);
+        const root = [sa * R * 0.9, y0, -R * 0.1 - ca * R * 0.96], mid = [sa * R * out, y0 - R * lk * 0.55, -R * 0.1 - ca * R * (out + 0.04)];
+        const tip = [sa * R * (out + 0.1), y0 - R * lk, -R * 0.1 - ca * R * (out + 0.14)];
+        hp.push(hair(bone(root, mid, R * 0.15, R * 0.12).blend(0.01)), hair(bone(mid, tip, R * 0.12, R * 0.035).blend(0.006)));
+      }
+      for (const sx of [1, -1]) hp.push(hair(bone([sx * R * 0.86, R * 0.06, R * 0.02], [sx * R * 0.8, -R * 0.62, R * 0.24], R * 0.13, R * 0.06).blend(0.012)));
       hairPart = { prims: hp, hard: [] };
     }
   }
@@ -1329,6 +1389,7 @@ export function humanoid(def = {}, o = {}) {
 
   // ---- sculpt ----
   const torso = buildTorso(B), head = (HEADS[sp] || humanHead)(B), arm = buildArm(B), fore = buildForearm(B), leg = buildLeg(B), shin = buildShin(B);
+  if (B.farHard) { head.hard.push(...B.farHard); B.farHard = null; }
   const handR = held ? gripHand(B, gr, gripRot, gripAt) : openHand(B);
   const handL = bothHands ? gripHand(B, gr, [90 - 30, 0, 0], gripAt) : openHand(B);
 
@@ -1405,11 +1466,28 @@ export function humanoid(def = {}, o = {}) {
     route(name, view[name].hard.slice(counts[name][1]), 'hard');
   }
 
+  // ---- far level: hands and feet get stand-ins the colour of whatever now covers them (glove, gauntlet, boot, shoe, skin) ----
+  const coverAt = (n, pt, rad) => {
+    for (let i = n.prims.length - 1; i >= 0; i--) { const x = n.prims[i]; if (x.op === 0 && x.hasCol && !x.glowV && centreOf(x).distanceTo(pt) < rad) return x; }
+    return null;
+  };
+  const dressIn = (h, cover) => { if (cover) { h.col = cover.col.slice(); h.rough = cover.rough; h.metal = cover.metal; } return h; };
+  const _pt = new THREE.Vector3();
+  for (const name of ['handL', 'handR']) {
+    const n = nodes[name], h = knob(P.rWrist * 1.02, hr * 0.62, hr * 2, C.skin, 'handRod').scale(0.72, 1, 1).at(0, -hr, 0);
+    n.hard.push(dressIn(h, coverAt(n, _pt.set(0, -hr, 0), hr * 1.7)));
+  }
+  for (const name of ['shinL', 'shinR']) for (const h of nodes[name].hard) if (h.tag === 'footRod') dressIn(h, coverAt(nodes[name], centreOf(h), P.footLen * 0.55));
+  if ((o.scale || 1) >= 1.4) nodes.head.minRes = 32;                                  // a giant's face is big enough on screen to keep at distance
+
   // ---- weapon and shield ----
   let attack = w ? w.attack : (def.style === 'magic' ? 'cast' : st.claws > 0.3 ? 'claw' : 'swing');
+  let pass = 0, butt = 0;
   if (w && held) {
     const rot = w.hold === 'bow' ? [90, -24, 0] : [gripRot[0], 0, -gripRot[2]];
-    node('weaponR', 'handR', 'weapon', [-gripAt[0], gripAt[1], gripAt[2]], { prims: w.prims, hard: w.hard }, 1.2, rot);
+    const wn = node('weaponR', 'handR', 'weapon', [-gripAt[0], gripAt[1], gripAt[2]], { prims: w.prims, hard: w.hard }, 1.2, rot);
+    for (const h of wn.hard) { if (!h.geo.boundingBox) h.geo.computeBoundingBox(); butt = Math.max(butt, -_bb.copy(h.geo.boundingBox).applyMatrix4(h.m).min.y); }
+    if (o.weapon === 'longbow') pass = restring(wn, node, ws);
   } else if (w && st.claws <= 0.3) {
     // strap-on claws for hands that have none of their own: hand at the origin, fingers along +Y, back of the hand +Z
     const wl = makeWeapon(o.weapon, { scale: ws });
@@ -1422,7 +1500,47 @@ export function humanoid(def = {}, o = {}) {
     node('shieldL', 'foreL', 'shield', [Math.sin(yaw * DEG) * off, -F * 0.58, Math.cos(yaw * DEG) * off], { prims: sh.prims, hard: sh.hard }, 1.2, [0, yaw, 0]);
   }
   const hold = held ? (o.weapon === 'crossbow' ? 'xbow' : w.hold) : 'none';
-  return { kind: `humanoid.${hold}${o.shield ? '.shield' : ''}`, attack: attack || 'swing', nodes: order, hold };
+  // plain values the animators read (rigkit copies them onto the rig): weapon reach and how far its butt runs back
+  // past the grip, how high a corpse lies, the arrow's pass, the body's size against a man's, the weapon's scale
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  return {
+    kind: `humanoid.${hold}${o.shield ? '.shield' : ''}`, attack: attack || 'swing', nodes: order, hold,
+    reach: r3(w && held ? w.length : 0), butt: r3(Math.min(butt, 0.6)), lie: r3(P.chestD * 0.36 + (st.gut || 0) * 0.02), pass: r3(pass),
+    build: r3((P.upper + P.fore) / 0.325), wscale: r3(ws), handR: r3(hr),
+  };
+}
+
+const _bb = new THREE.Box3();
+/**
+ * A longbow comes with a rigid string. Take it off and string the bow again as two halves, each its own node hinged at a
+ * limb tip (rig list `string`), plus an arrow nocked where they meet (rig list `arrow`), so the animator can draw it.
+ * Returns how far to the side of the grip the arrow passes the bow, or 0 if the string could not be found (the bow then
+ * keeps its rigid string and the archer falls back to simply levelling it). Adapted from undead.js.
+ */
+function restring(wn, node, sc = 1) {
+  const box = (h) => { if (!h.geo.boundingBox) h.geo.computeBoundingBox(); return _bb.copy(h.geo.boundingBox).applyMatrix4(h.m); };
+  const isString = (h) => { const b = box(h); return b.max.x - b.min.x < 0.012 * sc && b.max.z - b.min.z < 0.012 * sc && b.max.z < -0.05 * sc; };
+  const own = wn.hard.filter(isString);
+  if (!own.length) return 0;
+  wn.hard = wn.hard.filter((h) => !isString(h));
+  let yTop = 0, yBot = 0, z = 0;
+  for (const h of own) { const b = box(h); if (b.max.y > yTop) { yTop = b.max.y; z = (b.min.z + b.max.z) / 2; } yBot = Math.min(yBot, b.min.y); }
+  const ny = 0.062 * sc, cord = 0xe4d9b8, serving = 0x6a5f48, sv = 0.03 * sc;
+  const half = (len, sg) => ({ prims: [], hard: [
+    H.cyl(0.002 * sc, 0.002 * sc, len - sv, 5).at(0, sg * (len - sv) / 2, 0).color(cord).pbr(0.8).near(),
+    H.cyl(0.0029 * sc, 0.0029 * sc, sv, 5).at(0, sg * (len - sv / 2), 0).color(serving).pbr(0.85).lod(1),
+  ] });
+  node('stringU', 'weaponR', 'string', [0, yTop, z], half(yTop - ny, -1));
+  node('stringL', 'weaponR', 'string', [0, yBot, z], half(ny - yBot, 1));
+  // the arrow: nock at the node's origin, point toward +Z; goose-feather fletching in the unit's own green-grey
+  const L = 0.45 * sc, ar = [
+    H.cyl(0.0027 * sc, 0.0027 * sc, L - 0.03 * sc, 5).rot(90, 0, 0).at(0, 0, (L - 0.03 * sc) / 2 - 0.004 * sc).color(0x8a7450).pbr(0.8).lod(1),
+    H.cone(0.0075 * sc, 0.036 * sc, 4).rot(90, 0, 0).at(0, 0, L - 0.012 * sc).color(0x5e5c64).pbr(0.5, 0.6).lod(1),
+    H.cyl(0.0042 * sc, 0.0042 * sc, 0.008 * sc, 5).rot(90, 0, 0).at(0, 0, L - 0.036 * sc).color(0x5e5c64).pbr(0.5, 0.6).lod(1),
+  ];
+  for (let k = 0; k < 3; k++) ar.push(H.box(0.0008 * sc, 0.011 * sc, 0.055 * sc, 0.0003).at(0, 0.0072 * sc, 0.042 * sc).rot(0, 0, 30 + k * 120).color(k ? 0x8c8a7c : 0x9a3a2a).pbr(0.9).lod(1));
+  node('arrow', 'weaponR', 'arrow', [0, ny, z], { prims: [], hard: ar });
+  return 0.0172 * sc;
 }
 
 export const bodies = { humanoid };
@@ -1450,6 +1568,7 @@ const MOVES = {
   cast: [[0, null, null, 0, null], [0.4, -1.2, -0.55, -0.1, [0, 0.92, 0.38]], [0.6, -1.45, -0.12, 0, [0, 0.72, 0.7]], [1, null, null, 0, null]],
 };
 const ease = (t) => t * t * (3 - 2 * t);
+const NO_OPTS = Object.freeze({}), OWN = Object.freeze({ ground: true }), ALIVE = {};
 
 const restQuats = new WeakMap();
 function restQuat(node) {
@@ -1495,16 +1614,24 @@ function reach(rig, i, target, w) {
 /**
  * Pose arms, wrists, weapon and shield for a body built by humanoid(). Call after the stock upper-body animation.
  * hold: none | one | two | pole | staff | bow | xbow.  Exported so mounted riders can reuse it.
+ * shield: true keeps the left hand off the weapon (it has a shield, or a rein). Mounts have long passed `true` with no
+ *   shield node to get a one-handed couched lance; that still works exactly as before.
+ * opts (optional):
+ *   oneHand  true: the weapon is wielded in the right hand only, even when there is no shield (the clean way to ask
+ *            for a one-handed couch: poseCarried(rig, c, base, rig.hold, false, { oneHand: true })).
+ *   ground   true: lift a swung weapon's direction so its head never digs into the ground (needs rig.reach and the
+ *            rig standing on y = 0 in inner space, so the humanoid's own animators set it and mounts should not).
  */
-export function poseCarried(rig, c, base, hold = 'none', shield = false) {
+export function poseCarried(rig, c, base, hold = 'none', shield = false, opts = NO_OPTS) {
   const A = rig.arms, F = rig.forearms, Hn = rig.hands, T = rig.torso;
   if (!A || !F || !Hn || !T || A.length < 2 || Hn.length < 2) return;
   const { R, keys } = base;
   const W = rig.weapon && rig.weapon[0], Sh = rig.shield && rig.shield[0];
   Hn[0].quaternion.identity(); Hn[1].quaternion.identity();
+  if (W) { R(W); if (base.P) base.P(W); }                                            // whatever turned the weapon on its grip last frame starts from rest
   if (c.dead > 0) { if (Sh) R(Sh); return; }                                        // the dead let go: arms fall back to the stock pose
   const a = c.atk, k = c.moving && !c.flying ? 1 : 0, s = Math.sin(c.t * 9.5 + c.phase) * k, idle = Math.sin(c.t * 1.6 + c.phase);
-  const carry = CARRY[hold], style = rig.attack;
+  const carry = CARRY[hold], style = rig.attack, single = shield || !!opts.oneHand;
 
   // ---- weapon arm ----
   let both = carry && carry.left ? 1 : 0, spacing = carry && carry.left ? carry.left : 0;
@@ -1512,7 +1639,7 @@ export function poseCarried(rig, c, base, hold = 'none', shield = false) {
   if (carry && W && known) {
     let ax = carry.ax - s * (hold === 'one' ? 0.22 : 0.06) + idle * 0.015, fx = carry.fx - Math.max(0, -s) * 0.08, az = 0, aim = carry.aim;
     _vd.set(carry.d[0], carry.d[1], carry.d[2]);
-    const two = hold === 'two' || (hold === 'pole' && !shield);
+    const two = hold === 'two' || (hold === 'pole' && !single);
     const move = a >= 0 ? (style === 'swing' ? (two ? MOVES.swing2 : MOVES.swing) : style === 'slam' ? (hold === 'two' || hold === 'pole' ? MOVES.slam : null) : MOVES[style]) : null;
     if (move) {
       let i = 1;
@@ -1526,7 +1653,15 @@ export function poseCarried(rig, c, base, hold = 'none', shield = false) {
       if (two && hold === 'pole') { both = lerp(k0[4] ? 1 : 0, k1[4] ? 1 : 0, t); spacing = style === 'thrust' ? 1.5 : -1.25; }
     }
     R(A[1], ax, (carry.ay || 0) + (two && hold === 'pole' ? 0.5 * both : 0), az); R(F[1], fx);
+    if (opts.ground && a >= 0) clearGround(rig, _vd);
     if (aim > 0) aimHand(rig, 1, _vd, _ve.crossVectors(_vd, _va.set(-1, 0, 0)), aim, restQuat(W));
+    if (hold === 'one' && style === 'shoot') whirlSling(rig, c, base, W);           // the sling hangs slack from the fist
+  } else if (hold === 'bow' && W && rig.arrow && rig.string && rig.hands) {
+    shootBow(rig, c, base, W);
+  } else if (hold === 'xbow' && W && style === 'shoot') {
+    aimCrossbow(rig, c, base, W);
+  } else if (hold === 'one' && W && a >= 0 && style === 'shoot') {
+    whirlSling(rig, c, base, W);
   } else if ((hold === 'bow' || hold === 'xbow') && W && a >= 0 && style === 'shoot') {
     // level the bow at the target however the arm happens to be raised
     const lv = keys(a, [[0, 0], [0.22, 1], [0.72, 1], [1, 0]]);
@@ -1544,7 +1679,7 @@ export function poseCarried(rig, c, base, hold = 'none', shield = false) {
   }
 
   // ---- off hand: the second grip of a two-handed weapon ----
-  if (W && both > 0 && !shield) {
+  if (W && both > 0 && !single) {
     foreQuat(_qe, rig, 1).multiply(Hn[1].quaternion);                              // weapon hand in root space
     wristPos(_va, rig, 1);
     _vb.copy(W.position).applyQuaternion(_qe).add(_va);                            // the grip
@@ -1577,8 +1712,225 @@ export function poseCarried(rig, c, base, hold = 'none', shield = false) {
   }
 }
 
+// =====================================================================================
+//  Archers, crossbowmen and slingers. Two-bone reach with an elbow pole, wrist placement and the drawn
+//  string are adapted from the skeleton archer in undead.js. All of it works in "inner" space: the space
+//  the root node sits in, before the model's own scale.
+// =====================================================================================
+const _ka = new THREE.Vector3(), _kb = new THREE.Vector3(), _kc = new THREE.Vector3(), _kd = new THREE.Vector3(), _ke = new THREE.Vector3(), _kf = new THREE.Vector3(), _kg = new THREE.Vector3();
+const _kx = new THREE.Vector3(), _ky = new THREE.Vector3(), _kz = new THREE.Vector3(), _wrist = new THREE.Vector3(), _km = new THREE.Matrix4();
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _qh = new THREE.Quaternion(), _qw = new THREE.Quaternion();
+const X_AXIS = new THREE.Vector3(1, 0, 0), _eul = new THREE.Euler();
+/** orientation whose +Y lies along d and whose +Z is as near e as it can be (own temporaries, so callers may pass _va.. vectors) */
+function frameQ(out, d, e) {
+  _ky.copy(d).normalize();
+  _kx.crossVectors(_ky, e);
+  if (_kx.lengthSq() < 1e-8) _kx.set(1, 0, 0);
+  _kx.normalize();
+  _kz.crossVectors(_kx, _ky);
+  return out.setFromRotationMatrix(_km.makeBasis(_kx, _ky, _kz));
+}
+/** two-bone reach with the elbow leaning toward `pole`; blended by w; leaves the wrist actually reached in _wrist */
+function reachArm(rig, i, target, pole, w = 1) {
+  const T = rig.torso, arm = rig.arms[i], fore = rig.forearms[i], hand = rig.hands[i];
+  const S = _ka.copy(arm.position).applyQuaternion(T.quaternion).add(T.position);
+  const U = fore.position.length(), L = hand.position.length();
+  const D = _kb.copy(target).sub(S);
+  const dist = clamp(D.length(), Math.abs(U - L) + 1e-4, (U + L) * 0.998);
+  D.normalize();
+  const along = (U * U - L * L + dist * dist) / (2 * dist), out = Math.sqrt(Math.max(0, U * U - along * along));
+  const Pv = _kc.copy(pole).addScaledVector(D, -pole.dot(D));
+  if (Pv.lengthSq() < 1e-8) Pv.set(0.3, -1, -0.3).addScaledVector(D, -(0.3 * D.x - D.y - 0.3 * D.z));
+  Pv.normalize();
+  _wrist.copy(S).addScaledVector(D, dist);
+  _ky.copy(D).multiplyScalar(along).addScaledVector(Pv, out).normalize().negate();     // the upper arm's +Y: elbow up to the shoulder
+  _kz.copy(Pv).negate(); _kz.addScaledVector(_ky, -_kz.dot(_ky)).normalize();          // the way the forearm folds
+  _kx.crossVectors(_ky, _kz);
+  _q1.setFromRotationMatrix(_km.makeBasis(_kx, _ky, _kz));
+  _q2.copy(T.quaternion).invert().multiply(_q1);
+  const flex = Math.PI - Math.acos(clamp((U * U + L * L - dist * dist) / (2 * U * L), -1, 1));
+  _q3.setFromAxisAngle(X_AXIS, -flex);
+  if (w >= 1) { arm.quaternion.copy(_q2); fore.quaternion.copy(_q3); } else { arm.quaternion.slerp(_q2, w); fore.quaternion.slerp(_q3, w); }
+}
+/** turn hand i at the wrist to the orientation q (inner space), blended by w */
+function setHand(rig, i, q, w = 1) {
+  _q1.copy(rig.torso.quaternion).multiply(rig.arms[i].quaternion).multiply(rig.forearms[i].quaternion).invert().multiply(q);
+  if (w >= 1) rig.hands[i].quaternion.copy(_q1); else rig.hands[i].quaternion.slerp(_q1, w);
+}
+/** put the weapon's grip at G with +Y along d and +Z near e by moving the right arm and wrist; leaves the weapon's orientation in _qw */
+function holdWeapon(rig, G, d, e, lean, w = 1) {
+  const W = rig.weapon[0];
+  frameQ(_qw, d, e);
+  _qh.copy(_qw).multiply(_q3.copy(restQuat(W)).invert());                            // the hand that holds it so
+  _kd.copy(W.position).applyQuaternion(_qh);                                          // wrist to grip
+  _ke.set(0, 1, 0).applyQuaternion(_qh).add(lean);                                    // the forearm comes in along the hand
+  reachArm(rig, 1, _kf.copy(G).sub(_kd), _ke, w);
+  setHand(rig, 1, _qh, w);
+  G.copy(_wrist).add(_kd);
+}
+/** turn the carried piece W (a child of hand i) so it lies along d / e in inner space, whatever the hand is doing */
+function orientCarried(rig, i, W, d, e, w = 1) {
+  frameQ(_q2, d, e);
+  _q1.copy(rig.torso.quaternion).multiply(rig.arms[i].quaternion).multiply(rig.forearms[i].quaternion).multiply(rig.hands[i].quaternion).invert().multiply(_q2);
+  if (w >= 1) W.quaternion.copy(_q1); else W.quaternion.slerp(_q1, w);
+}
+/** swing the two halves of the bowstring to meet `draw` behind where they rest, and seat the arrow on them */
+function setString(rig, draw, shown) {
+  const St = rig.string, Ar = rig.arrow && rig.arrow[0];
+  if (!St || St.length < 2 || !Ar) return;
+  const nock = Ar.userData.rest;
+  if (!nock) return;
+  St.forEach((n, i) => {
+    const r = n.userData.rest, len = Math.abs(nock[4] - r[4]) || 1;
+    n.rotation.set((i ? -1 : 1) * Math.atan2(draw, len), 0, 0);
+    n.scale.set(1, Math.hypot(draw, len) / len, 1);
+  });
+  Ar.visible = shown;
+  Ar.position.set(nock[3], nock[4], nock[5] - draw);
+  Ar.rotation.set(0, -Math.atan2(rig.pass || 0, draw - nock[5]), 0);                // the shaft lies past the side of the grip
+}
+
+/** longbow: at the trail beside the leg; to shoot, turn side-on, raise the bow at the target, draw to the jaw and loose */
+function shootBow(rig, c, base, W) {
+  const { R, keys } = base, T = rig.torso, Ar = rig.arrow[0], a = c.atk;
+  frameQ(_qw, _kg.set(0.1, 0.6, 0.8), _kb.set(0, -0.8, 0.6));                         // the trail: lower limb swung clear of the leg
+  setHand(rig, 1, _qh.copy(_qw).multiply(_q3.copy(restQuat(W)).invert()));
+  if (a < 0) { setString(rig, 0, false); return; }
+  const up = keys(a, [[0, 0], [0.2, 1], [0.74, 1], [1, 0]]);                           // bow raised
+  const pull = keys(a, [[0, 0], [0.18, 0], [0.46, 1], [0.66, 1], [1, 0.4]]);           // string hand back to the jaw (and it stays there after the loose)
+  const held = keys(a, [[0, 0], [0.14, 0], [0.24, 1], [0.5, 1], [0.525, 0], [1, 0]]);  // fingers on the string
+  const B = rig.build || 1;
+  const ty = up * 1.2;                                                                 // side-on to the target, head turned back over the bow shoulder
+  R(T, -0.04 * up, ty, 0.03 * up);
+  R(rig.head, 0.02 * up, -ty * 0.9, 0);
+  const hp = _kg.copy(rig.head.position).applyQuaternion(T.quaternion).add(T.position);
+  const ax = hp.x + 0.122 * B, ay = hp.y - 0.05 * B, az = hp.z + 0.03 * B;            // the anchor beside the jaw (the head's origin is at eye level)
+  const nock = Ar.userData.rest, brace = -nock[5], full = 0.29 * B;
+  const G = _kg.set(ax, ay - nock[4], az + brace + full);
+  holdWeapon(rig, G, _ka.set(0, 1, 0), _kb.set(0, 0, 1), _kc.set(-0.5, -0.9, 0), up);  // bow arm straight out at the target, bow upright
+  const gx = G.x, gy = G.y, gz = G.z;
+  // string hand: fingers forward and hooked round the string, palm to the face, forearm in line with the arrow
+  _qh.setFromRotationMatrix(_km.makeBasis(_kx.set(1, 0, 0), _ky.set(0, 0, -1), _kz.set(0, 1, 0)));
+  _qh.multiply(_q3.setFromEuler(_eul.set(0, 0, -0.5 * (1 - pull))));
+  const hook = _kd.set(-0.018 * B, -0.086 * B, 0).applyQuaternion(_qh);
+  const reachW = keys(a, [[0, 0], [0.2, 1], [0.66, 1], [1, 0]]);
+  _kf.set(gx, gy + nock[4], lerp(gz - brace - 0.03 * B, az, pull)).sub(hook);
+  _qw.copy(_qh);
+  reachArm(rig, 0, _kf, _ke.set(0.5, 0.35, -1), reachW);
+  setHand(rig, 0, _qw, reachW);
+  const draw = clamp(gz - brace - (_wrist.z + hook.z), 0, full * 1.4) * held * up;
+  setString(rig, draw, held > 0.03);
+}
+
+/** crossbow: carried at the side; to shoot, shoulder it with the butt in the pocket of the right shoulder, the off hand under the tiller */
+const XBOW_SUPPORT = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(1, 0, 0)));
+function aimCrossbow(rig, c, base, W) {
+  const { R, keys } = base, T = rig.torso, A = rig.arms, a = c.atk;
+  if (a < 0) return;
+  const up = keys(a, [[0, 0], [0.2, 1], [0.8, 1], [1, 0]]);                            // shouldered and aimed
+  const kick = keys(a, [[0, 0], [0.44, 0], [0.47, 1], [0.66, 0], [1, 0]]);             // the loose jolts the muzzle up
+  const B = rig.build || 1, ws = rig.wscale || 1, hr = rig.handR || 0.036;
+  R(T, (-0.03 - 0.06 * kick) * up, -0.5 * up, 0.02 * up);                             // left shoulder toward the target
+  R(rig.head, 0.17 * up, 0.42 * up, 0.24 * up);                                       // cheek down to the stock, eye along it
+  // the butt plate sits in front of the right shoulder joint (torso space), the bolt points at the target
+  const S = _kg.copy(A[1].position).add(_ka.set(0.05 * B, 0.035 * B, 0.075 * B)).applyQuaternion(T.quaternion).add(T.position);
+  const k = 0.13 * kick;
+  _kc.set(0, Math.cos(k), -Math.sin(k)); _ke.set(0, Math.sin(k), Math.cos(k));
+  frameQ(_qw, _kc, _ke);
+  const G = S.sub(_ka.set(0, 0.043 * ws, -0.2 * ws).applyQuaternion(_qw));
+  holdWeapon(rig, G, _kc, _ke, _kb.set(-0.5, -0.85, -0.25), up);
+  // off hand: palm up under the tiller ahead of the lock, fingers forward
+  _qh.copy(_qw).multiply(XBOW_SUPPORT);
+  const contact = _kf.set(0, 0.036 * ws, 0.11 * ws).applyQuaternion(_qw).add(G);
+  contact.sub(_kd.set(-0.3 * hr, -1.0 * hr, 0.15 * hr).applyQuaternion(_qh));          // so the wrist goes here
+  const q = _q2.copy(_qh);
+  reachArm(rig, 0, contact, _ke.set(0.6, -1, 0.05), up);
+  setHand(rig, 0, q, up);
+}
+
+/** sling: hangs from the fist; to shoot, whirl it overhead twice and cast it overarm at the target */
+function whirlSling(rig, c, base, W) {
+  const { R, keys } = base, T = rig.torso, A = rig.arms, F = rig.forearms, a = c.atk;
+  if (a < 0) {
+    const k = c.moving ? 1 : 0, sw = Math.sin(c.t * 9.5 + (c.phase || 0)) * k;
+    orientCarried(rig, 1, W, _kc.set(0.02, -1, 0.08 + sw * 0.25), _ke.set(0, 0, 1));    // hanging slack from the fist, swinging with the stride
+    return;
+  }
+  R(A[1], keys(a, [[0, 0], [0.14, -2.55], [0.6, -2.6], [0.67, -1.6], [0.77, -0.55], [1, 0]]), 0, keys(a, [[0, 0], [0.14, -0.4], [0.6, -0.38], [0.7, -0.08], [1, 0]]));
+  R(F[1], keys(a, [[0, -0.2], [0.14, -0.75], [0.6, -0.75], [0.67, -0.3], [0.8, -0.35], [1, -0.2]]));
+  R(A[0], keys(a, [[0, 0], [0.22, -1.25], [0.66, -1.3], [0.8, -0.35], [1, 0]]), 0, 0.12); R(F[0], -0.25);   // the free hand points the way
+  R(T, keys(a, [[0, 0], [0.6, -0.06], [0.7, 0.22], [1, 0]]), keys(a, [[0, 0], [0.14, 0.32], [0.6, 0.38], [0.7, -0.3], [1, 0]]), 0);
+  R(rig.head, 0, keys(a, [[0, 0], [0.14, -0.3], [0.6, -0.36], [0.7, 0.25], [1, 0]]), 0);
+  let e = _ke.set(0, 1, 0);
+  if (a < 0.14) { const t = ease(a / 0.14); _kc.set(0, lerp(-1, 0.2, t), lerp(0.08, -1, t)); }
+  else if (a < 0.6) { const ph = -Math.PI / 2 - (0.6 - a) / 0.46 * 4 * Math.PI; _kc.set(Math.cos(ph), 0.22, Math.sin(ph)); }
+  else if (a < 0.77) { const b = keys(a, [[0.6, 168], [0.645, 95], [0.69, 18], [0.77, -50]]) * DEG; _kc.set(0, Math.sin(b), Math.cos(b)); e = _ke.set(1, 0, 0); }
+  else { const t = ease((a - 0.77) / 0.23); _kc.set(0, lerp(Math.sin(-50 * DEG), -1, t), lerp(Math.cos(-50 * DEG), 0.08, t)); }
+  orientCarried(rig, 1, W, _kc, e);
+}
+
+/** keep the business end of a swung weapon out of the ground: lift the direction d (inner space) if the tip would dig in */
+function clearGround(rig, d) {
+  const reachLen = rig.reach || 0;
+  if (!reachLen || !rig.hands) return;
+  const y = wristPos(_kg, rig, 1).y, floor = 0.03;
+  d.normalize();
+  if (y + d.y * reachLen >= floor) return;
+  const ny = clamp((floor - y) / reachLen, -1, 0.6), h = Math.hypot(d.x, d.z) || 1, s = Math.sqrt(Math.max(0, 1 - ny * ny)) / h;
+  d.set(d.x * s, ny, d.z * s);
+}
+
+/**
+ * The dead let go and lie slack: limbs splayed, head lolled to one side, what was carried lying flat beside the hand
+ * instead of standing up out of the corpse, wings spread on the ground, the tail laid out to one side. Every joint
+ * eases from the pose it had when the blow landed (the carry pose is posed first), so nothing snaps.
+ */
+const _qt = new THREE.Quaternion(), _et = new THREE.Euler(), _pt3 = new THREE.Vector3();
+function toward(n, x, y, z, e) {
+  if (!n) return;
+  const r = n.userData.rest;
+  _qt.setFromEuler(_et.set((r ? r[0] : 0) + x, (r ? r[1] : 0) + y, (r ? r[2] : 0) + z, 'XYZ'));
+  n.quaternion.slerp(_qt, e);
+}
+function fallen(rig, inner, c) {
+  const f = Math.min(1, c.dead * 2), e = ease(f), sg = Math.sin((c.phase || 0) * 7) >= 0 ? 1 : -1;
+  const A = rig.arms || [], F = rig.forearms || [], L = rig.legs || [], Sn = rig.shins || [], T = rig.torso;
+  if (T) { const r = T.userData.rest; toward(T, -(r ? r[0] : 0) * 0.7, 0, 0, e); }        // the hunch straightens out on the ground (no twist: lying down it would roll the body)
+  toward(rig.head, -0.08, 0.55 * sg, 0.15 * sg, e);
+  // arms flung out and dropped back to the ground (a deep chest lifts the shoulders off it)
+  const drop = A[0] && F[0] && rig.hands ? Math.asin(clamp((rig.lie || 0) / (F[0].position.length() + rig.hands[0].position.length() + 0.04), 0, 0.6)) : 0;
+  toward(A[0], 0.02 + drop, 0, 0.8 + 0.25 * sg, e); toward(F[0], -0.12, 0, 0, e);
+  toward(A[1], 0.02 + drop, 0, -(0.8 - 0.25 * sg), e); toward(F[1], -0.16, 0, 0, e);
+  // one knee drawn up (the thigh lifts so the foot rests on the ground instead of bending into it)
+  const kn0 = sg > 0 ? 0.6 : 0.12, kn1 = sg > 0 ? 0.1 : 0.55;
+  toward(L[0], -0.02 - kn0 * 0.62, 0, 0.13 + 0.05 * sg, e); toward(Sn[0], kn0, 0, 0, e);
+  toward(L[1], -0.02 - kn1 * 0.62, 0, -(0.15 - 0.05 * sg), e); toward(Sn[1], kn1, 0, 0, e);
+  for (const h of rig.hands || []) h.quaternion.slerp(_qt.identity(), e);
+  // the weapon falls out of the hand and lies past it, butt at the fingers, blade flat; the shield lies flat on its arm
+  for (const n of rig.weapon || []) {
+    const r = n.userData.rest;
+    toward(n, Math.PI - (r ? r[0] : 0), Math.PI / 2 - (r ? r[1] : 0), 0, e);
+    if (r) n.position.lerp(_pt3.set(r[3], r[4] - (rig.butt || 0), r[5]), e);
+  }
+  for (const n of rig.shield || []) { const r = n.userData.rest; toward(n, 0, -(r ? r[1] : 0), 0, e); }
+  setString(rig, 0, false);
+  (rig.wings || []).forEach((w, i) => toward(w, 0.22, (i ? 1 : -1) * 0.36, (i ? 1 : -1) * 0.38, e));   // spread flat on the ground instead of folded into it
+  // the tail: the root swung down to lie along the ground off to one side, the rest curling flat beside it
+  (rig.tail || []).forEach((s, i) => { const r = s.userData.rest; toward(s, -(r ? r[0] : 0) - (i ? 0 : Math.PI / 2), (i ? 0.35 : 1.25) * sg, 0, e); });
+  inner.position.y += (rig.lie || 0) * (inner.scale.y || 1) * f;                       // lie on the ground, not half in it
+}
+
 /** custom animators: one entry per way of carrying things, so the rig's kind says how the hands are used */
 export const animators = {};
 for (const hold of ['none', 'one', 'two', 'pole', 'staff', 'bow', 'xbow']) {
-  for (const sh of [false, true]) animators[`humanoid.${hold}${sh ? '.shield' : ''}`] = (rig, inner, c, base) => { base.biped(rig, inner, c); poseCarried(rig, c, base, hold, sh); };
+  for (const sh of [false, true]) {
+    animators[`humanoid.${hold}${sh ? '.shield' : ''}`] = (rig, inner, c, base) => {
+      base.biped(rig, inner, c);
+      if (c.dead > 0) {
+        // pose what the living body was doing with its hands, then let every joint ease from there into the fall
+        poseCarried(rig, Object.assign(ALIVE, c, { dead: 0, atk: -1 }), base, hold, sh, OWN);
+        fallen(rig, inner, c);
+      } else poseCarried(rig, c, base, hold, sh, OWN);
+    };
+  }
 }

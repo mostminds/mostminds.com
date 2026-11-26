@@ -6,6 +6,7 @@
 // --ticks   battle ticks to simulate before the screenshot (default 0 = deployment)
 // --zoom    0..0.9, how far to move the camera toward the middle of the map
 // --quality low | medium | high | ultra (default medium)
+// --gen     site:defender:attacker[:size] generates a scenario instead of loading a preset (e.g. city:kingdom:goblin)
 const http = require('http'), fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
 const args = {};
@@ -33,6 +34,11 @@ server.listen(0, async () => {
     const ready = () => page.waitForFunction(() => !window.__tb.sim.loading, null);
     await ready();
     if (args.preset) { await page.selectOption('#preset', args.preset); await page.click('#loadPreset'); await page.waitForTimeout(300); await ready(); await page.waitForTimeout(1200); }
+    if (args.gen) { // --gen site:defender:attacker[:size] builds a generated scenario
+      const [site, def = '', att = '', size = '0'] = args.gen.split(':');
+      await page.selectOption('#genSite', site); await page.selectOption('#genDef', def); await page.selectOption('#genAtt', att); await page.selectOption('#genSize', size);
+      await page.click('#generate'); await page.waitForTimeout(300); await ready(); await page.waitForTimeout(1200);
+    }
     const ticks = +(args.ticks || 0);
     if (ticks) {
       await page.click('#play');

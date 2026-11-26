@@ -13,6 +13,7 @@ import { MAP_SHAPES, BIOMES } from './engine/terrain.js';
 import { addCustomModel, removeCustomModel, customModelList, restoreCustomModels, libraryAdd, libraryList, librarySearch, libraryAssign, libraryAutoMatch, libraryClear, libraryRemove } from './render/customModels.js';
 import { PRESETS, DEFAULT_SCENARIOS } from './data/presets.js';
 import { castleKit } from './data/castle.js';
+import { generateScenario, SITES, FACTIONS } from './data/worldgen.js';
 
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -219,7 +220,7 @@ $('quality').onchange = (e) => { stage.setQuality(e.target.value); store.set('tb
 
 function lockEditing(on) {
   document.querySelectorAll('#panel input, #panel select, #panel button, #panel textarea').forEach((el) => {
-    if (el.closest('details') || el.id === 'preset' || el.id === 'loadPreset') return;
+    if (el.closest('details') || el.id === 'preset' || el.id === 'loadPreset' || el.id === 'generate' || el.id.startsWith('gen')) return;
     el.disabled = on;
   });
   $('modeHint').textContent = on ? 'Battle running. Press Reset to edit the armies and map.' : modeHint();
@@ -273,6 +274,17 @@ $('loadPreset').onclick = () => {
   state.scn[p.mode] = clone({ ...p.scn, mode: p.mode === 'naval' ? undefined : p.mode });
   setMode(p.mode);
   $('preset').value = p.id;
+};
+
+// ---------- generated scenarios ----------
+$('genSite').replaceChildren(...Object.entries(SITES).map(([k, v]) => new Option(v.name, k)));
+$('genSite').value = 'castle';
+for (const id of ['genDef', 'genAtt']) $(id).replaceChildren(new Option('Any faction', ''), ...Object.entries(FACTIONS).map(([k, v]) => new Option(v.name, k)));
+$('generate').onclick = () => {
+  const g = generateScenario({ site: $('genSite').value, defender: $('genDef').value, attacker: $('genAtt').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
+  state.scn[g.mode] = clone({ ...g.scn, mode: g.mode });
+  setMode(g.mode);
+  $('genName').textContent = g.name;
 };
 
 // ---------- armies ----------
