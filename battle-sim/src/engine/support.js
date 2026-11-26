@@ -10,25 +10,29 @@ const NOBODY = { id: -1 };
 const ucx = (u) => u.x + u.def.size / 2;
 const ucy = (u) => u.y + u.def.size / 2;
 
+/** register the gun standing on structure si (also used for guns built during the battle) */
+export function addGun(b, si) {
+  const s = b.structures[si];
+  const def = STRUCTURES[s.type];
+  if (!def.weapon) return;
+  const ring = [];
+  for (let y = s.y - 1; y <= s.y + s.h; y++) for (let x = s.x - 1; x <= s.x + s.w; x++) {
+    if (x < 0 || y < 0 || x >= b.W || y >= b.H) continue;
+    if (x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h) continue;
+    ring.push(y * b.W + x);
+  }
+  let elev = 0;
+  for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) elev = Math.max(elev, b.level[y * b.W + x]);
+  b.guns.push({
+    id: b.guns.length, si, type: s.type, x: s.x, y: s.y, w: s.w, h: s.h, cx: s.x + s.w / 2, cy: s.y + s.h / 2,
+    wpn: def.weapon, hp: def.hp, maxHp: def.hp, owner: s.side ?? null, cd: b.rng.int(0, 4), crew: [0, 0],
+    aim: s.side === 1 ? Math.PI : 0, destroyed: false, claim: -1, ring, elev, lastFire: -99,
+  });
+}
+
 export function initSupport(b, scn, shipDefs = {}) {
   b.guns = [];
-  b.structures.forEach((s, si) => {
-    const def = STRUCTURES[s.type];
-    if (!def.weapon) return;
-    const ring = [];
-    for (let y = s.y - 1; y <= s.y + s.h; y++) for (let x = s.x - 1; x <= s.x + s.w; x++) {
-      if (x < 0 || y < 0 || x >= b.W || y >= b.H) continue;
-      if (x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h) continue;
-      ring.push(y * b.W + x);
-    }
-    let elev = 0;
-    for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) elev = Math.max(elev, b.level[y * b.W + x]);
-    b.guns.push({
-      id: b.guns.length, si, type: s.type, x: s.x, y: s.y, w: s.w, h: s.h, cx: s.x + s.w / 2, cy: s.y + s.h / 2,
-      wpn: def.weapon, hp: def.hp, maxHp: def.hp, owner: s.side ?? null, cd: b.rng.int(0, 4), crew: [0, 0],
-      aim: s.side === 1 ? Math.PI : 0, destroyed: false, claim: -1, ring, elev, lastFire: -99,
-    });
-  });
+  b.structures.forEach((s, si) => addGun(b, si));
 
   b.ships = [];
   scn.sides.forEach((side, si) => {

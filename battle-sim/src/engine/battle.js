@@ -6,6 +6,7 @@ import { generateTerrain, DEEP } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGunRing } from './support.js';
 import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsAirship } from './airship.js';
+import { initCommand, commandTick, specDuty, fallbackFor, onUnitDeath } from './command.js';
 
 const INF = 32767;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -118,6 +119,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   buildSquads(b);
   initSupport(b, scn, shipDefs);
   initAirships(b, scn);
+  initCommand(b, scn);
   return b;
 }
 
@@ -442,7 +444,7 @@ function bfs(b, sources, side) {
   }
   return dist;
 }
-function field(b, key, ttl, sourceFn) {
+export function field(b, key, ttl, sourceFn) {
   const side = b.moverSide ?? -1;
   key = `${key}|${side}`;
   const c = b.fields.get(key);
@@ -496,6 +498,7 @@ export function stepBattle(b) {
   moveCrafts(b);
   supportTick(b);
   airTick(b);
+  commandTick(b);
   for (const sq of b.squads) if ((b.tick + sq.id) % 3 === 0) updateSquad(b, sq);
 
   // Fair-ish ordering: shuffle each tick
@@ -609,7 +612,7 @@ function disembark(b, c) {
 }
 
 // ---------- squads ----------
-function squadUnits(b, sq) { return sq.members.map((id) => b.units[id]).filter((u) => u.alive); }
+export function squadUnits(b, sq) { return sq.members.map((id) => b.units[id]).filter((u) => u.alive); }
 
 function updateSquad(b, sq) {
   const us = squadUnits(b, sq);
@@ -634,6 +637,22 @@ function updateSquad(b, sq) {
   // Morale: broken squads fall back and merge into a healthier friendly squad
   const ratio = sq.alive / sq.initial;
   const myHp = sideHp(b, sq.side), theirHp = sideHp(b, 1 - sq.side);
+  const shaken = b.cmd.shock[sq.side] > b.tick && sq.leaderless; // their commander has just fallen
+  if (sq.state !== 'regroup' && sq.state !== 'fallback' && !sq.rallied && sq.initial >= 3 && ((ratio <= 0.4 && myHp < theirHp * 0.9) || (shaken && ratio <= 0.75))) {
+    const pt = fallbackFor(b, sq);
+    if (pt) {
+      sq.prev = sq.state; sq.state = 'fallback'; sq.rallyPt = pt; sq.rallyUntil = b.tick + 150; sq.rallied = true;
+      b.events.push({ type: 'fallback', squad: sq.id, side: sq.side, name: us[0].def.name, to: pt.kind });
+    }
+  }
+  if (sq.state === 'fallback') {
+    const pt = sq.rallyPt;
+    if (Math.hypot(pt.x - sq.cx, pt.y - sq.cy) < 4 || b.tick > sq.rallyUntil) {
+      // steadied at the rally point: reorganise and go back in
+      sq.state = sq.prev === 'hold' ? 'hold' : 'advance'; sq.initial = Math.max(1, sq.alive); sq.leaderless = false;
+      b.events.push({ type: 'rallied', squad: sq.id, side: sq.side, name: us[0].def.name });
+    } else { sq.target = nearest.id; return; }
+  }
   if (sq.state !== 'regroup' && ratio <= 0.34 && sq.initial >= 3 && myHp < theirHp * 0.8) {
     const friends = b.squads.filter((s) => s.side === sq.side && s.id !== sq.id && s.alive >= 3 && s.role === sq.role);
     if (friends.length) {
@@ -768,7 +787,7 @@ function pickTarget(b, u, range) {
   return best;
 }
 
-function nearestEnemyDist(b, u, r) {
+export function nearestEnemyDist(b, u, r) {
   let best = Infinity, who = null;
   near(b, u.x, u.y, r, (t) => {
     if (!t.alive || t.side === u.side || t.aboard >= 0) return;
@@ -847,7 +866,8 @@ function unitTick(b, u) {
     }
   }
 
-  const mend = ability(u, 'repair');
+  if (u.spec !== 'line' && specDuty(b, u)) return;
+  const mend = ability(u, 'repair') || (u.spec === 'engineer' ? { amount: 22 } : null);
   if (mend && repairDuty(b, u, mend)) return;
 
   const sq = b.squads[u.squad];
@@ -934,6 +954,11 @@ function unitTick(b, u) {
 
   let f = null;
   const local = nearestEnemyDist(b, u, 7);
+  if (sq.state === 'fallback') {
+    const pt = sq.rallyPt;
+    f = field(b, `fb${pt.x},${pt.y}`, 60, () => [pt.y * b.W + pt.x]);
+    if (f) { walk(b, u, f, 1, 2); return; }
+  }
   if (sq.state === 'regroup') {
     const host = b.squads[sq.rally];
     f = host && field(b, `s${host.id}`, 4, () => unitTiles(b, squadUnits(b, host)));
@@ -962,7 +987,7 @@ function face(u, tx, ty) {
   if (tx !== u.x || ty !== u.y) u.face = Math.atan2(ty - u.y, tx - u.x);
 }
 
-function walk(b, u, f, range, stop = null) {
+export function walk(b, u, f, range, stop = null) {
   const steps = u.def.move;
   for (let s = 0; s < steps; s++) {
     const hi = u.y * b.W + u.x;
@@ -1120,6 +1145,7 @@ export function damage(b, t, dmg, from, style, hit = true) {
     occupy(b, t, 0);
     if (from) from.kills++;
     b.events.push({ type: 'death', id: t.id, by: from ? from.id : -1 });
+    onUnitDeath(b, t, from);
   }
 }
 

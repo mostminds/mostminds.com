@@ -32,6 +32,8 @@ export const STRUCTURES = {
   zeppelinTower: { name: 'Zeppelin tower', w: 3, h: 3, blocksMove: true, blocksLos: true, losHeight: 6, hp: 1300, mooring: true, model: 'zeppelinTower', color: 0x8f8a80 },
   hangar:        { name: 'Hangar',         w: 5, h: 4, blocksMove: true, blocksLos: true, losHeight: 4, hp: 900, model: 'hangar', color: 0x7a6a52 },
   workshop:      { name: 'Workshop',       w: 3, h: 3, blocksMove: true, blocksLos: true, losHeight: 3, hp: 600, model: 'workshop', color: 0x9a7a52 },
+  railCar:       { name: 'Supply wagon',   w: 3, h: 1, blocksMove: true, cover: true, hp: 400, cargo: 8, model: 'railCar', color: 0x6b4a2e },
+  rail:          { name: 'Rail track',     w: 4, h: 1, stretch: true, model: 'rail', color: 0x5a5148 },
   castleWall:  { name: 'Castle wall',  w: 4, h: 1, stretch: true, level: 2, hp: 1400, model: 'castleWall', color: 0x9a958b },
   castleTower: { name: 'Castle tower', w: 3, h: 3, level: 3, hp: 2200, model: 'castleTower', color: 0x938e84 },
   stairs:      { name: 'Stairs',       w: 2, h: 1, level: 1, hp: 400, model: 'stairs', color: 0x8a857c },
