@@ -697,6 +697,18 @@ export function buildFortModel(def) {
   return g;
 }
 
+// Where a ship's i-th gun on the side facing a target sits, in world space. Falls back to null when the
+// model does not say where its guns are (userData.muzzles: starboard muzzles [x, y, z] in ship space).
+const _mz = new THREE.Vector3();
+export function shipMuzzle(model, tx, tz, i, out) {
+  const list = model?.userData?.muzzles;
+  if (!list || !list.length) return null;
+  model.updateMatrixWorld();
+  const side = model.worldToLocal(_mz.set(tx, 0, tz)).z >= 0 ? 1 : -1;
+  const m = list[((i % list.length) + list.length) % list.length];
+  return model.localToWorld(out.set(m[0], m[1], m[2] * side));
+}
+
 export function buildCraft(color) {
   const sc = guarded('craft', () => REG.craft(color));
   if (sc) return sc;

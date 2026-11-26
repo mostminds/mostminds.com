@@ -105,12 +105,36 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
 
 ## Graphics
 
-The look is a retro low-poly fantasy style at modern fidelity: smooth terrain with colours blended between ground types,
-rounded characters with faces, armour plates, capes and shields, procedurally painted stone, wood, thatch and roof-tile
-textures, soft shadows, tone mapping, a sky gradient and rippling water. Each unit type is built once, its parts are
-merged into one mesh per moving limb, and every soldier is a clone of that template, so a 300-unit battle stays near
-1,800 draw calls. The **Graphics** menu sets pixel density and shadow resolution (Low, Medium, High, Ultra; Auto picks
-Medium on phones and High elsewhere).
+The look is a chunky classic fantasy MMO style with dense, smooth geometry: nothing is built from boxes and
+cones. Every unit, building, siege weapon, ship and sea creature is sculpted in code the first time it is
+needed, from smoothly blended volumes (anatomy, cloth, fur, stone) meshed at high resolution plus crisp
+hard-surface pieces (blades, plate, rivets, planks, rigging). A soldier is 50,000 to 90,000 triangles up close,
+a mounted knight about 170,000, a ship of the line about 87,000.
+
+- **Units** are jointed rigs with knees, elbows, wrists and jaws: faces with eyes and teeth, hands with
+  fingers gripping their weapons, layered clothing and armour per unit, mounts with seated riders.
+- **Detail levels.** Each model is built at several levels and swaps as the camera moves; the farthest level
+  is a single merged mesh of a few thousand triangles, so a 320-unit battle draws about 2,000 meshes and
+  0.7 million triangles at a typical view.
+- **Loading.** Sculpting a model takes a fraction of a second, so a new battle shows a progress card while
+  its models are built one per frame; they are then cached for the session.
+- **Graphics menu.** Low, Medium, High and Ultra set pixel density, shadow resolution and sculpt resolution
+  (Auto picks Medium on phones and High elsewhere). Changing it rebuilds the models.
+- **Scene.** Smooth terrain with colours blended between ground types, soft shadows, tone mapping, an
+  environment-lit sky and rippling water.
+
+Models you import yourself (see above) replace the built-in ones unit by unit.
+
+### Authoring models
+
+`docs/MODELING.md` is the guide: the sculpting kit, rig conventions, budgets and per-family contracts.
+`viewer.html` previews any model, and two tools render it headlessly:
+
+```sh
+node tools/model-shot.cjs --kind unit --id knight@idle,knight@attack:0.38,knight@death --out knight.png
+node tools/model-shot.cjs --kind ship --id galleon --water 0 --ref 1 --out galleon.png
+node tools/smoke.cjs --preset horde --ticks 40 --zoom 0.55 --out game.png   # the real game, errors reported
+```
 
 ## Adding your own units
 
@@ -150,10 +174,16 @@ Imported units are saved in the browser and can be placed by hand or added to ar
 src/engine/   battle.js (land + amphibious, levels, breaching, flight), support.js (guns, fire-support ships),
               naval.js (ships, creatures, forts), combat.js, terrain.js (map shapes, biomes), worker.js, batch.js
 src/data/     units.js, structures.js, naval.js, presets.js, castle.js (castle builder)
-src/render/   stage.js, landView.js, navalView.js, models.js (procedural animated models), textures.js (painted textures),
+src/render/   stage.js, landView.js, navalView.js, textures.js,
+              sculpt.js (sculpting kit), rigkit.js (jointed rigs and detail levels), animate.js (poses),
+              registry.js + models.js (gathers the model families; falls back to simple shapes if a builder fails),
+              bodies/  humanoid.js, anatomy.js, gear.js, weapons.js, undead.js, beasts.js, monsters.js
+              props/   buildings.js, siege.js, ships.js, seacreatures.js
               customModels.js (imports and the model library)
-src/app.js    UI wiring
-tools/        build-artifact.mjs (single-page bundle for hosting as a claude.ai artifact)
+src/app.js    UI wiring          src/viewer.js + viewer.html   model preview page
+docs/         MODELING.md (how the models are authored)
+tools/        model-shot.cjs, smoke.cjs (headless previews and game checks),
+              build-artifact.mjs (single-page bundle for hosting as a claude.ai artifact)
 ```
 
 The engine has no DOM dependency; `node` can import it directly for headless batch runs.

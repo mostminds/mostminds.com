@@ -1,6 +1,6 @@
 // Renders a land/amphibious battle state produced by engine/battle.js.
 import * as THREE from 'three';
-import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, setLod, mat, LEVEL_H } from './models.js';
+import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
 import { structureFootprint } from '../engine/battle.js';
@@ -188,7 +188,7 @@ export class LandView {
     });
     this.shipModels = b.ships.map((sh) => {
       const m = buildShip(sh.def, SIDE_COLORS[sh.side]);
-      const bar = makeBar(0x4fd36a); bar.position.y = 2 + sh.def.len * 0.35; setBar(bar, 1, Math.min(3, sh.def.len * 0.4));
+      const bar = makeBar(0x4fd36a); bar.position.y = (m.userData.top ?? 1.7 + sh.def.len * 0.35) + 0.3; setBar(bar, 1, Math.min(3, sh.def.len * 0.4));
       m.add(bar); m.userData.bar = bar;
       const ring = new THREE.Mesh(new THREE.RingGeometry(sh.radius + 0.3, sh.radius + 0.5, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[sh.side], transparent: true, opacity: 0.6 }));
       ring.position.y = 0.05; m.add(ring); m.userData.ring = ring;
@@ -269,7 +269,7 @@ export class LandView {
         const sh = b.ships[e.ship];
         for (let i = 0; i < e.guns; i++) {
           const off = (i / Math.max(1, e.guns - 1) - 0.5) * sh.def.len * 0.6;
-          v.set(sh.x + Math.cos(sh.heading) * off, 0.7, sh.y + Math.sin(sh.heading) * off);
+          if (!shipMuzzle(this.shipModels[e.ship], e.x1, e.y1, i * 2 + (b.tick % 2), v)) v.set(sh.x + Math.cos(sh.heading) * off, 0.7, sh.y + Math.sin(sh.heading) * off);
           w.set(e.x1 + (Math.random() - 0.5) * 1.5, 0.2, e.y1 + (Math.random() - 0.5) * 1.5);
           st.projectile(v.clone(), w.clone(), 'cannon', (e.delay * TICK_MS) / 1000 / this.speed, 0.5);
           if (i % 2 === 0) st.puff(v.clone(), 0xeeeeee, 0.35, 0.9);
@@ -386,6 +386,11 @@ export class LandView {
       m.position.set(x, this.waveY(x, y) - 0.1, y);
       m.rotation.y = -(sh.ph + dh * alpha);
       m.rotation.z = Math.sin(t * 1.1 + i) * 0.04;
+      if (m.userData.lod) {
+        const ratio = this.stage.camera.position.distanceTo(m.position) / 1.5;
+        let lv = 0; while (lv < 5 && ratio > [14, 30, 60, 110, 200][lv]) lv++;
+        setLod(m, lv);
+      }
       if (sunk !== undefined) {
         const k = (t - sunk) * speed;
         m.position.y -= k * 0.7; m.rotation.x = Math.min(0.6, k * 0.3);

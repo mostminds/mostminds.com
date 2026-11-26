@@ -234,3 +234,19 @@ hand-made art.
 as a multiple of the fitted distance, optional target), `--water <y>` (see-through sea surface instead
 of the ground), `--ground 0`, `--opts '<json>'` (options for `--kind weapon`) and `--bbox 1` (each
 model's bounds in the printed stats).
+
+### More hooks (second round)
+
+- `gear.js` also exports `headCover(def, o)` (true for outfits that bring their own helm). Gear may insert
+  prims ahead of the head's own, empties the head under closed helms, hangs skirts and robes on `root`,
+  and turns skirts into thigh lappets when riding.
+- Skeleton rig lists `string`, `arrow`, `rack`; rig values `build`, `pass`, `grip2`. Beast rig lists `paws`,
+  `mneck`, `mhead`, `mjaw`, `wingskins`, `palps`, `abdomen`; a rider's nodes are prefixed `r_`.
+- Ships return `userData.lod` (three tiers built on first use), `setSide(hex)`, `muzzles` (starboard gun
+  muzzles `[x, y, z]` in ship space; the views fire from them) and `top` (masthead height; the views seat
+  the health bar there). Both views call `setLod` for ships.
+- Most units are seen at level 2 or 3 most of the time: stand-in tiers deserve as much care as the close-up.
+- Preview: an id may carry its own pose and time (`--id knight@idle,knight@attack:0.38,knight@death`), so one
+  sheet shows several poses. The default death frame is 0.5 (later frames have sunk into the ground).
+- `tools/smoke.cjs` reports every console warning except graphics-driver notices, and waits for the
+  model-building progress card to finish.

@@ -49,6 +49,16 @@ export const PRESETS = [
               { name: 'Infernal host', posture: 'attack', groups: [g('infernalLord', 1), g('pitFiend', 3), g('imp', 30)], placed: [] }] },
   },
   {
+    id: 'wildwood', name: 'Wildwood ambush: wolves, spiders and bats', mode: 'field',
+    scn: { size: 48, shape: 'plains', biome: 'temperate', structures: [
+      S('tree', 20, 6), S('pine', 23, 9), S('tree', 26, 5), S('pine', 21, 14), S('tree', 25, 17), S('rock', 22, 21),
+      S('pine', 20, 27), S('tree', 24, 30), S('pine', 27, 34), S('tree', 21, 37), S('pine', 25, 41), S('tree', 19, 43),
+      S('tent', 7, 20), S('tent', 7, 26), S('crates', 10, 23), S('barricade', 13, 19, { rot: 1 }), S('barricade', 13, 26, { rot: 1 }),
+    ],
+      sides: [{ name: 'Ranger patrol', posture: 'defend', groups: [g('longbow', 18), g('footman', 14), g('halberdier', 6), g('militia', 12), g('cleric', 3)], placed: [] },
+              { name: 'The wild hunt', posture: 'attack', groups: [g('wolf', 38), g('spider', 18), g('bat', 32)], placed: [] }] },
+  },
+  {
     id: 'greenmantle', name: 'Greenmantle Crossing: forcing the fords', mode: 'field',
     scn: { size: 64, shape: 'river', biome: 'temperate', terrainSeed: 7, structures: [
       // east bank guns covering the three fords

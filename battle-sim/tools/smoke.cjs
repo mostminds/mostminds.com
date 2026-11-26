@@ -26,7 +26,7 @@ server.listen(0, async () => {
     const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
     page.setDefaultTimeout(300000);
     page.on('pageerror', (e) => errors.push(String(e.stack || e)));
-    page.on('console', (m) => { if (m.type() === 'error' || (m.type() === 'warning' && /\[models\]/.test(m.text()))) errors.push(m.text()); });
+    page.on('console', (m) => { if (m.type() === 'error' || (m.type() === 'warning' && !/GL Driver Message|GPU stall|WebGL|THREE\./.test(m.text()))) errors.push(m.text()); });
     await page.addInitScript((q) => { try { localStorage.clear(); localStorage.setItem('tb.quality', JSON.stringify(q)); } catch { /* no storage */ } }, args.quality || 'medium');
     await page.goto(`http://localhost:${server.address().port}/index.html`);
     await page.waitForFunction(() => window.__tb && window.__tb.sim.b, null);

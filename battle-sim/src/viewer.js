@@ -1,6 +1,7 @@
 // Model preview used while authoring models (see docs/MODELING.md).
 //   viewer.html?kind=unit&id=knight&pose=attack&lod=0&detail=high
 //   kind: unit | struct | ship | creature | fort | craft | weapon     id: one id, or several separated by commas (shown side by side)
+//   an id may carry its own pose and time, e.g. id=knight@idle,knight@attack:0.38,knight@attack:0.55,knight@death
 //   pose: idle | walk | attack | death | fly           t: animation time in seconds (default picks a telling frame)
 //   lod: detail level to force (0 = closest)            detail: low | medium | high | ultra
 //   view: quad (default: front, side, back three-quarter, close-up) | single
@@ -20,7 +21,7 @@ import { SHIPS, CREATURES, FORTS } from './data/naval.js';
 
 const q = new URLSearchParams(location.search);
 const kind = q.get('kind') || 'unit', ids = (q.get('id') || 'footman').split(',');
-const pose = q.get('pose') || 'idle', view = q.get('view') || 'quad';
+const view = q.get('view') || 'quad';
 const stats = { kind, ids, errors: [], models: {} };
 window.__stats = stats;
 window.addEventListener('error', (e) => stats.errors.push(String(e.message)));
@@ -48,10 +49,14 @@ if (q.get('ground') === '0') ground.visible = false;
 const box = new THREE.Box3();
 const items = [];
 let x = 0;
-const T = q.has('t') ? +q.get('t') : { idle: 0.4, walk: 0.165, attack: 0.5, death: 1, fly: 0.3 }[pose] ?? 0.4;
-for (const id of ids) {
+// an id may carry its own pose and time: knight@attack:0.38 (so one sheet can show several poses of one unit)
+const DEFAULT_T = { idle: 0.4, walk: 0.165, attack: 0.5, death: 0.5, fly: 0.3 };
+for (const spec of ids) {
   const t0 = performance.now();
-  let m = null, width = 1.2, anim = null;
+  const [id, own] = spec.split('@');
+  const pose = own ? own.split(':')[0] : q.get('pose') || 'idle';
+  const T = own && own.includes(':') ? +own.split(':')[1] : !own && q.has('t') ? +q.get('t') : DEFAULT_T[pose] ?? 0.4;
+  let m = null, width = 1.2, anim = null, late = null;
   try {
     if (kind === 'unit') {
       const def = prepareDef(UNITS[id]);
@@ -64,13 +69,18 @@ for (const id of ids) {
         else if (pose === 'fly') animateUnit(m, T, true, -1, 0, 0, true);
         else animateUnit(m, T, false, -1, 0, 0, false);
       };
-      stats.models[id] = { triangles: triangleStats(m), sculpted: !!m.userData.rig?.v2, height: m.userData.rig?.height };
+      stats.models[spec] = { triangles: triangleStats(m), sculpted: !!m.userData.rig?.v2, height: m.userData.rig?.height };
     } else if (kind === 'struct') {
       const def = STRUCTURES[id];
       const w = def.stretch ? +(q.get('len') || 6) : def.w, h = def.h;
       m = buildStructure(def, w, h); width = Math.max(w, h) + 1;
-    } else if (kind === 'ship') { const def = SHIPS[id]; m = buildShip(def, 0x3d7bd9); width = def.len + 1; }
-    else if (kind === 'creature') { const def = CREATURES[id]; m = buildCreature(def); width = (def.size || 1) * 2.4 + 1; anim = () => animateCreature(m, T, 0); stats.models[id] = { triangles: triangleStats(m) }; }
+    } else if (kind === 'ship') {
+      const def = SHIPS[id]; m = buildShip(def, 0x3d7bd9); width = def.len + 1;
+      // triangles per detail tier (each is built on first use, so count them after the build time is taken)
+      const tiers = m.userData.lod?.meshes?.[0]?.geos;
+      if (tiers) late = () => { stats.models[spec].triangles = [0, 1, 2, 3, 4, 5].map((n) => { const g = tiers[Math.min(n, tiers.length - 1)]; return g ? Math.round((g.index ? g.index.count : g.attributes.position.count) / 3) : 0; }); };
+    }
+    else if (kind === 'creature') { const def = CREATURES[id]; m = buildCreature(def); width = (def.size || 1) * 2.4 + 1; anim = () => animateCreature(m, T, 0); stats.models[spec] = { triangles: triangleStats(m) }; }
     else if (kind === 'fort') { const def = FORTS[id]; const mod = await import('./render/models.js'); m = mod.buildFortModel(def); width = def.size * 2.6 + 1; }
     else if (kind === 'craft') { m = buildCraft(0x3d7bd9); width = 3; }
     else if (kind === 'weapon') {
@@ -79,7 +89,7 @@ for (const id of ids) {
       const wo = q.get('opts') ? JSON.parse(q.get('opts')) : {};
       const part = name === 'shield' ? makeShield({ shape: variant || 'kite', color: 0x2f5aa8, ...wo }) : makeWeapon(name, wo);
       m = cloneRigged(assemble({ kind: 'float', nodes: [{ name: 'root', pos: [0, name === 'shield' ? 0.35 : 0.5, 0], prims: part.prims, hard: part.hard }] }));
-      width = 0.6; stats.models[id] = { triangles: triangleStats(m), hold: part.hold, attack: part.attack, length: part.length };
+      width = 0.6; stats.models[spec] = { triangles: triangleStats(m), hold: part.hold, attack: part.attack, length: part.length };
     }
   } catch (err) { stats.errors.push(`${id}: ${err.stack || err}`); }
   if (!m) continue;
@@ -90,9 +100,10 @@ for (const id of ids) {
   anim?.();
   let tris = 0;
   m.traverse((o) => { if (o.isMesh && o.visible) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
-  (stats.models[id] ||= {}).visibleTriangles = Math.round(tris);
-  stats.models[id].buildMs = Math.round(performance.now() - t0);
-  if (q.get('bbox')) { m.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(m); stats.models[id].bounds = { min: bb.min.toArray().map((v) => +v.toFixed(3)), max: bb.max.toArray().map((v) => +v.toFixed(3)), at: +m.position.x.toFixed(3) }; }
+  (stats.models[spec] ||= {}).visibleTriangles = Math.round(tris);
+  stats.models[spec].buildMs = Math.round(performance.now() - t0);
+  late?.();
+  if (q.get('bbox')) { m.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(m); stats.models[spec].bounds = { min: bb.min.toArray().map((v) => +v.toFixed(3)), max: bb.max.toArray().map((v) => +v.toFixed(3)), at: +m.position.x.toFixed(3) }; }
   items.push(m);
 }
 if (q.get('ref') && items.length) {
@@ -141,6 +152,6 @@ function draw() {
   });
 }
 draw(); draw();
-document.getElementById('label').textContent = `${kind}: ${ids.join(', ')}  pose ${pose}\n${names.join('  |  ')}\n${Object.entries(stats.models).map(([k, v]) => `${k}: ${v.visibleTriangles} tris${v.triangles ? ` (levels ${v.triangles.join(' / ')})` : ''}`).join('\n')}`;
+document.getElementById('label').textContent = `${kind}: ${ids.join(', ')}  pose ${q.get('pose') || 'idle'}\n${names.join('  |  ')}\n${Object.entries(stats.models).map(([k, v]) => `${k}: ${v.visibleTriangles} tris${v.triangles ? ` (levels ${v.triangles.join(' / ')})` : ''}`).join('\n')}`;
 stats.drawCalls = stage.renderer.info.render.calls;
 window.__ready = true;

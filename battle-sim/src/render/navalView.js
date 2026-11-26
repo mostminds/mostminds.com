@@ -1,6 +1,6 @@
 // Renders naval battles from engine/naval.js. Engine (x, y) maps to world (x, 0, y).
 import * as THREE from 'three';
-import { buildShip, buildCreature, animateCreature, buildFortModel, setLod, mat } from './models.js';
+import { buildShip, buildCreature, animateCreature, buildFortModel, shipMuzzle, setLod, mat } from './models.js';
 import { makeBar, setBar } from './stage.js';
 import { SIDE_COLORS } from './landView.js';
 import { TICK_MS } from '../engine/combat.js';
@@ -64,7 +64,7 @@ export class NavalView {
     this.models = b.ents.map((e) => {
       const m = e.ship ? buildShip(e.def, SIDE_COLORS[e.side]) : e.fort ? buildFort(e.def) : buildCreature(e.def);
       const bar = makeBar(0x4fd36a);
-      bar.position.y = e.ship ? 2 + e.def.len * 0.35 : e.fort ? Math.max(2.4 + e.def.size * 0.5, (m.userData.top || 0) + 0.4) : Math.max(1 + (e.def.size || 1) * 0.5, (m.userData.rig?.height || 0) + 0.3);
+      bar.position.y = e.ship ? (m.userData.top ?? 1.7 + e.def.len * 0.35) + 0.3 : e.fort ? Math.max(2.4 + e.def.size * 0.5, (m.userData.top || 0) + 0.4) : Math.max(1 + (e.def.size || 1) * 0.5, (m.userData.rig?.height || 0) + 0.3);
       setBar(bar, 1, e.ship ? Math.min(3, e.def.len * 0.4) : 0.8 + (e.def.size || 1) * 0.3);
       m.add(bar);
       const ring = new THREE.Mesh(new THREE.RingGeometry(e.radius + 0.3, e.radius + 0.5, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.side], transparent: true, opacity: 0.6 }));
@@ -94,8 +94,15 @@ export class NavalView {
     for (const e of events) {
       if (e.type === 'shot') {
         const from = new THREE.Vector3(e.x0, 0.8, e.y0), to = new THREE.Vector3(e.x1, e.hit ? 0.8 : 0, e.y1);
+        // a broadside comes from the gun ports facing the target, a few guns at a time
+        const gm = e.kind === 'cannon' && b.ents[e.from]?.ship ? this.models[e.from] : null;
+        const n0 = gm ? (gm.userData.gunTurn = (gm.userData.gunTurn || 0) + 3) : 0;
+        if (gm && shipMuzzle(gm, e.x1, e.y1, n0, from)) {
+          const p = new THREE.Vector3();
+          for (let k = 1; k < 3; k++) if (shipMuzzle(gm, e.x1, e.y1, n0 + k, p)) st.puff(p.clone(), 0xeeeeee, 0.3, 0.9);
+        }
         st.projectile(from, to, e.kind === 'spell' ? 'magic' : e.kind, (e.flight * TICK_MS) / 1000 / this.speed, 0.5);
-        if (e.kind === 'cannon') st.puff(from, 0xeeeeee, 0.35, 0.9);
+        if (e.kind === 'cannon') st.puff(from.clone(), 0xeeeeee, 0.35, 0.9);
       } else if (e.type === 'blast') {
         st.ring(new THREE.Vector3(e.x, 0.1, e.y), e.r, 0xffb060, 0.6);
         st.puff(new THREE.Vector3(e.x, 0.3, e.y), 0x8a7a6a, 0.8, 0.9);
