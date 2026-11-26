@@ -1,0 +1,36 @@
+// Original ship classes and sea creatures. "level" is the sailing level a
+// captain needs for the hull. Speeds are tiles per tick, turn in degrees per tick.
+// cannons: per broadside. dmg [min,max], range tiles, reload ticks, acc 0..1.
+export const SHIPS = {
+  raft:      { name: 'Raft',          level: 1,  hull: 40,  armour: 0,  speed: 0.35, turn: 9, crew: 3,  len: 2.2, beam: 1.6,
+               cannons: { perSide: 0, dmg: [0, 0], range: 0, reload: 99, acc: 0 }, musket: { range: 6, dmg: [0, 4], reload: 4, acc: 0.5 }, sails: 1, color: 0x8b6b42, sail: 0xd8cfb5 },
+  skiff:     { name: 'Skiff',         level: 10, hull: 90,  armour: 5,  speed: 0.6,  turn: 10, crew: 6, len: 3.4, beam: 1.6,
+               cannons: { perSide: 1, dmg: [4, 12], range: 10, reload: 8, acc: 0.55 }, sails: 1, color: 0x7a5a36, sail: 0xe8e2d0 },
+  sloop:     { name: 'Sloop',         level: 25, hull: 160, armour: 10, speed: 0.55, turn: 8, crew: 12, len: 4.5, beam: 2,
+               cannons: { perSide: 2, dmg: [6, 16], range: 12, reload: 8, acc: 0.55 }, sails: 1, color: 0x6b4a2e, sail: 0xf0ead8 },
+  cutter:    { name: 'Cutter',        level: 35, hull: 200, armour: 12, speed: 0.7,  turn: 9, crew: 14, len: 5, beam: 1.9,
+               cannons: { perSide: 2, dmg: [8, 18], range: 13, reload: 7, acc: 0.6 }, sails: 2, color: 0x2f4f6f, sail: 0xf0ead8 },
+  brigantine:{ name: 'Brigantine',    level: 50, hull: 320, armour: 18, speed: 0.5,  turn: 6, crew: 26, len: 6.2, beam: 2.4,
+               cannons: { perSide: 4, dmg: [8, 20], range: 14, reload: 9, acc: 0.55 }, sails: 2, color: 0x5a3a24, sail: 0xe8e2d0 },
+  frigate:   { name: 'Frigate',       level: 65, hull: 480, armour: 25, speed: 0.55, turn: 5, crew: 40, len: 7.5, beam: 2.7,
+               cannons: { perSide: 6, dmg: [10, 24], range: 16, reload: 9, acc: 0.55 }, sails: 3, color: 0x3a2a1a, sail: 0xf0ead8 },
+  galleon:   { name: 'Galleon',       level: 75, hull: 650, armour: 30, speed: 0.4,  turn: 4, crew: 70, len: 8.5, beam: 3.3,
+               cannons: { perSide: 7, dmg: [10, 26], range: 15, reload: 10, acc: 0.5 }, sails: 3, color: 0x6b3a1a, sail: 0xd8c07a },
+  manowar:   { name: "Ship of the Line", level: 90, hull: 900, armour: 38, speed: 0.38, turn: 3.5, crew: 90, len: 10, beam: 3.6,
+               cannons: { perSide: 10, dmg: [12, 30], range: 17, reload: 11, acc: 0.5 }, sails: 3, color: 0x1f1f2a, sail: 0xf0ead8 },
+};
+
+// Creature attacks: range tiles, maxHit, speed ticks, acc 0..1
+// Abilities: submerge {every,duration} (untargetable, faster), grapple {slow,duration}
+//  ink {accPenalty,duration}, ram {damage,cooldown}, sweep {radius,maxHit,every}, charm {duration,every}
+export const CREATURES = {
+  crab:      { name: 'Reef Crab',     level: 15, hp: 40,  armour: 20, speed: 0.4,  size: 1,   attack: { range: 1.5, maxHit: 6,  speed: 4, acc: 0.6 }, abilities: [], model: 'crab', color: 0xc0502a },
+  shark:     { name: 'Great Shark',   level: 30, hp: 80,  armour: 5,  speed: 0.9,  size: 1.4, attack: { range: 1.5, maxHit: 14, speed: 4, acc: 0.65 }, abilities: [{ type: 'submerge', every: 20, duration: 6 }], model: 'shark', color: 0x6a7a8a },
+  eel:       { name: 'Giant Eel',     level: 40, hp: 110, armour: 10, speed: 0.75, size: 1.8, attack: { range: 2,   maxHit: 16, speed: 4, acc: 0.6 }, abilities: [{ type: 'grapple', slow: 0.5, duration: 5 }], model: 'eel', color: 0x3a5a3a },
+  siren:     { name: 'Siren',         level: 50, hp: 90,  armour: 5,  speed: 0.6,  size: 1.2, attack: { range: 9,   maxHit: 14, speed: 5, acc: 0.6 }, abilities: [{ type: 'charm', every: 18, duration: 6 }, { type: 'submerge', every: 24, duration: 5 }], model: 'siren', color: 0x6ad0c0 },
+  serpent:   { name: 'Sea Serpent',   level: 65, hp: 320, armour: 25, speed: 0.7,  size: 3,   attack: { range: 3,   maxHit: 28, speed: 5, acc: 0.6 }, abilities: [{ type: 'submerge', every: 25, duration: 6 }, { type: 'sweep', radius: 4, maxHit: 18, every: 12 }], model: 'serpent', color: 0x2a6a5a },
+  kraken:    { name: 'Kraken',        level: 85, hp: 700, armour: 35, speed: 0.35, size: 4,   attack: { range: 4,   maxHit: 34, speed: 5, acc: 0.65 }, abilities: [{ type: 'grapple', slow: 0.2, duration: 6 }, { type: 'ink', accPenalty: 0.4, duration: 8 }, { type: 'sweep', radius: 5, maxHit: 22, every: 10 }], model: 'kraken', color: 0x7a2a4a },
+  leviathan: { name: 'Leviathan',     level: 99, hp: 1200, armour: 45, speed: 0.5, size: 6,   attack: { range: 4,   maxHit: 45, speed: 6, acc: 0.6 }, abilities: [{ type: 'ram', damage: 90, cooldown: 25 }, { type: 'submerge', every: 30, duration: 8 }], model: 'leviathan', color: 0x2a3a5a },
+};
+for (const [id, s] of Object.entries(SHIPS)) s.id = id;
+for (const [id, c] of Object.entries(CREATURES)) c.id = id;

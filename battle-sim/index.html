@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--BODY-START-->
+<title>Thousand Battles</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Thousand Battles</div>
+    <nav class="modes" aria-label="Battle mode">
+      <button type="button" data-mode="field" class="on">Field battle</button>
+      <button type="button" data-mode="amphibious">Island assault</button>
+      <button type="button" data-mode="naval">Naval</button>
+    </nav>
+    <div class="runbar">
+      <button type="button" id="play" class="primary">Start battle</button>
+      <button type="button" id="reset">Reset</button>
+      <label class="speed">Speed
+        <select id="speed"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option><option value="8">8×</option></select>
+      </label>
+      <button type="button" id="batchBtn" class="brass">Simulate</button>
+      <select id="batchCount" aria-label="Number of battles"><option value="100">100</option><option value="1000" selected>1,000</option></select>
+      <button type="button" id="sheetToggle" class="sheet-toggle">Setup</button>
+    </div>
+  </header>
+
+  <aside class="panel" id="panel">
+    <section class="block">
+      <h2>Scenario</h2>
+      <div class="row">
+        <select id="preset" aria-label="Preset scenario"></select>
+        <button type="button" id="loadPreset">Load</button>
+      </div>
+      <p class="hint" id="modeHint"></p>
+    </section>
+
+    <section class="block" id="armies">
+      <h2>Armies</h2>
+      <div class="sides" id="sides"></div>
+    </section>
+
+    <section class="block" id="mapBlock">
+      <h2>Map</h2>
+      <div class="row">
+        <label class="inline">Size <select id="mapSize"><option>32</option><option>40</option><option>48</option><option>64</option><option>80</option><option>96</option></select></label>
+        <button type="button" id="rotate" title="Rotate (R)">Rotate</button>
+        <button type="button" id="clearMap">Clear map</button>
+      </div>
+      <div class="palette" id="palette"></div>
+      <h3>Place units by hand</h3>
+      <div class="row wrap">
+        <select id="placeSide" aria-label="Side to place"><option value="0">Side A</option><option value="1">Side B</option></select>
+        <select id="placeUnit" aria-label="Unit to place"></select>
+        <label class="inline">Brush <input id="placeBrush" type="number" min="1" max="50" value="5"></label>
+        <button type="button" id="placeTool">Place</button>
+      </div>
+      <p class="hint">Pick a tool, then tap the ground. Erase removes objects and hand-placed units. Units added in the army list deploy automatically.</p>
+    </section>
+
+    <section class="block">
+      <details>
+        <summary>Import your own units</summary>
+        <p class="hint">Paste JSON stat blocks. Plain objects become land units; use <code>{"units":{}, "ships":{}, "creatures":{}}</code> to add naval entries too. Fields match the built-in roster: <code>hp att str def rng mag style speed range move size bonus abilities</code>.</p>
+        <textarea id="importText" rows="7" spellcheck="false"></textarea>
+        <div class="row"><button type="button" id="importBtn">Import</button><button type="button" id="exportBtn">Copy scenario JSON</button></div>
+        <p class="hint" id="importMsg" role="status"></p>
+      </details>
+    </section>
+  </aside>
+
+  <main class="view" id="view">
+    <div class="hud" id="hud">
+      <div class="side-score a"><span class="nm" id="hudNameA"></span><span class="ct" id="hudCountA"></span><div class="bar"><i id="hudBarA"></i></div></div>
+      <div class="clock"><span id="hudState">Deployment</span><b id="hudTime">0:00</b></div>
+      <div class="side-score b"><span class="nm" id="hudNameB"></span><span class="ct" id="hudCountB"></span><div class="bar"><i id="hudBarB"></i></div></div>
+    </div>
+    <ol class="ticker" id="ticker" aria-live="polite"></ol>
+    <div class="tooltip" id="tip" hidden></div>
+    <div class="progress" id="progress" hidden><span id="progressText">Running battles…</span><div class="bar"><i id="progressBar"></i></div><button type="button" id="cancelBatch">Cancel</button></div>
+    <div class="result" id="result" hidden>
+      <div class="result-card">
+        <button type="button" class="close" id="closeResult" aria-label="Close results">×</button>
+        <h2>Battle Result</h2>
+        <p class="matchup" id="resMatchup"></p>
+        <div class="res-top">
+          <div><small>Winner</small><b id="resWinner"></b><span id="resWon"></span></div>
+          <div class="avg"><small id="resAvgLabel">Average survivors left</small><b id="resAvg"></b></div>
+        </div>
+        <p class="chart-title" id="resChartTitle"></p>
+        <div class="chart" id="resChart"></div>
+        <p class="res-foot" id="resFoot"></p>
+      </div>
+    </div>
+  </main>
+</div>
+<script type="module" src="src/app.js"></script>
+<!--BODY-END-->
+</body>
+</html>

@@ -1,0 +1,130 @@
+// Renders naval battles from engine/naval.js. Engine (x, y) maps to world (x, 0, y).
+import * as THREE from 'three';
+import { buildShip, buildCreature, animateCreature, mat } from './models.js';
+import { makeBar, setBar } from './stage.js';
+import { SIDE_COLORS } from './landView.js';
+import { TICK_MS } from '../engine/combat.js';
+
+export class NavalView {
+  constructor(stage) {
+    this.stage = stage;
+    this.root = new THREE.Group();
+    this.dynamic = new THREE.Group();
+    this.root.add(this.dynamic);
+    stage.scene.add(this.root);
+  }
+  dispose() { this.stage.scene.remove(this.root); }
+
+  buildSea(b) {
+    if (this.sea) this.root.remove(this.sea);
+    const g = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(b.W * 3, b.H * 3, 90, 60);
+    geo.rotateX(-Math.PI / 2);
+    this.waterGeo = geo;
+    this.base = Float32Array.from(geo.attributes.position.array);
+    const water = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x24628a, flatShading: true }));
+    water.position.set(b.W / 2, 0, b.H / 2);
+    water.receiveShadow = true;
+    g.add(water);
+    for (const isl of b.islands) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(isl.r * 0.8, isl.r, 1.2, 14), mat(0xcdb57a));
+      m.position.set(isl.x, 0.1, isl.y);
+      const top = new THREE.Mesh(new THREE.ConeGeometry(isl.r * 0.7, isl.r * 0.6, 10), mat(0x4f7a3a));
+      top.position.set(isl.x, 0.7 + isl.r * 0.3, isl.y);
+      g.add(m, top);
+    }
+    this.sea = g;
+    this.root.add(g);
+    this.stage.scene.background.set(0xb4cddb);
+    this.stage.setBounds(b.W, b.H);
+    this.stage.camera.position.set(b.W * 0.42, 42, b.H * 0.5 + 52);
+  }
+
+  load(b) {
+    this.b = b;
+    this.buildSea(b);
+    this.stage.clear(this.dynamic);
+    this.stage.clearFx();
+    this.models = b.ents.map((e) => {
+      const m = e.ship ? buildShip(e.def, SIDE_COLORS[e.side]) : buildCreature(e.def);
+      const bar = makeBar(0x4fd36a);
+      bar.position.y = e.ship ? 2 + e.def.len * 0.35 : 1 + (e.def.size || 1) * 0.5;
+      setBar(bar, 1, e.ship ? Math.min(3, e.def.len * 0.4) : 0.8 + (e.def.size || 1) * 0.3);
+      m.add(bar);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(e.radius + 0.3, e.radius + 0.5, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.side], transparent: true, opacity: 0.6 }));
+      ring.position.y = 0.05;
+      m.add(ring);
+      m.userData = { ...m.userData, bar, ring, phase: e.id * 1.3, side: e.side };
+      this.dynamic.add(m);
+      return m;
+    });
+    this.deathAt = new Map();
+  }
+
+  waveH(x, z, t) { return Math.sin(x * 0.25 + t * 1.2) * 0.18 + Math.cos(z * 0.3 + t * 0.9) * 0.14; }
+
+  onEvents(events) {
+    const b = this.b, st = this.stage, msgs = [];
+    for (const e of events) {
+      if (e.type === 'shot') {
+        const from = new THREE.Vector3(e.x0, 0.8, e.y0), to = new THREE.Vector3(e.x1, e.hit ? 0.8 : 0, e.y1);
+        st.projectile(from, to, e.kind === 'spell' ? 'magic' : e.kind, (e.flight * TICK_MS) / 1000 / this.speed, 0.5);
+        if (e.kind === 'cannon') st.puff(from, 0xeeeeee, 0.35, 0.9);
+      } else if (e.type === 'splash') {
+        st.puff(new THREE.Vector3(e.x, 0, e.y), 0xffffff, 0.3, 0.7);
+      } else if (e.type === 'hit') {
+        const x = b.ents[e.id];
+        st.splat(new THREE.Vector3(x.x, 2.5, x.y), e.dmg);
+      } else if (e.type === 'death') {
+        this.deathAt.set(e.id, this.time);
+        const x = b.ents[e.id];
+        st.ring(new THREE.Vector3(x.x, 0, x.y), 2, 0xffffff, 1.2);
+        msgs.push({ side: x.side, text: `${x.def.name} ${x.ship ? 'is sunk' : 'is slain'}` });
+      } else if (e.type === 'captured') {
+        const x = b.ents[e.id];
+        msgs.push({ side: e.by, text: `${x.def.name} boarded and captured` });
+        this.models[e.id].userData.ring.material = new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.by], transparent: true, opacity: 0.6 });
+      } else if (e.type === 'ability') {
+        const x = b.ents[e.id];
+        if (e.name === 'sweep') st.ring(new THREE.Vector3(x.x, 0, x.y), e.radius, 0x9ad0ff, 0.8);
+        if (e.name === 'ink' || e.name === 'charm' || e.name === 'ram') msgs.push({ side: x.side, text: `${x.def.name}: ${e.name === 'ink' ? 'ink cloud blinds the gunners' : e.name === 'charm' ? 'song lures a ship off course' : 'rams a hull'}` });
+        if (e.name === 'ink') { const t = b.ents[e.to]; st.puff(new THREE.Vector3(t.x, 0.5, t.y), 0x111111, 1.5, 2); }
+      } else if (e.type === 'submerge') {
+        const x = b.ents[e.id]; st.ring(new THREE.Vector3(x.x, 0, x.y), 1, 0xffffff, 0.8);
+      }
+    }
+    return msgs;
+  }
+
+  update(alpha, t, dt, speed = 1) {
+    const b = this.b;
+    if (!b) return;
+    this.time = t; this.speed = speed;
+    const pos = this.waterGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.array[i * 3 + 1] = this.waveH(this.base[i * 3], this.base[i * 3 + 2], t) - 0.15;
+    pos.needsUpdate = true;
+    b.ents.forEach((e, i) => {
+      const m = this.models[i];
+      const died = this.deathAt.get(i);
+      if (!e.alive && died === undefined) { m.visible = false; return; }
+      const x = e.px + (e.x - e.px) * alpha, y = e.py + (e.y - e.py) * alpha;
+      let dh = e.heading - e.ph; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      const hd = e.ph + dh * alpha;
+      m.position.set(x, this.waveH(x, y, t) * 0.8, y);
+      m.rotation.y = -hd;
+      m.rotation.z = Math.sin(t * 1.1 + i) * 0.04;
+      if (!e.ship) animateCreature(m, t, m.userData.phase);
+      const sub = !e.ship && b.tick < e.subUntil;
+      m.position.y -= sub ? 1.2 : 0;
+      if (died !== undefined) {
+        const k = (t - died) * speed;
+        m.position.y -= k * 0.8;
+        m.rotation.x = Math.min(0.6, k * 0.3);
+        m.userData.bar.visible = false; m.userData.ring.visible = false;
+        if (k > 3) m.visible = false;
+      } else {
+        setBar(m.userData.bar, e.hp / e.maxHp);
+      }
+    });
+  }
+}
