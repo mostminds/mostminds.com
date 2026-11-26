@@ -1,7 +1,7 @@
 // War zeppelins in land and amphibious battles: flight, broadsides, bombs, hangar launches,
 // drop pods, ladder rescues, airship duels with boarding, crews and hijacking.
 import { AIRSHIPS } from '../data/airships.js';
-import { DEEP } from './terrain.js';
+import { isWater } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { hitChance, defenceRoll } from './combat.js';
 import { near, queueHit, damageStructure, hitStructuresAt, unitHeight, spawnUnit, addSquad, freeTileNear, occupy, canStandAir, damage, stepAir } from './battle.js';
@@ -213,7 +213,7 @@ function shipTick(b, a) {
       const back = a.side === 0 ? -1 : 1;
       let dx = clamp(a.pick.x + back * 16, 3, b.W - 4);
       const dy = clamp(a.pick.y, 3, b.H - 4);
-      for (let k = 0; k < 20 && b.terrain[Math.round(dy) * b.W + Math.round(dx)] === DEEP; k++) dx = clamp(dx - back * 2, 3, b.W - 4);
+      for (let k = 0; k < 20 && isWater(b.terrain[Math.round(dy) * b.W + Math.round(dx)]); k++) dx = clamp(dx - back * 2, 3, b.W - 4);
       a.drop = { x: dx, y: dy }; a.mode = 'ferry';
     } else { a.mode = 'hunt'; a.ladderCd = 20; }
     carry(); return;
@@ -289,8 +289,8 @@ function shipTick(b, a) {
     const P = a.def.pods;
     const ang = b.rng.next() * Math.PI * 2;
     let px = clamp(Math.round(g.x + Math.cos(ang) * 3), 1, b.W - 2), py = clamp(Math.round(g.y + Math.sin(ang) * 3), 1, b.H - 2);
-    if (b.terrain[py * b.W + px] === DEEP) { px = Math.round(g.x); py = Math.round(g.y); }
-    if (b.terrain[py * b.W + px] !== DEEP) {
+    if (isWater(b.terrain[py * b.W + px])) { px = Math.round(g.x); py = Math.round(g.y); }
+    if (!isWater(b.terrain[py * b.W + px])) {
       a.podsLeft--; a.podCd = 16;
       b.airQueue.push({ tick: b.tick + 4, side: a.side, unit: P.unit, n: P.perPod, x: px, y: py });
       b.events.push({ type: 'podDrop', air: a.id, x: px, y: py, delay: 4 });

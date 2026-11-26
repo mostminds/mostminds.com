@@ -84,7 +84,7 @@ export const PRESETS = [
   {
     id: 'highcrag', name: 'Highcrag Castle: rams, sappers and griffons', mode: 'field',
     scn: { size: 64, shape: 'plains', biome: 'snow', structures: [
-      ...castleKit(38, 19, 24, 1, 'west'),
+      ...castleKit(38, 19, 24, 1, 'west').map((x) => ({ ...x, grp: 1 })),
       gun('ballista', 39, 20), gun('ballista', 39, 41), gun('mortar', 52, 26), gun('mortar', 52, 36),
       S('pine', 12, 8), S('pine', 16, 54), S('rock', 24, 14), S('rock', 22, 46), S('tent', 4, 30),
     ],
@@ -107,7 +107,7 @@ export const PRESETS = [
   {
     id: 'saltspire', name: 'Saltspire Sea Castle: bombard, land and breach', mode: 'amphibious',
     scn: { size: 64, shape: 'coast', biome: 'temperate', terrainSeed: 5, structures: [
-      ...castleKit(40, 20, 20, 1, 'west'),
+      ...castleKit(40, 20, 20, 1, 'west').map((x) => ({ ...x, grp: 1 })),
       gun('battery', 34, 14), gun('battery', 34, 46), gun('harpoon', 41, 21), gun('harpoon', 41, 37),
       S('sandbags', 33, 24), S('sandbags', 33, 36), S('house', 56, 6), S('house', 56, 52),
     ],
@@ -214,6 +214,41 @@ export const PRESETS = [
               { name: 'Fort command', groups: [g('sloop', 2)] }] },
   },
 ];
+
+// The scenarios above were laid out on small maps. They are enlarged here so armies have room to
+// manoeuvre: open-field maps gain a wide margin all round (the layout itself is untouched), shaped
+// maps (coasts, rivers, islands) are scaled with their terrain, castles moving as one piece, and sea
+// battles get a bigger sea.
+function enlarge(p) {
+  const scn = p.scn;
+  if (p.mode === 'naval') {
+    const K = 1.5;
+    scn.width = 210; scn.height = 135; scn.maxTicks = 5000;
+    for (const i of scn.islands || []) { i.x = Math.round(i.x * K); i.y = Math.round(i.y * K); i.r = Math.round(i.r * 1.3); }
+    for (const f of scn.forts || []) { f.x = Math.round(f.x * K); f.y = Math.round(f.y * K); }
+    return;
+  }
+  const old = scn.size;
+  if (!scn.shape || scn.shape === 'plains') {
+    const size = Math.round((old * 1.75) / 4) * 4, off = (size - old) >> 1;
+    scn.size = size;
+    for (const st of scn.structures || []) { st.x += off; st.y += off; }
+    for (const sd of scn.sides) for (const q of sd.placed || []) { q.x += off; q.y += off; }
+    return;
+  }
+  const K = 1.6;
+  scn.size = Math.round((old * K) / 4) * 4;
+  const k = scn.size / old;
+  const grp = (scn.structures || []).filter((st) => st.grp);
+  let dx = 0, dy = 0;
+  if (grp.length) { const gx = Math.min(...grp.map((st) => st.x)), gy = Math.min(...grp.map((st) => st.y)); dx = Math.round(gx * k) - gx; dy = Math.round(gy * k) - gy; }
+  for (const st of scn.structures || []) {
+    if (st.grp) { st.x += dx; st.y += dy; } else { st.x = Math.round(st.x * k); st.y = Math.round(st.y * k); }
+    delete st.grp;
+  }
+  for (const sd of scn.sides) for (const q of sd.placed || []) { q.x = Math.round(q.x * k); q.y = Math.round(q.y * k); }
+}
+for (const p of PRESETS) enlarge(p);
 
 export const DEFAULT_SCENARIOS = {
   field: PRESETS.find((p) => p.id === 'horde').scn,

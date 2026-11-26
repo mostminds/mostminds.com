@@ -51,3 +51,22 @@ speed by point of sail, raking bonuses for bow and stern shots, and sail or rigg
 Fit here: every soldier of a type is currently a clone of one template. Two or three head, hair and helm
 variants per type, a per-soldier tint and height scale, and rank or specialisation marks (a sergeant's crest,
 an engineer's pack, a medic's satchel) are cheap with the part-based rigs.
+
+## Large themed combat maps (city, fort, fortified settlement, harbour, air base, island hopping)
+
+No single library produces battle maps for this game; the useful pieces are layout generators, constraint
+solvers for placing parts, terrain generators, and model kits. Licences as reported by each source: confirm before use.
+
+| Need | Source | What it gives | Fit |
+| --- | --- | --- | --- |
+| City and town layouts | [Watabou Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator) ([older source: TownGeneratorOS](https://watabou.itch.io/medieval-fantasy-city-generator/devlog/6592/source-code)) | Wards, walls with gates and towers, a citadel, rivers and harbours; newer versions export GeoJSON | Best reference for organic walled cities. The method (Voronoi wards, walls round the inner wards, streets from gates to the plaza) would replace our street grid. The current tool is Haxe, not a JS library. |
+| Road networks | [t-mw/citygen](https://github.com/t-mw/citygen) | Open JavaScript road-growth city generator (highways, then streets, then lots) | Could lay real street networks for the 144 and 160 tile cities. |
+| Fitting themed parts together | Wave function collapse: [kchapelier/wavefunctioncollapse](https://npmjs.com/package/wavefunctioncollapse) (MIT, port of [mxgmn's original](https://raw.githubusercontent.com/mxgmn/WaveFunctionCollapse/master/README.md)), [BlazinWFC](https://github.com/arkyris/blazinwfc), [ndwfc](https://github.com/LingDong-/ndwfc) | Fills a grid from tiles with adjacency rules | The right tool for harbours (quay, pier, warehouse, crane), forts (wall, bastion, gate, glacis) and air bases (mooring tower, hangar, workshop, apron): define each theme as a tile set with sockets. |
+| Islands and coastlines | [Red Blob Games polygon map generation](https://www.redblobgames.com/maps/polygon-map-generation/), [mapgen2](https://redblobgames.com/maps/mapgen2), [mapgen4](https://www.redblobgames.com/maps/mapgen4) (Apache 2 per forks), [Evelios/procedural-island](https://github.com/Evelios/procedural-island) | Island shapes from noise minus distance to the edge, elevation, rivers | Would replace our fixed island and archipelago formulas with varied island chains for island hopping. |
+| Building and prop kits | [Kenney Castle Kit](https://kenney-assets.itch.io/castle-kit) and [Fantasy Town Kit](https://opengameart.org/content/fantasy-town-kit), [KayKit Medieval Builder Pack](https://opengameart.org/content/kaykit-medieval-builder-pack-10), [Quaternius Medieval Village MegaKit](https://quaternius.com/packs/medievalvillagemegakit.html) (all CC0) | Hundreds of modular walls, houses, docks and props in glTF | Usable today through the model library (import a folder, auto-match by name). They are low-poly, so they would not match the sculpted look; no free kit found for airships or air bases. |
+
+What the game does now: `src/data/worldgen.js` lays out villages, forts, castles, cities, coastal towns,
+harbour cities and island strongholds from hand-written rules per faction (street grid, warren, necropolis,
+stone rings, lair). The most valuable upgrades from the sources above, in order: wave function collapse tile
+sets per theme (adds air bases and proper harbours cheaply), Voronoi wards for cities, and noise-based island
+chains with several defended islands for island hopping.

@@ -1,5 +1,9 @@
 // Terrain codes shared by engine, renderer and editor.
 export const GRASS = 0, SAND = 1, SHALLOW = 2, DEEP = 3;
+// FORD: a gravel crossing through a river. It is the only water land troops will walk through.
+export const FORD = 4;
+/** water that soldiers on foot keep out of (shallows and deep water alike) */
+export const isWater = (t) => t === SHALLOW || t === DEEP;
 
 export const MAP_SHAPES = {
   plains: 'Open plains',
@@ -82,7 +86,7 @@ export function generateTerrain(shape, size, seed = 7) {
         const d = Math.abs(nx - rx) * S;
         h = d < 1.6 ? -0.3 : d < 3 ? -0.04 : d < 4 ? 0.04 : 1;
         // fords: shallow crossings
-        for (const fy of [0.18, 0.52, 0.84]) if (Math.abs(ny - fy) * S < 2 && d < 3) h = -0.04;
+        for (const fy of [0.18, 0.52, 0.84]) if (Math.abs(ny - fy) * S < Math.max(2, S * 0.03) && d < 3) h = 9; // ford
         break;
       }
       case 'lake': {
@@ -98,7 +102,23 @@ export function generateTerrain(shape, size, seed = 7) {
       }
       default: h = 1;
     }
-    t[y * S + x] = classify(h);
+    t[y * S + x] = h === 9 ? FORD : classify(h);
+  }
+  // Tidal sandbars: land troops cannot wade, so separated shores are joined by gravel crossings
+  const bar = (x0, y0, x1, y1, w) => {
+    const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+    for (let k = 0; k <= n; k++) {
+      const cx = x0 + ((x1 - x0) * k) / n, cy = y0 + ((y1 - y0) * k) / n;
+      for (let dy = -w; dy <= w; dy++) for (let dx = -w; dx <= w; dx++) {
+        const x = Math.round(cx + dx), y = Math.round(cy + dy);
+        if (x > 0 && y > 0 && x < S - 1 && y < S - 1 && isWater(t[y * S + x])) t[y * S + x] = FORD;
+      }
+    }
+  };
+  if (shape === 'strait') for (const fx of [0.42, 0.78]) bar(fx * S, 0.2 * S, fx * S, 0.8 * S, 1);
+  if (shape === 'archipelago') {
+    const isles = [[0.55, 0.22], [0.62, 0.62], [0.84, 0.35], [0.86, 0.8], [0.4, 0.82]];
+    for (const [a, c] of [[0, 2], [0, 1], [1, 3], [2, 3], [1, 4]]) bar(isles[a][0] * S, isles[a][1] * S, isles[c][0] * S, isles[c][1] * S, 1);
   }
   return t;
 }

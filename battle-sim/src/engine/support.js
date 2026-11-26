@@ -1,7 +1,7 @@
 // Crewed guns (cannons, ballistae, mortars, shore batteries, harpoon guns)
 // and fire-support ships inside land / amphibious battles.
 import { defenceRoll, hitChance } from './combat.js';
-import { DEEP } from './terrain.js';
+import { DEEP, isWater } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { near, losCheck, queueHit, damageStructure, hitStructuresAt, unitHeight, spawnUnit, addSquad, freeTileNear, rebuildGrid, walkable } from './battle.js';
 import { airTargetFor } from './airship.js';
@@ -205,8 +205,8 @@ function beastLanding(b, s) {
     let best = null, bs = Infinity;
     for (let y = 2; y < b.H - 2; y++) for (let x = 2; x < b.W - 2; x++) {
       const i = y * b.W + x;
-      if (b.terrain[i] === DEEP || !walkable(b, x, y)) continue;
-      if (b.terrain[i - 1] !== DEEP && b.terrain[i + 1] !== DEEP && b.terrain[i - b.W] !== DEEP && b.terrain[i + b.W] !== DEEP) continue;
+      if (!walkable(b, x, y)) continue;
+      if (!isWater(b.terrain[i - 1]) && !isWater(b.terrain[i + 1]) && !isWater(b.terrain[i - b.W]) && !isWater(b.terrain[i + b.W])) continue;
       const sc = Math.hypot(x - s.x, y - s.y) + 0.35 * Math.hypot(x - ex, y - b.H / 2);
       if (sc < bs) { bs = sc; best = { x, y }; }
     }
@@ -214,7 +214,7 @@ function beastLanding(b, s) {
   }
   if (!s.beach) { s.unloaded = true; return false; }
   const d = Math.hypot(s.beach.x - s.x, s.beach.y - s.y);
-  if (d > s.radius + 2.5) { sail(b, s, Math.atan2(s.beach.y - s.y, s.beach.x - s.x)); if (s.x !== s.px || s.y !== s.py || b.tick < 400) return true; }
+  if (d > s.radius + 4.5) { sail(b, s, Math.atan2(s.beach.y - s.y, s.beach.x - s.x)); if (s.x !== s.px || s.y !== s.py || b.tick < 400) return true; }
   s.unloaded = true;
   const { x, y } = s.beach;
   // the troops are of the kind that side fields most

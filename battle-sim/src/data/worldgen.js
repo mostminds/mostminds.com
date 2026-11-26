@@ -74,13 +74,13 @@ export const FACTIONS = {
 
 // size: map tiles. points: garrison strength. edge: how much stronger the attackers come.
 export const SITES = {
-  village: { name: 'Village raid', mode: 'field', shape: ['plains', 'plains', 'lake'], size: 64, points: 11000, edge: 1.15 },
-  fort: { name: 'Fort assault', mode: 'field', shape: ['plains', 'plains', 'river'], size: 64, points: 15000, edge: 1.5 },
-  castle: { name: 'Castle siege', mode: 'field', shape: ['plains'], size: 80, points: 21000, edge: 1.9 },
-  city: { name: 'City siege', mode: 'field', shape: ['plains', 'river'], size: 128, points: 36000, edge: 1.8 },
-  coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast'], size: 80, points: 14000, edge: 1.5 },
-  harbor: { name: 'Harbour city assault', mode: 'amphibious', shape: ['harbor'], size: 96, points: 24000, edge: 1.6 },
-  island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island'], size: 80, points: 16000, edge: 1.6 },
+  village: { name: 'Village raid', mode: 'field', shape: ['plains', 'plains', 'lake'], size: 96, points: 11000, edge: 1.15 },
+  fort: { name: 'Fort assault', mode: 'field', shape: ['plains', 'plains', 'river'], size: 96, points: 15000, edge: 1.5 },
+  castle: { name: 'Castle siege', mode: 'field', shape: ['plains'], size: 112, points: 21000, edge: 1.9 },
+  city: { name: 'City siege', mode: 'field', shape: ['plains', 'river'], size: 144, points: 36000, edge: 1.8 },
+  coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast'], size: 112, points: 14000, edge: 1.5 },
+  harbor: { name: 'Harbour city assault', mode: 'amphibious', shape: ['harbor'], size: 128, points: 24000, edge: 1.6 },
+  island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island'], size: 112, points: 16000, edge: 1.6 },
 };
 
 // ---------- helpers ----------
@@ -344,7 +344,7 @@ export function generateScenario(opts = {}) {
   let attId = FACTIONS[opts.attacker] ? opts.attacker : r.pick(ids.filter((k) => k !== defId));
   if (!opts.attacker && attId === defId) attId = ids[(ids.indexOf(defId) + 1) % ids.length];
   const D = FACTIONS[defId], A = FACTIONS[attId];
-  const S = [48, 64, 80, 96, 128].includes(+opts.size) ? +opts.size : site.size;
+  const S = [64, 80, 96, 112, 128, 144, 160].includes(+opts.size) ? +opts.size : site.size;
   const shape = r.pick(site.shape), biome = r.pick(D.biomes), terrainSeed = 1 + r.int(0, 9998);
   const terrain = generateTerrain(shape, S, terrainSeed);
   const p = new Plan(S, terrain, r);

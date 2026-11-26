@@ -138,6 +138,11 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
   fighting tower. They fight as ships at sea; in land battles they swim to the enemy shore and land troops,
   stores and, for the crab and the ark, a siege weapon.
 
+- **Bigger maps, drier feet.** Preset land maps are 72 to 128 tiles across and sea battles 210 by 135; generated
+  sites run from 96 to 160. Soldiers on foot keep out of all water: rivers are crossed at gravel fords, and
+  straits and island chains are joined by tidal sandbars. Rally points are never set in water. Units glide
+  between tiles, cut corners, keep their own spot in the rank and stride by the ground they cover.
+
 `docs/TACTICS.md` describes the squad AI and the published frameworks it draws on.
 
 ## Graphics

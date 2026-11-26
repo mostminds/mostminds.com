@@ -170,7 +170,7 @@ export function commandTick(b) {
     let best = null, bd = 8;
     for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
       const x = Math.round(s.x) + dx, y = Math.round(s.y) + dy;
-      if (x < 1 || y < 1 || x >= b.W - 1 || y >= b.H - 1 || b.terrain[y * b.W + x] === DEEP || !walkable(b, x, y)) continue;
+      if (x < 1 || y < 1 || x >= b.W - 1 || y >= b.H - 1 || !walkable(b, x, y)) continue;
       const d = Math.hypot(dx, dy);
       if (d < bd) { bd = d; best = [x, y]; }
     }
@@ -321,7 +321,7 @@ function planBuild(b, side, p) {
   const w = rot ? def.h : def.w, h = rot ? def.w : def.h;
   const free = (x, y) => {
     if (x < 1 || y < 1 || x + w >= b.W - 1 || y + h >= b.H - 1) return false;
-    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) { const i = yy * b.W + xx; if (b.sid[i] || !walkable(b, xx, yy) || b.terrain[i] === DEEP) return false; }
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) { const i = yy * b.W + xx; if (b.sid[i] || !walkable(b, xx, yy)) return false; }
     return !C.builds.some((s) => !s.done && x < s.x + s.w + 1 && s.x < x + w + 1 && y < s.y + s.h + 1 && s.y < y + h + 1) && Math.hypot(x - p.x, y - p.y) >= 2;
   };
   const off = front ? ((slot % 5) - 2) * 0.42 : (slot % 2 ? 1 : -1) * 0.5 * (1 + (slot >> 1));

@@ -2,7 +2,7 @@
 // the same code runs the live 3D view and the batch worker.
 import { createRng } from './rng.js';
 import { attackRoll, defenceRoll, hitChance, maxHit, hitDelay, combatLevel } from './combat.js';
-import { generateTerrain, DEEP } from './terrain.js';
+import { generateTerrain, DEEP, isWater } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGunRing } from './support.js';
 import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsAirship } from './airship.js';
@@ -154,7 +154,7 @@ export function freeTileNear(b, x, y, size, side) {
     if (canStand(b, cx, cy, size, -1, side)) return [cx, cy];
     for (const [dx, dy] of DIRS) {
       const nx = cx + dx, ny = cy + dy, n = ny * b.W + nx;
-      if (nx < 0 || ny < 0 || nx >= b.W || ny >= b.H || seen.has(n) || (b.terrain[n] === DEEP && !b.level[n])) continue;
+      if (nx < 0 || ny < 0 || nx >= b.W || ny >= b.H || seen.has(n) || (isWater(b.terrain[n]) && !b.level[n])) continue;
       seen.add(n); q.push(n);
     }
   }
@@ -167,7 +167,7 @@ function spawnTiles(b, mode, side) {
   const cy = H / 2;
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     const i = y * W + x;
-    if (b.terrain[i] === DEEP || b.blockMove[i] || b.door[i] >= 0) continue;
+    if (isWater(b.terrain[i]) || b.blockMove[i] || b.door[i] >= 0) continue;
     let depth;
     if (mode === 'amphibious') {
       if (side === 0) continue;
@@ -199,12 +199,12 @@ function newCraft(b, side, x, y, tx, ty) {
 function deployPlacedCrafts(b, list, pool, addUnit, side) {
   const { W, H } = b, ex = side === 0 ? W * 0.85 : W * 0.15;
   for (const c of list) {
-    if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H || b.terrain[c.y * W + c.x] !== DEEP) continue;
+    if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H || !isWater(b.terrain[c.y * W + c.x])) continue;
     let best = null, bs = Infinity;
     for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
-      if (b.terrain[i] === DEEP || b.blockMove[i]) continue;
-      if (b.terrain[i - 1] !== DEEP && b.terrain[i + 1] !== DEEP && b.terrain[i - W] !== DEEP && b.terrain[i + W] !== DEEP) continue;
+      if (isWater(b.terrain[i]) || b.blockMove[i]) continue;
+      if (!isWater(b.terrain[i - 1]) && !isWater(b.terrain[i + 1]) && !isWater(b.terrain[i - W]) && !isWater(b.terrain[i + W])) continue;
       const sc = Math.hypot(x - c.x, y - c.y) + 0.5 * Math.hypot(x - ex, y - H / 2);
       if (sc < bs) { bs = sc; best = [x, y]; }
     }
@@ -229,7 +229,7 @@ function deployByCraft(b, pool, addUnit, side) {
     const x = 2 - wave * 4;
     // Beach target: first non-deep tile eastward on this row
     let tx = W - 1;
-    for (let xx = 0; xx < W; xx++) if (b.terrain[y * W + xx] !== DEEP) { tx = xx; break; }
+    for (let xx = 0; xx < W; xx++) if (!isWater(b.terrain[y * W + xx])) { tx = xx; break; } // run right in to dry ground
     const craft = newCraft(b, side, x, y, tx, y);
     for (let k = 0; k < CRAFT_CAPACITY && p < pool.length; k++, p++) {
       const u = addUnit(pool[p], side, -1, -1);
@@ -265,11 +265,11 @@ function buildSquads(b) {
 export function walkable(b, x, y) {
   if (x < 0 || y < 0 || x >= b.W || y >= b.H) return false;
   const i = y * b.W + x;
-  return !b.blockMove[i] && (b.terrain[i] !== DEEP || b.level[i] > 0); // a deck over water can be walked on
+  return !b.blockMove[i] && (!isWater(b.terrain[i]) || b.level[i] > 0); // soldiers keep out of the water; a deck over it can be walked on
 }
 // side may pass this tile (doors only open for their owner)
 function passable(b, i, side) {
-  return !b.blockMove[i] && (b.terrain[i] !== DEEP || b.level[i] > 0) && (b.door[i] < 0 || b.door[i] === side);
+  return !b.blockMove[i] && (!isWater(b.terrain[i]) || b.level[i] > 0) && (b.door[i] < 0 || b.door[i] === side);
 }
 // one level up or down per step, or any height on a ladder
 function stepOk(b, a, c) {
@@ -367,7 +367,7 @@ export function damageStructure(b, idx, dmg, from) {
     const i = u.y * b.W + u.x;
     const drop = before[i] - b.level[i];
     if (drop > 0) damage(b, u, drop * 6 + b.rng.int(0, drop * 4), null, 'fall');
-    if (u.alive && b.terrain[i] === DEEP && !b.level[i]) { u.alive = false; u.hp = 0; occupy(b, u, 0); b.events.push({ type: 'death', id: u.id, drowned: true }); } // the dock went from under them
+    if (u.alive && isWater(b.terrain[i]) && !b.level[i]) { u.alive = false; u.hp = 0; occupy(b, u, 0); b.events.push({ type: 'death', id: u.id, drowned: true }); } // the dock went from under them
   }
 }
 // blast damage to anything built within r tiles of (x, y)
@@ -426,7 +426,7 @@ function bfs(b, sources, side) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= W || ny >= b.H) continue;
         const n = ny * W + nx;
-        if (b.terrain[n] === DEEP && !b.level[n]) continue;
+        if (isWater(b.terrain[n]) && !b.level[n]) continue;
         if (!passable(b, n, side) && !breakableFor(b, n, side)) continue;
         let cost;
         if (iOpen && stepOk(b, n, i)) {
@@ -582,7 +582,7 @@ function moveCrafts(b) {
     const nx = c.x + (dx / d) * step, ny = c.y + (dy / d) * step;
     const ti = Math.round(ny) * b.W + Math.round(nx);
     c.x = nx; c.y = ny;
-    if (b.terrain[ti] !== DEEP) { c.landed = true; b.events.push({ type: 'land', craft: c.id }); }
+    if (!isWater(b.terrain[ti])) { c.landed = true; b.events.push({ type: 'land', craft: c.id }); }
     for (const id of c.passengers) { const u = b.units[id]; u.x = Math.round(c.x); u.y = Math.round(c.y); }
   }
 }
@@ -603,7 +603,7 @@ function disembark(b, c) {
       }
       for (const [dx, dy] of DIRS) {
         const nx = x + dx, ny = y + dy, n = ny * b.W + nx;
-        if (walkable(b, nx, ny) && !seen.has(n)) { seen.add(n); q.push(n); }
+        if (nx >= 0 && ny >= 0 && nx < b.W && ny < b.H && !b.blockMove[n] && b.terrain[n] !== DEEP && !seen.has(n)) { seen.add(n); q.push(n); }
       }
     }
     if (!placed) keep.push(id);
@@ -815,7 +815,7 @@ function unitTick(b, u) {
       u.airTime = (u.airTime || 0) + 1;
       if (u.airTime > (u.def.stamina || 250)) {
         u.airTime = 0;
-        if (b.terrain[u.y * b.W + u.x] === DEEP) { u.seekLand = true; u.airTime = (u.def.stamina || 250); }
+        if (isWater(b.terrain[u.y * b.W + u.x])) { u.seekLand = true; u.airTime = (u.def.stamina || 250); }
         else {
           u.seekLand = false;
           u.landedUntil = b.tick + 40;
@@ -923,7 +923,7 @@ function unitTick(b, u) {
     if (!posted) {
       const f = field(b, 'ramparts', 60, () => {
         const out = [];
-        for (let i = 0; i < b.W * b.H; i++) if (b.level[i] > 0 && !b.blockMove[i] && b.door[i] < 0 && b.terrain[i] !== DEEP && !nearStair(i)) out.push(i);
+        for (let i = 0; i < b.W * b.H; i++) if (b.level[i] > 0 && !b.blockMove[i] && b.door[i] < 0 && !isWater(b.terrain[i]) && !nearStair(i)) out.push(i);
         return out;
       });
       const d = f ? f[hi] : INF;
@@ -1197,7 +1197,7 @@ function flyToward(b, u, sq, range) {
     let best = null, bd = Infinity;
     for (let r = 1; r < 30 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       const x = u.x + dx, y = u.y + dy;
-      if (x < 0 || y < 0 || x >= b.W || y >= b.H || b.terrain[y * b.W + x] === DEEP) continue;
+      if (x < 0 || y < 0 || x >= b.W || y >= b.H || isWater(b.terrain[y * b.W + x])) continue;
       const d = Math.hypot(dx, dy);
       if (d < bd) { bd = d; best = { x, y, def: { size: 1 } }; }
     }

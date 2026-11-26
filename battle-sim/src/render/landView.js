@@ -44,9 +44,10 @@ export class LandView {
     const g = new THREE.Group();
     const W = b.W, H = b.H, V = W + 1;
     const tileAt = (x, y) => b.terrain[Math.max(0, Math.min(H - 1, y)) * W + Math.max(0, Math.min(W - 1, x))];
-    const BASE = [0, -0.05, -0.34, -1.3]; // grass, sand, shallow, deep
+    const BASE = [0, -0.05, -0.34, -1.3, -0.1]; // grass, sand, shallow, deep, ford
     const deepCol = new THREE.Color(bio.floor).multiplyScalar(1.6);
-    const COL = [new THREE.Color().setRGB(...bio.grass, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.sand, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.shallow, THREE.SRGBColorSpace), deepCol];
+    const COL = [new THREE.Color().setRGB(...bio.grass, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.sand, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.shallow, THREE.SRGBColorSpace), deepCol,
+      new THREE.Color().setRGB(...bio.sand, THREE.SRGBColorSpace).lerp(new THREE.Color(0x8a8478), 0.55)]; // fords are gravel
     const noise = (x, y) => Math.sin(x * 0.31 + 1.7) * Math.cos(y * 0.27 + 0.4) * 0.5 + Math.sin(x * 0.83 + y * 0.61) * 0.25 + Math.sin(x * 1.9 - y * 1.3) * 0.12;
     // one height and one blended colour per tile corner: smooth ground instead of flat squares
     const hc = (this.hCorner = new Float32Array(V * V));
@@ -743,6 +744,26 @@ export class LandView {
       }
       m.visible = true;
       this.unitPos(u, died !== undefined ? 1 : alpha, m.position);
+      // Natural movement: the engine steps tile to tile, but a soldier glides after his place in the
+      // grid, cuts corners, keeps his own spot within the tile, and turns the way he is really going.
+      let walkDir = null, walked = 0;
+      const ud = m.userData;
+      if (u.aboard < 0) {
+        if (u.def.size === 1) { m.position.x += (((u.id * 73) % 17) / 17 - 0.5) * 0.3; m.position.z += (((u.id * 137) % 19) / 19 - 0.5) * 0.3; } // not ruler-straight ranks
+        if (died !== undefined) { if (ud.sp) m.position.copy(ud.sp); } // he lies where he actually was
+        else if (!ud.sp || ud.sp.distanceToSquared(m.position) > 16) ud.sp = m.position.clone();
+        else {
+          const k = 1 - Math.exp(-dt * speed * (6.5 + (u.id % 5) * 0.5));
+          const ox = ud.sp.x, oz = ud.sp.z;
+          ud.sp.lerp(m.position, k);
+          const dx = ud.sp.x - ox, dz = ud.sp.z - oz;
+          walked = Math.hypot(dx, dz);
+          const v = walked / Math.max(1e-4, dt * speed);
+          ud.vel = (ud.vel || 0) + (v - (ud.vel || 0)) * Math.min(1, dt * 8);
+          if (ud.vel > 0.5) walkDir = Math.atan2(dz, dx);
+          m.position.copy(ud.sp);
+        }
+      } else { ud.sp = null; ud.vel = 0; }
       const dth = m.userData.death;
       if (dth && dth.fling && dead > 0) {
         // thrown by the blast: out along its line, up and down again
@@ -751,14 +772,16 @@ export class LandView {
       }
       let duel = m.userData.duel;
       if (duel) { const k = (t - duel.t0) * speed / duel.dur; if (k >= 1 || !u.alive) { m.userData.duel = null; duel = null; } else duel.k = Math.max(0, k); }
-      const facing = dth ? dth.face : duel && b.units[duel.other] ? Math.atan2(b.units[duel.other].y - u.y, b.units[duel.other].x - u.x) : u.face;
-      const want = Math.PI / 2 - facing;
-      let d = want - m.userData.rotY; d = Math.atan2(Math.sin(d), Math.cos(d));
-      m.userData.rotY += d * Math.min(1, dt * 10);
-      m.rotation.y = m.userData.rotY;
-      const moving = u.alive && (u.x !== u.px || u.y !== u.py) && u.aboard < 0;
       const since = (tickNow - u.lastAttack) * 0.6 * 1.6;
       const atk = since >= 0 && since < 1 ? since : -1;
+      const facing = dth ? dth.face : duel && b.units[duel.other] ? Math.atan2(b.units[duel.other].y - u.y, b.units[duel.other].x - u.x) : walkDir !== null && atk < 0 ? walkDir : u.face;
+      const want = Math.PI / 2 - facing;
+      let d = want - m.userData.rotY; d = Math.atan2(Math.sin(d), Math.cos(d));
+      m.userData.rotY += d * Math.min(1, dt * 7 * Math.max(1, speed * 0.6));
+      m.rotation.y = m.userData.rotY;
+      const moving = u.alive && u.aboard < 0 && ((ud.vel || 0) > 0.35 || (!ud.sp && (u.x !== u.px || u.y !== u.py)));
+      // the stride follows the ground covered, so feet do not skate; standing still, the clock runs on time
+      ud.clock = (ud.clock ?? t) + (moving ? walked * 0.64 : dt);
       const airborne = !!u.def.fly && u.alive && !(u.landedUntil > b.tick);
       if (m.userData.lod) {
         // detail follows how large the unit is on screen
@@ -767,7 +790,7 @@ export class LandView {
         if (dead > 0 || duel) lv = Math.min(lv, m.userData.lod.levels - 2); // the far level cannot bend, and these must
         setLod(m, lv);
       }
-      animateUnit(m, t, moving || airborne, duel && duel.role === 'a' && atk < 0 ? duel.k : atk, dead, m.userData.phase, airborne, dth || duel ? { death: dth, duel } : null);
+      animateUnit(m, airborne ? t : ud.clock, moving || airborne, duel && duel.role === 'a' && atk < 0 ? duel.k : atk, dead, m.userData.phase, airborne, dth || duel ? { death: dth, duel } : null);
       if (u.def.fly) m.userData.disc.position.y = -(m.position.y - Math.max(0, this.groundY(u.x, u.y))) + 0.02;
       m.userData.rig?.mixer?.update(dt * speed);
       if (u.alive) { m.userData.bar.visible = u.hp < u.def.hp; if (u.hp < u.def.hp) setBar(m.userData.bar, u.hp / u.def.hp); }
