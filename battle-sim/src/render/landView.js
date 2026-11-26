@@ -1,6 +1,6 @@
 // Renders a land/amphibious battle state produced by engine/battle.js.
 import * as THREE from 'three';
-import { buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
+import { animateCreature, buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
 import { bakePose } from './rigkit.js';
 import { sculptMaterial } from './sculpt.js';
 import { LIFTED } from '../engine/airship.js';
@@ -511,6 +511,10 @@ export class LandView {
         this.howDied(e);
         if (e.drowned) { this.unitPos(b.units[e.id], 1, v); st.puff(v, 0xffffff, 0.3); this.noBody.add(e.id); }
         else if (b.units[e.id].aboard >= 0) this.noBody.add(e.id);
+      } else if (e.type === 'beastLanding') {
+        const sh = b.ships[e.ship];
+        st.ring(v.set(e.x + 0.5, 0.05, e.y + 0.5), 2, 0xffffff, 0.8);
+        msgs.push({ side: sh.side, text: `${sh.def.name} comes ashore: ${e.n} troops${e.gun ? ' and a siege weapon' : ''} landed` });
       } else if (e.type === 'duel') {
         // a matched exchange: both fighters play the same blow, facing one another
         const dur = 0.62;
@@ -695,6 +699,7 @@ export class LandView {
       m.position.set(x, this.waveY(x, y) - 0.1, y);
       m.rotation.y = -(sh.ph + dh * alpha);
       m.rotation.z = Math.sin(t * 1.1 + i) * 0.04;
+      if (m.userData.beast && sunk === undefined) animateCreature(m.userData.beast, t, i * 1.3);
       if (m.userData.lod) {
         const ratio = this.stage.camera.position.distanceTo(m.position) / 1.5;
         let lv = 0; while (lv < 5 && ratio > [14, 30, 60, 110, 200][lv]) lv++;

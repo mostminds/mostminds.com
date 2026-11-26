@@ -14,6 +14,8 @@ export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES, FORTS }) {
     maxTicks: scn.maxTicks || 2500, islands: scn.islands || [],
     sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, initial: 0 })),
   };
+  // the wind blows toward `dir` and backs and veers a little as the fight goes on
+  b.wind = { dir: scn.wind !== undefined ? scn.wind : b.rng.next() * Math.PI * 2, speed: 0.85 + b.rng.next() * 0.3, veer: (b.rng.next() - 0.5) * 0.004 };
   scn.sides.forEach((side, si) => {
     const list = [];
     for (const g of side.groups || []) {
@@ -43,7 +45,7 @@ function addEnt(b, def, side, x, y) {
     heading: side === 0 ? 0 : Math.PI, ph: side === 0 ? 0 : Math.PI,
     hp: ship ? def.hull : def.hp, maxHp: ship ? def.hull : def.hp, crew: ship ? def.crew : fort ? def.garrison : 0,
     alive: true, reload: [b.rng.int(0, 4), b.rng.int(0, 4)], cd: b.rng.int(0, 3), target: -1,
-    slowUntil: 0, slow: 1, inkUntil: 0, ink: 0, charmUntil: 0, charmBy: -1, subUntil: 0, nextSub: 0,
+    rig: 1, tack: 1, tackUntil: 0, slowUntil: 0, slow: 1, inkUntil: 0, ink: 0, charmUntil: 0, charmBy: -1, subUntil: 0, nextSub: 0,
     nextSweep: 0, nextRam: 0, nextCharm: 0, radius: ship ? def.len / 2 : fort ? def.size : (def.size || 1) * 0.7, kills: 0,
   };
   b.ents.push(e);
@@ -54,6 +56,7 @@ export function stepNaval(b) {
   if (b.winner !== null) return;
   b.tick++;
   b.events = [];
+  b.wind.dir = wrap(b.wind.dir + b.wind.veer + (b.rng.next() - 0.5) * 0.004);
   for (const e of b.ents) { e.px = e.x; e.py = e.y; e.ph = e.heading; }
   for (const e of b.ents) if (e.alive) (e.ship ? shipTick : e.fort ? fortTick : creatureTick)(b, e);
   separate(b);
@@ -74,6 +77,20 @@ export function stepNaval(b) {
   if (b.winner !== null) b.events.push({ type: 'end', winner: b.winner });
 }
 
+// How well a ship sails on this heading: nothing in the wind's eye, slow close-hauled, best with
+// the wind on the beam or quarter, a little less dead before it. Square-riggers point worse than
+// fore-and-aft rigs. Oared craft and beasts do not care.
+export function sailFactor(b, e, heading = e.heading) {
+  if (!e.ship || e.def.oars || e.def.beast) return 1;
+  const off = Math.abs(wrap(heading - b.wind.dir)) / DEG; // 0 = running, 180 = head to wind
+  const irons = e.def.sails >= 3 ? 128 : 140;             // how close to the wind she will lie
+  let f;
+  if (off > irons) f = 0.18;
+  else if (off > irons - 25) f = 0.18 + (0.62 * (irons - off)) / 25;
+  else if (off > 55) f = 1;
+  else f = 0.82 + 0.18 * (off / 55);
+  return f * b.wind.speed * (0.4 + 0.6 * e.rig);
+}
 const submerged = (b, e) => !e.ship && !e.fort && b.tick < e.subUntil;
 const dist = (a, c) => Math.hypot(a.x - c.x, a.y - c.y) - a.radius - c.radius;
 
@@ -109,6 +126,7 @@ function steer(b, e, desired, speedMul = 1) {
   e.heading = wrap(e.heading + Math.max(-turn, Math.min(turn, diff)));
   let spd = e.def.speed * speedMul * (b.tick < e.slowUntil ? e.slow : 1);
   if (e.ship) spd *= 0.35 + 0.65 * Math.max(0.25, e.crew / e.def.crew); // short-handed ships are slow
+  if (e.ship) spd *= sailFactor(b, e);
   if (submerged(b, e)) spd *= 1.4;
   e.x += Math.cos(e.heading) * spd;
   e.y += Math.sin(e.heading) * spd;
@@ -142,6 +160,15 @@ function shipTick(b, e) {
     const port = wrap(bearing + Math.PI / 2), star = wrap(bearing - Math.PI / 2);
     desired = Math.abs(wrap(port - e.heading)) < Math.abs(wrap(star - e.heading)) ? port : star;
     if (d < range * 0.4) desired = wrap(desired + (wrap(desired - bearing) > 0 ? 0.4 : -0.4));
+  }
+  // a ship cannot sail into the wind's eye: she beats up to her mark on alternate tacks
+  if (!e.def.oars && !e.def.beast) {
+    const eye = wrap(b.wind.dir + Math.PI), irons = (e.def.sails >= 3 ? 52 : 40) * DEG;
+    const offEye = wrap(desired - eye);
+    if (Math.abs(offEye) < irons) {
+      if (b.tick > e.tackUntil) { e.tack = offEye >= 0 ? 1 : -1; if (Math.abs(offEye) < 8 * DEG) e.tack = -e.tack; e.tackUntil = b.tick + 22; if (!e.beating) { e.beating = true; b.events.push({ type: 'tack', id: e.id }); } }
+      desired = wrap(eye + e.tack * (irons + 6 * DEG));
+    } else e.beating = false;
   }
   steer(b, e, desired);
   fireBroadsides(b, e);
@@ -184,6 +211,8 @@ function fireBroadsides(b, e) {
 function shoot(b, e, t, dmg, acc, range, kind, broadside = 0, offset = 0) {
   const d = Math.max(0, dist(e, t));
   let p = acc * (1 - 0.45 * (d / Math.max(1, range)));
+  // the weather gage: the ship to windward shoots through clear air, her smoke rolling down on the enemy
+  if (kind === 'cannon') { const upwind = Math.cos(wrap(Math.atan2(t.y - e.y, t.x - e.x) - b.wind.dir)); p *= 1 + 0.12 * upwind; }
   p *= Math.min(1.3, 0.75 + t.radius * 0.15);
   if (b.tick < e.inkUntil) p *= 1 - e.ink;
   const hit = b.rng.next() < p;
@@ -271,7 +300,16 @@ function resolveShots(b) {
     if (s.tick > b.tick) { keep.push(s); continue; }
     const t = b.ents[s.to];
     if (s.hit && t.alive && !submerged(b, t)) {
-      hurt(b, t, s.dmg, b.ents[s.from]);
+      let dmg = s.dmg;
+      const src = b.ents[s.from];
+      if (t.ship && !t.def.beast && src && src.ship && dmg > 0) {
+        // raking fire down the length of the deck from ahead or astern does far more harm
+        const ang = Math.abs(wrap(Math.atan2(src.y - t.y, src.x - t.x) - t.heading)) / DEG;
+        if (ang < 24 || ang > 156) { dmg = Math.round(dmg * 1.6); t.crew = Math.max(0, t.crew - 1); if (b.tick !== t.rakedAt) { t.rakedAt = b.tick; b.events.push({ type: 'rake', id: t.id, by: src.id, stern: ang > 156 }); } }
+        // shot aloft cuts up sails and rigging
+        if (t.rig > 0.35 && b.rng.chance(0.12)) { t.rig = Math.max(0.35, t.rig - 0.1); if (t.rig <= 0.55 && !t.crippled) { t.crippled = true; b.events.push({ type: 'rigging', id: t.id }); } }
+      }
+      hurt(b, t, dmg, src);
       if (s.grapple) { t.slowUntil = b.tick + s.grapple.duration; t.slow = s.grapple.slow; }
     } else b.events.push({ type: 'splash', x: s.x, y: s.y });
     if (s.splash) {

@@ -83,7 +83,7 @@ export function initCommand(b, scn) {
   }
   // what there is to unload
   for (const c of b.crafts) c.supplies = 3;
-  for (const s of b.ships) s.supplies = 6;
+  for (const s of b.ships) s.supplies = s.def.supplies ?? 6;
   for (const a of b.airships) a.supplies = 4;
   b.structures.forEach((st) => {
     if (!STRUCTURES[st.type].cargo) return;

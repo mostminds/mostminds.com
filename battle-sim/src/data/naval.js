@@ -3,7 +3,7 @@
 // cannons: per broadside. dmg [min,max], range tiles, reload ticks, acc 0..1.
 export const SHIPS = {
   raft:      { name: 'Raft',          level: 1,  hull: 40,  armour: 0,  speed: 0.35, turn: 9, crew: 3,  len: 2.2, beam: 1.6,
-               cannons: { perSide: 0, dmg: [0, 0], range: 0, reload: 99, acc: 0 }, musket: { range: 6, dmg: [0, 4], reload: 4, acc: 0.5 }, sails: 1, color: 0x8b6b42, sail: 0xd8cfb5 },
+               cannons: { perSide: 0, dmg: [0, 0], range: 0, reload: 99, acc: 0 }, musket: { range: 6, dmg: [0, 4], reload: 4, acc: 0.5 }, sails: 1, oars: true, color: 0x8b6b42, sail: 0xd8cfb5 },
   skiff:     { name: 'Skiff',         level: 10, hull: 90,  armour: 5,  speed: 0.6,  turn: 10, crew: 6, len: 3.4, beam: 1.6,
                cannons: { perSide: 1, dmg: [4, 12], range: 10, reload: 8, acc: 0.55 }, sails: 1, color: 0x7a5a36, sail: 0xe8e2d0 },
   sloop:     { name: 'Sloop',         level: 25, hull: 160, armour: 10, speed: 0.55, turn: 8, crew: 12, len: 4.5, beam: 2,
@@ -18,6 +18,15 @@ export const SHIPS = {
                cannons: { perSide: 7, dmg: [10, 26], range: 15, reload: 10, acc: 0.5 }, sails: 3, color: 0x6b3a1a, sail: 0xd8c07a },
   manowar:   { name: "Ship of the Line", level: 90, hull: 900, armour: 38, speed: 0.38, turn: 3.5, crew: 90, len: 10, beam: 3.6,
                cannons: { perSide: 10, dmg: [12, 30], range: 17, reload: 11, acc: 0.5 }, sails: 3, color: 0x1f1f2a, sail: 0xf0ead8 },
+  // ---- War beasts: sea creatures broken to harness, with a fighting tower and a crew on their backs.
+  // They ignore the wind, carry troops (carries), stores (supplies) and sometimes a siege weapon
+  // (siege) which they land on an enemy shore in land battles.
+  siegeCrab:    { name: 'Siege Crab',    level: 55, hull: 520,  armour: 45, speed: 0.4,  turn: 9,  crew: 18, len: 5,  beam: 4,   beast: 'crab', beastSize: 3.2, carries: 8, siege: 'ballista', supplies: 6,
+                  cannons: { perSide: 1, dmg: [14, 30], range: 13, reload: 9, acc: 0.6 }, sails: 0, color: 0xb5462f, sail: 0xd8cfb5 },
+  warSerpent:   { name: 'War Serpent',   level: 70, hull: 420,  armour: 20, speed: 0.75, turn: 10, crew: 18, len: 7,  beam: 2,   beast: 'serpent', beastSize: 2.4, carries: 10, supplies: 4,
+                  cannons: { perSide: 1, dmg: [8, 20], range: 11, reload: 7, acc: 0.6 }, sails: 0, color: 0x2f6f5a, sail: 0xd8cfb5 },
+  leviathanArk: { name: 'Leviathan Ark', level: 95, hull: 1300, armour: 40, speed: 0.33, turn: 4,  crew: 44, len: 11, beam: 5,   beast: 'leviathan', beastSize: 5, carries: 24, siege: 'mortar', supplies: 12,
+                  cannons: { perSide: 3, dmg: [14, 34], range: 15, reload: 11, acc: 0.5 }, sails: 0, color: 0x3a4a5a, sail: 0xd8cfb5 },
 };
 
 // Creature attacks: range tiles, maxHit, speed ticks, acc 0..1

@@ -3,7 +3,7 @@
 import { defenceRoll, hitChance } from './combat.js';
 import { DEEP } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
-import { near, losCheck, queueHit, damageStructure, hitStructuresAt, unitHeight } from './battle.js';
+import { near, losCheck, queueHit, damageStructure, hitStructuresAt, unitHeight, spawnUnit, addSquad, freeTileNear, rebuildGrid, walkable } from './battle.js';
 import { airTargetFor } from './airship.js';
 
 const NOBODY = { id: -1 };
@@ -198,8 +198,51 @@ function shipTargets(b, s, R) {
   return best ? { obj: best, kind, d: bd } : null;
 }
 
+// A war beast makes for the nearest enemy shore and puts its troops, its siege weapon and its stores on the beach.
+function beastLanding(b, s) {
+  if (!s.beach || b.tick % 30 === 0) {
+    const ex = s.side === 0 ? b.W * 0.8 : b.W * 0.2;
+    let best = null, bs = Infinity;
+    for (let y = 2; y < b.H - 2; y++) for (let x = 2; x < b.W - 2; x++) {
+      const i = y * b.W + x;
+      if (b.terrain[i] === DEEP || !walkable(b, x, y)) continue;
+      if (b.terrain[i - 1] !== DEEP && b.terrain[i + 1] !== DEEP && b.terrain[i - b.W] !== DEEP && b.terrain[i + b.W] !== DEEP) continue;
+      const sc = Math.hypot(x - s.x, y - s.y) + 0.35 * Math.hypot(x - ex, y - b.H / 2);
+      if (sc < bs) { bs = sc; best = { x, y }; }
+    }
+    s.beach = best;
+  }
+  if (!s.beach) { s.unloaded = true; return false; }
+  const d = Math.hypot(s.beach.x - s.x, s.beach.y - s.y);
+  if (d > s.radius + 2.5) { sail(b, s, Math.atan2(s.beach.y - s.y, s.beach.x - s.x)); if (s.x !== s.px || s.y !== s.py || b.tick < 400) return true; }
+  s.unloaded = true;
+  const { x, y } = s.beach;
+  // the troops are of the kind that side fields most
+  const tally = new Map();
+  for (const u of b.units) if (u.side === s.side && !u.def.fly && u.def.size === 1 && u.def.role !== 'siege') { const base = u.baseDef || u.def; tally.set(base, (tally.get(base) || 0) + 1); }
+  const def = [...tally.entries()].sort((p, q) => q[1] - p[1])[0]?.[0] || b.getDef('footman') || b.getDef('goblin');
+  const fresh = [];
+  if (def) for (let k = 0; k < (s.def.carries || 0); k++) { const spot = freeTileNear(b, x, y, 1, s.side); if (spot) { const u = spawnUnit(b, def, s.side, spot[0], spot[1]); u.rank = 0; u.spec = 'line'; fresh.push(u); } }
+  addSquad(b, fresh);
+  let gunAt = null;
+  if (s.def.siege && STRUCTURES[s.def.siege]) {
+    const spot = freeTileNear(b, x, y, 1, s.side);
+    if (spot && !b.sid[spot[1] * b.W + spot[0]]) {
+      const gd = STRUCTURES[s.def.siege], idx = b.structures.length;
+      b.structures.push({ type: s.def.siege, x: spot[0], y: spot[1], rot: 0, side: s.side, w: gd.w, h: gd.h, hp: gd.hp || 0, maxHp: gd.hp || 0, destroyed: false, built: true });
+      rebuildGrid(b); b.fields.clear();
+      addGun(b, idx);
+      gunAt = idx;
+      b.events.push({ type: 'built', s: idx, side: s.side, kind: s.def.siege, by: -1, landed: true });
+    }
+  }
+  b.events.push({ type: 'beastLanding', ship: s.id, n: fresh.length, gun: gunAt !== null, x, y });
+  return false;
+}
+
 function shipTick(b, s) {
   if (s.cd > 0) s.cd--;
+  if (s.def.beast && !s.unloaded && (s.def.carries || s.def.siege) && beastLanding(b, s)) return;
   const wpn = shipWeapon(s);
   const t = shipTargets(b, s, wpn.range);
 

@@ -125,6 +125,19 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
   island stronghold laid out in the defending faction's own building style, on maps up to 128 tiles, with docks,
   mooring towers, hangars, workshops and a rail supply line.
 
+- **Deaths and matched combat.** How a soldier falls depends on what killed him and from where: thrown back by
+  a blow from the front, pitched forward when cut down from behind, sideways when taken in the flank, to his
+  knees, or flung by a blast. Bodies lie where and how they fell. Two evenly sized melee fighters toe to toe
+  play parries, hits and killing blows together.
+- **Fracture.** Damaged buildings break into chunks (cell pattern from the three-pinata library, loaded from
+  the CDN) that fall as damage mounts and stay as rubble; repairs set them back.
+- **Sailing.** Naval battles have a wind (arrow and streaks on the sea). Ships are slow close-hauled, cannot
+  sail into the wind's eye and tack instead, shoot better from windward, rake for extra damage through bow
+  or stern, and lose way as their rigging is shot up. Oared craft and beasts ignore the wind.
+- **War beasts** (Siege Crab, War Serpent, Leviathan Ark, in the ship lists): crewed sea creatures with a
+  fighting tower. They fight as ships at sea; in land battles they swim to the enemy shore and land troops,
+  stores and, for the crab and the ark, a siege weapon.
+
 `docs/TACTICS.md` describes the squad AI and the published frameworks it draws on.
 
 ## Graphics

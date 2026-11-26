@@ -34,6 +34,18 @@ export class NavalView {
       top.position.set(isl.x, 0.68, isl.y);
       g.add(m, top);
     }
+    // the wind: a pennant-shaped arrow lying on the water at the map's edge, and streaks blowing across the sea
+    const arrow = new THREE.Group();
+    const shaft = new THREE.Shape(); shaft.moveTo(-3, -0.5); shaft.lineTo(1, -0.5); shaft.lineTo(1, -1.4); shaft.lineTo(3.4, 0); shaft.lineTo(1, 1.4); shaft.lineTo(1, 0.5); shaft.lineTo(-3, 0.5); shaft.closePath();
+    arrow.add(new THREE.Mesh(new THREE.ShapeGeometry(shaft).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 })));
+    arrow.position.set(b.W / 2, 0.25, 5);
+    g.add(arrow); this.windArrow = arrow;
+    this.streaks = [];
+    for (let k = 0; k < 26; k++) {
+      const sm = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.07).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22 }));
+      sm.position.set(Math.random() * b.W, 0.2, Math.random() * b.H);
+      g.add(sm); this.streaks.push(sm);
+    }
     this.sea = g;
     this.root.add(g);
     this.stage.setSky(0xb4cddb);
@@ -116,6 +128,14 @@ export class NavalView {
         const x = b.ents[e.id];
         st.ring(new THREE.Vector3(x.x, 0, x.y), 2, 0xffffff, 1.2);
         msgs.push({ side: x.side, text: `${x.def.name} ${x.ship ? 'is sunk' : x.fort ? 'is reduced to rubble' : 'is slain'}` });
+      } else if (e.type === 'rake') {
+        const x = b.ents[e.id];
+        st.puff(new THREE.Vector3(x.x, 1.2, x.y), 0xd8c8a8, 0.6, 0.9);
+        msgs.push({ side: b.ents[e.by].side, text: `${b.ents[e.by].def.name} rakes ${x.def.name} ${e.stern ? 'through the stern' : 'across the bow'}` });
+      } else if (e.type === 'rigging') {
+        msgs.push({ side: 1 - b.ents[e.id].side, text: `${b.ents[e.id].def.name}'s rigging is shot away: she loses way` });
+      } else if (e.type === 'tack') {
+        if (b.tick % 3 === 0) msgs.push({ side: b.ents[e.id].side, text: `${b.ents[e.id].def.name} beats to windward` });
       } else if (e.type === 'captured') {
         const x = b.ents[e.id];
         msgs.push({ side: e.by, text: `${x.def.name} ${x.fort ? 'stormed and taken' : 'boarded and captured'}` });
@@ -136,6 +156,15 @@ export class NavalView {
     const b = this.b;
     if (!b) return;
     this.time = t; this.speed = speed;
+    if (this.windArrow && b.wind) {
+      this.windArrow.rotation.y = -b.wind.dir;
+      const wx = Math.cos(b.wind.dir), wz = Math.sin(b.wind.dir);
+      for (const sm of this.streaks) {
+        sm.rotation.y = -b.wind.dir;
+        sm.position.x += wx * dt * 9 * b.wind.speed; sm.position.z += wz * dt * 9 * b.wind.speed;
+        if (sm.position.x < 0 || sm.position.x > b.W || sm.position.z < 0 || sm.position.z > b.H) sm.position.set(Math.random() * b.W, 0.2, Math.random() * b.H);
+      }
+    }
     const pos = this.waterGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) pos.array[i * 3 + 1] = this.waveH(this.base[i * 3], this.base[i * 3 + 2], t) - 0.15;
     pos.needsUpdate = true;
@@ -164,16 +193,25 @@ export class NavalView {
         let lv = 0; while (lv < 5 && ratio > [14, 30, 60, 110, 200][lv]) lv++;
         setLod(m, lv);
       }
-      if (!e.ship) animateCreature(m, t, m.userData.phase);
+      if (!e.ship && died === undefined) animateCreature(m, t, m.userData.phase);
+      else if (m.userData.beast && died === undefined) animateCreature(m.userData.beast, t, i * 1.3);
       m.userData.rig?.mixer?.update(dt * speed);
       const sub = !e.ship && b.tick < e.subUntil;
       m.position.y -= sub ? 1.2 : 0;
       if (died !== undefined) {
         const k = (t - died) * speed;
-        m.position.y -= k * 0.8;
-        m.rotation.x = Math.min(0.6, k * 0.3);
         m.userData.bar.visible = false; m.userData.ring.visible = false;
-        if (k > 3) m.visible = false;
+        if (e.ship && !m.userData.beast) {
+          // she settles on the bottom with her mastheads still above water
+          const down = Math.min((m.userData.top || 3) * 0.72, k * 0.8);
+          m.position.y -= down; m.rotation.x = Math.min(0.35, k * 0.12); m.rotation.z = Math.min(0.5, k * 0.2);
+        } else {
+          // a dead beast rolls belly-up and drifts
+          const r = Math.min(1, k / 2.5), e2 = r * r * (3 - 2 * r);
+          m.rotation.x = e2 * Math.PI * 0.92;
+          m.position.y += -0.25 * e2 + Math.sin(t * 0.8 + i) * 0.05;
+          m.rotation.z = Math.sin(t * 0.5 + i) * 0.05;
+        }
       } else {
         setBar(m.userData.bar, e.hp / e.maxHp);
       }

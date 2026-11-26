@@ -8,6 +8,8 @@ import { tmat } from './textures.js';
 import { assemble, cloneRigged as cloneSculpted, getDetail, setLod } from './rigkit.js';
 import { animateRig } from './animate.js';
 import * as REG from './registry.js';
+import { STRUCTURES } from '../data/structures.js';
+import { CREATURES as NAVAL_CREATURES } from '../data/naval.js';
 
 // Sculpted models come from the family modules gathered in registry.js. Each
 // lookup falls back to the older primitive-built model below if a family has
@@ -771,7 +773,29 @@ export function buildCraft(color) {
 }
 
 // ---------- ships ----------
+// A war beast: the sea creature itself, with a timber fighting tower lashed to its back and a side pennant.
+function buildWarBeast(def, sideColor) {
+  const g = new THREE.Group();
+  const cdef = { ...NAVAL_CREATURES[def.beast], size: def.beastSize, id: `${def.id}:beast` };
+  const beast = buildCreature(cdef);
+  g.add(beast);
+  const tower = buildStructure(STRUCTURES.tower, 2, 2, null);
+  const k = Math.max(0.5, Math.min(1.1, def.len / 9));
+  const back = Math.max(0.5, (beast.userData.rig?.height || def.beastSize * 0.5) * 0.55);
+  tower.scale.setScalar(k); tower.position.set(-def.len * 0.05, back, 0);
+  g.add(tower);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 6).translate(0, 0.6, 0), mat(0x4a3a26));
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5), new THREE.MeshStandardMaterial({ color: sideColor, side: THREE.DoubleSide, roughness: 0.9 }));
+  flag.position.set(0.42, 0.95, 0);
+  const mast = new THREE.Group(); mast.add(pole, flag); mast.position.set(tower.position.x, back + 2.6 * k, 0); g.add(mast);
+  const deck = back + 1.6 * k + 0.3;
+  g.userData = { beast, top: back + 3.6 * k, muzzles: Array.from({ length: Math.max(1, def.cannons.perSide) }, (_, i) => [tower.position.x + (i - (def.cannons.perSide - 1) / 2) * 0.5, deck, 0.9 * k]),
+    setSide: (hex) => flag.material.color.set(hex) };
+  return g;
+}
+
 export function buildShip(def, sideColor) {
+  if (def.beast && NAVAL_CREATURES[def.beast] && !instantiateCustom(def.id, def.len, 'ship')) return buildWarBeast(def, sideColor);
   if (!instantiateCustom(def.id, def.len, 'ship')) { const ss = guarded(`ship:${def.id}`, () => REG.ship(def, sideColor)); if (ss) return ss; }
   const custom = instantiateCustom(def.id, def.len, 'ship');
   if (custom) {
