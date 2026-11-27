@@ -167,6 +167,23 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
 - **Under the walkways.** Troops arriving at ground level pass beneath walkways and viaducts; those coming off
   a wall or terrace cross on top.
 
+## Lords of the deep
+
+Nine great sea monsters that any fleet may bind or ally with (add them from the ship list in a naval battle):
+
+- **Triton**, a giant sea-god with a trident: calls up tidal waves that batter, throw back and slow ships, and
+  sweeps hands off their decks. He will not sail with the Shadow-Kin, the Ironbound, the Endless Screaming or
+  the Greenhide Hordes, and leaves a fleet that includes their ships.
+- **Sea Elemental**, a living waterspout: washes crews overboard and takes about an eighth of the harm from
+  cannon; other monsters and magic hurt it normally.
+- **Kraken**: wraps a ship, crushes her and drags her under when she is nearly broken; ink and sweeping arms.
+- **Sea Dragon**, finned and wingless: a cone of scalding fire that burns hulls and rigging.
+- **Megalodon**: goes into a frenzy against a wounded ship and snatches sailors.
+- **Ironshell Colossus**, an armoured giant crab: shrugs off much of a broadside and shears weakened hulls in two.
+- **Abyssal Maw**, a deep-sea fish that is mostly jaw: swallows small damaged craft whole and drags larger ones down.
+- **Great Coil Serpent**: constricts and batters.
+- **Horned Behemoth**, a whale with a spiral horn: devastating rams that leave a ship taking water.
+
 ## The land
 
 - **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights

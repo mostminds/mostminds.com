@@ -904,6 +904,7 @@ export function buildShip(def, sideColor) {
 }
 
 export function buildCreature(def) {
+  if (def.alt && !REG.CREATURES[def.model]) def = { ...def, model: def.alt }; // not sculpted yet: its nearest kin stands in
   if (!instantiateCustom(def.id, 1, 'creature') && REG.CREATURES[def.model]) { const sc = guarded(`creature:${def.id}`, () => REG.CREATURES[def.model](def)); if (sc) return sc; }
   const custom = instantiateCustom(def.id, (def.size || 1) * 1.6, 'creature');
   if (custom) { custom.userData.rig.segs = []; return custom; }

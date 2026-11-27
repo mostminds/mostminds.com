@@ -23,6 +23,12 @@ export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES, FORTS }) {
       if (!def) continue;
       for (let k = 0; k < Math.min(g.count, 60); k++) list.push(def);
     }
+    // some of the deep's lords choose their company: they will not sail with fleets they despise
+    const realms = new Set(list.map((d) => d.realm).filter(Boolean));
+    for (let k = list.length - 1; k >= 0; k--) {
+      const d = list[k];
+      if (d.refuses && d.refuses.some((r) => realms.has(r))) { list.splice(k, 1); (b.refused ||= []).push({ side: si, name: d.name }); }
+    }
     const cols = Math.ceil(Math.sqrt(list.length * 0.6)) || 1;
     list.forEach((def, k) => {
       const col = k % cols, row = Math.floor(k / cols);
@@ -46,7 +52,7 @@ function addEnt(b, def, side, x, y) {
     hp: ship ? def.hull : def.hp, maxHp: ship ? def.hull : def.hp, crew: ship ? def.crew : fort ? def.garrison : 0,
     alive: true, reload: [b.rng.int(0, 4), b.rng.int(0, 4)], cd: b.rng.int(0, 3), target: -1,
     rig: 1, tack: 1, tackUntil: 0, slowUntil: 0, slow: 1, inkUntil: 0, ink: 0, charmUntil: 0, charmBy: -1, subUntil: 0, nextSub: 0,
-    nextSweep: 0, nextRam: 0, nextCharm: 0, radius: ship ? def.len / 2 : fort ? def.size : (def.size || 1) * 0.7, kills: 0,
+    nextSweep: 0, nextRam: 0, nextCharm: 0, nextWave: 0, nextBreath: 0, nextSwallow: 0, dot: null, gripBy: -1, radius: ship ? def.len / 2 : fort ? def.size : (def.size || 1) * 0.7, kills: 0,
   };
   b.ents.push(e);
   if (!fort) b.sides[side].initial++;
@@ -58,7 +64,19 @@ export function stepNaval(b) {
   b.events = [];
   b.wind.dir = wrap(b.wind.dir + b.wind.veer + (b.rng.next() - 0.5) * 0.004);
   for (const e of b.ents) { e.px = e.x; e.py = e.y; e.ph = e.heading; }
+  if (b.tick === 1 && b.refused) for (const r of b.refused) b.events.push({ type: 'refused', side: r.side, name: r.name });
   for (const e of b.ents) if (e.alive) (e.ship ? shipTick : e.fort ? fortTick : creatureTick)(b, e);
+  // fire in the rigging, water in the hold, coils round the hull: harm that goes on after the blow
+  for (const e of b.ents) {
+    const d = e.dot;
+    if (!d || !e.alive) continue;
+    if (b.tick >= d.until || (d.grip && !(b.ents[d.by] && b.ents[d.by].alive))) { e.dot = null; if (d.grip) e.gripBy = -1; continue; }
+    if ((b.tick - d.from) % d.every === 0) {
+      hurt(b, e, d.dmg, b.ents[d.by]);
+      // a ship held fast and nearly broken is pulled under
+      if (d.grip && d.drag && e.alive && e.ship && e.hp < e.maxHp * d.drag) { e.hp = 0; e.alive = false; e.dragged = true; if (b.ents[d.by]) b.ents[d.by].kills++; b.events.push({ type: 'dragged', id: e.id, by: d.by }); b.events.push({ type: 'death', id: e.id }); }
+    }
+  }
   separate(b);
   resolveShots(b);
   boarding(b);
@@ -258,6 +276,46 @@ function creatureTick(b, e) {
       for (const o of b.ents) if (o.alive && o.side !== e.side && dist(e, o) < a.radius) hurt(b, o, b.rng.int(0, a.maxHit), e);
       b.events.push({ type: 'ability', id: e.id, name: 'sweep', radius: a.radius });
     }
+    if (a.type === 'wave' && b.tick >= e.nextWave && d < a.range) {
+      // a wall of water rolls out over the target: hulls are battered, thrown back and left wallowing
+      e.nextWave = b.tick + a.every;
+      for (const o of b.ents) {
+        if (!o.alive || o.side === e.side || o.fort || submerged(b, o)) continue;
+        const dd = Math.hypot(o.x - t.x, o.y - t.y);
+        if (dd - o.radius > a.radius) continue;
+        hurt(b, o, Math.round(b.rng.int(a.maxHit >> 1, a.maxHit) * (100 / (100 + (o.def.armour || 0)))), e);
+        if (!o.alive) continue;
+        const ang = Math.atan2(o.y - e.y, o.x - e.x), push = a.push * (o.ship ? Math.min(1, 6 / o.def.len) : 0.5);
+        o.x = Math.max(2, Math.min(b.W - 2, o.x + Math.cos(ang) * push)); o.y = Math.max(2, Math.min(b.H - 2, o.y + Math.sin(ang) * push));
+        o.slowUntil = b.tick + 6; o.slow = 0.4;
+        if (o.ship && b.rng.chance(0.5)) o.crew = Math.max(0, o.crew - b.rng.int(1, 3)); // hands swept off the deck
+      }
+      b.events.push({ type: 'ability', id: e.id, name: 'wave', x: t.x, y: t.y, radius: a.radius });
+    }
+    if (a.type === 'breath' && b.tick >= e.nextBreath && d < a.range) {
+      // scalding steam or fire: everything ahead in a cone burns
+      e.nextBreath = b.tick + a.every;
+      for (const o of b.ents) {
+        if (!o.alive || o.side === e.side || submerged(b, o)) continue;
+        const dd = dist(e, o);
+        if (dd > a.range || Math.abs(wrap(Math.atan2(o.y - e.y, o.x - e.x) - bearing)) > 0.5) continue;
+        hurt(b, o, b.rng.int(a.maxHit >> 1, a.maxHit), e);
+        if (o.alive && o.ship && !o.def.beast) {
+          if (o.rig > 0.35) o.rig = Math.max(0.35, o.rig - 0.15); // sails and tarred rope go up
+          o.dot = { until: b.tick + a.burn, from: b.tick, every: 3, dmg: a.burnDmg, by: e.id };
+          b.events.push({ type: 'afire', id: o.id });
+        }
+      }
+      b.events.push({ type: 'ability', id: e.id, name: 'breath', to: t.id, range: a.range, fire: !!a.fire });
+    }
+    if (a.type === 'swallow' && b.tick >= e.nextSwallow && t.ship && d < 1.2 && t.maxHp <= a.maxHull && t.hp <= t.maxHp * a.below) {
+      // small craft go down whole
+      e.nextSwallow = b.tick + a.every;
+      t.hp = 0; t.alive = false; t.swallowed = true; e.kills++;
+      b.events.push({ type: 'swallowed', id: t.id, by: e.id }); b.events.push({ type: 'death', id: t.id });
+      e.cd = Math.max(e.cd, 6); // it takes a moment to get a brig down
+      return;
+    }
     if (a.type === 'charm' && b.tick >= e.nextCharm && t.ship && d < atk.range) {
       e.nextCharm = b.tick + a.every;
       t.charmUntil = b.tick + a.duration; t.charmBy = e.id;
@@ -267,7 +325,12 @@ function creatureTick(b, e) {
   if (e.cd <= 0 && d <= atk.range) {
     e.cd = atk.speed;
     const hit = b.rng.next() < atk.acc;
-    const dmg = hit ? Math.round(b.rng.int(0, atk.maxHit) * (100 / (100 + (t.def.armour || 0)))) : 0;
+    let dmg = hit ? Math.round(b.rng.int(0, atk.maxHit) * (100 / (100 + (t.def.armour || 0)))) : 0;
+    for (const a of e.def.abilities) {
+      // claws that shear a weakened hull in two; jaws that go mad at the scent of a wounded ship
+      if (a.type === 'shear' && t.ship && t.hp < t.maxHp * a.below) dmg = Math.round(dmg * a.mult);
+      if (a.type === 'frenzy' && t.hp < t.maxHp * a.below) { dmg = Math.round(dmg * a.mult); e.cd = Math.max(1, atk.speed - 1); }
+    }
     if (atk.range > 4) {
       b.shots.push({ tick: b.tick + 2, from: e.id, to: t.id, dmg, hit, x: t.x, y: t.y });
       b.events.push({ type: 'shot', kind: 'spell', from: e.id, to: t.id, x0: e.x, y0: e.y, x1: t.x, y1: t.y, flight: 2, hit });
@@ -277,6 +340,12 @@ function creatureTick(b, e) {
     }
     for (const a of e.def.abilities) {
       if (a.type === 'grapple' && hit) { t.slowUntil = b.tick + a.duration; t.slow = a.slow; }
+      // coils or arms round the hull: held, crushed a little every moment, and dragged down when nearly broken
+      if (a.type === 'crush' && hit && t.ship && !t.dot) { t.dot = { until: b.tick + a.duration, from: b.tick, every: 2, dmg: a.dmg, by: e.id, grip: true, drag: a.drag || 0 }; t.gripBy = e.id; t.slowUntil = b.tick + a.duration; t.slow = 0.15; b.events.push({ type: 'ability', id: e.id, name: 'crush', to: t.id }); }
+      // sailors washed or snatched off the deck
+      if (a.type === 'overboard' && hit && t.ship && t.crew > 0 && b.rng.chance(a.chance)) { const n = Math.min(t.crew, b.rng.int(1, a.crew)); t.crew -= n; b.events.push({ type: 'ability', id: e.id, name: 'overboard', to: t.id, n }); }
+      // a horn through the planking: she takes water until the hole is stopped
+      if (a.type === 'breach' && hit && t.ship && !t.dot && dmg > a.over) { t.dot = { until: b.tick + a.duration, from: b.tick, every: 3, dmg: a.dmg, by: e.id }; b.events.push({ type: 'ability', id: e.id, name: 'breach', to: t.id }); }
       if (a.type === 'ink' && b.rng.chance(0.3)) { t.inkUntil = b.tick + a.duration; t.ink = a.accPenalty; b.events.push({ type: 'ability', id: e.id, name: 'ink', to: t.id }); }
     }
   }
@@ -302,6 +371,8 @@ function resolveShots(b) {
     if (s.hit && t.alive && !submerged(b, t)) {
       let dmg = s.dmg;
       const src = b.ents[s.from];
+      // round shot passes through living water: only magic and other monsters truly hurt it
+      if (t.def.shrugs && src && (src.ship || src.fort)) dmg = Math.round(dmg * t.def.shrugs);
       if (t.ship && !t.def.beast && src && src.ship && dmg > 0) {
         // raking fire down the length of the deck from ahead or astern does far more harm
         const ang = Math.abs(wrap(Math.atan2(src.y - t.y, src.x - t.x) - t.heading)) / DEG;

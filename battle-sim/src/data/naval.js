@@ -39,8 +39,31 @@ export const CREATURES = {
   eel:       { name: 'Giant Eel',     level: 40, hp: 110, armour: 10, speed: 0.75, size: 1.8, attack: { range: 2,   maxHit: 16, speed: 4, acc: 0.6 }, abilities: [{ type: 'grapple', slow: 0.5, duration: 5 }], model: 'eel', color: 0x3a5a3a },
   siren:     { name: 'Siren',         level: 50, hp: 90,  armour: 5,  speed: 0.6,  size: 1.2, attack: { range: 9,   maxHit: 14, speed: 5, acc: 0.6 }, abilities: [{ type: 'charm', every: 18, duration: 6 }, { type: 'submerge', every: 24, duration: 5 }], model: 'siren', color: 0x6ad0c0 },
   serpent:   { name: 'Sea Serpent',   level: 65, hp: 320, armour: 25, speed: 0.7,  size: 3,   attack: { range: 3,   maxHit: 28, speed: 5, acc: 0.6 }, abilities: [{ type: 'submerge', every: 25, duration: 6 }, { type: 'sweep', radius: 4, maxHit: 18, every: 12 }], model: 'serpent', color: 0x2a6a5a },
-  kraken:    { name: 'Kraken',        level: 85, hp: 700, armour: 35, speed: 0.35, size: 4,   attack: { range: 4,   maxHit: 34, speed: 5, acc: 0.65 }, abilities: [{ type: 'grapple', slow: 0.2, duration: 6 }, { type: 'ink', accPenalty: 0.4, duration: 8 }, { type: 'sweep', radius: 5, maxHit: 22, every: 10 }], model: 'kraken', color: 0x7a2a4a },
+  kraken:    { name: 'Kraken',        level: 85, hp: 700, armour: 35, speed: 0.35, size: 4,   attack: { range: 4,   maxHit: 34, speed: 5, acc: 0.65 }, abilities: [{ type: 'grapple', slow: 0.2, duration: 6 }, { type: 'crush', duration: 12, dmg: 10, drag: 0.25 }, { type: 'ink', accPenalty: 0.4, duration: 8 }, { type: 'sweep', radius: 5, maxHit: 22, every: 10 }], model: 'kraken', color: 0x7a2a4a },
   leviathan: { name: 'Leviathan',     level: 99, hp: 1200, armour: 45, speed: 0.5, size: 6,   attack: { range: 4,   maxHit: 45, speed: 6, acc: 0.6 }, abilities: [{ type: 'ram', damage: 90, cooldown: 25 }, { type: 'submerge', every: 30, duration: 8 }], model: 'leviathan', color: 0x2a3a5a },
+  // ---- Lords of the deep: independent monsters any fleet may bind or ally with to hunt enemy ships ----
+  //  wave {every, range, radius, maxHit, push}   a tidal wave over the target: damage, ships thrown back and slowed
+  //  breath {every, range, maxHit, burn, burnDmg, fire}   a cone of steam or fire that sets ships alight
+  //  crush {duration, dmg, drag}   holds a ship fast and crushes it; below `drag` of her hull she is pulled under
+  //  overboard {chance, crew}   washes or snatches hands off the deck      shear / frenzy {below, mult}   worse against a weakened hull
+  //  swallow {every, maxHull, below}   takes small damaged craft whole     breach {over, duration, dmg}   a holed hull takes water
+  //  shrugs: share of cannon damage it takes (round shot barely troubles it)   refuses: realms it will not sail with
+  triton:      { name: 'Triton',            level: 96, hp: 950,  armour: 30, speed: 0.5,  size: 4.5, attack: { range: 3.5, maxHit: 52, speed: 5, acc: 0.7 }, model: 'triton', alt: 'leviathan', color: 0x4a9a8a,
+                 abilities: [{ type: 'wave', every: 22, range: 14, radius: 6, maxHit: 44, push: 5 }, { type: 'overboard', chance: 0.4, crew: 3 }], refuses: ['kaelneth', 'ironbound', 'screaming', 'greenhide'] },
+  seaElemental:{ name: 'Sea Elemental',     level: 88, hp: 440,  armour: 0,  speed: 0.65, size: 4,   attack: { range: 2.5, maxHit: 26, speed: 4, acc: 0.75 }, model: 'seaElemental', alt: 'kraken', color: 0x4aa8d8, shrugs: 0.12,
+                 abilities: [{ type: 'overboard', chance: 0.8, crew: 5 }, { type: 'grapple', slow: 0.35, duration: 5 }, { type: 'wave', every: 30, range: 6, radius: 4, maxHit: 20, push: 3 }] },
+  seaDragon:   { name: 'Sea Dragon',        level: 94, hp: 820,  armour: 35, speed: 0.7,  size: 5,   attack: { range: 3,   maxHit: 40, speed: 5, acc: 0.65 }, model: 'seaDragon', alt: 'serpent', color: 0x2a7a6a,
+                 abilities: [{ type: 'breath', every: 16, range: 9, maxHit: 36, burn: 18, burnDmg: 7, fire: true }, { type: 'submerge', every: 34, duration: 5 }] },
+  megalodon:   { name: 'Megalodon',         level: 80, hp: 560,  armour: 18, speed: 0.95, size: 4,   attack: { range: 2,   maxHit: 38, speed: 4, acc: 0.7 }, model: 'megalodon', alt: 'shark', color: 0x5a6a78,
+                 abilities: [{ type: 'frenzy', below: 0.6, mult: 1.5 }, { type: 'overboard', chance: 0.5, crew: 4 }, { type: 'submerge', every: 22, duration: 5 }] },
+  ironshell:   { name: 'Ironshell Colossus', level: 90, hp: 900, armour: 120, speed: 0.34, size: 4.5, attack: { range: 2.5, maxHit: 46, speed: 6, acc: 0.65 }, model: 'ironshell', alt: 'crab', color: 0x8a4a3a, shrugs: 0.55,
+                 abilities: [{ type: 'shear', below: 0.4, mult: 2.2 }, { type: 'grapple', slow: 0.4, duration: 4 }] },
+  abyssalMaw:  { name: 'Abyssal Maw',       level: 92, hp: 780,  armour: 28, speed: 0.6,  size: 5,   attack: { range: 2.5, maxHit: 44, speed: 5, acc: 0.65 }, model: 'abyssalMaw', alt: 'leviathan', color: 0x1a1424,
+                 abilities: [{ type: 'swallow', every: 30, maxHull: 340, below: 0.75 }, { type: 'crush', duration: 8, dmg: 9, drag: 0.22 }, { type: 'submerge', every: 28, duration: 7 }] },
+  coilSerpent: { name: 'Great Coil Serpent', level: 78, hp: 600, armour: 28, speed: 0.72, size: 5.5, attack: { range: 3,   maxHit: 30, speed: 5, acc: 0.65 }, model: 'coilSerpent', alt: 'serpent', color: 0x3a6a4a,
+                 abilities: [{ type: 'crush', duration: 10, dmg: 8, drag: 0.12 }, { type: 'sweep', radius: 5, maxHit: 20, every: 12 }, { type: 'submerge', every: 26, duration: 6 }] },
+  behemoth:    { name: 'Horned Behemoth',   level: 99, hp: 1500, armour: 50, speed: 0.55, size: 6.5, attack: { range: 3.5, maxHit: 48, speed: 6, acc: 0.6 }, model: 'behemoth', alt: 'leviathan', color: 0x2a3444,
+                 abilities: [{ type: 'ram', damage: 130, cooldown: 20 }, { type: 'breach', over: 14, duration: 24, dmg: 8 }, { type: 'submerge', every: 32, duration: 8 }] },
 };
 Object.assign(SHIPS, realmShips(SHIPS)); // each realm's own hulls (see realms.js)
 for (const [id, s] of Object.entries(SHIPS)) s.id = id;

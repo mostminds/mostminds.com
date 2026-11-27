@@ -143,8 +143,36 @@ export class NavalView {
       } else if (e.type === 'ability') {
         const x = b.ents[e.id];
         if (e.name === 'sweep') st.ring(new THREE.Vector3(x.x, 0, x.y), e.radius, 0x9ad0ff, 0.8);
+        if (e.name === 'wave') {
+          // the wave rolls out from where it breaks
+          for (let k = 0; k < 4; k++) st.ring(new THREE.Vector3(e.x, 0.1, e.y), e.radius * (0.4 + k * 0.2), k % 2 ? 0xffffff : 0x9ad0ff, 0.7 + k * 0.25);
+          for (let k = 0; k < 8; k++) st.puff(new THREE.Vector3(e.x + (Math.random() - 0.5) * e.radius * 1.6, 0.6 + Math.random() * 1.6, e.y + (Math.random() - 0.5) * e.radius * 1.6), 0xffffff, 0.6, 1.1);
+          msgs.push({ side: x.side, text: `${x.def.name} calls up a great wave` });
+        }
+        if (e.name === 'breath') {
+          const t = b.ents[e.to], n = 7;
+          for (let k = 1; k <= n; k++) st.puff(new THREE.Vector3(x.x + (t.x - x.x) * k / n + (Math.random() - 0.5) * k * 0.3, 1.2 + Math.random(), x.y + (t.y - x.y) * k / n + (Math.random() - 0.5) * k * 0.3), e.fire ? [0xff7a1a, 0xffc040, 0xe8e8e8][k % 3] : 0xe8e8e8, 0.5 + k * 0.08, 0.9);
+          msgs.push({ side: x.side, text: `${x.def.name} breathes scalding fire` });
+        }
+        if (e.name === 'crush') msgs.push({ side: x.side, text: `${x.def.name} wraps itself round ${b.ents[e.to].def.name}` });
+        if (e.name === 'breach') msgs.push({ side: x.side, text: `${x.def.name} holes ${b.ents[e.to].def.name} below the waterline` });
+        if (e.name === 'overboard' && e.n >= 3) msgs.push({ side: x.side, text: `${e.n} hands are swept from ${b.ents[e.to].def.name}'s deck` });
         if (e.name === 'ink' || e.name === 'charm' || e.name === 'ram') msgs.push({ side: x.side, text: `${x.def.name}: ${e.name === 'ink' ? 'ink cloud blinds the gunners' : e.name === 'charm' ? 'song lures a ship off course' : 'rams a hull'}` });
         if (e.name === 'ink') { const t = b.ents[e.to]; st.puff(new THREE.Vector3(t.x, 0.5, t.y), 0x111111, 1.5, 2); }
+      } else if (e.type === 'refused') {
+        msgs.push({ side: e.side, text: `The ${e.name} will not sail in this company and is gone` });
+      } else if (e.type === 'afire') {
+        const x = b.ents[e.id];
+        for (let k = 0; k < 4; k++) st.puff(new THREE.Vector3(x.x + (Math.random() - 0.5) * 2, 1 + Math.random() * 2, x.y + (Math.random() - 0.5) * 2), k % 2 ? 0xff7a1a : 0xffc040, 0.5, 1.2);
+        if (b.tick !== this.fireSaid) { this.fireSaid = b.tick; msgs.push({ side: 1 - x.side, text: `${x.def.name} is set alight` }); }
+      } else if (e.type === 'swallowed') {
+        const x = b.ents[e.id], m = b.ents[e.by];
+        st.ring(new THREE.Vector3(x.x, 0, x.y), 3, 0x1a1424, 1.4);
+        msgs.push({ side: m.side, text: `${m.def.name} swallows ${x.def.name} whole` });
+      } else if (e.type === 'dragged') {
+        const x = b.ents[e.id], m = b.ents[e.by];
+        for (let k = 0; k < 3; k++) st.ring(new THREE.Vector3(x.x, 0, x.y), 1.5 + k, 0xffffff, 0.9 + k * 0.3);
+        msgs.push({ side: m ? m.side : 0, text: `${x.def.name} is dragged beneath the waves` });
       } else if (e.type === 'submerge') {
         const x = b.ents[e.id]; st.ring(new THREE.Vector3(x.x, 0, x.y), 1, 0xffffff, 0.8);
       }
