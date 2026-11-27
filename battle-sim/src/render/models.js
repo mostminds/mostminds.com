@@ -439,7 +439,6 @@ function standIn(def) {
   if (o.alt && o.body !== 'aircraft' && !REG.BODIES[o.body]) o = o.alt;
   const w = o.weapon;
   if (w && !WEAPONS.has(w) && !hasWeapon(w) && !(weaponKnown && weaponKnown(w))) o = { ...o, weapon: WEAPON_ALT[w] || 'sword' };
-  if (o.rider && typeof o.rider === 'object') o = { ...o, rider: undefined };
   return o === def.model ? def : { ...def, model: o };
 }
 

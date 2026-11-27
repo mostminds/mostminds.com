@@ -2130,7 +2130,7 @@ export function humanoid(def = {}, o = {}) {
     const rot = w.hold === 'bow' ? [90, -24, 0] : [gripRot[0], 0, -gripRot[2]];
     const wn = node('weaponR', 'handR', 'weapon', [-gripAt[0], gripAt[1], gripAt[2]], { prims: w.prims, hard: w.hard }, 1.2, rot);
     for (const h of wn.hard) { if (!h.geo.boundingBox) h.geo.computeBoundingBox(); butt = Math.max(butt, -_bb.copy(h.geo.boundingBox).applyMatrix4(h.m).min.y); }
-    if (o.weapon === 'longbow') pass = restring(wn, node, ws);
+    if (o.weapon === 'longbow' || o.weapon === 'bow') pass = restring(wn, node, ws);
   } else if (w && st.claws <= 0.3) {
     // strap-on claws for hands that have none of their own: hand at the origin, fingers along +Y, back of the hand +Z
     const wl = makeWeapon(o.weapon, { scale: ws });
@@ -2142,7 +2142,7 @@ export function humanoid(def = {}, o = {}) {
     const yaw = 62, off = P.rFore + 0.034;
     node('shieldL', 'foreL', 'shield', [Math.sin(yaw * DEG) * off, -F * 0.58, Math.cos(yaw * DEG) * off], { prims: sh.prims, hard: sh.hard }, 1.2, [0, yaw, 0]);
   }
-  const hold = held ? (o.weapon === 'crossbow' ? 'xbow' : w.hold) : 'none';
+  const hold = held ? (SHOULDERED.has(o.weapon) ? 'xbow' : w.hold) : 'none'; // guns are shouldered like the crossbow
   // plain values the animators read (rigkit copies them onto the rig): weapon reach and how far its butt runs back
   // past the grip, how high a corpse lies, the arrow's pass, the body's size against a man's, the weapon's scale
   const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -2186,6 +2186,7 @@ function restring(wn, node, sc = 1) {
   return 0.0172 * sc;
 }
 
+const SHOULDERED = new Set(['crossbow', 'handgun', 'blunderbuss', 'repeater', 'axeGun']);
 export const bodies = { humanoid };
 
 // =====================================================================================
