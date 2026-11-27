@@ -50,4 +50,13 @@ let arctic = {};
 try { arctic = await import('./props/arctic.js'); Object.assign(CREATURES, arctic.creatures || {}); Object.assign(CREATURE_ANIM, arctic.animators || {}); }
 catch (err) { console.info('arctic sea models not available yet', err?.message || err); }
 export const ARCTIC = arctic;
+// island scenery for the other seas: the jungle village and its life, and the temperate, desert, swamp and volcanic sets
+const sets = [arctic];
+for (const f of ['jungleset', 'seascapes']) {
+  try { sets.push(await import(`./props/${f}.js`)); }
+  catch (err) { console.info(`${f} scenery not available yet`, err?.message || err); }
+}
+/** every scenery builder, and one call that animates whatever piece it is given */
+export const SCENERY = Object.assign({}, ...sets.map((m) => m.scenery || {}));
+export function animateScenery(obj, t) { for (const m of sets) if (m.animateScenery) m.animateScenery(obj, t); }
 for (const m of [humanoid, undead, beasts, monsters, ...laterBodies]) if (m.animators) registerAnimators(m.animators);

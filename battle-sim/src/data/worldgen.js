@@ -417,12 +417,28 @@ const seaPrice = (d) => Math.pow(d.level || 30, 1.7);
 const SEA_BEASTS = ['shark', 'eel', 'siren', 'serpent', 'kraken', 'megalodon', 'seaDragon', 'seaElemental', 'ironshell', 'abyssalMaw', 'coilSerpent', 'behemoth', 'triton', 'leviathan',
   'dunkleosteus', 'leedsichthys', 'tylosaurus', 'shonisaurus', 'kronosaurus', 'elasmosaurus', 'tusoteuthis', 'orthoceras', 'xiphactinus', 'styxosaurus'];
 const ICE_BEASTS = ['tuskWalrus', 'orca', 'narwhal', 'iceKraken', 'polarSerpent', 'bergTitan', 'styxosaurus', 'behemoth'];
-const PACKS = { xiphactinus: 3, orca: 3, narwhal: 4, shark: 4, eel: 3, crab: 5 };
+// every sea has its own hunters
+const WATERS = {
+  arctic: ICE_BEASTS,
+  temperate: ['shark', 'eel', 'siren', 'serpent', 'kraken', 'megalodon', 'behemoth', 'triton', 'leviathan', 'elasmosaurus', 'xiphactinus', 'seaElemental', 'coilSerpent'],
+  desert: ['reefDrake', 'sandCrab', 'ironshell', 'dunkleosteus', 'orthoceras', 'tusoteuthis', 'kronosaurus', 'seaElemental', 'shark', 'triton'],
+  swamp: ['bogLurker', 'mireEel', 'tylosaurus', 'coilSerpent', 'leedsichthys', 'abyssalMaw', 'crab', 'siren', 'eel'],
+  volcanic: ['cinderSerpent', 'magmaCrab', 'seaDragon', 'ironshell', 'abyssalMaw', 'dunkleosteus', 'kraken', 'orthoceras'],
+  jungle: ['riverTyrant', 'lagoonSquid', 'shonisaurus', 'tylosaurus', 'styxosaurus', 'elasmosaurus', 'leedsichthys', 'megalodon', 'siren', 'xiphactinus', 'serpent'],
+};
+export const SEA_THEMES = { temperate: 'The grey sea', arctic: 'The frozen sea', desert: 'The burning coast', swamp: 'The drowned marshes', volcanic: 'The sea of fire', jungle: 'The green lagoons' };
+const PACKS = { xiphactinus: 3, orca: 3, narwhal: 4, shark: 4, eel: 3, crab: 5, mireEel: 3, sandCrab: 4 };
 const COLD = new Set(['velikaya', 'fimbul', 'grom', 'undead', 'elemental']);
 
 function generateNaval({ r, seed, defId, attId, D, A, theme }) {
   const W = 210, H = 135;
-  const arctic = theme === 'arctic' || (theme !== 'open' && (COLD.has(defId) || COLD.has(attId) ? r.chance(0.75) : r.chance(0.25)));
+  // the sea takes after the lands of those who fight on it, unless one was asked for
+  let env = SEA_THEMES[theme] ? theme : null;
+  if (!env) {
+    if ((COLD.has(defId) || COLD.has(attId)) && r.chance(0.6)) env = 'arctic';
+    else { const b2 = r.pick([...D.biomes, ...A.biomes, 'temperate']); env = b2 === 'snow' ? 'arctic' : b2; }
+  }
+  const arctic = env === 'arctic';
   const islands = [], forts = [];
   const clear = (x, y, rad, gap = 6) => islands.every((i) => Math.hypot(i.x - x, i.y - y) > i.r + rad + gap);
   // islands: a few big ones and a scatter of small, kept out of the two fleets' forming-up water
@@ -431,6 +447,11 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
     const rad = k < 2 ? r.int(7, 10) : r.int(3, 6), x = r.int(46, W - 46), y = r.int(12, H - 12);
     if (!clear(x, y, rad)) continue;
     islands.push({ x, y, r: rad }); k++;
+  }
+  // the sea of fire: one or two islands are live volcanoes, which nobody garrisons
+  if (env === 'volcanic') {
+    const mid = islands.filter((i) => i.x > W * 0.3 && i.x < W * 0.7).sort((a, c) => c.r - a.r);
+    for (const isl of (mid.length ? mid : islands).slice(0, r.int(1, 2))) { isl.volcano = true; isl.r = Math.max(isl.r, 8); }
   }
   // forts: the defenders (side 1, to the east) hold the islands on their side of the sea; the attackers may hold one of theirs
   const fortify = (isl, side, strong) => {
@@ -442,7 +463,7 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
       forts.push({ type, x: Math.round(isl.x + Math.cos(a) * (isl.r - 1.5)), y: Math.round(isl.y + Math.sin(a) * (isl.r - 1.5)), side });
     });
   };
-  const east = islands.filter((i) => i.x > W * 0.52).sort((a, c) => c.r - a.r), west = islands.filter((i) => i.x < W * 0.42);
+  const east = islands.filter((i) => i.x > W * 0.52 && !i.volcano).sort((a, c) => c.r - a.r), west = islands.filter((i) => i.x < W * 0.42 && !i.volcano);
   east.slice(0, r.int(1, 3)).forEach((isl, i) => fortify(isl, 1, i === 0));
   if (west.length && r.chance(0.45)) fortify(r.pick(west), 0, false);
   // the frozen sea: a field of pack ice across part of the map, bergs adrift, and floes round the islands
@@ -469,7 +490,7 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
     const u = SHIPS[F.undersea] || CREATURES[F.undersea];
     if (u) buy(u, SHIPS[F.undersea] ? r.int(1, 2) : 1);
     // monsters bound to the fleet: about a quarter of its strength
-    const pool = (arctic ? ICE_BEASTS : SEA_BEASTS).map((k) => CREATURES[k]).filter((c) => c && !(c.refuses && c.refuses.some((x) => x === id)));
+    const pool = (WATERS[env] || SEA_BEASTS).map((k) => CREATURES[k]).filter((c) => c && !(c.refuses && c.refuses.some((x) => x === id)));
     let beasts = budget * (0.18 + r() * 0.14);
     for (let k = 0; k < 3 && beasts > 600; k++) {
       const can = pool.filter((c) => seaPrice(c) * (PACKS[c.id] || 1) <= beasts * 1.25);
@@ -497,9 +518,9 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
   ];
   const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
   return {
-    name: `${arctic ? 'The frozen sea off' : 'The sea off'} ${place}: ${A.adj} fleet against the ${D.adj.toLowerCase()} ${forts.some((f) => f.side === 1) ? 'island forts' : 'squadron'}`,
+    name: `${SEA_THEMES[env]} off ${place}: ${A.adj} fleet against the ${D.adj.toLowerCase()} ${forts.some((f) => f.side === 1) ? 'island forts' : 'squadron'}`,
     mode: 'naval', seed, site: 'sea', defender: defId, attacker: attId,
-    scn: { width: W, height: H, islands, forts, sides, theme: arctic ? 'arctic' : 'open', maxTicks: 5000 },
+    scn: { width: W, height: H, islands, forts, sides, theme: env, maxTicks: 5000 },
   };
 }
 

@@ -4,7 +4,8 @@ import { buildShip, buildCreature, animateCreature, buildFortModel, shipMuzzle, 
 import { makeBar, setBar } from './stage.js';
 import { SIDE_COLORS } from './landView.js';
 import { TICK_MS } from '../engine/combat.js';
-import { ARCTIC } from './registry.js';
+import { ARCTIC, SCENERY, animateScenery } from './registry.js';
+import { SEA_LOOK, DOME, dressIslands } from './seaset.js';
 
 // plain stand-ins for the ice and its birds, used until the sculpted ones are there
 const ICE = { top: 0xf4f8fc, edge: 0xbfe0f0, deep: 0x7fb8d8 };
@@ -49,8 +50,8 @@ export class NavalView {
     geo.rotateX(-Math.PI / 2);
     this.waterGeo = geo;
     this.base = Float32Array.from(geo.attributes.position.array);
-    const arctic = b.theme === 'arctic';
-    const water = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: arctic ? 0x2f6078 : 0x2a6f96, roughness: 0.22, metalness: 0.3 }));
+    const arctic = b.theme === 'arctic', look = SEA_LOOK[b.theme] || SEA_LOOK.temperate;
+    const water = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: look.sea, roughness: 0.22, metalness: 0.3 }));
     water.position.set(b.W / 2, 0, b.H / 2);
     water.receiveShadow = true;
     g.add(water);
@@ -93,10 +94,11 @@ export class NavalView {
         for (let j = 0; j < Math.min(4, Math.round(isl.r / 2)); j++) { const a = seed + j * 1.9, p = (sc.penguinGroup || plainPenguins)(seed + j); p.position.set(isl.x + Math.cos(a) * isl.r * 0.82, 0.72, isl.y + Math.sin(a) * isl.r * 0.82); p.scale.setScalar(1.5); g.add(p); this.birds.push(p); }
         continue;
       }
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(isl.r * 0.8, isl.r, 1.2, 28), mat(0xcdb57a));
-      m.position.set(isl.x, 0.1, isl.y);
-      const top = new THREE.Mesh(new THREE.SphereGeometry(isl.r * 0.72, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x4f7a3a));
-      top.scale.y = 0.55;
+      // a low island in the colours of its sea: flat enough to build and grow on when the sea has a climate
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(isl.r * 0.8, isl.r, 1.2, 28), mat(look.sand));
+      m.position.set(isl.x, 0.1, isl.y); m.receiveShadow = true;
+      const top = new THREE.Mesh(new THREE.SphereGeometry(isl.r * 0.72, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(look.top));
+      top.scale.y = b.theme && b.theme !== 'open' ? DOME : 0.55; top.receiveShadow = true;
       top.position.set(isl.x, 0.68, isl.y);
       g.add(m, top);
     }
@@ -114,7 +116,10 @@ export class NavalView {
     }
     this.sea = g;
     this.root.add(g);
-    this.stage.setSky(b.theme === 'arctic' ? 0xd6e2ea : 0xb4cddb);
+    // trees, beasts, villages and volcanoes, by the kind of sea this is
+    const set = dressIslands(b, g, SCENERY);
+    this.scenery = set.moving; this.craters = set.craters; this.erupting = new Map();
+    this.stage.setSky(look.sky);
     if (this.boundsKey !== `${b.W}x${b.H}`) {
       this.boundsKey = `${b.W}x${b.H}`;
       this.stage.setBounds(b.W, b.H);
@@ -231,6 +236,21 @@ export class NavalView {
         if (e.name === 'overboard' && e.n >= 3) msgs.push({ side: x.side, text: `${e.n} hands are swept from ${b.ents[e.to].def.name}'s deck` });
         if (e.name === 'ink' || e.name === 'charm' || e.name === 'ram') msgs.push({ side: x.side, text: `${x.def.name}: ${e.name === 'ink' ? 'ink cloud blinds the gunners' : e.name === 'charm' ? 'song lures a ship off course' : 'rams a hull'}` });
         if (e.name === 'ink') { const t = b.ents[e.to]; st.puff(new THREE.Vector3(t.x, 0.5, t.y), 0x111111, 1.5, 2); }
+      } else if (e.type === 'rumble') {
+        msgs.push({ side: 0, text: 'The mountain rumbles' });
+      } else if (e.type === 'eruption') {
+        this.erupting.set(e.isl, e.until);
+        const c = this.craters.get(e.isl);
+        if (c) for (let k = 0; k < 14; k++) st.puff(c.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, Math.random() * 4, (Math.random() - 0.5) * 3)), k % 3 ? 0x3a2e2a : 0xff6a14, 1.6, 2.2);
+        msgs.push({ side: 1, text: 'The volcano erupts: molten rock falls on both fleets' });
+      } else if (e.type === 'bombUp') {
+        const isl = [...this.craters.values()].sort((a, c2) => Math.hypot(a.x - e.x0, a.z - e.y0) - Math.hypot(c2.x - e.x0, c2.z - e.y0))[0];
+        const from = isl ? isl.clone() : new THREE.Vector3(e.x0, 6, e.y0);
+        st.projectile(from, new THREE.Vector3(e.x1, 0.1, e.y1), 'shell', (e.flight * TICK_MS) / 1000 / this.speed, 2.4);
+      } else if (e.type === 'lavabomb') {
+        const p = new THREE.Vector3(e.x, 0.1, e.y);
+        st.ring(p, 2.4, 0xff7a1a, 0.7);
+        for (let k = 0; k < 5; k++) st.puff(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.4 + Math.random() * 1.8, (Math.random() - 0.5) * 2)), e.hit ? [0xff7a1a, 0xffc040, 0x3a2e2a][k % 3] : [0xffffff, 0xe8e8e8, 0xff9a4a][k % 3], 0.7, 1.2);
       } else if (e.type === 'torpedo') {
         const x = b.ents[e.id];
         if (b.tick !== this.torpSaid) { this.torpSaid = b.tick; msgs.push({ side: x.side, text: `${x.def.name} looses a torpedo at ${b.ents[e.to].def.name}` }); }
@@ -274,6 +294,20 @@ export class NavalView {
         sm.rotation.y = -b.wind.dir;
         sm.position.x += wx * dt * 9 * b.wind.speed; sm.position.z += wz * dt * 9 * b.wind.speed;
         if (sm.position.x < 0 || sm.position.x > b.W || sm.position.z < 0 || sm.position.z > b.H) sm.position.set(Math.random() * b.W, 0.2, Math.random() * b.H);
+      }
+    }
+    // island life stirs: a few pieces each frame, nearest the camera first is not worth the sort
+    if (this.scenery && this.scenery.length) {
+      const n = this.scenery.length, step = Math.max(1, Math.ceil(n / 160));
+      this.sceneTurn = ((this.sceneTurn || 0) + 1) % step;
+      for (let k = this.sceneTurn; k < n; k += step) animateScenery(this.scenery[k], t);
+    }
+    // a volcano in eruption pours smoke and sparks from its crater
+    if (this.erupting && this.erupting.size) {
+      for (const [isl, until] of this.erupting) {
+        if (b.tick > until) { this.erupting.delete(isl); continue; }
+        const c = this.craters.get(isl);
+        if (c && Math.random() < dt * 14) this.stage.puff(c.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, Math.random() * 2, (Math.random() - 0.5) * 1.5)), [0x2a2424, 0x4a3a34, 0xff6a14, 0xffb040][Math.floor(Math.random() * 4)], 1.2 + Math.random(), 1.8);
       }
     }
     // the penguins shuffle, flap and hop

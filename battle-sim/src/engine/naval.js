@@ -37,6 +37,9 @@ export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES, FORTS }) {
       addEnt(b, def, si, x + b.rng.next() * 2, Math.max(4, Math.min(H - 4, y + b.rng.next() * 2)));
     });
   });
+  // volcanoes: each sleeps a while, rumbles, then throws molten rock over the water round it for a spell
+  b.volcanoes = b.islands.map((isl, i) => (isl.volcano ? { isl: i, x: isl.x, y: isl.y, r: isl.r, next: 60 + b.rng.int(0, 80), until: 0, warned: false } : null)).filter(Boolean);
+  b.bombs = [];
   for (const f of scn.forts || []) {
     const def = fortDefs[f.type];
     if (def && (f.side === 0 || f.side === 1)) addEnt(b, def, f.side, f.x, f.y);
@@ -77,6 +80,7 @@ export function stepNaval(b) {
       if (d.grip && d.drag && e.alive && e.ship && e.hp < e.maxHp * d.drag) { e.hp = 0; e.alive = false; e.dragged = true; if (b.ents[d.by]) b.ents[d.by].kills++; b.events.push({ type: 'dragged', id: e.id, by: d.by }); b.events.push({ type: 'death', id: e.id }); }
     }
   }
+  if (b.volcanoes.length || b.bombs.length) eruptions(b);
   separate(b);
   resolveShots(b);
   boarding(b);
@@ -398,6 +402,42 @@ function creatureTick(b, e) {
       if (a.type === 'ink' && b.rng.chance(0.3)) { t.inkUntil = b.tick + a.duration; t.ink = a.accPenalty; b.events.push({ type: 'ability', id: e.id, name: 'ink', to: t.id }); }
     }
   }
+}
+
+// A volcano cares nothing for flags: its bombs fall on both fleets alike.
+const REACH = 30;
+function eruptions(b) {
+  for (const v of b.volcanoes) {
+    if (!v.warned && b.tick >= v.next - 12 && b.tick < v.next) { v.warned = true; b.events.push({ type: 'rumble', isl: v.isl }); }
+    if (b.tick === v.next) { v.until = b.tick + 14 + b.rng.int(0, 8); b.events.push({ type: 'eruption', isl: v.isl, until: v.until }); }
+    if (b.tick >= v.next && b.tick < v.until) {
+      for (let k = 0, n = b.rng.chance(0.45) ? 2 : 1; k < n; k++) {
+        // most fall anywhere within reach; some come down on whatever is nearest
+        let x, y;
+        const near = b.rng.chance(0.3) ? b.ents.filter((e) => e.alive && !e.fort && Math.hypot(e.x - v.x, e.y - v.y) < REACH) : [];
+        if (near.length) { const e = near[b.rng.int(0, near.length - 1)]; x = e.x + (b.rng.next() - 0.5) * 5; y = e.y + (b.rng.next() - 0.5) * 5; }
+        else { const a = b.rng.next() * Math.PI * 2, d = v.r + 2 + b.rng.next() * (REACH - v.r - 2); x = v.x + Math.cos(a) * d; y = v.y + Math.sin(a) * d; }
+        const flight = 3 + Math.floor(Math.hypot(x - v.x, y - v.y) / 9);
+        b.bombs.push({ tick: b.tick + flight, x, y });
+        b.events.push({ type: 'bombUp', x0: v.x, y0: v.y, x1: x, y1: y, flight });
+      }
+    }
+    if (v.until && b.tick === v.until) { v.next = b.tick + 110 + b.rng.int(0, 110); v.warned = false; v.until = 0; b.events.push({ type: 'eruptionEnd', isl: v.isl }); }
+  }
+  const keep = [];
+  for (const m of b.bombs) {
+    if (m.tick > b.tick) { keep.push(m); continue; }
+    let hit = false;
+    for (const e of b.ents) {
+      if (!e.alive || submerged(b, e)) continue;
+      if (Math.hypot(e.x - m.x, e.y - m.y) - e.radius > 2.4) continue;
+      hit = true;
+      hurt(b, e, Math.round(b.rng.int(24, 58) * (100 / (100 + (e.def.armour || 0) * 0.5))), null);
+      if (e.alive && e.ship && !e.def.beast && !e.dot && b.rng.chance(0.45)) { e.dot = { until: b.tick + 12, from: b.tick, every: 3, dmg: 6, by: -1 }; b.events.push({ type: 'afire', id: e.id }); }
+    }
+    b.events.push({ type: 'lavabomb', x: m.x, y: m.y, hit });
+  }
+  b.bombs = keep;
 }
 
 function hurt(b, t, dmg, from) {

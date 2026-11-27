@@ -78,6 +78,23 @@ export const CREATURES = {
                  abilities: [{ type: 'breath', every: 14, range: 9, maxHit: 22, freeze: { slow: 0.3, duration: 9 } }, { type: 'crush', duration: 8, dmg: 7, drag: 0.1 }, { type: 'submerge', every: 26, duration: 6 }] },
   bergTitan:   { name: 'Berg Titan',        level: 90, hp: 1100, armour: 60, speed: 0.3,  size: 4.5, attack: { range: 3,   maxHit: 46, speed: 6, acc: 0.6 }, model: 'bergTitan', alt: 'leviathan', color: 0xcfe6f2, arctic: true, shrugs: 0.5, turn: 7,
                  abilities: [{ type: 'wave', every: 26, range: 10, radius: 5, maxHit: 30, push: 4 }, { type: 'breath', every: 20, range: 7, maxHit: 16, freeze: { slow: 0.25, duration: 10 } }] },
+  // ---- Hunters of other waters: kin of the beasts above, bred by their own seas ----
+  cinderSerpent:{ name: 'Cinder Serpent',   level: 82, hp: 640,  armour: 34, speed: 0.7,  size: 5,   attack: { range: 3,   maxHit: 30, speed: 5, acc: 0.65 }, model: 'coilSerpent', alt: 'serpent', color: 0x4a1a12, waters: 'volcanic',
+                 abilities: [{ type: 'breath', every: 15, range: 8, maxHit: 30, burn: 15, burnDmg: 7, fire: true }, { type: 'crush', duration: 8, dmg: 8, drag: 0.1 }, { type: 'submerge', every: 26, duration: 6 }] },
+  magmaCrab:   { name: 'Magma Crab',        level: 84, hp: 760,  armour: 110, speed: 0.36, size: 4,  attack: { range: 2.5, maxHit: 40, speed: 6, acc: 0.65 }, model: 'ironshell', alt: 'crab', color: 0x2a1614, shrugs: 0.6, waters: 'volcanic',
+                 abilities: [{ type: 'shear', below: 0.4, mult: 2 }, { type: 'breath', every: 24, range: 5, maxHit: 18, burn: 12, burnDmg: 6, fire: true }] },
+  bogLurker:   { name: 'Bog Lurker',        level: 78, hp: 620,  armour: 24, speed: 0.55, size: 4,   attack: { range: 2.5, maxHit: 38, speed: 5, acc: 0.65 }, model: 'abyssalMaw', alt: 'leviathan', color: 0x2a3a22, waters: 'swamp',
+                 abilities: [{ type: 'swallow', every: 30, maxHull: 260, below: 0.8 }, { type: 'grapple', slow: 0.3, duration: 6 }, { type: 'submerge', every: 20, duration: 8 }] },
+  mireEel:     { name: 'Mire Eel',          level: 55, hp: 220,  armour: 12, speed: 0.85, size: 2.6, attack: { range: 2,   maxHit: 22, speed: 4, acc: 0.65 }, model: 'eel', color: 0x3a3a1e, waters: 'swamp',
+                 abilities: [{ type: 'grapple', slow: 0.4, duration: 6 }, { type: 'pack', radius: 8, bonus: 0.25 }, { type: 'submerge', every: 16, duration: 5 }] },
+  reefDrake:   { name: 'Coral Drake',       level: 86, hp: 700,  armour: 32, speed: 0.7,  size: 4.5, attack: { range: 3,   maxHit: 36, speed: 5, acc: 0.65 }, model: 'seaDragon', alt: 'serpent', color: 0xd87a6a, waters: 'desert',
+                 abilities: [{ type: 'breath', every: 16, range: 8, maxHit: 28, burn: 14, burnDmg: 6 }, { type: 'submerge', every: 30, duration: 5 }] },
+  sandCrab:    { name: 'Dune Crab',         level: 48, hp: 200,  armour: 60, speed: 0.5,  size: 2.4, attack: { range: 1.5, maxHit: 18, speed: 4, acc: 0.62 }, model: 'crab', color: 0xd8b070, waters: 'desert',
+                 abilities: [{ type: 'pack', radius: 7, bonus: 0.2 }, { type: 'grapple', slow: 0.5, duration: 4 }] },
+  riverTyrant: { name: 'River Tyrant',      level: 80, hp: 640,  armour: 26, speed: 0.9,  size: 4.2, attack: { range: 2.5, maxHit: 40, speed: 4, acc: 0.7 }, model: 'tylosaurus', alt: 'serpent', color: 0x2a6a2a, waters: 'jungle',
+                 abilities: [{ type: 'overboard', chance: 0.7, crew: 5 }, { type: 'frenzy', below: 0.6, mult: 1.4 }, { type: 'submerge', every: 18, duration: 6 }] },
+  lagoonSquid: { name: 'Lagoon Strangler',  level: 74, hp: 420,  armour: 10, speed: 0.95, size: 3.6, attack: { range: 2.5, maxHit: 22, speed: 4, acc: 0.7 }, model: 'tusoteuthis', alt: 'kraken', color: 0x2aa88a, waters: 'jungle',
+                 abilities: [{ type: 'snare', every: 18, range: 8, duration: 12, slow: 0.45 }, { type: 'crush', duration: 9, dmg: 7, drag: 0.1 }, { type: 'ink', accPenalty: 0.3, duration: 6 }] },
   // ---- Beasts of the ancient seas: prehistoric hunters broken to war ----
   //  pierce {plate, mult}   armour does not count against its bite; against plate of `plate` or more it bites harder still
   //  ram {.., perTile, max, through}   builds damage over a straight run; `through` ignores armour     jet {cycle, burst, speed}   moves in straight bursts

@@ -223,6 +223,25 @@ Ten prehistoric hunters, also in the ship list of a naval battle:
   Xibalbans a Shonisaurus, the Endless Screaming an Abyssal Maw, and Beasts, Elementals and Dragons a
   Megalodon, a Sea Elemental and a Sea Dragon.
 
+### Six seas
+
+A generated sea battle takes its sea from the lands of the two factions, or from the **Sea** picker beside
+*Place*: the grey sea (temperate), the frozen sea, the burning coast (desert), the drowned marshes (swamp), the
+sea of fire (volcanic) or the green lagoons (jungle). Each has its own water and sky, its own islands, its own
+hunters in the water, and its own life and buildings ashore.
+
+- **Hunters by sea.** Besides the monsters above: Cinder Serpents and Magma Crabs in volcanic water, Bog
+  Lurkers and Mire Eels in the marshes, Coral Drakes and Dune Crabs on desert reefs, River Tyrants and Lagoon
+  Stranglers in the lagoons.
+- **The sea of fire.** One or two islands are live volcanoes. Each rumbles, then erupts for a spell, throwing
+  molten rock up to thirty tiles: it damages whatever it lands on, of either fleet, and sets ships alight.
+- **Islands.** Every island is dressed for its sea, and the largest carries a settlement: a jungle village on
+  stilts (tribal hall, shaman's hut, market, cookhouse, barracks, boar pen, watch towers, gatehouse and
+  boardwalk) among palms, banana trees, banyans and mangroves, with boars, macaws, monkeys, crocodiles, frogs
+  and snakes; a lighthouse, windmill and cottages on the grey sea; an oasis camp with camels on the burning
+  coast; stilt shacks and fireflies in the marshes; ash-buried ruins under the volcano. (`src/render/seaset.js`
+  lays them out; the pieces are in `src/render/props/jungleset.js`, `seascapes.js` and `arctic.js`.)
+
 ## The land
 
 - **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights

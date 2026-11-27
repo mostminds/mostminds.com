@@ -13,7 +13,7 @@ import { MAP_SHAPES, BIOMES } from './engine/terrain.js';
 import { addCustomModel, removeCustomModel, customModelList, restoreCustomModels, libraryAdd, libraryList, librarySearch, libraryAssign, libraryAutoMatch, libraryClear, libraryRemove } from './render/customModels.js';
 import { PRESETS, DEFAULT_SCENARIOS } from './data/presets.js';
 import { castleKit } from './data/castle.js';
-import { generateScenario, SITES, FACTIONS } from './data/worldgen.js';
+import { generateScenario, SITES, FACTIONS, SEA_THEMES } from './data/worldgen.js';
 import { AIRSHIPS } from './data/airships.js';
 
 const $ = (id) => document.getElementById(id);
@@ -286,6 +286,7 @@ $('loadPreset').onclick = () => {
 // ---------- generated scenarios ----------
 $('genSite').replaceChildren(new Option('Any place', ''), ...Object.entries(SITES).map(([k, v]) => new Option(v.name, k)));
 $('genSite').value = '';
+$('genSea').append(...Object.entries(SEA_THEMES).map(([k, v]) => new Option(v, k)));
 for (const id of ['genDef', 'genAtt']) {
   // factions grouped the way the realms are: the first seven, then order, destruction, the undead and distant lands
   const groups = new Map();
@@ -295,7 +296,7 @@ for (const id of ['genDef', 'genAtt']) {
 $('generate').onclick = () => {
   const sites = Object.keys(SITES);
   // on the sea, Generate makes a sea battle unless a place on land was asked for by name
-  const g = generateScenario({ site: $('genSite').value || (isNaval() ? 'sea' : sites[Math.floor(Math.random() * sites.length)]), defender: $('genDef').value, attacker: $('genAtt').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
+  const g = generateScenario({ site: $('genSite').value || (isNaval() ? 'sea' : sites[Math.floor(Math.random() * sites.length)]), defender: $('genDef').value, attacker: $('genAtt').value, theme: $('genSea').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
   state.scn[g.mode] = clone({ ...g.scn, mode: g.mode });
   setMode(g.mode);
   $('genName').textContent = g.name;
