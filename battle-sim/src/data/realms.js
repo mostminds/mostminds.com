@@ -633,9 +633,10 @@ export function realmAirships(make) {
 
 // ------------------------------------------------------------------------------------------
 // Landmark buildings: two per realm. They join the game's structure table and each realm's
-// districts once their models are sculpted (LANDMARKS_READY).
+// districts once their models are sculpted (LANDMARK_REALMS).
 // ------------------------------------------------------------------------------------------
-export const LANDMARKS_READY = false;
+// realms whose landmark models exist
+const LANDMARK_REALMS = new Set(['graal', 'aurelia', 'aethel', 'kaelneth', 'verdant', 'grom', 'xibalba', 'velikaya', 'tianlong']);
 const L = (realm, name, w, h, hp, losHeight, x = {}) => ({ name, w, h, hp, losHeight, realm, ...(x.cover ? {} : { blocksMove: true, blocksLos: true }), ...x });
 export const LANDMARKS = {
   graal_cathedral: L('graal', 'Gothic cathedral', 4, 6, 2200, 8, { model: 'graal_cathedral', color: 0x8a8a86, heals: 2 }),
@@ -693,4 +694,6 @@ export const LANDMARKS = {
   thousandgods_carvedTemple: L('thousandgods', 'Temple of a thousand statues', 5, 5, 2600, 9, { model: 'thousandgods_carvedTemple', color: 0x8a8a86, heals: 2 }),
   thousandgods_stepwell: L('thousandgods', 'Stepped water-tank', 4, 4, 600, 1, { model: 'thousandgods_stepwell', color: 0x8a8a86, cover: true }),
 };
-export const landmarksOf = (realm) => (LANDMARKS_READY ? Object.keys(LANDMARKS).filter((k) => LANDMARKS[k].realm === realm) : []);
+export const landmarksOf = (realm) => (LANDMARK_REALMS.has(realm) ? Object.keys(LANDMARKS).filter((k) => LANDMARKS[k].realm === realm) : []);
+/** the landmark definitions that can be built now, for the structure table */
+export const readyLandmarks = () => Object.fromEntries(Object.entries(LANDMARKS).filter(([, d]) => LANDMARK_REALMS.has(d.realm)));
