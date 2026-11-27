@@ -383,7 +383,7 @@ function chain(nodes, name, parent, pos, rots, lens, radii, o) {
 function dunkleosteusDesc(def) {
   const base = num(def.color, 0x6b7a3a), olive = tone(base, 0, 0.02, -0.02), oliveDk = tone(base, 0.01, 0.0, -0.13), bone = 0xc9bd98, boneDk = 0x8a7f62;
   const hide = mix(tone(base, 0.03, -0.12, -0.1), 0x39403a, 0.3), back = mix(hide, 0x1c211c, 0.35), belly = 0xd8d0b0, mouth = 0x6e2028, ivory = 0xf1e8c8, wet = 0.4;
-  const CY = -0.085;
+  const CY = -0.035;
   const TAB = [
     { z: 1.1, w: 0.15, h: 0.15, y: CY + 0.01 }, { z: 1.03, w: 0.225, h: 0.235, y: CY + 0.005 }, { z: 0.86, w: 0.285, h: 0.3, y: CY }, { z: 0.62, w: 0.315, h: 0.335, y: CY },
     { z: 0.32, w: 0.305, h: 0.33, y: CY }, { z: 0.05, w: 0.25, h: 0.275, y: CY + 0.005 }, { z: -0.25, w: 0.175, h: 0.205, y: CY + 0.015 }, { z: -0.55, w: 0.115, h: 0.14, y: CY + 0.03 },
@@ -407,16 +407,16 @@ function dunkleosteusDesc(def) {
   prims.head.push(S.box(1.6, 1.6, 0.05, 0.01).at(0, CY, HZ + 0.02).color(0x15170f).pbr(0.6).paint(0.008, -0.014));
   // plates: low embossed fields, olive weathering to bone, with dark sutures between and bare bone along the rims
   const plate = (n, z, th, rw, rz, k, yaw = 0) => { const q = skin(z, th, 0.01); prims[n].push(S.box(rw * 2, 0.2, rz * 2, Math.min(rw, rz) * 0.45).rot(0, yaw, 0).rot(0, 0, -th).at(q.p[0], q.p[1], q.p[2]).color(mix(olive, bone, k)).pbr(0.66).bump(0.007, 24, 'rock').tint(0.3, 15).paint(0.012, 0.007)); };
-  plate('head', 0.86, 0, 0.12, 0.15, 0.42);                 // skull roof
-  plate('head', 1.03, 0, 0.1, 0.06, 0.55);                  // rostral
+  plate('head', 0.86, 0, 0.12, 0.15, 0.3);                 // skull roof
+  plate('head', 1.03, 0, 0.1, 0.06, 0.42);                  // rostral
   for (const sd of [-1, 1]) {
     plate('head', 0.82, sd * 50, 0.085, 0.13, 0.3, sd * 8);  // cheek
-    plate('head', 0.76, sd * 98, 0.085, 0.1, 0.5);            // under the eye
-    plate('body', 0.4, sd * 42, 0.105, 0.16, 0.38);           // anterior dorso-lateral
+    plate('head', 0.76, sd * 98, 0.085, 0.1, 0.36);            // under the eye
+    plate('body', 0.4, sd * 42, 0.105, 0.16, 0.3);           // anterior dorso-lateral
     plate('body', 0.4, sd * 86, 0.1, 0.15, 0.22);             // anterior lateral
-    plate('body', 0.4, sd * 128, 0.09, 0.14, 0.5);            // ventro-lateral
+    plate('body', 0.4, sd * 128, 0.09, 0.14, 0.4);            // ventro-lateral
   }
-  plate('body', 0.34, 0, 0.1, 0.2, 0.5);                     // median dorsal
+  plate('body', 0.34, 0, 0.1, 0.2, 0.36);                     // median dorsal
   const suture = (n, a, b, r = 0.007) => prims[n].push(S.capsule(a, b, r).color(0x23261c).pbr(0.7).paint(0.004, -0.009));
   suture('head', skin(1.08, 0, 0.0).p, skin(HZ + 0.06, 0, 0.0).p);
   for (const sd of [-1, 1]) {
@@ -481,8 +481,8 @@ function animDunkleosteus(model, ctx) {
   const c = frac(t * 0.2 + phase * 0.137), bite = pulse(c, 0.0, 0.3), snap = pulse(c, 0.2, 0.32), chew = Math.max(0, Math.sin(t * 1.1 + phase));
   R(rig.body, -bite * 0.1 + Math.sin(w * 0.5) * 0.02, -Math.sin(w + 0.9) * 0.05, Math.sin(w) * 0.035);
   P(rig.body, 0, bite * 0.05 + Math.sin(w * 0.5) * 0.008, 0);
-  R(rig.head, -(chew * 0.03 + bite * 0.3 - snap * 0.16), Math.sin(w + 0.9) * 0.03, 0);
-  R(rig.jaw, chew * 0.07 + bite * 0.6 - snap * 0.42);
+  R(rig.head, -(0.04 + chew * 0.07 + bite * 0.3 - snap * 0.16), Math.sin(w + 0.9) * 0.03, 0);
+  R(rig.jaw, chew * 0.14 + bite * 0.55 - snap * 0.42);
   (rig.tail || []).forEach((n, i) => R(n, bite * 0.04, Math.sin(w - i * 0.8) * (0.1 + i * 0.07), 0));
   (rig.fins || []).forEach((n, i) => { const sg = i ? -1 : 1; R(n, Math.sin(w * 0.6 + i * 2) * 0.12, 0, sg * (Math.sin(w * 0.6 + i * 2 + 0.9) * 0.14 - bite * 0.25)); });
 }
@@ -492,15 +492,15 @@ function animDunkleosteus(model, ctx) {
 // =====================================================================================
 function leedsichthysDesc(def) {
   const gold = num(def.color, 0xc9a23a), bronze = mix(tone(gold, -0.035, 0.0, -0.17), 0x5a3414, 0.25), cream = 0xf0e2b4, backC = mix(bronze, 0x2a1c10, 0.45), belly = 0xf2ead0;
-  const goldLt = tone(gold, 0.01, 0.05, 0.1), mouth = 0x8a3038, wet = 0.3, MET = 0.5;
-  const CY = -0.13;
+  const goldLt = tone(gold, 0.01, 0.05, 0.1), mouth = 0x8a3038, wet = 0.3, MET = 0.35;
+  const CY = -0.1;
   const TAB = [
     { z: 1.2, w: 0.07, h: 0.075, y: CY + 0.03 }, { z: 1.13, w: 0.135, h: 0.15, y: CY + 0.022 }, { z: 1.0, w: 0.2, h: 0.24, y: CY + 0.01 }, { z: 0.82, w: 0.255, h: 0.335, y: CY },
     { z: 0.52, w: 0.3, h: 0.41, y: CY }, { z: 0.18, w: 0.305, h: 0.425, y: CY }, { z: -0.18, w: 0.265, h: 0.375, y: CY + 0.005 }, { z: -0.5, w: 0.19, h: 0.27, y: CY + 0.02 },
     { z: -0.75, w: 0.12, h: 0.17, y: CY + 0.035 }, { z: -0.95, w: 0.068, h: 0.095, y: CY + 0.05 }, { z: -1.08, w: 0.046, h: 0.062, y: CY + 0.055 },
   ];
   const sk = (p, part) => p.color(part === 'top' ? backC : part === 'bottom' ? cream : gold).pbr(wet, MET).bump(0.0085, 17, 'scales').tint(0.1, 8);
-  const smoothSk = (p, part) => p.color(part === 'top' ? backC : part === 'bottom' ? cream : bronze).pbr(wet + 0.06, MET * 0.6).bump(0.004, 24).tint(0.14, 9);
+  const smoothSk = (p, part) => p.color(part === 'top' ? backC : part === 'bottom' ? cream : mix(gold, bronze, 0.45)).pbr(wet + 0.06, 0.12).bump(0.004, 24).tint(0.14, 9);
   const GZ = 0.78;   // rear edge of the gill plate
   const K = carcass(TAB, [['body', 1.2, -0.22], ['tail0', -0.22, -0.5], ['tail1', -0.5, -0.74], ['tail2', -0.74, -0.93], ['tail3', -0.93, -1.08]], 'body', sk, { pivot: 0.3 });
   const { at, skin, prims, hard } = K;
@@ -551,8 +551,8 @@ function animLeedsichthys(model, ctx) {
   const w = t * 1.25 + phase;
   // now and then the great mouth swings open to strain the sea
   const c = frac(t * 0.085 + phase * 0.173), gape = pulse(c, 0.0, 0.5);
-  R(rig.body, Math.sin(w * 0.5) * 0.012 - gape * 0.07, -Math.sin(w + 0.8) * 0.03, Math.sin(w) * 0.02);
-  P(rig.body, 0, Math.sin(w * 0.5 + 1) * 0.012 + gape * 0.03, 0);
+  R(rig.body, Math.sin(w * 0.5) * 0.012 - gape * 0.15, -Math.sin(w + 0.8) * 0.03, Math.sin(w) * 0.02);
+  P(rig.body, 0, Math.sin(w * 0.5 + 1) * 0.012 + gape * 0.06, 0);
   R(rig.jaw, Math.sin(t * 0.7 + phase) * 0.03 + gape * 0.62);
   (rig.tail || []).forEach((n, i) => R(n, 0, Math.sin(w - i * 0.7) * (0.07 + i * 0.05), 0));
   (rig.fins || []).forEach((n, i) => { const sg = i ? -1 : 1; R(n, Math.sin(w * 0.7 + i * 2.2) * 0.1, 0, sg * (Math.sin(w * 0.7 + i * 2.2 + 0.8) * 0.15 + gape * 0.2)); });
@@ -622,7 +622,7 @@ function animXiphactinus(model, ctx) {
 // =====================================================================================
 function tylosaurusDesc(def) {
   const moss = num(def.color, 0x4f6a3a), back = mix(tone(moss, 0.01, 0.0, -0.07), 0x1a2218, 0.3), spot = 0x1c2020, lite = tone(moss, -0.02, 0.04, 0.09), belly = 0xe8e0c0, mouth = 0xb4525c, tooth = 0xf3eedc, wet = 0.42;
-  const CY = -0.03;
+  const CY = -0.012;
   const TAB = [
     { z: 1.25, w: 0.024, h: 0.022, y: CY + 0.012 }, { z: 1.16, w: 0.046, h: 0.04, y: CY + 0.01 }, { z: 1.02, w: 0.068, h: 0.06, y: CY + 0.008 }, { z: 0.88, w: 0.094, h: 0.084, y: CY + 0.005 },
     { z: 0.78, w: 0.1, h: 0.1, y: CY }, { z: 0.6, w: 0.126, h: 0.135, y: CY }, { z: 0.32, w: 0.15, h: 0.162, y: CY }, { z: 0.02, w: 0.146, h: 0.158, y: CY },
@@ -755,7 +755,7 @@ function animShonisaurus(model, ctx) {
 // =====================================================================================
 function kronosaurusDesc(def) {
   const orange = num(def.color, 0xc9692a), ochre = mix(tone(orange, 0.035, 0.0, 0.08), 0xd9a84a, 0.45), back = mix(tone(orange, -0.01, 0.0, -0.12), 0x4a2410, 0.3), dark = 0x3a2012, belly = 0xf0dfb4, mouth = 0xa8404a, tooth = 0xf4ecd4, wet = 0.44;
-  const CY = -0.045;
+  const CY = -0.02;
   const TAB = [
     { z: 1.2, w: 0.04, h: 0.032, y: CY - 0.004 }, { z: 1.1, w: 0.064, h: 0.052, y: CY }, { z: 0.9, w: 0.1, h: 0.086, y: CY + 0.004 }, { z: 0.7, w: 0.155, h: 0.124, y: CY + 0.006 },
     { z: 0.52, w: 0.215, h: 0.165, y: CY + 0.006 }, { z: 0.42, w: 0.225, h: 0.185, y: CY + 0.004 }, { z: 0.2, w: 0.285, h: 0.235, y: CY }, { z: -0.05, w: 0.3, h: 0.252, y: CY },
@@ -1069,7 +1069,7 @@ function orthocerasDesc(def) {
   const headHard = [...H.mirrorX([eye(ER, { iris: 0xf2e2a0, rim: 0x7a4a1a, white: 0xf2e2a0, shape: 'bar', pupilDeg: 24, irisDeg: 64, rough: 0.25, glow: 0.25, seg: 18 }).rot(-4, 100, 0).at(0.168, AY + 0.024, ZM - 0.11)])];
   const nodes = [
     ROOT,
-    { name: 'body', parent: 'root', rig: 'body', pos: BO, prims: into(BO, shell), hard: into(BO, shellHard), detail: 0.8, minRes: 30 },
+    { name: 'body', parent: 'root', rig: 'body', pos: BO, prims: into(BO, shell), hard: into(BO, shellHard), detail: 0.8, minRes: 22 },
     { name: 'head', parent: 'body', rig: 'head', pos: sub(HO, BO), prims: into(HO, head), hard: into(HO, headHard), detail: 0.95 },
   ];
   const seg = (j, r0, r1, LL) => ({
