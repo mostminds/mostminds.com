@@ -332,15 +332,18 @@ export class LandView {
       stand.traverse((o) => { if (o.isMesh && o !== ring) { o.castShadow = true; o.receiveShadow = true; } });
       this.dynamic.add(stand);
       // the flag: a tall pole, a long swallow-tailed banner, a gilt finial
-      const flag = new THREE.Group(), H = 2.6;
+      const flag = new THREE.Group(), H = 3.6;
       flag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, H, 6).translate(0, H / 2, 0), wood));
       flag.add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6).translate(0, H + 0.05, 0), gold));
-      const geo = new THREE.PlaneGeometry(1.15, 0.7, 8, 2);
+      const geo = new THREE.PlaneGeometry(1.7, 1.05, 8, 2);
       const pos = geo.attributes.position;
-      for (let i = 0; i < pos.count; i++) if (pos.getX(i) > 0.5) pos.setY(i, pos.getY(i) * (1.25 - Math.abs(pos.getY(i)) * 1.6)); // swallow tail
+      for (let i = 0; i < pos.count; i++) if (pos.getX(i) > 0.75) pos.setY(i, pos.getY(i) * (1.25 - Math.abs(pos.getY(i)) * 1.1)); // swallow tail
       const cloth = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: col, side: THREE.DoubleSide, roughness: 0.85, emissive: col, emissiveIntensity: 0.18 }));
-      cloth.position.set(0.6, H - 0.42, 0); cloth.castShadow = true;
+      cloth.position.set(0.88, H - 0.6, 0); cloth.castShadow = true;
       flag.add(cloth);
+      // a shaft of light so the flag can be found from across the field
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.34, 9, 10, 1, true).translate(0, 4.5, 0), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+      flag.add(beam);
       flag.userData = { cloth, base: geo.attributes.position.array.slice(), ring };
       this.dynamic.add(flag);
       this.flags.push({ flag, stand, pos: new THREE.Vector3(f.hx + 0.5, gy + 0.3, f.hy + 0.5), lean: 0 });
@@ -367,7 +370,7 @@ export class LandView {
       o.flag.rotation.z = -o.lean;
       // the cloth flies
       const { cloth, base } = o.flag.userData, p = cloth.geometry.attributes.position;
-      for (let k = 0; k < p.count; k++) { const x = base[k * 3] + 0.575; p.setZ(k, Math.sin(t * 5 + x * 5 + i) * 0.07 * x); }
+      for (let k = 0; k < p.count; k++) { const x = base[k * 3] + 0.85; p.setZ(k, Math.sin(t * 5 + x * 4 + i) * 0.09 * x); }
       p.needsUpdate = true;
       o.stand.children[2].material.opacity = f.state === 'home' ? 0.7 : 0.3 + 0.3 * Math.abs(Math.sin(t * 4)); // the empty stand pulses
     });
