@@ -13,6 +13,17 @@
 // priest, necromancer, lancer, skyKnight, rags, sapper, shaman, raider, hides, warlord, tatters, loincloth,
 // infernalPlate, feathers, none. Anything else is dressed from the descriptor's flags (robe, armor, helm, hood).
 //
+// The wardrobe (second half of OUTFITS) is picked by `outfit` alone and reads cloth (main colour), cloth2 (second
+// colour, default a contrast derived from cloth), armor (metal / lacquer), trim (ornament, default gold). Each brings
+// its own headgear unless the descriptor says bare: true:
+//   levy, surcoat (device, deviceColor, quartered), landsknecht, flagellant, elfScale, barbed (glow), leafcloak (antlers),
+//   starIron (glow), sunGold (gem), streltsy (fur), hussar, brocade (gem), lamellar (variant: celestial | samurai |
+//   ashigaru; tassel), dreadPlate (glow), pelts (helm), scrapPlate, darkHood, ragGoggles (glow), ziggurat, nobleDead,
+//   pharaoh (variant: guard; gem), pirate, gutplate (device), doublet (stripes, cuirass, hat: plumed | morion | cap),
+//   silkRobe (mail, turban), shinobi, woad (cloak, paint), tigerPelt, gothicHabit (hat: mitre; device), bloat.
+// Closed helms (surcoat, barbed, starIron, dreadPlate, the pharaoh's mask) replace the head; on a head with a muzzle
+// (G.muzzled()) they become an open bowl with the same crest, so the species still shows.
+//
 // How garments are made:
 //   - tight layers (hose, shirts, mail under plate, boots, bracers, belts, trim) are PAINT volumes with a little
 //     raise: they follow the anatomy exactly, cost almost nothing and keep their colour on the far detail level;
@@ -1788,7 +1799,6 @@ OUTFITS.feathers = (G) => {
   G.add('shinL', [gold(G.band(-P.shin * 0.55, 0.014, P.rCalf * 3), g).paint(0.003, 0.004)]);
 };
 
-//@@WARDROBE@@
 // =====================================================================================
 //  Wardrobe: outfits picked by `outfit` alone. Each reads cloth (main colour), cloth2 (second colour), armor (metal),
 //  trim (ornament) and brings its own headgear unless the descriptor says bare: true. Everything is sized from the
@@ -2103,7 +2113,7 @@ OUTFITS.flagellant = (G) => {
 // ---- Elven guard: white-gold scale over a long tunic, a spotless cloak, a tall winged helm ----
 SHELLS.spire = { f: [[0, 2.2], [0.17, 1.8], [0.5, 1.2], [0.88, 0.78], [1.03, 0.52], [1.1, 0.38]], s: [[0, 2.2], [0.17, 1.8], [0.5, 1.2], [0.88, 0.76], [1.04, 0.36], [1.08, 0.0]], b: [[0, 2.2], [0.19, 1.8], [0.56, 1.2], [0.94, 0.74], [1.08, 0.2], [1.2, -0.4]] };
 OUTFITS.elfScale = (G) => {
-  const { T, k, P, R } = G, c = G.cloth, m = G.armor, trim = G.trim, white = tone(c, 0, -0.5, 0.0) && 0xf1ede2;
+  const { T, k, P, R } = G, c = G.cloth, m = G.armor, trim = G.trim, white = 0xf1ede2;
   const sc = (x) => fin(x, m, 0.28, 1, 0.05, 30), st = (x) => fin(x, m, 0.24, 1, 0.04, 24), tm = (x) => cloth(x, white);
   G.add('torso', [torsoLayer(G, tm, { raise: 0.002 }), ...torsoShells(G, (x) => sc(x).bump(0.0045, 46, 'scales'), { grow: 0.013, blend: 0.02, hips: false })]);
   G.add('torso', [
@@ -2285,8 +2295,7 @@ OUTFITS.starIron = (G) => {
     ...studs(G, 'torso', [-1, 1].flatMap((s) => [0, 1, 2].map((i) => [s * ch.side * 0.6, G.chestY - 0.02 + i * 0.045 * k, 0.6])), { dir: [0, 0, -1], r: 0.008, color: trim }),
   ]);
   const r = P.rUpper, rf = P.rFore, F = P.fore, rc = P.rCalf;
-  G.lr('arm', [st(S.box(r * 2.9, r * 0.8, r * 3.3, r * 0.25).rot(0, 0, -16).at(r * 0.6, r * 0.95, 0)).blend(0.004), tm(S.box(r * 3.2, r * 0.22, r * 3.6, 0.002).rot(0, 0, -16).at(r * 0.55, r * 0.62, 0)).paint(0.003, 0.003)],
-    studs(G, 'torso', [], {}));
+  G.lr('arm', [st(S.box(r * 2.9, r * 0.8, r * 3.3, r * 0.25).rot(0, 0, -16).at(r * 0.6, r * 0.95, 0)).blend(0.004), tm(S.box(r * 3.2, r * 0.22, r * 3.6, 0.002).rot(0, 0, -16).at(r * 0.55, r * 0.62, 0)).paint(0.003, 0.003)]);
   G.lr('fore', runeBand(G, -F * 0.3, 0.022, limbRing(rf * 1.2), 6, trim, glow));
   G.lr('shin', runeBand(G, -P.shin * 0.14, 0.022, limbRing(rc * 1.2), 6, trim, glow));
   G.lr('leg', [st(S.box(P.rThigh * 2.3, P.thigh * 0.5, 0.03, 0.01).rot(-6, 0, 0).at(P.rThigh * 0.1, -P.thigh * 0.28, P.rThigh * 0.95)).blend(0.004)]);
@@ -2394,10 +2403,6 @@ OUTFITS.streltsy = (G) => {
   G.add('torso', [fm(S.torus(P.rNeck * 1.62, 0.024).at(0, T + 0.012, -0.004)).blend(0.006)]);
   const sa = sash(G, 0.06 * k, c2, { h: 0.05, deg: -42, len: 0.15, fringe: trim });
   G.add('torso', sa.prims, sa.hard);
-  // bandolier of powder charges
-  const ba = Math.atan2(G.sx * 0.9 + G.tp(0.06).side * 0.9, T * 0.82), ch = [];
-  for (let i = 0; i < 6; i++) { const t = 0.3 + i * 0.085, x = lerp(-1, 1, t) * Math.sin(ba) * T * 0.62 * -1, y = T * 0.5 + lerp(-1, 1, t) * Math.cos(ba) * T * 0.62 - 0.0, p = trace(f, [x, y, 0.6], [0, 0, -1]); if (p) ch.push(wood(H.cyl(0.008, 0.008, 0.04, 6), 0x7a5a36).at(p[0], p[1] - 0.03, p[2] + 0.012).lod(1), gold(H.cyl(0.009, 0.009, 0.008, 6), BRASS).at(p[0], p[1] - 0.008, p[2] + 0.012).lod(1)); }
-  G.add('torso', [], ch.slice(0, 0));
   const len = Math.min(0.37, P.hipY - 0.15);
   const sk = skirt(G, { mat: km, top: 0.03, len, flare: 0.08, fold: 0.008, foldFreq: 11, hem: { color: fur, h: 0.034 } });
   if (sk) G.add('root', [pbox((x) => cloth(x, 0x1a1512), 0.008, len, [0.022, sk.y1 - len / 2, sk.zc + 0.4], -0.003, 0.8), pbox((x) => gold(x, trim), 0.008, len, [0.034, sk.y1 - len / 2, sk.zc + 0.4], 0.002, 0.8), pbox((x) => gold(x, trim), 0.008, len, [0.01, sk.y1 - len / 2, sk.zc + 0.4], 0.002, 0.8),
@@ -2430,11 +2435,11 @@ OUTFITS.hussar = (G) => {
     ...studs(G, 'torso', [-1, 1].map((s) => [s * G.cw * 0.5, T - 0.085 * k, 0.6]), { field: f, dir: [0, 0, -1], r: 0.011, color: trim, lod: 1 })]);
   // the pelt: over the left shoulder and across the back, a paw hanging in front
   const a = Math.atan2(G.sx * 1.6, T) / DEG, fm = furM(pelt, 0.008, 34), spots = [], r2 = rng(hashStr(G.id + ':spots'));
-  for (let i = 0; i < 30; i++) { const t = r2() * 1.7 - 0.85, off = (r2() - 0.5) * 0.12 * k, ca = Math.cos(a * DEG), sa2 = Math.sin(a * DEG); spots.push(fin(S.sphere(0.008 + r2() * 0.006).at(0.02 + sa2 * t * T * 0.9 + ca * off, T * 0.5 + ca * t * T * 0.9 - sa2 * off, 0), spot, 0.9, 0).scale(1)); }
+  for (let i = 0; i < 30; i++) { const t = r2() * 1.7 - 0.85, off = (r2() - 0.5) * 0.12 * k, ca = Math.cos(a * DEG), sa2 = Math.sin(a * DEG); spots.push([0.02 + sa2 * t * T * 0.9 + ca * off, T * 0.5 + ca * t * T * 0.9 - sa2 * off]); }
   G.add('torso', [
     fm(S.box(0.16 * k, T * 2.4, 1, 0.01).rot(0, 0, -a).at(0.02, T * 0.5, 0)).paint(0.006, 0.008),
     fm(S.ellipsoid(0.085 * k, 0.05 * k, G.cd * 1.15).at(G.sx - 0.06, T - 0.008, -0.01)).blend(0.014),
-    ...spots.map((x) => { const e = x.m.elements; return fin(S.cyl(0.0075, 1, 0).rot(90, 0, 0).at(e[12], e[13], 0), spot, 0.9, 0).paint(0.003, 0.0085); }),
+    ...spots.map(([x, y]) => fin(S.cyl(0.0075, 1, 0).rot(90, 0, 0).at(x, y, 0), spot, 0.9, 0).paint(0.003, 0.0085)),
     fm(rod([-G.tp(0.1 * k).side * 0.8, 0.1 * k, G.tp(0.1 * k).front * 0.8], [-G.tp(0.1 * k).side * 0.9, 0.0, G.tp(0.02).front * 0.9 + 0.02], 0.024, 0.018)).blend(0.01),
   ]);
   const b = belt(G, 0.058 * k, { h: 0.026, color: DARK_LEATHER, raise: 0.004, buckleColor: trim });
@@ -3304,12 +3309,11 @@ OUTFITS.tigerPelt = (G) => {
   const cp = cape(G, { color: tg, len: 0.62, slope: 0.27, width: G.sx * 2.5, wTop: G.sx * 0.95, ragged: 0.03, foldAmp: 0.026, nu: 30, nv: 28, off: 0.02,
     pattern: (u, v) => { const d = Math.abs(u - 0.5); return d > 0.42 ? cream : Math.sin(v * 40 + Math.sin(u * 9) * 2.0 - d * 14) > 0.5 && d > 0.03 ? blk : d > 0.36 ? mix(tg, cream, 0.5) : null; } });
   const t0 = cp.at(0.5, 0.97);
-  G.add('torso', [], [furOrPlain(H.tube([t0, [t0[0] + 0.02, t0[1] - 0.08, t0[2] - 0.02], [t0[0] + 0.03, t0[1] - 0.17, t0[2] - 0.01], [t0[0] + 0.01, t0[1] - 0.22, t0[2] + 0.02]], [0.016, 0.014, 0.012, 0.008], 12, 6), tg).shade((x, y) => (Math.floor((t0[1] - y) / 0.022) % 2 ? blk : null))]);
+  G.add('torso', [], [cloth(H.tube([t0, [t0[0] + 0.02, t0[1] - 0.08, t0[2] - 0.02], [t0[0] + 0.03, t0[1] - 0.17, t0[2] - 0.01], [t0[0] + 0.01, t0[1] - 0.22, t0[2] + 0.02]], [0.016, 0.014, 0.012, 0.008], 12, 6), tg).shade((x, y) => (Math.floor((t0[1] - y) / 0.022) % 2 ? blk : null))]);
   if (G.bare) return;
   const tb = turban(G, c, { size: 1.06, mat: silk, top: c2, jewel: 0x2fb6a8, setting: trim, feather: [0x8a8474, cream, tg] });
   G.add('head', [...tb.prims, silk(S.cyl(G.R * 1.6, G.R * 0.14, 0).rot(0, 0, 24).at(0, tb.y, 0), c2).paint(0.003, 0.003)], tb.hard);
 };
-const furOrPlain = (h, c) => cloth(h, c);
 HEADGEAR.tigerPelt = true;
 
 /** a prayer scroll pinned at p: parchment with lines of script and a wax seal */

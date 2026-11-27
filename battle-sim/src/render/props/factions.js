@@ -1247,13 +1247,13 @@ function buildRestyle(parts, st0, style, key) {
   }
   // ---- roofs to re-cover: which, how, and what has to come off first ----
   const nt = ni / 3, jobs = [];
-  let cutv = null;
+  let cutv = null, lift = null, liftAt = null;
   if (roof) for (const c of roof.clusters) {
     const spec = c.ok ? roofSpec(st.roof, c, id) : null, mode = spec ? ROOF_MODE[spec.kind] : 0;
     if (!spec || mode === undefined || (mode === 2 && c.type === 'main' && c.fill < 0.7)) continue;
     let clear = 9;   // how far the new roof may reach past the old one before it would hang over a walk
     for (let q = 0; q < 24; q++) { const t = (q % 6 + 0.5) / 6, s = Math.floor(q / 6), x = s === 0 ? c.x0 : s === 1 ? c.x1 : lerp(c.x0, c.x1, t), z = s === 2 ? c.z0 : s === 3 ? c.z1 : lerp(c.z0, c.z1, t); for (let l = 0; l < 3; l++) if (fields[l] && LEVELS[l] < c.rY + 0.5) clear = Math.min(clear, fieldAt(fields[l], x, z)); }
-    c.over = clamp(clear - 0.15, 0, 0.7); c.spec = spec; c.mode = mode; c.cutY = c.eY + Math.min(0.2, 0.12 * (c.rY - c.eY)); c.posts = [];
+    c.over = clamp(clear - 0.15, 0, 0.7); c.spec = spec; c.mode = mode; c.cutY = c.eY + Math.min(0.2, 0.12 * (c.rY - c.eY));
     jobs.push(c);
     if (mode === 2) cutv = cutv || new Uint8Array(n);
   }
@@ -1262,9 +1262,10 @@ function buildRestyle(parts, st0, style, key) {
     const cut = jobs.filter((c) => c.mode === 2), col = new Map();
     for (const c of cut) { const gx = c.gable && !c.ax ? 0.6 : 0.006, gz = c.gable && c.ax ? 0.6 : 0.006; c.q = [Math.max(bb.x0 - 0.01, c.x0 - gx), Math.min(bb.x1 + 0.01, c.x1 + gx), Math.max(bb.z0 - 0.01, c.z0 - gz), Math.min(bb.z1 + 0.01, c.z1 + gz)]; }
     const regionOf = (x, z) => { for (const c of cut) if (c.type === 'cap' ? (x - c.cx) * (x - c.cx) + (z - c.cz) * (z - c.cz) < (c.r + 0.006) * (c.r + 0.006) : x > c.q[0] && x < c.q[1] && z > c.q[2] && z < c.q[3]) return c; return null; };
-    const seen = (x, y, z) => { if (!regionOf(x, z)) return; const key = cellKey(x, z), t = col.get(key); if (!t) col.set(key, { top: y, low: 9e9, c: null }); else if (y > t.top) t.top = y; };
-    for (let i = 0; i < n; i++) seen(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
-    for (const { mesh, m } of parts.other) { const p = mesh.geometry.attributes.position; for (let i = 0; i < p.count; i++) { v3.fromBufferAttribute(p, i).applyMatrix4(m); seen(v3.x, v3.y, v3.z); } }
+    const seen = (x, y, z, st) => { const c = regionOf(x, z); if (!c) return; const key = cellKey(x, z); let t = col.get(key); if (!t) col.set(key, t = { top: y, stone: false }); else if (y > t.top) t.top = y; if (st && y > c.cutY + 0.05 && y <= c.rY) t.stone = true; };
+    for (let i = 0; i < n; i++) seen(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], cls[i] === C_STONE && !vr[i]);
+    for (const { mesh, m } of parts.other) { const p = mesh.geometry.attributes.position; for (let i = 0; i < p.count; i++) { v3.fromBufferAttribute(p, i).applyMatrix4(m); seen(v3.x, v3.y, v3.z, false); } }
+    lift = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
       const o = i * 3, y = P[o + 1];
       if (pinned[i]) continue;
@@ -1272,10 +1273,10 @@ function buildRestyle(parts, st0, style, key) {
       if (!c || y <= c.cutY + 0.004) continue;
       const t = col.get(cellKey(P[o], P[o + 2]));
       if (t.top <= c.rY + 0.75 || vr[i] === c.i + 1) cutv[i] = c.i + 1;
-      else { t.c = c; if (y < t.low) t.low = y; }
+      else if (y > c.rY + 0.05) { if (!t.stone) lift[i] = c.i + 1; }   // it stood on the ridge: it will ride on the new roof
+      else if (!((cls[i] === C_STONE && !vr[i]) || cls[i] === C_DARK)) cutv[i] = c.i + 1;   // only masonry is left standing through the roof
     }
-    for (const [key, t] of col) if (t.c && t.low > t.c.cutY + 0.3) t.c.posts.push([(Math.floor(key / 4096) - 2048 + 0.5) * R_CELL, t.low, ((key % 4096) - 2048 + 0.5) * R_CELL]);
-    for (const c of cut) c.posts = c.posts.length && c.posts.length <= 10 ? [c.posts.reduce((a, b) => (b[1] < a[1] ? b : a))] : [];   // a flagpole left standing on the old roof gets a post under it
+    liftAt = (x, y, z) => { const c = regionOf(x, z); if (!c || c.top === undefined || y <= c.rY + 0.05) return 0; const t = col.get(cellKey(x, z)); return t && t.stone ? 0 : c.top - c.rY; };
   }
   // ---- triangles left out: torn roofs (decided where they lay before anything moved), roofs being replaced ----
   // Large dark linings under roofs are left out too: with only a corner here and there they cannot follow the tiles.
@@ -1303,9 +1304,11 @@ function buildRestyle(parts, st0, style, key) {
     const env = { P, N, n, vr, alive, cls, k, id, seed, st, bb };
     for (const c of jobs) {
       try { ROOFS[c.spec.kind](rg, c, c.spec, env); } catch (err) { console.warn('[factions] roof failed for', key, style, c.spec.kind, err); }
-      rg.surf(K_WOOD, 0.9); for (const p of c.posts) rg.in(M(p[0], c.cutY, p[2]), () => rg.cyl(0.022, 0.022, p[1] - c.cutY + 0.02, 5, [0.16, 0.12, 0.09]));
     }
-    if (cutv) for (let i = 0; i < n; i++) if (cutv[i]) P[i * 3 + 1] = roof.clusters[cutv[i] - 1].cutY;   // whatever straddled the cut is trimmed to it
+    if (cutv) for (let i = 0; i < n; i++) { // whatever straddled the cut is trimmed to it; what stood on the old ridge moves to the new one
+      if (cutv[i]) P[i * 3 + 1] = roof.clusters[cutv[i] - 1].cutY;
+      else if (lift[i]) { const c = roof.clusters[lift[i] - 1]; if (c.top !== undefined) P[i * 3 + 1] += c.top - c.rY; }
+    }
     if (!rg.n) rg = null;
   }
   // ---- shape ----
@@ -1320,10 +1323,12 @@ function buildRestyle(parts, st0, style, key) {
   if (rg) { const Q = rg.P; k.roof = 255; for (let i = 0; i < rg.n; i++) { const o = i * 3; move(Q[o], Q[o + 1], Q[o + 2]); Q[o] += o3[0]; Q[o + 1] += o3[1]; Q[o + 2] += o3[2]; } k.roof = 0; }
   const others = parts.other.map(({ mesh, m }) => {
     const g = mesh.geometry.clone().applyMatrix4(m), p = g.attributes.position, nr = g.attributes.normal;
+    let up = 0;
+    if (liftAt) { g.computeBoundingBox(); const b = g.boundingBox; up = liftAt((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2); }
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
       if (nr && nr.getY(i) > 0.25 && LEVELS.some((L) => Math.abs(y - L) <= 0.02)) continue;
-      move(x, y, z); p.setXYZ(i, x + o3[0], y + o3[1], z + o3[2]);
+      move(x, y, z); p.setXYZ(i, x + o3[0], y + o3[1] + up, z + o3[2]);
     }
     p.needsUpdate = true; g.computeBoundingBox(); g.computeBoundingSphere();
     return g;
@@ -1751,7 +1756,8 @@ function wallRect(c, env) {
 function roofFrame(c, env) {
   const r = wallRect(c, env), cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2, hx = (r.x1 - r.x0) / 2, hz = (r.z1 - r.z0) / 2;
   const ex = Math.min(c.x1 - cx, cx - c.x0), ez = Math.min(c.z1 - cz, cz - c.z0);
-  return c.ax ? { m: M(cx, 0, cz, 0, 90, 0), A: hz, B: hx, EA: ez, EB: ex, cx, cz } : { m: M(cx, 0, cz), A: hx, B: hz, EA: ex, EB: ez, cx, cz };
+  const bb = env.bb, lx = Math.min(bb.x1 - cx, cx - bb.x0) + 0.06, lz = Math.min(bb.z1 - cz, cz - bb.z0) + 0.06;   // nothing new may reach past the building's own outline
+  return c.ax ? { m: M(cx, 0, cz, 0, 90, 0), A: hz, B: hx, EA: Math.min(ez, lz), EB: Math.min(ex, lx), LA: lz, LB: lx, cx, cz } : { m: M(cx, 0, cz), A: hx, B: hz, EA: Math.min(ex, lx), EB: Math.min(ez, lz), LA: lx, LB: lz, cx, cz };
 }
 /** flat polygon facing down whatever order its corners come in */
 function flatDown(g, pts, col) {
@@ -1923,7 +1929,7 @@ const domeTiles = (pal, f = 9) => (a, t, x, y, z) => mul(pal[Math.floor(hash1(Ma
 const ROOFS = {
   /** a tiled hip roof, straight or swept, in one tier or two */
   hip(g, c, o, env) {
-    const f = roofFrame(c, env), ov = o.ov ?? 0.26, A = Math.min(f.A + ov, f.EA + c.over), B = Math.min(f.B + ov, f.EB + c.over), y0 = c.cutY, H = clamp((c.rY - c.eY) * (o.hs ?? 0.85), 0.4, o.maxH || 9), sd = env.seed % 977;
+    const f = roofFrame(c, env), ov = o.ov ?? 0.26, A = Math.min(f.A + ov, f.EA + c.over, f.LA), B = Math.min(f.B + ov, f.EB + c.over, f.LB), y0 = c.cutY, H = clamp((c.rY - c.eY) * (o.hs ?? 0.85), 0.4, o.maxH || 9), sd = env.seed % 977;
     const top = (a, b, hk) => (a >= b ? [Math.max(0, a - b * hk), 0] : [0, Math.max(0, b - a * hk)]);
     g.in(f.m, () => {
       g.surf(K_WOOD, 0.9); // the wall plate the roof sits on
@@ -1993,7 +1999,7 @@ const ROOFS = {
   },
   /** a ship's hull turned keel up */
   hull(g, c, o, env) {
-    const f = roofFrame(c, env), y0 = c.cutY - 0.03, A = Math.min(f.A + 0.4, f.EA + c.over + 0.15), B = Math.min(f.B + 0.16, f.EB + c.over), H = clamp(Math.min((c.rY - c.eY) * (o.hs ?? 0.8), B * 1.25), 0.45, 2.4), sd = env.seed % 911;
+    const f = roofFrame(c, env), y0 = c.cutY - 0.03, A = Math.min(f.A + 0.4, f.EA + c.over + 0.15, f.LA), B = Math.min(f.B + 0.16, f.EB + c.over, f.LB), H = clamp(Math.min((c.rY - c.eY) * (o.hs ?? 0.8), B * 1.25), 0.45, 2.4), sd = env.seed % 911;
     const wood = o.pal || [rgb(0x4a4438), rgb(0x3e3c34), rgb(0x55503e), rgb(0x3a4038)];
     const pt = (u, v) => { const x = (u * 2 - 1) * A, e = Math.abs(u * 2 - 1), wid = B * Math.pow(Math.max(0, 1 - Math.pow(e, 2.6)), 0.6), w = v * 2 - 1, rise = 0.3 * H * Math.pow(e, 3); return [x * (1 + 0.05 * (1 - Math.abs(w))), y0 + (H + rise) * (1 - Math.pow(Math.abs(w), 1.8)) - 0.02, w * wid]; };
     g.in(f.m, () => {
@@ -2027,7 +2033,7 @@ const ROOFS = {
   },
   /** a skin laid over the old roof's shape: thatch, hides, leaves, turf */
   drape(g, c, o, env) {
-    const d = 0.14, { P, n, vr } = env, ci = c.i + 1, ring = Math.round(Math.min(o.over ?? 0.2, c.over) / d), pad = ring + 1, thick = o.thick ?? 0.1;
+    const d = 0.14, { P, n, vr, bb } = env, ci = c.i + 1, ring = Math.round(Math.min(o.over ?? 0.2, c.over) / d), pad = ring + 1, thick = o.thick ?? 0.1;
     const gx0 = c.x0 - pad * d, gz0 = c.z0 - pad * d, w = Math.ceil((c.x1 - c.x0) / d) + 2 * pad + 2, h = Math.ceil((c.z1 - c.z0) / d) + 2 * pad + 2;
     let Hm = new Float32Array(w * h).fill(-1e9);
     for (let i = 0; i < n; i++) {
@@ -2037,7 +2043,7 @@ const ROOFS = {
     }
     for (let r = 0; r < ring; r++) { // reach out past the old eaves, dropping as it goes
       const Hn = Hm.slice();
-      for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) { const k = j * w + i; if (Hm[k] > -1e8) continue; const m = Math.max(Hm[k - 1], Hm[k + 1], Hm[k - w], Hm[k + w]); if (m > -1e8) Hn[k] = m - (o.drop ?? 0.11); }
+      for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) { const k = j * w + i; if (Hm[k] > -1e8) continue; const px = gx0 + i * d, pz = gz0 + j * d; if (px < bb.x0 - 0.06 || px > bb.x1 + 0.06 || pz < bb.z0 - 0.06 || pz > bb.z1 + 0.06) continue; const m = Math.max(Hm[k - 1], Hm[k + 1], Hm[k - w], Hm[k + w]); if (m > -1e8) Hn[k] = m - (o.drop ?? 0.11); }
       Hm = Hn;
     }
     for (let s = 0; s < (o.smooth ?? 1); s++) {
@@ -2146,6 +2152,7 @@ function lamp(g, s, glowCol, o = {}) {
 }
 /** wall: a lantern on a bracket */
 function bracketLamp(g, s, glowCol, o = {}) {
+  s = Math.min(s, 1.2);
   g.surf(K_PLAIN, 0.55, 0.85); g.tube([[0, 0.02, 0], [0, 0.12 * s, 0.1 * s], [0, 0.1 * s, 0.24 * s]], 0.014 * s, 5, o.frame || IRON);
   g.in(M(0, 0.1 * s, 0.24 * s), () => lamp(g, s, glowCol, o));
 }
@@ -2157,11 +2164,12 @@ function thorn(g, h, r, col, o = {}) {
 }
 /** top: a slender pinnacle for a parapet corner: a shaft and one of the DOME caps */
 function pinnacle(g, s, shape, o = {}) {
-  const sh = o.shaft ?? 0.5, r = o.r || 0.11;
+  const sh = o.shaft ?? 0.5, r = Math.min(o.r || 0.11, 0.1 / s);
   g.surf(o.shaftKind ?? K_STONE, 0.9, o.shaftMetal || 0);
   g.lathe([[r * 1.25 * s, -0.04], [r * 1.25 * s, 0.04 * s], [r * s, 0.07 * s], [r * s, sh * s], [r * 1.35 * s, (sh + 0.03) * s], [r * 1.35 * s, (sh + 0.07) * s]], o.sides || nq(8), o.shaftCol || [0.7, 0.68, 0.62]);
   let top = 0;
-  g.in(M(0, (sh + 0.07) * s, 0), () => { top = domeOn(g, r * 1.3 * s * (o.capK || 1), { drum: 0, shape, col: o.col, kind: o.kind, rough: o.rough, metal: o.metal, glow: o.glow, hk: o.hk, seg: o.sides || 10, finial: o.finial, finS: (o.finS || 0.4) * s, fin: o.fin, deep: o.deep, bright: o.bright, seed: o.seed, flame: o.flame }); });
+  const pmax = DOME[shape].reduce((m, p) => Math.max(m, p[0]), 0), capR = Math.min(r * 1.3 * s * (o.capK || 1), 0.13 / pmax);   // never wider than the merlon it stands on, or it would hang over the walk
+  g.in(M(0, (sh + 0.07) * s, 0), () => { top = domeOn(g, capR, { drum: 0, shape, col: o.col, kind: o.kind, rough: o.rough, metal: o.metal, glow: o.glow, hk: o.hk, seg: o.sides || 10, finial: o.finial, finS: (o.finS || 0.4) * s, fin: o.fin, deep: o.deep, bright: o.bright, seed: o.seed, flame: o.flame }); });
   return (sh + 0.07) * s + top;
 }
 /** wall: a round disc with rays (a sun, a mirror, a gong) */
@@ -2403,7 +2411,7 @@ function shapeOf(p) {
 const thatchCol = (base, seed = 0, dark = 0.72, moss = 0) => (x, y, z, nx, ny, nz) => { const s = Math.abs(nx) > Math.abs(nz) ? z : x; let c = mul(base, (0.55 + 0.7 * noise3(s * 13 + seed, y * 2.2, 1.5)) * (0.72 + 0.28 * tri1(y * 3.3)) * (ny > 0.95 ? dark : 1)); if (moss) c = mix(c, [0.16, 0.24, 0.07], moss * smooth(0.45, 0.7, noise3(x * 1.6 + seed, y * 1.6, z * 1.6))); return c; };
 const leafCol = (pal, seed = 0, bloom = null) => (x, y, z, nx, ny) => { const d = cells3(x * 2.6 + seed, y * 2.6, z * 2.6), q = hash1(Math.round(x * 2.6 + seed), Math.round(y * 2.6), Math.round(z * 2.6)), f = cells3(x * 7 + seed, y * 7, z * 7); if (bloom && f < 0.1 && q > 0.6) return bloom; return mul(pal[Math.floor(q * pal.length) % pal.length], (0.4 + 1.0 * smooth(0.0, 0.5, d)) * (0.7 + 0.5 * smooth(0.05, 0.4, f)) * (0.7 + 0.35 * (ny || 0.5))); };
 const hidePatch = (col, seed = 0) => { const alt = [col, mul(col, 0.7), mix(col, rgb(0x7a5a30), 0.6), mix(col, rgb(0xc8b070), 0.45)]; return (x, y, z) => { const cu = x * 2.3 + 0.4 * noise3(z * 3 + seed, 1, 2), cv = z * 2.3 + 0.4 * noise3(x * 3, seed, 5), iu = Math.floor(cu), iv = Math.floor(cv), e = Math.min(cu - iu, 1 - (cu - iu), cv - iv, 1 - (cv - iv)); return mul(alt[Math.floor(hash1(iu, iv, seed) * 4)], (e < 0.07 ? 0.5 : 1) * (0.75 + 0.4 * noise3(x * 8 + seed, y * 8, z * 8))); }; };
-const snowOn = (c, a, x, y, z, ny, k, amt = 0.5) => { if (k.roof) ny = Math.abs(ny); if (ny > 0.3) { const t = smooth(0.3, 0.7, ny) * smooth(0.62 - amt * 0.6, 0.72 - amt * 0.6, noise3(x * 1.3 + k.s1, y * 0.9, z * 1.3 + k.s2)); tintTo(c, [0.86, 0.9, 0.96], t); a[0] = lerp(a[0], 0.55, t); a[1] *= 1 - t; } };
+const snowOn = (c, a, x, y, z, ny, k, amt = 0.5) => { if (k.roof) { ny = Math.abs(ny); amt = 0.5 + amt * 0.5; } if (ny > 0.3) { const t = smooth(0.3, 0.7, ny) * smooth(0.62 - amt * 0.6, 0.72 - amt * 0.6, noise3(x * 1.3 + k.s1, y * 0.9, z * 1.3 + k.s2)); tintTo(c, [0.86, 0.9, 0.96], t); a[0] = lerp(a[0], 0.55, t); a[1] *= 1 - t; } };
 const mossOn = (c, x, y, z, ny, k, amt = 0.6, col = [0.1, 0.17, 0.045]) => { const t = (ny > 0.15 ? smooth(0.15, 0.6, ny) : 0.35 * smooth(0.9, 0.1, y)) * smooth(0.6 - amt * 0.3, 0.8 - amt * 0.3, noise3(x * 1.5 + k.s1, y * 1.5, z * 1.5 + k.s2)) * amt * 1.3; if (t > 0) tintTo(c, col, Math.min(0.9, t)); };
 const STRAW = rgb(0xa8873c), STRAW_OLD = rgb(0x7e7248);
 const TILE_GREEN = sw(0x2f7a4a, 0x2a6a40, 0x3a8a55, 0x256038, 0x348050), TILE_GOLD = sw(0xd9a62e, 0xc8962a, 0xe0b440, 0xb88826), TILE_GREY = sw(0x565a62, 0x4a4e56, 0x62666e, 0x50545c);
@@ -2427,7 +2435,7 @@ Object.assign(STYLES, {
   },
   aurelia: {
     glow: [1.0, 0.6, 0.2], window: 0.6, trim: [rgb(0xc8b690)], joint: [0.5, 0.47, 0.42, 0.55],
-    pal: palOf({ stone: [0x7a4a38, 0x6e4232, 0x84523c, 0x5e3a2e, 0x744636], plaster: [0xd8c8a0, 0xccba90], timber: [0x2e241c, 0x261e18, 0x382c22], roof: [0x3c4450, 0x343c48, 0x464e5a, 0x2e3640], moss: [0x44582e, 0x384a28], gold: [0xc89a3a, 0xb88a30], iron: [0x2a2a2e, 0x222226], other: [0x8a2a22, 0xd8b83a, 0x26262a] }),
+    pal: palOf({ stone: [0x7a4a38, 0x6e4232, 0x84523c, 0x5e3a2e, 0x744636], plaster: [0xe0d2ac, 0xd6c69c], timber: [0x3e2e22, 0x34261c, 0x4a382a], roof: [0x3c4450, 0x343c48, 0x464e5a, 0x2e3640], moss: [0x44582e, 0x384a28], gold: [0xc89a3a, 0xb88a30], iron: [0x2a2a2e, 0x222226], other: [0x8a2a22, 0xd8b83a, 0x26262a] }),
     roof: { main: { kind: 'gables', stone: 0x7a4a38, st: brickSt, cope: rgb(0xc8b690), steps: 5, fin: 'ball' }, cap: { kind: 'cap', shape: 'bulb', hk: 1.15, drum: 0.2, col: domeTiles(SLATE_DARK), finial: 'ball', finS: 0.5 } },
     by: { humble: { pal: palOf({ stone: [0xd8cba8, 0xcebf98, 0xe0d4b4, 0xc4b690] }), joint: null },
       grand: { pal: palOf({ stone: [0xe2ded6, 0xd8d2c8, 0xeae6de, 0xcfcac2] }), joint: null, trim: [rgb(0xf4f2ec)], roof: { main: { kind: 'gables', stone: 0xe2ded6, cope: rgb(0xf4f2ec), steps: 5, fin: 'ball' } } },
@@ -2640,7 +2648,7 @@ Object.assign(STYLES, {
   },
   westmark: {
     glow: [1.0, 0.8, 0.45], window: 0.45, trim: [rgb(0xeeeae0)], joint: [0.72, 0.68, 0.6, 0.55],
-    pal: palOf({ stone: [0xa8482e, 0x9a4028, 0xb45236, 0x8c3a26, 0xa24a32], plaster: [0xeeeae0, 0xe4e0d4], timber: [0x26342a, 0x1e2a22, 0x2e3e32, 0x3a2a20], roof: [0x3a3c44, 0x32343c, 0x44464e, 0x2c2e36], moss: [0x4a6a3a, 0x3c5a30], gold: [0xe0aa2e, 0xd09a26], iron: [0x2a2a2e, 0x222226], other: [0xe07a1e, 0xeeeae0, 0x2a4a8a] }),
+    pal: palOf({ stone: [0xa8482e, 0x9a4028, 0xb45236, 0x8c3a26, 0xa24a32], plaster: [0xeeeae0, 0xe4e0d4], timber: [0x5e3e2a, 0x523424, 0x6a4832, 0x2e4a3a], roof: [0x3a3c44, 0x32343c, 0x44464e, 0x2c2e36], moss: [0x4a6a3a, 0x3c5a30], gold: [0xe0aa2e, 0xd09a26], iron: [0x2a2a2e, 0x222226], other: [0xe07a1e, 0xeeeae0, 0x2a4a8a] }),
     roof: { main: { kind: 'gables', stone: 0xa8482e, st: brickSt, cope: rgb(0xeeeae0), steps: 6, rise: 0.34, fin: 'ball' }, cap: { kind: 'cap', shape: 'bulb', hk: 1.2, drum: 0.25, drumCol: rgb(0xa8482e), col: domeTiles(sw(0x4a9a80, 0x3f8c74, 0x58a88c, 0x449078)), metal: 0.3, rough: 0.6, finial: 'ball', finS: 0.5 } },
     by: { grand: { pal: palOf({ roof: [0x4a9a80, 0x3f8c74, 0x58a88c, 0x449078] }) } },
     fx(cls, x, y, z, ny, c, a, k) { // bands of white stone through the brick
@@ -2715,7 +2723,7 @@ Object.assign(ORNAMENTS, {
     dress(g, sv, {
       ridge: [300, (a, i) => g.in(M(0, -0.1, -0.06), () => pennon(g, 0.9 * sc, 0.6 * sc, i ? gold : blue, i ? blue : gold))],
       corner: [420, (a, i) => (i % 2 ? g.in(M(0, -0.05, 0), () => pennon(g, 0.8 * sc, 0.5 * sc, blue, gold)) : pinnacle(g, 0.8 * sc, 'bell', { col: SLATE_BLUE[0], finial: 'spike', shaft: 0.3, hk: 1.3, shaftCol: [0.8, 0.78, 0.72] }))],
-      face: [520, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.3 * sc, 0.02), () => hanging(g, 0.42 * sc, Math.min(0.95 * sc, a.y - 0.05), blue, gold, { device: gold, point: true })) : g.in(M(0, -0.25 * sc, 0), () => archFrame(g, 0.34 * sc, 0.72 * sc, 'point', [0.86, 0.84, 0.78], { fill: (x, y) => [[0.7, 0.1, 0.08], [0.12, 0.25, 0.8], [0.9, 0.65, 0.12], [0.12, 0.55, 0.25]][(Math.floor(x * 14 + 40) + Math.floor(y * 11 + 40)) % 4], fillGlow: 0.3, t: 0.03 })))],
+      face: [520, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.3 * sc, 0.02), () => hanging(g, 0.42 * sc, Math.min(0.95 * sc, a.y - 0.05), blue, gold, { device: gold, point: true })) : HUMBLE.has(sv.id) ? g.in(M(0, 0.05, 0.02), () => heater(g, 0.7 * sc, blue, gold, { quarter: true })) : g.in(M(0, -0.25 * sc, 0), () => archFrame(g, 0.34 * sc, 0.72 * sc, 'point', [0.86, 0.84, 0.78], { fill: (x, y) => [[0.7, 0.1, 0.08], [0.12, 0.25, 0.8], [0.9, 0.65, 0.12], [0.12, 0.55, 0.25]][(Math.floor(x * 14 + 40) + Math.floor(y * 11 + 40)) % 4], fillGlow: 0.3, t: 0.03 })))],
       door: [300, () => bracketLamp(g, 1.1 * sc, [1.0, 0.62, 0.22])],
     });
   },
