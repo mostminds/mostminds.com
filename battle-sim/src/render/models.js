@@ -549,7 +549,7 @@ export function buildStructure(def, w, h, place = null) {
     if (sm) {
       // a faction other than the kingdom gives the building its own look
       const st = place && place.style;
-      if (st && st !== 'kingdom' && REG.FACTION.restyle && !(REG.FACTION.structures || {})[def.model]) {
+      if (st && st !== 'kingdom' && !def.realm && REG.FACTION.restyle && !(REG.FACTION.structures || {})[def.model]) { // landmarks keep their own look
         const rs = guarded(`restyle:${st}:${def.model}`, () => REG.FACTION.restyle(sm, st, `${def.model}:${w}x${h}:${def.color}:${getDetail()}`));
         if (rs && rs !== sm) { rs.userData = { ...sm.userData, ...rs.userData }; return rs; }
         // a realm whose own style is not sculpted yet borrows the nearest of the older ones
