@@ -11,6 +11,13 @@ import { registerAnimators } from './animate.js';
 import { exampleBody } from './bodies/_example.js';
 
 export const BODIES = { example: exampleBody, ...humanoid.bodies, ...undead.bodies, ...beasts.bodies, ...monsters.bodies };
+// great beasts and war machines of the realms: each file is optional, and a unit whose body is not
+// there yet is drawn with the stand-in its descriptor names (see models.js standIn)
+const laterBodies = [];
+for (const f of ['titans', 'machines']) {
+  try { const m = await import(`./bodies/${f}.js`); Object.assign(BODIES, m.bodies || {}); laterBodies.push(m); }
+  catch (err) { console.info(`${f} models not available yet; stand-ins are used`, err?.message || err); }
+}
 // airships, aircraft, drop pods and the buildings that serve them
 let air = {};
 try { air = await import('./props/airships.js'); } catch (err) { console.warn('[models] airship models unavailable, using simple shapes', err); }
@@ -24,10 +31,15 @@ let fac = {};
 try { fac = await import('./props/factions.js'); } catch (err) { console.info('faction building styles not available yet', err?.message || err); }
 export const FACTION = fac;
 export const STRUCT = { ...buildings.structures, ...(air.structures || {}), ...(civic.structures || {}), ...(fac.structures || {}) };
+// the realms' own landmark buildings, in three optional files
+for (const f of ['realmsOrder', 'realmsRuin', 'realmsFar']) {
+  try { const m = await import(`./props/${f}.js`); Object.assign(STRUCT, m.structures || {}); }
+  catch (err) { console.info(`${f} buildings not available yet`, err?.message || err); }
+}
 export const rubble = buildings.rubble;
 export const SIEGE = siegeMod.siege;
 export const craft = siegeMod.craft;
 export const ship = ships.ship;
 export const CREATURES = sea.creatures;
 export const CREATURE_ANIM = sea.animators || {};
-for (const m of [humanoid, undead, beasts, monsters]) if (m.animators) registerAnimators(m.animators);
+for (const m of [humanoid, undead, beasts, monsters, ...laterBodies]) if (m.animators) registerAnimators(m.animators);
