@@ -286,6 +286,38 @@ a ring marking the ground that must be held). Rules are in `src/engine/fronts.js
   point if there is none; after a while there he returns to the fight at half strength. Left too long, he
   dies. Healers still heal in the field as before.
 
+### Campaign maps: the borderland and the island chain
+
+With no place chosen, Generate makes a campaign map, 256 tiles a side (`site: 'region'` and `'isles'` in
+`src/data/worldgen.js`, terrain from `regionLayout` in `src/engine/terrain.js`):
+
+- **Borderland war.** Three villages, two forts and a walled city with its castle, strung along a river with
+  fords and bridges, with a canal from the river to the city's dock quarter. The attackers' camps are on the
+  western edge.
+- **Island campaign.** Two villages and a fort on three islands joined by low-water causeways, and a fort, a
+  village and the city on the mainland. Every wave of the landing force comes ashore in landing craft that steer
+  round the islands to the next one the defenders still hold.
+
+Every place has several rally points: its centre and an edge or gate, plus a fortified landing on the water
+(a dock with sandbags and a gun). The city has five: the castle (the defenders' headquarters), the upper town,
+and three lower districts. Roads join everything and are paved through the towns; walls carry guns on their
+towers, and the defenders' shooters man the wall-walks near their posts.
+
+The city is packed with houses. Its lower town is split into three districts by walls with gates (one in the
+district and one across the boulevard). The upper town stands two storeys up on a platform reached by stairs and
+by walkways from the district walls. A footbridge runs from the upper town to the castle's wall. When a walkway
+or bridge is destroyed, everyone standing on it falls to their death.
+
+Both armies come in four waves (`sides[i].waves`, `waveEvery` ticks apart). Each later wave marches in from its
+own edge with fresh stores, or puts out in landing craft. The defenders start spread over all their rally
+points, more at the headquarters and the landings. Both sides go for the enemy's landings first.
+
+**Boats.** River boats, canal gondolas and (for the savage peoples) rafts run between the landings
+(`scn.waterways`). Each side has its own boat on every line, and it runs only between landings that side holds:
+take two of the enemy's landings and the line is yours. Boats load stores at the landing nearest their side's
+edge, set them down where they are short, and ferry soldiers bound for a distant point. They can be holed and
+sunk from the bank; anyone aboard who cannot reach the bank drowns.
+
 ### Trains, cable cars and balloons
 
 Supply runs to a timetable on three kinds of line (`src/engine/transit.js`):

@@ -89,8 +89,8 @@ export const SITES = {
   ctf: { name: 'Capture the flag', mode: 'field', shape: ['plains'], size: 112, points: 12000, edge: 1 },
   island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island', 'island', 'peninsula'], size: 112, points: 16000, edge: 1.3 },
   // the big maps: three villages, two forts and a city with its castle
-  region: { name: 'Borderland war', mode: 'field', shape: ['region'], size: 256, points: 150000, edge: 1.3, big: true },
-  isles: { name: 'Island campaign', mode: 'amphibious', shape: ['isles'], size: 256, points: 150000, edge: 1.35, big: true },
+  region: { name: 'Borderland war', mode: 'field', shape: ['region'], size: 256, points: 150000, edge: 1.15, big: true },
+  isles: { name: 'Island campaign', mode: 'amphibious', shape: ['isles'], size: 256, points: 150000, edge: 1.2, big: true },
 };
 
 // ---------- helpers ----------
@@ -180,7 +180,12 @@ function rampart(p, x, y, w, h, side, gates) {
     feats.sort((a, c) => a[0] - c[0]);
     let at = 0;
     const wall = (from, to) => {
-      for (let s = from; s < to; s += 40) { const len = Math.min(40, to - s); if (len > 0) add('castleWall', rot ? fx : fx + s, rot ? fy + s : fy, { rot, len }); }
+      for (let s = from; s < to; s += 40) {
+        const len = Math.min(40, to - s);
+        if (len <= 0 || add('castleWall', rot ? fx : fx + s, rot ? fy + s : fy, { rot, len })) continue;
+        // something in the way (a river, a canal): build it in short lengths, leaving only the gap it needs
+        for (let q = s; q < s + len; q++) add('castleWall', rot ? fx : fx + q, rot ? fy + q : fy, { rot, len: 1 });
+      }
     };
     for (const [o, wd, kind] of feats) {
       wall(at, o);
@@ -975,14 +980,14 @@ function generateRegion({ r, seed, siteId, site, defId, attId, D, A }) {
     const U = { x: E.x, y: K.y + K.h + 4, w: E.w, h: E.y + E.h - (K.y + K.h + 4) };
     p.road(E.x, K.y + K.h, E.w, 4); // the street under the castle walls
     if (U.h >= 20) {
-      p.out.push({ type: 'terrace', x: U.x, y: U.y, rot: 0, len: U.w, wid: U.h, side: 1 });
+      // the whole upper town stands two storeys up: stairs and walkways are the only ways onto it
+      p.out.push({ type: 'terraceHigh', x: U.x, y: U.y, rot: 0, len: U.w, wid: U.h, side: 1 });
       const hw = even(Math.min(16, U.w - 10)), hh = even(Math.min(16, U.h - 14)), hx = U.x + U.w - hw - 2, hy = U.y + ((U.h - hh) >> 1);
-      p.out.push({ type: 'terraceHigh', x: hx, y: hy, rot: 0, len: hw, wid: hh, side: 1 });
       const has = new Set(CIVIC[defId] || []);
       (has.has('palace') && p.put('palace', hx + ((hw - 7) >> 1), hy + ((hh - 6) >> 1), { side: 1 }, 0)) || (has.has('temple') && p.put('temple', hx + ((hw - 4) >> 1), hy + ((hh - 5) >> 1), { side: 1 }, 0)) || p.put('keep', hx + ((hw - 5) >> 1), hy + ((hh - 5) >> 1), { side: 1 }, 0);
       // stairs up from the boulevard, and from the terrace to the high terrace
-      for (const f of [0.2, 0.5, 0.8]) p.out.push({ type: 'stairs', x: U.x, y: U.y + Math.round(U.h * f), rot: 1, side: 1 });
-      p.out.push({ type: 'stairs', x: hx - 2, y: hy + (hh >> 1), rot: 1, side: 1 });
+      for (const f of [0.2, 0.5, 0.8]) p.out.push({ type: 'stairs', x: U.x - 1, y: U.y + Math.round(U.h * f), rot: 1, side: 1 });
+      p.out.push({ type: 'stairs', x: U.x + Math.round(U.w * 0.3), y: U.y - 1, rot: 0, side: 1 });
       p.road(U.x + 2, hy + (hh >> 1) - 1, hx - U.x - 2, 3);
       // houses on the terrace
       const T = { x: U.x + 3, y: U.y + 2, w: hx - U.x - 5, h: U.h - 4 };
@@ -995,13 +1000,16 @@ function generateRegion({ r, seed, siteId, site, defId, attId, D, A }) {
     // the lower town: three districts behind their own walls and gates
     const thirds = [0, 1, 2].map((k) => ({ x: lower.x, y: lower.y + Math.round((lower.h * k) / 3), w: lower.w, h: Math.round(lower.h / 3) }));
     for (const k of [1, 2]) {
-      const y = thirds[k].y - 1, gx = lower.x + (lower.w >> 1) - 1;
-      p.force('castleWall', lower.x, y, { rot: 0, len: gx - lower.x, side: 1 });
+      // a wall from the city wall to the upper town, with a gate in the district and another across the boulevard
+      const y = thirds[k].y - 1, gx = lower.x + (lower.w >> 1) - 1, x0 = R.x + 1;
+      p.force('castleWall', x0, y, { rot: 0, len: gx - x0, side: 1 });
       p.force('castleGate', gx, y, { rot: 0, side: 1 });
-      p.force('castleWall', gx + 3, y, { rot: 0, len: lower.x + lower.w - gx - 3, side: 1 });
+      p.force('castleWall', gx + 3, y, { rot: 0, len: bx - gx - 3, side: 1 });
+      p.force('castleGate', bx, y, { rot: 0, side: 1 });
+      p.force('castleWall', bx + 3, y, { rot: 0, len: 1, side: 1 }); // close the last step to the castle or the terrace
       p.out.push({ type: 'stairs', x: lower.x + 3, y: y - 1, rot: 0, side: 1 }, { type: 'stairs', x: lower.x + lower.w - 5, y: y + 1, rot: 0, side: 1 });
-      // a walkway from the district wall over the boulevard onto the terrace
-      p.out.push({ type: 'walkway', x: bx - 1, y, rot: 0, len: 5, side: 1 });
+      // a walkway from the district wall over the boulevard onto the upper town
+      p.out.push({ type: 'walkway', x: bx - 1, y: y - 1, rot: 0, len: 6, side: 1 });
     }
     thirds.forEach((Dk, k) => {
       const Z = { x: Dk.x + 1, y: Dk.y + 1, w: Dk.w - 2, h: Dk.h - 3 }, cx = Z.x + (Z.w >> 1), cy = Z.y + (Z.h >> 1);

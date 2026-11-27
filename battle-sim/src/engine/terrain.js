@@ -136,7 +136,8 @@ function regionTerrain(shape, S, seed) {
     // a few meres and bog pools out in the open country, well away from the settlements and the river
     for (let y = 2; y < S - 2; y++) for (let x = 2; x < S - 2; x++) {
       const i = y * S + x;
-      if (t[i] !== GRASS || L.sites.some((s) => Math.hypot(s.x - x, s.y - y) < S * 0.13) || Math.abs(riverXAt(L.rivers[0].pts, y) - x) < 12 || x < S * 0.12 || x > S * 0.93) continue;
+      if (t[i] !== GRASS || L.sites.some((s) => Math.hypot(s.x - x, s.y - y) < S * (s.kind === 'city' ? 0.3 : 0.14)) || Math.abs(riverXAt(L.rivers[0].pts, y) - x) < 12 || x < S * 0.12 || x > S * 0.93) continue;
+      if (L.rivers[1].pts.some(([cx, cy]) => Math.hypot(cx - x, cy - y) < 14)) continue; // and clear of the canal
       const v = fbm(x * f * 1.6, y * f * 1.6, seed + 90);
       if (v > 0.71) t[i] = v > 0.75 ? DEEP : SHALLOW; else if (v > 0.69) t[i] = SAND;
     }
