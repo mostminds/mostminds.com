@@ -1,3 +1,4 @@
+import { realmAirships } from './realms.js';
 // War zeppelins: one per faction. They fly above the battle, fire broadsides, drop bombs,
 // launch aircraft from a stern hangar, drop pods of shock troops and lower ladders to lift
 // hard-pressed troops out of a fight. Each needs a crew: without one it drifts, and enemy
@@ -30,4 +31,5 @@ export const AIRSHIPS = {
     cannons: { perSide: 3, dmg: [10, 30], range: 9, reload: 8, acc: 0.55 }, bombs: { maxHit: 44, radius: 2, reload: 9 },
     hangar: { unit: 'wyrmling', count: 3, every: 40 }, pods: { unit: 'cyclops', pods: 2, perPod: 1 }, ladders: { capacity: 6, every: 70 } }),
 };
+Object.assign(AIRSHIPS, realmAirships(ship)); // see realms.js
 for (const [id, a] of Object.entries(AIRSHIPS)) a.id = id;

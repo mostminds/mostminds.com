@@ -44,7 +44,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   const b = {
     W, H, mode: scn.mode, tick: 0, seed, rng: createRng(seed),
     terrain: scn.terrain || generateTerrain(scn.shape || (scn.mode === 'amphibious' ? 'island' : 'plains'), W, scn.terrainSeed || 7),
-    shape: scn.shape, biome: scn.biome || 'temperate', style: scn.style || null, guns: [], ships: [],
+    shape: scn.shape, biome: scn.biome || 'temperate', style: scn.style || null, look: scn.look || null, guns: [], ships: [],
     blockMove: new Uint8Array(N), blockLos: new Uint8Array(N), cover: new Uint8Array(N),
     elevated: new Uint8Array(N), occ: new Int32Array(N), occAir: new Int32Array(N),
     level: new Uint8Array(N), ladder: new Uint8Array(N), door: new Int8Array(N).fill(-1),

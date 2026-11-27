@@ -19,6 +19,8 @@
 // fly: true puts a unit in the air. Ground melee cannot reach it except in the
 // moment it swoops down to strike; archers, mages, ballistae and harpoons can.
 
+import { realmUnits } from './realms.js';
+
 const H = (o) => ({ body: 'humanoid', ...o });
 
 export const UNITS = {
@@ -281,6 +283,9 @@ function tradesFor(u) {
   if (m.shield) return TRADES.frontShield;
   return TRADES.frontTwoHand;
 }
+
+// the twenty-seven realms (see realms.js) muster troops built on the roster above
+Object.assign(UNITS, realmUnits(UNITS));
 
 for (const [id, u] of Object.entries(UNITS)) { u.id = id; u.abilities ||= []; u.trades = tradesFor(u); }
 

@@ -282,7 +282,12 @@ $('loadPreset').onclick = () => {
 // ---------- generated scenarios ----------
 $('genSite').replaceChildren(new Option('Any place', ''), ...Object.entries(SITES).map(([k, v]) => new Option(v.name, k)));
 $('genSite').value = '';
-for (const id of ['genDef', 'genAtt']) $(id).replaceChildren(new Option('Any faction', ''), ...Object.entries(FACTIONS).map(([k, v]) => new Option(v.name, k)));
+for (const id of ['genDef', 'genAtt']) {
+  // factions grouped the way the realms are: the first seven, then order, destruction, the undead and distant lands
+  const groups = new Map();
+  for (const [k, v] of Object.entries(FACTIONS)) { const gname = v.group || 'The First Factions'; if (!groups.has(gname)) groups.set(gname, []); groups.get(gname).push(new Option(v.name, k)); }
+  $(id).replaceChildren(new Option('Any faction', ''), ...[...groups].map(([gname, opts]) => { const og = document.createElement('optgroup'); og.label = gname; og.append(...opts); return og; }));
+}
 $('generate').onclick = () => {
   const sites = Object.keys(SITES);
   const g = generateScenario({ site: $('genSite').value || sites[Math.floor(Math.random() * sites.length)], defender: $('genDef').value, attacker: $('genAtt').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });

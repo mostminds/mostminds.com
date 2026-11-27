@@ -426,7 +426,24 @@ export function buildDropPod(style, sideColor) {
   return g;
 }
 
+// Weapons and bodies a unit may name before they are sculpted, and what stands in for them.
+const WEAPONS = new Set(['sword', 'longsword', 'greatsword', 'dagger', 'claws', 'spear', 'lance', 'halberd', 'axe', 'greataxe', 'club', 'warhammer', 'staff', 'longbow', 'sling', 'crossbow']);
+const WEAPON_ALT = { pike: 'spear', javelin: 'spear', trident: 'spear', glaive: 'halberd', naginata: 'halberd', katana: 'longsword', rapier: 'sword', cutlass: 'sword', scimitar: 'sword', khopesh: 'sword',
+  cleaver: 'axe', maul: 'warhammer', flail: 'club', handgun: 'crossbow', blunderbuss: 'crossbow', repeater: 'crossbow', axeGun: 'crossbow', chakram: 'sling', blowpipe: 'sling', bow: 'longbow' };
+let weaponKnown = null; // set by the weapons module when it knows more kinds
+export function knownWeapons(fn) { weaponKnown = fn; }
+function standIn(def) {
+  let o = def.model;
+  if (!o) return def;
+  if (o.alt && o.body !== 'aircraft' && !REG.BODIES[o.body]) o = o.alt;
+  const w = o.weapon;
+  if (w && !WEAPONS.has(w) && !(weaponKnown && weaponKnown(w))) o = { ...o, weapon: WEAPON_ALT[w] || 'sword' };
+  if (o.rider && typeof o.rider === 'object') o = { ...o, rider: undefined };
+  return o === def.model ? def : { ...def, model: o };
+}
+
 export function buildUnitModel(def) {
+  def = standIn(def);
   if (def.model?.body === 'aircraft' && !instantiateCustom(def.id, 1, 'unit')) {
     // one-man flying machines: built nose toward +X, turned to face +Z like every other unit
     const craft = buildAircraft(def.model.kind, 0xcfc9bb, def.model.style);
@@ -533,7 +550,13 @@ export function buildStructure(def, w, h, place = null) {
       const st = place && place.style;
       if (st && st !== 'kingdom' && REG.FACTION.restyle && !(REG.FACTION.structures || {})[def.model]) {
         const rs = guarded(`restyle:${st}:${def.model}`, () => REG.FACTION.restyle(sm, st, `${def.model}:${w}x${h}:${def.color}:${getDetail()}`));
-        if (rs) { rs.userData = { ...sm.userData, ...rs.userData }; return rs; }
+        if (rs && rs !== sm) { rs.userData = { ...sm.userData, ...rs.userData }; return rs; }
+        // a realm whose own style is not sculpted yet borrows the nearest of the older ones
+        const lk = place.look;
+        if (lk && lk !== st && lk !== 'kingdom') {
+          const r2 = guarded(`restyle:${lk}:${def.model}`, () => REG.FACTION.restyle(sm, lk, `${def.model}:${w}x${h}:${def.color}:${getDetail()}`));
+          if (r2 && r2 !== sm) { r2.userData = { ...sm.userData, ...r2.userData }; return r2; }
+        }
       }
       return sm;
     }

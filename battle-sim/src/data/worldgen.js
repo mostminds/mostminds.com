@@ -7,6 +7,7 @@ import { combatLevel } from '../engine/combat.js';
 import { STRUCTURES } from './structures.js';
 import { UNITS } from './units.js';
 import { AIRSHIPS } from './airships.js';
+import { realmFactions } from './realms.js';
 
 const clampRow = (y, S) => Math.max(3, Math.min(S - 4, y));
 
@@ -71,6 +72,9 @@ export const FACTIONS = {
     places: { village: 'nesting ground', fort: 'eyrie', castle: 'great eyrie', city: 'dragon roost', coast: 'sea eyrie', harbor: 'drake cove', island: 'dragon isle' },
   },
 };
+// the twenty-seven realms
+const REALM_FACTIONS = realmFactions();
+Object.assign(FACTIONS, REALM_FACTIONS);
 
 // size: map tiles. points: garrison strength. edge: how much stronger the attackers come.
 export const SITES = {
@@ -311,6 +315,7 @@ const LAYOUTS = { streets, warren, necropolis, rings, wild };
 const FACTION_OWN = new Set(['scrapHut', 'warDrum', 'brewery', 'crypt', 'boneSpire', 'charnel', 'forge', 'obelisk', 'pitGate', 'yurt', 'totem', 'bonePit', 'crystalSpire', 'monolith', 'stoneRing', 'nest', 'perch', 'hoard']);
 // Which civic buildings each faction raises.
 const CIVIC = {
+  ...Object.fromEntries(Object.entries(REALM_FACTIONS).map(([k, v]) => [k, v.civic])),
   kingdom: ['marketHall', 'stall', 'bank', 'inn', 'garden', 'fountain', 'barracks', 'temple', 'shrine', 'alchemist', 'graveyard', 'palace'],
   goblin: ['marketHall', 'stall', 'inn', 'barracks', 'shrine', 'alchemist', 'graveyard', 'scrapHut', 'warDrum', 'brewery'],
   undead: ['temple', 'shrine', 'graveyard', 'alchemist', 'palace', 'garden', 'crypt', 'boneSpire', 'charnel'],
@@ -596,6 +601,7 @@ export function generateScenario(opts = {}) {
   ];
   // airships: the attackers bring one to a big fight; a place with a mooring tower keeps its own
   const zep = (id) => (AIRSHIPS[`${id}Zeppelin`] ? [{ unit: `${id}Zeppelin`, count: 1 }] : []);
+  const look = D.look || defId; // the building style to fall back on until a realm's own is sculpted
   if (big || S >= 96) sides[0].airships = zep(attId);
   if (moored && (siteId === 'city' || siteId === 'harbor' || r.chance(0.5))) sides[1].airships = zep(defId);
   if (sea) {
@@ -607,6 +613,6 @@ export function generateScenario(opts = {}) {
   return {
     name: `${place}: ${A.adj} ${sea ? 'landing' : 'assault'} on a ${D.adj.toLowerCase()} ${D.places[siteId]}`,
     mode: site.mode, seed, site: siteId, defender: defId, attacker: attId,
-    scn: { size: S, shape, biome, terrainSeed, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId })), sides, style: defId },
+    scn: { size: S, shape, biome, terrainSeed, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, style: defId, look },
   };
 }

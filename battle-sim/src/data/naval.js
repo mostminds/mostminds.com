@@ -1,3 +1,4 @@
+import { realmShips } from './realms.js';
 // Original ship classes and sea creatures. "level" is the sailing level a
 // captain needs for the hull. Speeds are tiles per tick, turn in degrees per tick.
 // cannons: per broadside. dmg [min,max], range tiles, reload ticks, acc 0..1.
@@ -41,6 +42,7 @@ export const CREATURES = {
   kraken:    { name: 'Kraken',        level: 85, hp: 700, armour: 35, speed: 0.35, size: 4,   attack: { range: 4,   maxHit: 34, speed: 5, acc: 0.65 }, abilities: [{ type: 'grapple', slow: 0.2, duration: 6 }, { type: 'ink', accPenalty: 0.4, duration: 8 }, { type: 'sweep', radius: 5, maxHit: 22, every: 10 }], model: 'kraken', color: 0x7a2a4a },
   leviathan: { name: 'Leviathan',     level: 99, hp: 1200, armour: 45, speed: 0.5, size: 6,   attack: { range: 4,   maxHit: 45, speed: 6, acc: 0.6 }, abilities: [{ type: 'ram', damage: 90, cooldown: 25 }, { type: 'submerge', every: 30, duration: 8 }], model: 'leviathan', color: 0x2a3a5a },
 };
+Object.assign(SHIPS, realmShips(SHIPS)); // each realm's own hulls (see realms.js)
 for (const [id, s] of Object.entries(SHIPS)) s.id = id;
 for (const [id, c] of Object.entries(CREATURES)) c.id = id;
 
