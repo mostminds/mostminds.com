@@ -1783,6 +1783,409 @@ OUTFITS.feathers = (G) => {
 };
 
 //@@WARDROBE@@
+// =====================================================================================
+//  Wardrobe: outfits picked by `outfit` alone. Each reads cloth (main colour), cloth2 (second colour), armor (metal),
+//  trim (ornament) and brings its own headgear unless the descriptor says bare: true. Everything is sized from the
+//  proportions and from the body's own distance field, so they fit any two-legged species.
+// =====================================================================================
+const BRONZE = 0xb8823a, COPPER = 0xb86a3a, TURQ = 0x2fb6a8, LAPIS = 0x2a4a9a, WOOD = 0x6a4a2a, PARCH = 0xe2d6b0, ROPE = 0xa8935c;
+const silk = (x, c) => fin(x, c, 0.5, 0.08, 0.06, 30);
+const wood = (x, c = WOOD) => fin(x, c, 0.8, 0, 0.2, 30);
+const dkSteel = (c) => (x) => fin(x, c, 0.42, 0.9, 0.16, 20);
+const gem = (h, c, glow = 0.3) => h.color(c).pbr(0.12, 0.25).glow(glow);
+/** a painted slab: recolours (and lifts) whatever it crosses in a node */
+const pbox = (mat, w, h, at, raise = 0.003, d = 1, soft = 0.004) => mat(S.box(w, h, d, 0.002).at(at[0], at[1], at[2])).paint(soft, raise);
+
+/** seats hat pieces modelled round a unit skull (radius 1, brow line near y = 0.4, face toward +Z) on the head */
+function hatPlace(G, o = {}) {
+  const R = G.R;
+  return (h) => h.scale(R * (o.sx ?? 0.97), R * (o.sy ?? 1) * (o.fit === false ? 1 : G.Lk), R * (o.sz ?? 1.08)).rot(o.tilt ?? 0, o.yaw ?? 0, o.roll ?? 0).at(R * (o.x ?? 0), R * (o.y ?? 0.08), R * (o.z ?? -0.06));
+}
+/** a lathed hat (profile [[r, y], ...] from the crown down, unit-skull space): detailed piece and a lean far twin */
+function latheHat(G, key, prof, mat, o = {}) {
+  const place = o.place || hatPlace(G, o);
+  const geo = (seg) => cached(`lathe:${key}:${seg}`, () => new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(Math.max(r, 1e-4), y)), seg));
+  return { place, hard: [place(mat(H.geo(geo(o.seg ?? 26)))).near(), place(mat(H.geo(geo(8)))).far()] };
+}
+/** a brim that is not round: fn(a, t) -> [radius, y] for bearing a (0 = front) and t = 0 (crown) .. 1 (edge), unit-skull space */
+function brimGeo(key, fn, seg = 36, rings = 4) {
+  return cached(`brim:${key}:${seg}`, () => surfaceGeo(seg, rings, (u, v) => { const a = u * Math.PI * 2 + Math.PI, q = fn(a, v); return [Math.sin(a) * q[0], q[1], Math.cos(a) * q[0]]; }, false, true));
+}
+function brim(G, key, fn, mat, place, shade) {
+  const near = mat(H.geo(brimGeo(key, fn, 36, 4)));
+  if (shade) near.shade(shade);
+  return [place(near).near(), place(mat(H.geo(brimGeo(key, fn, 9, 1)))).far()];
+}
+/** a pair of horns: pts for the left one in head radii, mirrored for the right */
+function hornPair(G, pts, radii, o = {}) {
+  const R = G.R, out = [], c = o.color ?? 0xd8cba6, m = o.mat || bone;
+  for (const s of [-1, 1]) {
+    const hp = pts.map((q) => [s * q[0] * R, q[1] * R, q[2] * R]), rr = radii.map((x) => x * R);
+    const near = m(H.tube(hp, rr, o.seg ?? 14, 8), c);
+    if (o.tip != null) near.shade((x, y, z, nx, ny, nz, i) => (i >= ((o.seg ?? 14) + 1) * 9 * 0.62 ? o.tip : null));
+    out.push(near.near(), m(H.tube(hp, rr, 4, 5), c).far());
+    if (o.ring != null) out.push(iron(H.torus(rr[0] * 1.06, rr[0] * 0.24, 12, 5), o.ring).rot(0, 90, 0).at(hp[0][0], hp[0][1], hp[0][2]).lod(1));
+  }
+  return out;
+}
+/** points of a chain or cord sagging between a and b */
+function sag(a, b, drop, n = 6) { const out = []; for (let i = 0; i <= n; i++) { const t = i / n, q = add3(a, mul3(sub3(b, a), t)); out.push([q[0], q[1] - drop * 4 * t * (1 - t), q[2]]); } return out; }
+/** a chain as a tube whose rings alternate dark and bright, so it reads as links */
+function chain(pts, r = 0.005, c = 0x4a4a50, o = {}) {
+  const n = o.n ?? Math.max(8, pts.length * 4), rad = 5, c2 = tone(c, 0, 0, 0.14);
+  return fin(H.tube(pts, r, n, rad), c, o.rough ?? 0.5, o.metal ?? 0.8).shade((x, y, z, nx, ny, nz, i) => (Math.floor(i / (rad + 1)) % 2 ? c2 : null)).lod(o.lod ?? 1);
+}
+/** a strip of cloth hanging from `at`, turned `yaw` degrees round the vertical: sash ends, scrolls, weed, veils */
+function hang(at, w, len, c, o = {}) {
+  const sway = o.sway ?? 0, taper = o.taper ?? 0.5, nv = o.nv ?? 4;
+  const g = surfaceGeo(2, nv, (u, v) => [(u - 0.5) * w * (1 - v * taper), -v * len, Math.sin(v * 2.6 + sway) * len * (o.wave ?? 0.1) + v * len * (o.out ?? 0.12)]);
+  const h = (o.mat || cloth)(H.geo(g), c);
+  if (o.shade) h.shade(o.shade);
+  return h.rot(o.pitch ?? 0, o.yaw ?? 0, 0).at(at[0], at[1], at[2]).lod(o.lod ?? 1);
+}
+/** rope round the waist with a knot and two hanging ends */
+function ropeBelt(G, y, c = ROPE, o = {}) {
+  const f = G.field('torso'), e = G.tp(y), kx = o.kx ?? 0.03, kn = trace(f, [kx, y, 0.6], [0, 0, -1]) || [kx, y, e.front];
+  const rp = (h) => fin(h, c, 0.9, 0, 0.1, 60), L = o.len ?? 0.09;
+  return {
+    prims: [fin(G.band(y, o.h ?? 0.02, 0.6), c, 0.9, 0, 0.12, 70).paint(0.004, 0.006), fin(G.band(y, 0.004, 0.6), tone(c, 0, 0, -0.14), 0.9, 0).paint(0.002, 0.004)],
+    hard: [
+      rp(H.sphere(0.014, 8)).at(kn[0], kn[1], kn[2] + 0.006).lod(1),
+      rp(H.tube([[kn[0], kn[1], kn[2] + 0.008], [kn[0] + 0.012, kn[1] - L * 0.45, kn[2] + 0.016], [kn[0] + 0.006, kn[1] - L, kn[2] + 0.012]], 0.005, 8, 5)).lod(1),
+      rp(H.tube([[kn[0], kn[1], kn[2] + 0.008], [kn[0] - 0.014, kn[1] - L * 0.35, kn[2] + 0.016], [kn[0] - 0.012, kn[1] - L * 0.75, kn[2] + 0.012]], 0.005, 8, 5)).lod(1),
+      rp(H.sphere(0.008, 6)).at(kn[0] + 0.006, kn[1] - L, kn[2] + 0.012).lod(1), rp(H.sphere(0.008, 6)).at(kn[0] - 0.012, kn[1] - L * 0.75, kn[2] + 0.012).lod(1),
+    ],
+  };
+}
+/** a stitched patch on the torso where the ray from `from` along `dir` meets it */
+function patchOn(G, f, from, dir, r, c) {
+  const p = trace(f, from, dir, 1.5);
+  if (!p) return { prims: [], hard: [] };
+  const ax = Math.abs(dir[2]) > 0.5 ? [1, 0, 0] : [0, 0, 1], pts = [];
+  for (let i = 0; i < 7; i++) { const a = i * 0.9; pts.push(add3(add3(sub3(p, mul3(dir, 0.3)), mul3(ax, Math.cos(a) * r * 1.05)), [0, Math.sin(a) * r * 1.05, 0])); }
+  return { prims: [cloth(S.sphere(r * 1.25).at(p[0], p[1], p[2]), c).paint(0.004, 0.002)], hard: studs(G, 'torso', pts, { field: f, dir, r: 0.004, color: 0x2a2018, rough: 0.9, metal: 0 }) };
+}
+/** a broad sash wound round the waist, knotted at `deg` with two ends hanging */
+function sash(G, y, c, o = {}) {
+  const h = o.h ?? 0.055, e = G.tp(y), a = (o.deg ?? 40) * DEG, m = o.mat || cloth;
+  const x = Math.sin(a) * (e.side + 0.014), z = e.zc + Math.cos(a) * (e.depth + 0.016), L = o.len ?? 0.16;
+  const prims = [m(G.band(y, h, 0.7), c).paint(0.004, o.raise ?? 0.008), m(G.band(y + h * 0.18, 0.005, 0.7), tone(c, 0, 0, -0.1)).paint(0.002, (o.raise ?? 0.008) - 0.002), m(G.band(y - h * 0.2, 0.005, 0.7), tone(c, 0, 0, -0.1)).paint(0.002, (o.raise ?? 0.008) - 0.002)];
+  const hard = o.ends === false ? [] : [
+    m(H.sphere(h * 0.36, 8), tone(c, 0, 0, -0.05)).scale(1, 0.8, 0.8).at(x, y, z).lod(1),
+    hang([x, y - 0.004, z], h * 0.8, L, c, { yaw: a / DEG, sway: 1, taper: -0.3, mat: m, shade: o.fringe != null ? (px, py) => (py < -L * 0.86 ? o.fringe : null) : null, lod: 99 }),
+    hang([x + 0.012 * Math.cos(a), y - 0.004, z - 0.012 * Math.sin(a)], h * 0.7, L * 0.78, tone(c, 0, 0, -0.07), { yaw: a / DEG + 14, sway: 3, taper: -0.2, mat: m, shade: o.fringe != null ? (px, py) => (py < -L * 0.66 ? o.fringe : null) : null }),
+  ];
+  return { prims, hard };
+}
+/** bare feet: the body's painted shoe goes back to skin */
+function barefoot(G) { const { P } = G; G.lr('shin', [fin(S.box(0.3, P.footH + 0.06, 0.7, 0.004).at(0, -P.shin - P.footH + (P.footH + 0.06) / 2 - 0.014, 0.05), G.skin, 0.72, 0, 0.08, 30).paint(0.004, 0)]); }
+/** cloth painted down the whole arm */
+function armPaint(G, mat, raise = 0.0025) {
+  const { P } = G;
+  G.lr('arm', [mat(S.cyl(P.rUpper * 3, P.upper * 1.6, 0).at(0, -P.upper * 0.5, 0)).paint(0.005, raise)]);
+  G.lr('fore', [mat(S.cyl(P.rFore * 3, P.fore * 1.14, 0).at(0, -P.fore * 0.45, 0)).paint(0.005, raise)]);
+}
+/** slashes: narrow panes of a second colour let into a puffed sleeve or leg, centred at height y of a limb node */
+function slashes(c, r, y, len, n = 4, raise = -0.003) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n - 0.5;
+    out.push(cloth(S.box(r * 0.26, len, 1, 0.002).at(t * r * 2.2, y, 0), c).paint(0.003, raise));
+    out.push(cloth(S.box(1, len, r * 0.26, 0.002).at(0, y, t * r * 2.2), c).paint(0.003, raise));
+  }
+  return out;
+}
+/** full plate over an arming layer, any finish: the general form of fullPlate() */
+function plateSuit(G, c, o = {}) {
+  const { P } = G, under = o.under ?? tone(c, 0, -0.03, -0.32), um = o.underMat || ((x) => mail(x, under));
+  const po = { mat: o.mat, trim: o.trim, trimMat: o.trimMat, rivet: o.rivet };
+  G.add('torso', [torsoLayer(G, um)]);
+  G.lr('arm', [um(S.cyl(P.rUpper * 3, P.upper * 1.6, 0).at(0, -P.upper * 0.5, 0)).paint(0.005, 0)]);
+  G.lr('fore', [um(S.cyl(P.rFore * 3, P.fore * 1.1, 0).at(0, -P.fore * 0.45, 0)).paint(0.005, 0)]);
+  G.lr('leg', [um(S.cyl(P.rThigh * 3, P.thigh * 1.5, 0).at(0, -P.thigh * 0.5, 0)).paint(0.005, 0)]);
+  G.lr('shin', [um(S.cyl(P.rCalf * 3, P.shin * 1.0, 0).at(0, -P.shin * 0.46, 0)).paint(0.005, 0)]);
+  for (const n of ['arm', 'fore', 'leg', 'shin']) G.cores(n, c);
+  const cu = cuirass(G, c, { ...po, fauld: o.fauld ?? 3, grow: o.grow, gorget: o.gorget, keel: o.keel, seams: o.seams });
+  G.add('torso', cu.prims, cu.hard);
+  const pa = plateArm(G, c, { ...po, pauldron: o.pauldron ?? 1.08, lames: o.lames ?? 2, hand: o.hand });
+  G.lr('arm', pa.arm, pa.armH); G.lr('fore', pa.fore, pa.foreH);
+  const pl = plateLeg(G, c, { ...po, sabaton: o.sabaton, tasset: o.tasset });
+  G.lr('leg', pl.leg, pl.legH); G.lr('shin', pl.shin, pl.shinH);
+  if (o.skirt !== false) skirt(G, { mat: (x) => um(x).bump(0.003, 60, 'weave'), len: 0.105, flare: 0.022, top: 0.0, grow: 0.004 });
+}
+/** cones standing on a limb or plate: [[pos, dir, r, len], ...] */
+const spikes = (list, mat, lodN = 99) => list.map(([p, d, r, l]) => orient(mat(H.cone(r, l, 6)), add3(p, mul3(norm3(d), l * 0.42)), d).lod(lodN));
+/** an open bowl with the outfit's crest: what a closed helm becomes on a head with a muzzle */
+function openBowl(G, mat, o = {}) {
+  const hs = helmShell(G, o.kind ?? 'cap', mat, { sy: G.Lk * (o.sy ?? 1), y: o.y ?? 0.12, comb: o.comb, combMat: o.combMat });
+  G.add('head', [], hs.hard);
+  return hs;
+}
+
+// ---- Levy spearman: patched wool tunic, muddy hose, a rope for a belt, a kettle helm that has seen better days ----
+OUTFITS.levy = (G) => {
+  const { T, k, P } = G, c = G.cloth, dk = tone(c, 0, -0.04, -0.1), pc = G.o.cloth2 ?? tone(c, 0.06, 0.04, 0.1), hoseC = 0x5c4b38, mudC = 0x3a2c20;
+  const wm = (x) => cloth(x, c);
+  G.add('torso', [
+    torsoLayer(G, wm, { raise: 0.003 }),
+    ...torsoShells(G, (x) => wm(x).bump(0.003, 34, 'weave'), { grow: 0.011, blend: 0.03, hips: false }),
+    cloth(S.cone(P.rNeck * 1.7, P.rNeck * 1.25, 0.03, 0.008).at(0, T + 0.008, -0.004), LINEN).blend(0.01),
+    pbox((x) => cloth(x, tone(LINEN, 0, 0, -0.08)), 0.02, T * 0.26, [0, T * 0.9, 0.25], -0.003, 0.5),            // neck slit showing the shirt
+    pbox((x) => cloth(x, dk), 0.006, T * 0.7, [G.cw * 0.86, T * 0.42, 0], -0.002),                               // side seams
+    pbox((x) => cloth(x, dk), 0.006, T * 0.7, [-G.cw * 0.86, T * 0.42, 0], -0.002),
+  ]);
+  const f = G.field('torso');
+  const p1 = patchOn(G, f, [-G.cw * 0.42, 0.16 * k, 0.6], [0, 0, -1], 0.03, pc), p2 = patchOn(G, f, [G.cw * 0.3, 0.1 * k, -0.6], [0, 0, 1], 0.034, tone(c, -0.03, 0, -0.12)), p3 = patchOn(G, f, [G.cw * 0.5, T * 0.72, 0.6], [0, 0, -1], 0.022, tone(pc, 0, -0.1, -0.1));
+  const rb = ropeBelt(G, 0.05 * k), bag = pouch(G, 0.05 * k, -64, { size: 1.3, color: 0x6a4a2c });
+  G.add('torso', [p1.prims, p2.prims, p3.prims, rb.prims, bag.prims, baldric(G, 0x5a3c22, true, 0.02)], [p1.hard, p2.hard, p3.hard, rb.hard, bag.hard]);
+  const sk = skirt(G, { mat: (x) => wm(x), len: 0.17, flare: 0.045, top: 0.03, fold: 0.006, hem: { color: dk, h: 0.012 } });
+  if (sk) G.add('root', [cloth(S.sphere(0.036).at(sk.rTop * 0.6, sk.y1 - sk.len * 0.6, sk.zc + sk.rTop + 0.02), pc).paint(0.006, 0.002)], tatters(G, { n: 7, y: sk.y1 - sk.len + 0.01, len: 0.035, w: 0.05, colors: [c, dk], ring: hemRing(sk, -0.005) }));
+  G.lr('arm', sleeve(G, wm, { end: 0.96, grow: 1.05, hem: dk, bump: [0.003, 34, 'weave'] }));
+  G.lr('fore', [cloth(S.cyl(P.rFore * 3, P.fore * 1.2, 0).at(0, -P.fore * 0.42, 0), LINEN).paint(0.004, 0.003), ...wraps(P.rFore, [-P.fore * 0.78, -P.fore * 0.9], 0x8a7450, 0.014, 0.004)]);
+  G.add('armR', [cloth(S.sphere(P.rUpper * 0.9).at(-P.rUpper, -P.upper * 0.55, 0), pc).paint(0.005, 0.002)]);
+  G.cores('arm', c); G.cores('fore', LINEN);
+  hose(G, (x) => cloth(x, hoseC)); G.cores('leg', hoseC); G.cores('shin', mudC);
+  G.lr('leg', [cloth(S.sphere(P.rCalf * 0.95).at(0, -P.thigh, P.rCalf * 0.7), tone(hoseC, 0.02, 0.05, 0.09)).paint(0.006, 0.002)]);
+  boots(G, { top: 0.2, color: 0x4a3524, cuff: 0.02 });
+  G.lr('shin', [fin(S.ellipsoid(0.2, P.shin * 0.42 + P.footH, 0.3).at(0, -P.shin - P.footH * 0.4, 0.04), mudC, 0.95, 0, 0.3, 46).paint(0.03, 0)]);        // mud to the calf
+  if (!G.bare) {
+    hoodShell(G, (x) => cloth(x, tone(LINEN, 0, -0.02, -0.1)), { grow: 0.06, bump: [0.002, 40, 'weave'], open: [0.66, 0.82], oy: -0.24 });
+    const hc = tone(G.armor, 0.02, 0.02, -0.08);
+    G.add('head', [], kettleHelm(G, hc, { brim: 1.62, droop: 0.2, tall: 0.84, tilt: -7, rivet: 0x6a6a6e, ridge: false }));
+  }
+};
+HEADGEAR.levy = true;
+
+// ---- Knight banneret: plate under a long quartered surcoat, great helm with a fan crest ----
+/** a flat-topped great helm; trim picks out the cross over the sights */
+function greatHelm(G, st, trim) {
+  const R = G.R;
+  clearHead(G);
+  const gh = [
+    st(S.cone(R * 1.13, R * 1.0, R * 2.0, R * 0.08).at(0, -R * 0.1, 0)),
+    st(S.ellipsoid(R * 0.97, R * 0.3, R * 0.97).at(0, R * 0.84, 0)).blend(0.025),
+    st(S.cone(R * 1.24, R * 1.14, R * 0.2, R * 0.03).at(0, -R * 1.06, 0)).blend(0.006),
+    st(S.cyl(R * 1.09, R * 0.3, R * 0.02).at(0, R * 0.12, 0)).blend(0.003),
+    gold(S.box(R * 0.2, R * 1.84, R * 0.8, 0.003).at(0, -R * 0.14, R * 0.98), trim).paint(0.003, 0.004),
+    gold(S.box(R * 2.6, R * 0.3, R * 1.2, 0.003).at(0, R * 0.12, R * 0.7), trim).paint(0.003, 0.003),
+    ...[-1, 1].map((s) => S.box(R * 0.56, R * 0.1, R * 0.5, 0.002).at(s * R * 0.43, R * 0.12, R * 1.0).cut(0.002).color(0x08080a)),
+    gold(G.band(-R * 1.14, R * 0.08, R * 2), trim).paint(0.003, 0.003),
+  ];
+  const ghH = [];
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) ghH.push(H.cyl(R * 0.03, R * 0.03, 0.004, 8).rot(90, 0, 0).rot(0, s * (22 + i * 9), 0).at(s * R * (0.4 + i * 0.165), -R * (0.42 + j * 0.16), R * (1.045 - i * 0.075)).color(0x08080a).pbr(0.9).lod(0));
+  G.add('head', gh, ghH);
+  return R * 1.14;   // height of the flat top
+}
+/** a fan crest across the helm, halved in two colours, on a twisted wreath */
+function fanCrest(G, y, c, c2, trim, o = {}) {
+  const R = G.R, s = o.size ?? 1, out = [], n = 9, pts = [[-0.34, 0]];
+  for (let i = 0; i <= n * 2; i++) { const a = (160 - (i / (n * 2)) * 140) * DEG, r = i % 2 ? 1.0 : 0.9; pts.push([Math.cos(a) * r * 1.05, 0.1 + Math.sin(a) * r * 1.3]); }
+  pts.push([0.34, 0]);
+  const sc = R * s;
+  const fan = cloth(H.extrude(pts.map(([x, yy]) => [x * sc, yy * sc]), 0.008, 0.002), c).shade((x, yy) => (Math.hypot(x, yy - 0.1 * sc) > sc * 1.0 ? trim : (Math.atan2(yy, x) / DEG + 360) % 45 < 22.5 ? c2 : null));
+  out.push(fan.rot(-6, 0, 0).at(0, y, -R * 0.04));
+  out.push(cloth(H.torus(R * 0.52, R * 0.1, 16, 6), c).shade((x, yy) => (((Math.atan2(yy, x) / DEG + 360) % 60) < 30 ? c2 : null)).rot(90, 0, 0).at(0, y + R * 0.03, -R * 0.02).lod(1));
+  return out;
+}
+OUTFITS.surcoat = (G) => {
+  const { T, k, P, R } = G, c = G.cloth, c2 = G.c2, steelC = G.armor, trim = G.trim, dev = typeof G.o.device === 'string' && SHAPES[G.o.device] ? G.o.device : null;
+  const st = (x) => steel(x, steelC), sm = (x) => cloth(x, c), quartered = G.o.quartered ?? !dev;
+  plateSuit(G, steelC, { fauld: 2, skirt: false, pauldron: 1.0 });
+  // the surcoat: sleeveless, belted, split for the saddle
+  const g = 0.026, yq = T - 0.078 * k;
+  G.add('torso', [
+    sm(G.shell(G.chestY - 0.004, 0.128 * k, g, g + 0.01)).blend(0.006).bump(0.002, 18, 'fur'),
+    sm(G.shell(0.118 * k, 0.1 * k, g * 0.95)).blend(0.02),
+    sm(G.shell(0.01, 0.07, g + 0.004)).blend(0.02),
+    quartered && pbox((x) => cloth(x, c2), 0.5, yq + 0.12, [0.25, (yq - 0.12) / 2, 0], 0, 1, 0.003),
+    pbox((x) => gold(x, trim), 0.5, 0.012, [0, yq - 0.012, 0], 0.002, 1, 0.003),                                   // neckline
+  ]);
+  const f = G.field('torso');
+  if (dev) G.add('torso', [], [decal(G, 'torso', dev, { field: f, at: [0, G.chestY - 0.01, 0], size: 0.06 * k, color: G.o.deviceColor ?? c2, rough: 0.8, lift: 0.003 }), decal(G, 'torso', dev, { field: f, at: [0, G.chestY - 0.01, 0], size: 0.055 * k, color: G.o.deviceColor ?? c2, rough: 0.8, lift: 0.003, dir: [0, 0, 1], ex: [-1, 0, 0] })]);
+  const b = belt(G, 0.06 * k, { h: 0.026, color: DARK_LEATHER, raise: 0.005, buckleColor: trim });
+  G.add('torso', b.prims, [b.hard, scabbard(G, 0.06 * k, { len: 0.36, color: tone(c, 0, -0.1, -0.2), metal: trim })]);
+  const len = Math.min(P.hipY - 0.13, 0.36);
+  const sk = skirt(G, { mat: sm, top: 0.035, len, flare: 0.085, fold: 0.011, foldFreq: 12, grow: 0.03, hem: { color: trim, h: 0.014, rough: 0.5, metal: 0.6 } });
+  if (sk) G.add('root', [
+    quartered && pbox((x) => cloth(x, c2), 0.6, len * 1.2, [-0.3, sk.y1 - len / 2, 0], 0, 1.4, 0.003),
+    pbox((x) => cloth(x, 0x1a1512), 0.01, len * 0.62, [0, sk.y1 - len * 0.7, sk.zc + 0.4], -0.004, 0.8),          // the riding split
+    pbox((x) => gold(x, trim), 0.6, 0.014, [0, sk.y1 - len + 0.009, 0], 0.0025, 1.4),
+  ]);
+  else G.lr('leg', [gold(G.band(-Math.min(0.17 * 0.8, P.thigh * 0.6) * 0.9, 0.012, P.rThigh * 2.4), trim).paint(0.004, 0.002)]);
+  if (G.bare) return;
+  let top;
+  if (G.muzzled()) { openBowl(G, st, {}); top = R * 1.16 * G.Lk; } else top = greatHelm(G, st, trim);
+  G.add('head', [], fanCrest(G, top, c, c2, trim));
+};
+HEADGEAR.surcoat = true;
+
+// ---- Landsknecht: slashed and puffed in two colours, a breastplate, an enormous hat ----
+OUTFITS.landsknecht = (G) => {
+  const { T, k, P, R } = G, c = G.cloth, c2 = G.c2, steelC = G.armor, st = (x) => steel(x, steelC);
+  const dm = (x) => cloth(x, c);
+  G.add('torso', [torsoLayer(G, dm, { raise: 0.003 }), ...slashes(c2, G.cw, T * 0.5, T * 0.5, 5, -0.002)]);
+  const cu = cuirass(G, steelC, { fauld: 1, gorget: false });
+  G.add('torso', [cu.prims, cloth(S.torus(P.rNeck * 1.45, 0.012).at(0, T + 0.012, -0.004), LINEN).blend(0.004).bump(0.004, 60, 'ridges')], cu.hard);
+  const b = belt(G, 0.05 * k, { h: 0.028, color: DARK_LEATHER, raise: 0.004 });
+  G.add('torso', b.prims, [b.hard, scabbard(G, 0.05 * k, { len: 0.24, color: 0x3a2618, metal: BRASS })]);
+  skirt(G, { mat: (x) => cloth(x, c2), len: 0.1, flare: 0.05, top: 0.02, fold: 0.012, foldFreq: 9, hem: { color: c, h: 0.016 } });
+  // mi-parti: the left side leads with the main colour, the right with the second
+  const limb = (a, b2) => {
+    const r = P.rUpper, U = P.upper, rf = P.rFore, F = P.fore, rt = P.rThigh, L = P.thigh;
+    const am = (x) => cloth(x, a), bm = (x) => cloth(x, b2);
+    return {
+      arm: [am(S.cyl(r * 3, U * 1.6, 0).at(0, -U * 0.5, 0)).paint(0.005, 0.002), am(S.ellipsoid(r * 1.8, U * 0.5, r * 1.85).at(r * 0.2, -U * 0.4, 0)).blend(0.012), ...slashes(b2, r * 1.5, -U * 0.42, U * 0.6, 4), bm(G.band(-U * 0.93, 0.02, r * 3)).paint(0.003, 0.006)],
+      fore: [bm(S.cyl(rf * 3, F * 1.14, 0).at(0, -F * 0.45, 0)).paint(0.005, 0.002), bm(S.ellipsoid(rf * 1.6, F * 0.34, rf * 1.6).at(0, -F * 0.36, 0)).blend(0.012), ...slashes(a, rf * 1.3, -F * 0.36, F * 0.44, 3), am(G.band(-F * 0.84, 0.022, rf * 3)).paint(0.003, 0.005)],
+      leg: [am(S.cyl(rt * 3, L * 1.5, 0).at(0, -L * 0.5, 0)).paint(0.005, 0.002), am(S.ellipsoid(rt * 1.42, L * 0.46, rt * 1.5).at(rt * 0.1, -L * 0.42, 0)).blend(0.016), ...slashes(b2, rt * 1.3, -L * 0.42, L * 0.6, 4), bm(G.band(-L * 0.9, 0.022, rt * 3)).paint(0.003, 0.006)],
+      legH: [cloth(H.sphere(0.014, 6), b2).scale(1.5, 0.8, 0.7).at(P.rCalf * 1.1, -L * 0.9, 0).lod(1)],
+      shin: [bm(S.cyl(P.rCalf * 3, P.shin * 1.02, 0).at(0, -P.shin * 0.47, 0)).paint(0.005, 0.002), ...[-1, 0, 1].map((i) => am(S.box(P.rCalf * 0.4, P.shin, 1, 0.002).at(i * P.rCalf * 0.8, -P.shin * 0.47, 0)).paint(0.003, 0.0026))],
+    };
+  };
+  const lf = limb(c, c2), rt = limb(c2, c), mir = (l) => flat(l).map((x) => x.mirrorX());
+  G.add('armL', lf.arm); G.add('foreL', lf.fore); G.add('legL', lf.leg, lf.legH); G.add('shinL', lf.shin);
+  G.add('armR', mir(rt.arm)); G.add('foreR', mir(rt.fore)); G.add('legR', mir(rt.leg), mir(rt.legH)); G.add('shinR', mir(rt.shin));
+  G.core('armL', c); G.core('foreL', c2); G.core('legL', c); G.core('shinL', c2); G.core('armR', c2); G.core('foreR', c); G.core('legR', c2); G.core('shinR', c);
+  boots(G, { top: 0.12, color: 0x3a2a1e, cuff: 0.03 });
+  if (G.bare) return;
+  // the hat: a slashed brim wider than the shoulders, a soft crown, ostrich feathers
+  const place = hatPlace(G, { tilt: -8, roll: 10, y: 0.12 });
+  const bf = (a, t) => [lerp(1.02, 2.15 + 0.12 * Math.cos(a * 9), t), 0.44 - 0.2 * t * t + 0.16 * t * Math.sin(a * 3 + 1.2)];
+  const crown = latheHat(G, 'beret', [[0, 0.98], [0.5, 1.0], [0.95, 0.94], [1.3, 0.78], [1.36, 0.62], [1.2, 0.48], [1.02, 0.44]], (h) => cloth(h, c2), { place });
+  G.add('head', [], [
+    brim(G, 'lands', bf, (h) => cloth(h, c), place, (x, y, z) => (((Math.atan2(x, z) / DEG + 360) % 40) < 14 && Math.hypot(x, z) > 1.45 ? c2 : null)),
+    crown.hard,
+    place(cloth(H.torus(1.2, 0.06, 20, 5), c).rot(90, 0, 0).at(0, 0.5, 0)).lod(1),
+    plume(G, 0xf0ead8, { at: [-R * 0.9, R * 0.75, -R * 0.3], size: 1.05, n: 4 }),
+    plume(G, c2, { at: [-R * 0.7, R * 0.78, -R * 0.55], size: 0.9, n: 3 }),
+  ]);
+};
+HEADGEAR.landsknecht = true;
+
+// ---- Flagellant: what is left of a monk's habit, a rope, chains, bare feet ----
+OUTFITS.flagellant = (G) => {
+  const { T, k, P } = G, c = G.cloth, dk = tone(c, 0, -0.03, -0.1), ironC = 0x4a4a50;
+  const sk = robe(G, c, { fore: false, barefoot: true, bell: 1.8, flare: 0.09, fold: 0.012, hemY: Math.min(0.14, P.shin * 0.6), under: dk });
+  barefoot(G);
+  if (sk) G.add('root', [], tatters(G, { n: 13, y: sk.y1 - sk.len + 0.02, len: 0.1, w: 0.06, colors: [c, dk, tone(c, 0.02, 0, 0.06)], ring: hemRing(sk, -0.006), flare: 0.14 }));
+  // torn sleeves end above the elbow in strips
+  for (const s of [1, -1]) G.add(s > 0 ? 'armL' : 'armR', [], tatters(G, { n: 6, y: -P.upper * 0.86, len: 0.07, w: 0.04, colors: [c, dk], ring: (a) => [Math.sin(a) * P.rUpper * 1.25, Math.cos(a) * P.rUpper * 1.25], flare: 0.05, seed: 'slv' + s }));
+  // the hood hangs down the back
+  G.add('torso', [...mantle(G, (x) => cloth(x, dk), { drop: 0.05, reach: 0.014, bump: [0.005, 14, 'noise'] }), cloth(rod([0, T + 0.01, -G.cd * 1.2], [0, T - 0.16, -G.cd * 1.75], 0.05, 0.012), dk).blend(0.03)]);
+  const f = G.field('torso');
+  const p1 = patchOn(G, f, [G.cw * 0.4, 0.17 * k, 0.6], [0, 0, -1], 0.03, tone(c, 0.04, 0, 0.08));
+  const rb = ropeBelt(G, 0.055 * k, ROPE, { len: 0.2, h: 0.022 }), e = G.tp(0.055 * k);
+  // a chain over each shoulder crossing on the chest, a padlock where they meet; manacles trailing links
+  const a = Math.atan2(G.sx * 1.5, T) / DEG, cm = (x) => fin(x, ironC, 0.55, 0.8, 0.2, 90);
+  const cp = trace(f, [0, T * 0.52, 0.6], [0, 0, -1]) || [0, T * 0.52, G.cd];
+  G.add('torso', [p1.prims, rb.prims, cm(S.box(0.022, T * 2.4, 1, 0.004).rot(0, 0, a).at(0, T * 0.52, 0)).paint(0.003, 0.007).bump(0.003, 70, 'ridges'), cm(S.box(0.022, T * 2.4, 1, 0.004).rot(0, 0, -a).at(0, T * 0.52, 0)).paint(0.003, 0.007).bump(0.003, 70, 'ridges')], [
+    p1.hard, rb.hard,
+    iron(H.box(0.04, 0.036, 0.016, 0.005), 0x3a3a40).at(cp[0], cp[1] - 0.012, cp[2] + 0.012).lod(1), iron(H.torus(0.013, 0.004, 10, 5, Math.PI), 0x5a5a60).at(cp[0], cp[1] + 0.006, cp[2] + 0.012).lod(1),
+    // a wooden token and a scourge at the belt
+    wood(H.box(0.03, 0.04, 0.008, 0.003), 0x5a3c22).rot(0, -50, 0).at(-e.side * 0.8, 0.055 * k - 0.06, e.zc + e.depth * 0.8).lod(1),
+    wood(H.cyl(0.006, 0.007, 0.09, 6), 0x4a3020).rot(0, 0, 12).at(e.side + 0.014, 0.055 * k - 0.04, e.zc).lod(1),
+    ...[0, 1, 2].map((i) => chain(sag([e.side + 0.02, 0.055 * k - 0.085, e.zc], [e.side + 0.03 + i * 0.012, 0.055 * k - 0.2, e.zc + (i - 1) * 0.02], -0.006, 3), 0.003, 0x3a2a1e, { metal: 0, rough: 0.9 })),
+  ]);
+  const F = P.fore, rw = P.rWrist;
+  const man = [iron(S.cyl(rw * 2.6, 0.03, 0).at(0, -F * 0.86, 0), ironC).paint(0.003, 0.007)];
+  const links = (s) => chain([[s * (rw * 1.3 + 0.004), -F * 0.86, 0], [s * (rw * 1.3 + 0.01), -F * 0.86 - 0.05, 0.004], [s * (rw * 1.3 + 0.006), -F * 0.86 - 0.1, -0.004]], 0.0055, ironC);
+  G.add('foreL', man, [links(1)]); G.add('foreR', man.map((x) => x.mirrorX()), [links(-1)]);
+  G.add('foreL', wraps(P.rFore, [-F * 0.3, -F * 0.42, -F * 0.54], 0x9a8a68, 0.016, 0.004));
+};
+
+// ---- Elven guard: white-gold scale over a long tunic, a spotless cloak, a tall winged helm ----
+SHELLS.spire = { f: [[0, 1.9], [0.2, 1.58], [0.52, 1.14], [0.88, 0.78], [1.03, 0.52], [1.1, 0.38]], s: [[0, 1.9], [0.2, 1.58], [0.52, 1.14], [0.88, 0.76], [1.04, 0.36], [1.08, 0.0]], b: [[0, 1.9], [0.22, 1.58], [0.58, 1.14], [0.94, 0.74], [1.08, 0.2], [1.2, -0.4]] };
+OUTFITS.elfScale = (G) => {
+  const { T, k, P, R } = G, c = G.cloth, m = G.armor, trim = G.trim, white = tone(c, 0, -0.5, 0.0) && 0xf1ede2;
+  const sc = (x) => fin(x, m, 0.28, 1, 0.05, 30), st = (x) => fin(x, m, 0.24, 1, 0.04, 24), tm = (x) => cloth(x, white);
+  G.add('torso', [torsoLayer(G, tm, { raise: 0.002 }), ...torsoShells(G, (x) => sc(x).bump(0.0045, 46, 'scales'), { grow: 0.013, blend: 0.02, hips: false })]);
+  G.add('torso', [
+    st(S.cone(P.rNeck * 1.9, P.rNeck * 1.26, 0.05, 0.008).at(0, T + 0.016, -0.004)).blend(0.004), gold(S.torus(P.rNeck * 1.28, 0.006).at(0, T + 0.042, -0.004), trim).blend(0.003),
+    gold(G.band(0.2 * k, 0.008), trim).paint(0.003, 0.002),
+  ]);
+  const f = G.field('torso');
+  G.add('torso', [], [decal(G, 'torso', 'star', { field: f, at: [0, G.chestY + 0.012, 0], size: 0.034 * k, color: trim, rough: 0.3, metal: 1, lift: 0.004 }), gem(H.sphere(0.009 * k, 8), 0x7fd8e8).at(0, G.chestY + 0.012, G.tp(G.chestY).front + 0.022).lod(1)]);
+  const b = belt(G, 0.055 * k, { h: 0.022, color: tone(c, 0, -0.05, -0.12), raise: 0.004, buckleColor: trim });
+  G.add('torso', b.prims, b.hard);
+  // scale skirt over the long tunic
+  const len = Math.min(0.3, P.hipY - 0.2);
+  const sk = skirt(G, { mat: tm, top: 0.03, len, flare: 0.06, fold: 0.008, hem: { color: trim, h: 0.012, rough: 0.4, metal: 0.8 } });
+  if (sk) G.add('root', [sc(S.cone(sk.rTop + 0.034, sk.rTop + 0.008, 0.13, 0.01).at(0, sk.y1 - 0.06, sk.zc)).blend(0.004).bump(0.0045, 46, 'scales'), gold(G.band(sk.y1 - 0.128, 0.008), trim).paint(0.003, 0.002),
+    pbox((x) => cloth(x, 0x1a1512), 0.008, len * 0.5, [0, sk.y1 - len * 0.76, sk.zc + 0.4], -0.003, 0.8)]);
+  // leaf-shaped shoulders, slim vambraces and greaves
+  const pa = plateArm(G, m, { mat: st, trim, pauldron: 0.98, lames: 1, upper: false, couter: false });
+  const r = P.rUpper;
+  G.lr('arm', [tm(S.cyl(r * 3, P.upper * 1.6, 0).at(0, -P.upper * 0.5, 0)).paint(0.005, 0.002), sc(S.capsule([0, -r * 0.6, 0], [0, -P.upper * 0.7, 0], r * 1.16, r * 1.1)).blend(0.006).bump(0.004, 50, 'scales'), ...pa.arm, st(S.ellipsoid(r * 0.5, r * 1.5, r * 1.2).rot(0, 0, 24).at(r * 1.5, r * 0.5, 0)).blend(0.006)], pa.armH);
+  G.lr('fore', [tm(S.cyl(P.rFore * 3, P.fore * 1.14, 0).at(0, -P.fore * 0.45, 0)).paint(0.005, 0.002), ...pa.fore], pa.foreH);
+  const hoseC = tone(c, 0, -0.1, -0.16);
+  hose(G, (x) => cloth(x, hoseC));
+  const pl = plateLeg(G, m, { mat: st, trim, tasset: false, cuisse: false });
+  G.lr('leg', pl.leg, pl.legH); G.lr('shin', pl.shin, pl.shinH);
+  G.cores('arm', m); G.cores('fore', m); G.cores('leg', hoseC); G.cores('shin', m);
+  cape(G, { color: c, len: 0.7, trim: white, slope: 0.28, width: G.sx * 2.8, foldAmp: 0.026 });
+  for (const s of [-1, 1]) G.add('torso', [], [gold(H.sphere(0.015, 10), trim).scale(1, 1, 0.5).at(s * G.sx * 0.6, T - 0.03, G.tp(T - 0.04).front * 0.7 + 0.02).lod(1)]);
+  if (G.bare) return;
+  dropEars(G);
+  G.add('head', cheekPlates(G, st));
+  const hs = helmShell(G, 'spire', st, { sy: G.Lk, y: 0.1 });
+  const hh = [hs.hard, hs.place(gold(H.torus(1.085, 0.045, 28, 6), trim).rot(90, 0, 0).rot(-10, 0, 0).at(0, 0.42, 0.0)).lod(1), hs.place(gold(H.box(0.12, 0.7, 0.05, 0.02), trim).rot(-8, 0, 0).at(0, 0.1, 1.1)).lod(1),
+    hs.place(gold(H.torus(1.0, 0.03, 20, 5, Math.PI * 0.6), trim).rot(0, 0, 60).rot(0, -90, 0).scale(0.5, 1.84, 1.0)).lod(1)];
+  const cols = [tone(trim, 0, 0, -0.1), 0xf6f2e8, trim];
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 7; i++) {
+      const a = (38 + i * 11) * DEG, len = R * (2.3 - i * 0.2);
+      hh.push(feather([s * R * 0.98, R * (0.32 + i * 0.02), -R * (0.05 + i * 0.07)], [s * 0.34, Math.sin(a), -Math.cos(a)], len, R * 0.36, [s, 0, 0.25], cols).lod(i < 3 ? 99 : 1));
+    }
+    hh.push(gold(H.sphere(R * 0.17, 10), trim).scale(0.5, 1, 1).at(s * R * 1.03, R * 0.3, -R * 0.08).lod(1));
+  }
+  G.add('head', [], hh);
+};
+HEADGEAR.elfScale = true;
+
+// ---- Dark champion: black plate that is all hooks and edges, a crimson cloak, a masked helm with a blade for a crest ----
+OUTFITS.barbed = (G) => {
+  const { T, k, P, R } = G, red = G.cloth, c = G.armor, edge = tone(c, 0, 0, 0.16), trim = G.o.trim ?? tone(c, 0, 0, 0.2);
+  const st = dkSteel(c), eg = dkSteel(edge), hk = (h) => fin(h, edge, 0.34, 1);
+  plateSuit(G, c, { mat: st, trimMat: eg, pauldron: 1.2, lames: 2, fauld: 3, under: tone(red, 0, -0.2, -0.24), underMat: (x) => cloth(x, tone(red, 0, -0.2, -0.24)), rivet: edge, skirt: false });
+  const r = P.rUpper, rf = P.rFore, F = P.fore, L = P.thigh, rc = P.rCalf;
+  // barbs: swept blades on the shoulders, fins on the forearms, hooks at knee and hip
+  const fin2 = (len, w) => H.extrude([[0, 0], [w, len * 0.2], [w * 0.5, len * 0.42], [w * 0.95, len * 0.6], [w * 0.25, len * 0.74], [0, len], [-w * 0.2, len * 0.4]], 0.006, 0.002);
+  G.lr('arm', [], [
+    ...[0, 1, 2].map((i) => orient(hk(fin2(r * (2.6 - i * 0.5), r * 0.9)), [r * (0.3 + i * 0.62), r * (1.2 - i * 0.36), -r * 0.2 + (i - 1) * r * 0.3], [0.1 + i * 0.5, 1, -0.25], [0, 0, 1]).lod(i ? 1 : 99)),
+    orient(hk(H.cone(r * 0.3, r * 1.3, 5)), [r * 1.5, -P.upper, -r * 0.2], [0.8, 0.2, -0.6]).lod(1),
+  ]);
+  G.lr('fore', [], [0, 1, 2].map((i) => orient(hk(fin2(rf * (1.9 - i * 0.3), rf * 0.8)), [rf * 1.05, -F * (0.3 + i * 0.2), -rf * 0.3], [0.9, -0.5, -0.3], [0, 0, 1]).lod(1)));
+  G.lr('leg', [], [orient(hk(H.cone(rc * 0.5, rc * 2.0, 5)), [0, -L + rc * 0.5, rc * 1.5], [0, 0.55, 1]), orient(hk(fin2(P.rThigh * 1.5, P.rThigh * 0.6)), [P.rThigh * 1.2, -L * 0.3, 0], [1, -0.5, 0], [0, 0, 1]).lod(1)]);
+  G.lr('shin', [], [orient(hk(fin2(rc * 1.9, rc * 0.7)), [0, -P.shin * 0.3, -rc * 1.0], [0, -0.5, -1], [1, 0, 0]).lod(1)]);
+  // a jagged brow of steel over the breast, a ragged skirt of mail and leather
+  const f = G.field('torso'), ch = G.tp(G.chestY);
+  G.add('torso', [...[-1, 1].map((s) => eg(S.box(0.012, T * 0.42, 0.5, 0.002).rot(0, 0, s * 58).at(s * ch.side * 0.45, G.chestY - 0.06 * k, 0.25)).paint(0.003, 0.003)), eg(S.box(0.012, T * 0.5, 0.5, 0.002).at(0, G.chestY - 0.01, 0.25)).paint(0.003, 0.003)],
+    [decal(G, 'torso', 'lozenge', { field: f, at: [0, G.chestY + 0.02, 0], size: 0.03 * k, color: red, rough: 0.3, metal: 0.4, lift: 0.004 }), ...[-1, 1].map((s) => orient(hk(H.cone(0.014, 0.07, 5)), [s * (G.sx - 0.07), T + 0.03, -0.01], [s * 0.4, 1, -0.2]).lod(1))]);
+  const sk = skirt(G, { mat: (x) => cloth(x, tone(red, 0, -0.1, -0.2)), len: 0.15, flare: 0.035, top: 0.0, fold: 0.006, grow: 0.004 });
+  if (sk) G.add('root', [], [...tatters(G, { n: 11, y: sk.y1 - sk.len + 0.02, len: 0.09, w: 0.055, colors: [tone(red, 0, -0.1, -0.2), tone(red, 0, 0, -0.1), 0x16161a], ring: hemRing(sk, -0.006), flare: 0.2 }),
+    flap(G, sk, 1, { color: red, len: 0.3, w: 0.1, ragged: 0.05, trim: 0x16161a })]);
+  cape(G, { color: red, len: 0.72, slope: 0.27, ragged: 0.06, foldAmp: 0.036, width: G.sx * 2.8, trim: tone(red, 0, -0.1, -0.2) });
+  if (G.bare) return;
+  const crest = fin2(R * 2.3, R * 0.62);
+  const blade = (y) => [hk(H.extrude([[-1.25, -0.5], [-1.05, 0.25], [-0.5, 0.74], [0.1, 0.84], [0.9, 0.62], [1.5, 0.92], [1.2, 0.3], [0.9, -0.02], [0.3, 0.2], [-0.3, 0.16], [-0.9, -0.14]].map(([x, yy]) => [x * R, yy * R]), 0.007, 0.002)).rot(0, 90, 0).at(0, y, -R * 0.1)];
+  if (G.muzzled()) { openBowl(G, st, {}); G.add('head', [], blade(R * 0.86 * G.Lk)); return; }
+  clearHead(G);
+  const glowC = G.o.glow;
+  const slit = (s) => { const x = S.box(R * 0.5, R * 0.1, R * 0.5, 0.002).rot(0, 0, s * 16).at(s * R * 0.36, R * 0.06, R * 0.96).cut(0.002).color(glowC ?? 0x060608); return glowC != null ? x.glow(1.5) : x; };
+  G.add('head', [
+    st(S.ellipsoid(R * 1.03, R * 1.14, R * 1.12).at(0, R * 0.18, -R * 0.05)),
+    st(S.cone(R * 0.42, R * 0.98, R * 1.25, R * 0.05).at(0, -R * 0.6, R * 0.12)).blend(0.03),
+    st(S.cone(R * 1.2, R * 0.96, R * 0.34, R * 0.03).at(0, -R * 1.1, -R * 0.04)).blend(0.006),
+    eg(S.ellipsoid(R * 0.07, R * 0.8, R * 0.3).rot(-8, 0, 0).at(0, -R * 0.42, R * 0.98)).blend(0.006),                 // the keel of the mask
+    eg(S.box(R * 1.5, R * 0.12, R * 0.4, R * 0.03).at(0, R * 0.26, R * 0.9)).blend(0.005),                           // brow
+    slit(-1), slit(1),
+    ...[-1, 1].flatMap((s) => [0, 1, 2].map((i) => S.box(R * 0.03, R * 0.26, R * 0.4, 0).rot(0, s * 20, 0).at(s * R * (0.2 + i * 0.13), -R * 0.5, R * 0.95).cut(0.002).color(0x060608))),
+  ], [
+    blade(R * 1.02),
+    ...[-1, 1].flatMap((s) => [orient(hk(crest), [s * R * 0.96, R * 0.2, -R * 0.1], [s * 0.45, 0.5, -1], [0, 1, 0]).scale(1, 1, 1), orient(hk(fin2(R * 1.3, R * 0.4)), [s * R * 0.9, -R * 0.5, 0], [s * 0.5, -0.1, -1], [0, 1, 0]).lod(1)]),
+  ]);
+};
+HEADGEAR.barbed = true;
+
 
 OUTFITS.none = () => {};
 
@@ -1819,4 +2222,5 @@ export function dress(ctx) {
   } catch (err) {
     console.warn(`[models] gear: outfit "${ctx.o.outfit}" for ${G.id} failed, the unit is left partly dressed`, err);
   }
+  asked = null;
 }

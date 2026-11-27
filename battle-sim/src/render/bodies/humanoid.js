@@ -106,11 +106,11 @@ function eyeGeo(cornea) {
 /** eye(r, look) -> hard piece centred on the origin looking along +Z. look: { iris, pupil, white, slit, glow, ring } */
 function eye(r, look = {}) {
   const iris = look.iris ?? 0x4a6a8a, white = look.white ?? 0xefe8da, pupil = look.pupil ?? 0x0b0a0c, rim = look.ring ?? tone(iris, 0, 0.05, -0.18);
-  const slit = !!look.slit, pA = Math.sin(16 * DEG) * (look.pupilSize ?? 1), iA = Math.sin(34 * DEG);
+  const slit = !!look.slit, bar = look.slit === 'bar', pA = Math.sin(16 * DEG) * (look.pupilSize ?? 1), iA = Math.sin(34 * DEG);
   const h = H.geo(eyeGeo(look.cornea ?? 0.045)).shade((x, y, z) => {
     if (y < 0.2) return null;
     const d = Math.hypot(x, z);
-    if (slit) { if (Math.abs(x) < pA * 0.4 && Math.abs(z) < iA * 0.86) return pupil; } else if (d < pA * 1.01) return pupil;
+    if (slit) { if (bar ? Math.abs(z) < pA * 0.46 && Math.abs(x) < iA * 0.8 : Math.abs(x) < pA * 0.4 && Math.abs(z) < iA * 0.86) return pupil; } else if (d < pA * 1.01) return pupil;
     if (d < iA * 0.84) return iris;
     if (d < iA) return rim;
     return null;
@@ -198,10 +198,22 @@ const SPECIES = {
   imp: { muscle: 0.45, gut: 0.3, fingers: 3, feet: 'bare', toes: 3, claws: 0.7, det: 1, armOut: 6, tint: [0.16, 16], tail: 'spade', wings: 'bat', hide: ['noise', 0.0016, 64] },
   ghoul: { muscle: 0.2, fingers: 4, feet: 'bare', toes: 4, claws: 1, det: 1, armOut: 5, tint: [0.15, 13], gaunt: 1 },
   harpy: { muscle: 0.3, fingers: 3, feet: 'talon', claws: 0.9, det: 1, armOut: 6, tint: [0.07, 26], female: 1, noWrap: 1, tail: 'fan', wings: 'feather' },
+  // the wider races (feet: 'claw' = a raised hock and three splayed talons, for the look of a digitigrade leg)
+  elf: { muscle: 0.36, fingers: 4, feet: 'shoe', det: 1, armOut: 4, tint: [0.05, 26] },
+  dwarf: { muscle: 0.8, gut: 0.36, fingers: 4, feet: 'shoe', det: 1, armOut: 10, tint: [0.08, 22] },
+  orc: { muscle: 1, gut: 0.1, fingers: 4, feet: 'bare', toes: 4, claws: 0.26, det: 1.04, armOut: 12, tint: [0.11, 14], hide: ['noise', 0.0016, 50] },
+  lizard: { muscle: 0.6, fingers: 3, feet: 'claw', toes: 3, claws: 0.8, det: 1, armOut: 7, tint: [0.16, 13], hide: ['scales', 0.003, 50], tail: 'lizard' },
+  rat: { muscle: 0.25, fingers: 4, feet: 'bare', toes: 4, claws: 0.5, det: 1, armOut: 5, tint: [0.14, 20], hide: ['fur', 0.004, 42], tail: 'rat' },
+  goat: { muscle: 0.85, fingers: 4, feet: 'hoof', claws: 0.2, det: 1, armOut: 9, tint: [0.13, 16], hide: ['fur', 0.0035, 42], tail: 'goat' },
+  tiger: { muscle: 0.85, fingers: 4, feet: 'bare', toes: 4, claws: 0.42, det: 1.02, armOut: 7, tint: [0.07, 18], hide: ['fur', 0.003, 44], tail: 'tiger' },
+  mummy: { muscle: 0.15, fingers: 4, feet: 'bare', toes: 4, claws: 0.2, det: 1, armOut: 5, tint: [0.13, 30], gaunt: 1, noWrap: 1, hide: ['ridges', 0.0026, 27] },
 };
+/** skin colour when the descriptor gives none */
+const DEFAULT_SKIN = { elf: 0xe8cdb0, dwarf: 0xd09a74, orc: 0x5f7a3a, lizard: 0x4f7a4a, rat: 0x6a5a4a, goat: 0x6a5238, tiger: 0xd9822a, mummy: 0x3a2e24 };
 
 function palette(def, o, sp) {
-  const skin = o.skin ?? 0xd9a77c;
+  const flesh = o.skin ?? DEFAULT_SKIN[sp] ?? 0xd9a77c;
+  const skin = sp === 'mummy' ? o.cloth2 ?? 0xb9ab88 : flesh;          // a mummy's surface is its wrappings; `skin` is the dried flesh in the gaps
   const C = {
     skin,
     shade: tone(skin, -0.012, 0.05, -0.08),
@@ -221,6 +233,15 @@ function palette(def, o, sp) {
   if (sp === 'demon' || sp === 'imp') Object.assign(C, { lip: tone(skin, 0, 0, -0.16), blush: tone(skin, 0.02, 0.05, 0.04), nail: 0x141012, claw: 0x141012, linen: 0x1e1614, tooth: 0xf0e6c8, light: tone(skin, 0.015, 0.02, 0.06), horn: 0x1a1416, mouth: 0x2a0a08, ember: 0xff7a1e,
     scorch: tone(skin, -0.012, -0.08, -0.1), scorch2: tone(skin, -0.02, -0.16, -0.2) });
   if (sp === 'harpy') Object.assign(C, { claw: 0x2a2622, nail: 0x2a2622, plume: o.cloth ?? 0x6a5a8a, scale: 0xc79a3e });
+  if (sp === 'elf') Object.assign(C, { blush: mix(skin, 0xc2553f, 0.14), shoe: 0x4a3a28 });
+  if (sp === 'dwarf') Object.assign(C, { blush: mix(skin, 0xc2452f, 0.36), shoe: 0x3a2a1c, linen: 0x8a7a5c });
+  if (sp === 'orc') Object.assign(C, { lip: tone(skin, -0.02, 0, -0.19), blush: tone(skin, -0.03, 0.04, -0.06), nail: 0x2a261c, claw: 0x2a261c, linen: 0x3a2c20, white: 0xe6dcae, tooth: 0xe6dcb4, mouth: 0x2a1210, light: tone(skin, 0.02, -0.05, 0.07) });
+  if (sp === 'lizard') Object.assign(C, { light: mix(tone(skin, 0.04, -0.14, 0.2), 0xdcd29a, 0.5), lip: tone(skin, 0, 0, -0.2), nail: 0x1c1a14, claw: 0x1c1a14, linen: 0x4a3a26, tooth: 0xeee6c8, mouth: 0x4a1418,
+    crest: mix(0xc2482a, skin, 0.22), crestDeep: mix(0x7a2418, skin, 0.3) });
+  if (sp === 'rat') Object.assign(C, { light: tone(skin, 0.01, -0.06, 0.17), pink: 0xd39a92, lip: 0x8a5a56, nail: 0x3a3028, claw: 0x3a3028, linen: 0x3a3026, tooth: 0xe6c458, mouth: 0x3a1616, fur: tone(skin, 0, -0.03, -0.09) });
+  if (sp === 'goat') Object.assign(C, { light: tone(skin, 0.02, -0.08, 0.2), lip: 0x2a1c18, nail: 0x1c1614, claw: 0x1c1614, linen: 0x2c2018, fur: mix(tone(skin, -0.01, -0.04, -0.11), 0x2a241c, 0.25), hornA: 0x3a3028, horn: 0xbfb294 });
+  if (sp === 'tiger') Object.assign(C, { pale: 0xf0e8d8, light: 0xf0e8d8, stripe: 0x1a1410, lip: 0x1a1410, nail: 0xe2d8c0, claw: 0xe2d8c0, tooth: 0xf2ead4, mouth: 0x3a1614 });
+  if (sp === 'mummy') Object.assign(C, { flesh: tone(flesh, 0, 0, -0.02), lip: flesh, blush: skin, nail: tone(flesh, 0, -0.05, 0.1), claw: tone(flesh, 0, -0.05, 0.1), tooth: 0xcfc59e, mouth: 0x140e0c, light: tone(skin, 0, -0.02, 0.07) });
   C.fur ??= tone(skin, 0, -0.05, -0.12);
   C.horn ??= 0xd8cba6;
   C.plume ??= o.cloth ?? 0x6a5a8a;
@@ -416,6 +437,82 @@ function buildTorso(B) {
     const cols = B.featherCols;
     for (let i = -3; i <= 3; i++) hard.push(feather([i * cw * 0.26, T - 0.045, cd * (0.9 - Math.abs(i) * 0.12)], [i * 0.12, -1, 0.25], 0.07, 0.034, [i * 0.2, 0.3, 1], cols, 1));
   }
+  if (sp === 'orc') {
+    // slabs of muscle piled on the neck and shoulders, a mottled back, old scars
+    const dark = tone(C.skin, -0.015, 0.02, -0.08), scar = tone(C.skin, -0.02, -0.08, 0.13);
+    p.push(...S.mirrorX([sk(S.ellipsoid(0.075 * k, 0.05 * k, 0.062 * k).rot(0, 0, -22).at(sx * 0.42, T + 0.012, -0.022).blend(0.03))]));
+    p.push(sk(S.ellipsoid(cw * 0.62, 0.07 * k, cd * 0.5).at(0, T - 0.03 * k, -cd * 0.66).blend(0.04)));
+    for (let i = 0; i < 11; i++) p.push(S.sphere(0.026 * k + rr() * 0.024).at((rr() - 0.5) * cw * 2.2, T - 0.02 - rr() * T * 0.65, -cd * (0.4 + rr() * 0.6)).color(dark).paint(0.014, 0));
+    p.push(stroke(-cw * 0.3, T - 0.11 * k, cd * 0.92, 0.085, 0.005, 0.08, 0, 28).color(scar).paint(0.003, 0.0013));
+    p.push(stroke(cw * 0.26, 0.15 * k, wd * 0.95, 0.05, 0.0045, 0.08, 0, -38).color(scar).paint(0.003, 0.0013));
+    p.push(stroke(cw * 0.4, T - 0.07 * k, -cd * 0.9, 0.09, 0.005, 0.08, 0, -50).color(scar).paint(0.003, 0.0013));
+    p.push(...S.mirrorX([S.ellipsoid(cw * 0.38, 0.04 * k, cd * 0.4).rot(0, 0, 12).at(cw * 0.48, T - 0.085 * k, cd * 0.88).color(C.light).paint(0.03, 0)]));
+  }
+  if (sp === 'lizard') {
+    // pale plated belly from throat to groin, darker bands over the back, a row of spines down the spine
+    const dark = tone(C.skin, -0.02, 0.03, -0.11), seam = tone(C.light, 0, 0.02, -0.2);
+    p.push(S.ellipsoid(cw * 0.62, T * 0.56, 0.07).at(0, T * 0.46, wd * 1.0).color(C.light).pbr(0.6).paint(0.02, 0));
+    p.push(S.ellipsoid(nr * 0.9, 0.07, 0.04).at(0, T + 0.02, nr * 0.8).color(C.light).paint(0.02, 0));
+    for (let i = 0; i < 7; i++) { const y = T - 0.06 * k - i * 0.034 * k; p.push(S.box(cw * 1.0, 0.007, 0.2, 0).at(0, y, wd + 0.06).color(seam).paint(0.003, -0.003)); }
+    for (let i = 0; i < 5; i++) p.push(...S.mirrorX([S.ellipsoid(cw * 0.8, 0.016 * k, cd * 1.2).rot(0, 0, -16).at(cw * 0.5, T - 0.03 - i * 0.058 * k, -cd * 0.5).color(dark).paint(0.012, 0)]));
+    for (let i = 0; i < 6; i++) {
+      const y = T + 0.01 - i * (T * 0.86 / 6), base = hit(p, [0, y, -0.5], [0, 0, 1]);
+      hard.push(spike(add3(base, [0, 0, 0.014]), [0, 0.5, -1], 0.062 * k * (1 - i * 0.1), 0.015 * k, C.crest, [0, -1, 0], 0.25).lod(2));
+    }
+  }
+  if (sp === 'rat') {
+    // paler belly, a ridge of coarse dark fur over the hump of the back
+    const fur = B.fur;
+    p.push(S.ellipsoid(cw * 0.66, T * 0.5, 0.06).at(0, T * 0.46, wd * 0.98).color(C.light).paint(0.04, 0));
+    for (let i = 0; i < 5; i++) p.push(fur(bone([0, T + 0.02 - i * 0.05 * k, backZ(T - i * 0.05 * k) + 0.012], [0, T - 0.04 - i * 0.05 * k, backZ(T - 0.06 - i * 0.05 * k) - 0.012], 0.03 * k, 0.012 * k).blend(0.014), 0.011));
+    p.push(...S.mirrorX([fur(S.ellipsoid(0.04 * k, 0.03 * k, 0.045 * k).at(sx - 0.03, T - 0.004, -0.016).blend(0.022), 0.01)]));
+    for (let i = 0; i < 3; i++) { const a = rr() * 6.28; p.push(S.sphere(0.014 + rr() * 0.012).at(Math.cos(a) * cw * 0.9, T * (0.3 + rr() * 0.5), Math.sin(a) * cd * 0.9).color(mix(C.skin, C.pink, 0.55)).paint(0.008, -0.0015)); }   // mange
+  }
+  if (sp === 'goat') {
+    // a filthy matted pelt: mane over the neck and shoulders, a mat of it on the chest, shaggy hips
+    const fur = B.fur, filth = mix(C.fur, 0x2a2418, 0.5);
+    p.push(fur(S.ellipsoid(nr * 1.4, 0.07 * k, nr * 1.4).at(0, T + 0.03, -0.014).blend(0.025), 0.012));
+    for (let i = 0; i < 4; i++) for (const s of i ? [1, -1] : [1]) {
+      const x = s * i * cw * 0.3, y0 = T + 0.02 - i * 0.012, z0 = -cd * (0.5 + 0.12 * i);
+      p.push(fur(bone([x, y0, z0], [x * 1.25, y0 - (0.14 - i * 0.012) * k, -cd * (1.04 - i * 0.1)], 0.036 * k, 0.014 * k).blend(0.014), 0.012));
+    }
+    p.push(...S.mirrorX([fur(S.ellipsoid(0.058 * k, 0.046 * k, 0.062 * k).at(sx - 0.04, T - 0.002, -0.012).blend(0.022), 0.012)]));
+    for (let i = -1; i <= 1; i++) p.push(fur(bone([i * cw * 0.3, T - 0.04 * k, cd * (0.82 - Math.abs(i) * 0.1)], [i * cw * 0.22, T - (0.2 - Math.abs(i) * 0.04) * k, cd * (1.0 - Math.abs(i) * 0.08)], 0.04 * k, 0.014 * k).blend(0.016), 0.011));
+    p.push(fur(S.ellipsoid(hw * 1.06, 0.085, wd * 1.18).at(0, -0.012, -0.002).blend(0.03), 0.01));
+    p.push(S.ellipsoid(cw * 0.6, 0.12 * k, 0.05).at(0, 0.15 * k, wd * 0.98).color(C.light).paint(0.04, 0));
+    for (let i = 0; i < 6; i++) p.push(S.sphere(0.02 + rr() * 0.02).at((rr() - 0.5) * cw * 2, T * (0.5 + rr() * 0.55), (rr() - 0.5) * cd * 2.4).color(filth).pbr(0.95).paint(0.014, 0));
+  }
+  if (sp === 'tiger') {
+    // white from the throat down the chest and belly, black stripes wrapping in from the spine
+    const white = (x) => x.color(C.pale).pbr(0.85).paint(0.03, 0), stripe = (x) => x.color(C.stripe).pbr(0.85).paint(0.0035, 0);
+    p.push(white(S.ellipsoid(cw * 0.6, T * 0.58, 0.075).at(0, T * 0.46, wd * 1.02)));
+    p.push(white(S.ellipsoid(nr * 1.0, 0.08, 0.05).at(0, T + 0.02, nr * 0.8)));
+    p.push(B.fur(S.ellipsoid(cw * 0.34, 0.05 * k, 0.03).at(0, T - 0.07 * k, cd * 0.92).blend(0.02), 0.009).color(C.pale));          // ruff of the chest
+    for (let i = 0; i < 7; i++) {
+      const y = T - 0.012 - i * 0.047 * k, w = i < 2 ? 1 : 0.86;
+      p.push(...S.mirrorX([stripe(S.ellipsoid(cw * 0.78 * w, (0.0085 + (i % 2) * 0.003) * k, cd * 1.3).rot(0, 0, -15 - (i % 3) * 4).at(cw * 0.62 * w, y, -cd * 0.52))]));
+      if (i % 2) p.push(...S.mirrorX([stripe(S.ellipsoid(cw * 0.26, 0.007 * k, cd * 0.5).rot(0, 0, 12).at(cw * 0.86 * w, y + 0.022 * k, cd * 0.2))]));
+    }
+    p.push(stripe(S.capsule([0, T + 0.02, -cd * 0.9], [0, 0.0, -wd * 0.95], 0.012 * k)));
+  }
+  if (sp === 'mummy') {
+    // bands wound every which way: their edges show as creases, with gaps where the dried flesh shows through
+    const edge = tone(C.skin, 0, 0, -0.22), flesh = (x, raise = -0.0045) => x.color(C.flesh).pbr(0.85).tint(0.2, 40).paint(0.004, raise);
+    for (let i = 0; i < 8; i++) p.push(S.cyl(0.4, 0.0045, 0).rot(rr() * 30 - 15, 0, rr() * 44 - 22).at(0, T * (0.04 + i * 0.125), 0).color(edge).paint(0.003, -0.003));
+    for (const s of [1, -1]) p.push(S.box(0.07 * k, T * 1.5, 0.5, 0).rot(0, 0, s * 38).at(0, T * 0.52, 0).color(tone(C.skin, 0, 0, 0.03)).paint(0.004, 0.003));            // two broad bands crossed over the chest
+    p.push(flesh(S.ellipsoid(cw * 0.4, 0.016 * k, 0.07).rot(0, 0, 14).at(cw * 0.36, T - 0.15 * k, cd * 0.86)));
+    p.push(flesh(S.ellipsoid(ww * 0.6, 0.02 * k, 0.07).rot(0, 0, -10).at(-ww * 0.3, 0.13 * k, wd * 0.9)));
+    p.push(flesh(S.ellipsoid(cw * 0.5, 0.018 * k, 0.07).rot(0, 0, -18).at(-cw * 0.3, T - 0.1 * k, -cd * 0.9)));
+    p.push(flesh(S.sphere(0.024 * k).at(cw * 0.8, T * 0.45, 0.01), -0.006));
+    for (let i = 0; i < 5; i++) p.push(S.sphere(0.03 + rr() * 0.03).at((rr() - 0.5) * cw * 2, rr() * T, (rr() - 0.5) * cd * 2.2).color(tone(C.skin, -0.02, 0.06, -0.12)).paint(0.02, 0));   // stains
+    p.push(S.cyl(hw * 1.9, 0.14, 0.02).at(0, -0.02, 0).color(tone(C.skin, 0, 0.02, -0.07)).pbr(0.95).paint(0.004, 0.002));                                             // the hips bound in a broader, darker cloth
+    const strip = (w, len, at, rot) => H.box(w, len, 0.0024, 0.0008).at(0, -len / 2, 0).rot(rot[0], rot[1], rot[2]).at(at[0], at[1], at[2]).color(tone(C.skin, 0, 0, -0.07)).pbr(0.95).lod(1);
+    hard.push(strip(0.026, 0.1, [-ww * 0.7, 0.07, wd * 0.9], [8, 0, -6]), strip(0.022, 0.13, [cw * 0.5, T - 0.2 * k, -cd * 0.95], [-10, 0, 8]), strip(0.02, 0.075, [ww * 0.96, 0.1, 0], [0, 0, 14]));
+  }
+  if (sp === 'dwarf') {
+    // barrel chest thick with hair
+    p.push(S.ellipsoid(cw * 0.5, 0.07 * k, 0.06).at(0, T - 0.1 * k, cd * 0.95).color(mix(C.skin, B.face.hairCol ?? 0x5a3d24, 0.45)).paint(0.03, 0));
+  }
   // smallclothes: a wrap around the hips so nobody is ever naked
   if (!st.noWrap) {
     p.push(S.cyl(hw * 1.9, 0.135, 0.02).at(0, -0.022, 0).color(C.linen).tint(0.1, 60).pbr(0.92).paint(0.004, 0));
@@ -423,6 +520,41 @@ function buildTorso(B) {
   }
   return { prims: p, hard };
 }
+
+/** what a species wears on its own hide along a limb (stripes, bandage edges, bands of darker scale): `part` is arm | fore | leg | shin */
+function limbDeco(B, part, p, hard, L, r) {
+  const { sp, C, def } = B;
+  if (sp === 'tiger') {
+    const n = part === 'leg' ? 4 : 3;
+    for (let i = 0; i < n; i++) p.push(S.ellipsoid(r * 1.5, Math.max(0.006, r * 0.13), r * 1.8).rot(i % 2 ? 12 : -10, 0, i % 2 ? -9 : 10).at(r * 0.55, -L * (0.16 + (0.76 / n) * i), -r * 0.2).color(C.stripe).pbr(0.85).paint(0.0035, 0));
+    if (part === 'leg' || part === 'arm') p.push(S.ellipsoid(r * 0.6, L * 0.4, r * 0.9).at(-r * 0.8, -L * 0.55, 0).color(C.pale).paint(0.02, 0));       // pale inside of the limb
+  } else if (sp === 'mummy') {
+    const rr = rng(hashStr((def.id || sp) + ':' + part)), edge = tone(C.skin, 0, 0, -0.22);
+    for (let i = 0; i < 4; i++) p.push(S.cyl(r * 3, 0.004, 0).rot(rr() * 40 - 20, 0, rr() * 50 - 25).at(0, -L * (0.12 + i * 0.24), 0).color(edge).paint(0.0025, -0.0028));
+    const a = rr() * 6.28;
+    p.push(S.ellipsoid(r * 0.9, Math.max(0.008, L * 0.07), r * 0.9).rot(0, 0, rr() * 40 - 20).at(Math.cos(a) * r * 0.8, -L * (0.3 + rr() * 0.4), Math.sin(a) * r * 0.8).color(C.flesh).pbr(0.85).paint(0.003, -0.004));
+    if (part === 'fore' || part === 'shin') hard.push(H.box(r * 0.7, L * 0.42, 0.002, 0.0006).at(0, -L * 0.21, 0).rot(rr() * 16 - 8, 0, rr() * 20 - 10).at(r * 0.9, -L * (0.45 + rr() * 0.2), -r * 0.3).color(tone(C.skin, 0, 0, -0.07)).pbr(0.95).lod(1));
+  } else if (sp === 'lizard') {
+    const dark = tone(C.skin, -0.02, 0.03, -0.11);
+    for (let i = 0; i < 3; i++) p.push(S.ellipsoid(r * 1.4, Math.max(0.008, L * 0.07), r * 1.7).at(r * 0.5, -L * (0.2 + i * 0.28), -r * 0.2).color(dark).paint(0.008, 0));
+    p.push(S.ellipsoid(r * 0.6, L * 0.42, r * 0.8).at(-r * 0.8, -L * 0.5, r * 0.2).color(C.light).paint(0.02, 0));
+    if (part === 'arm') hard.push(spike([0, -L + r * 0.1, -r * 0.8], [0, 0.3, -1], r * 1.1, r * 0.3, C.claw, [0, 1, 0], 0.3));
+  } else if (sp === 'rat') {
+    if (part === 'arm' || part === 'leg') p.push(S.ellipsoid(r * 0.6, L * 0.4, r * 0.8).at(-r * 0.8, -L * 0.5, r * 0.2).color(C.light).paint(0.02, 0));
+  } else if (sp === 'goat') {
+    if (part === 'arm') p.push(B.fur(S.ellipsoid(r * 1.2, r * 1.05, r * 1.2).at(r * 0.15, -r * 0.15, -r * 0.1).blend(0.03), 0.011), B.fur(bone([r * 0.2, -r * 0.4, -r * 0.5], [r * 0.3, -L * 0.6, -r * 0.8], r * 0.7, r * 0.2).blend(0.016), 0.011));
+    if (part === 'fore') p.push(B.fur(bone([r * 0.3, -L * 0.05, -r * 0.5], [r * 0.2, -L * 0.6, -r * 0.6], r * 0.6, r * 0.16).blend(0.014), 0.01));
+    if (part === 'leg') p.push(B.fur(S.ellipsoid(r * 1.12, L * 0.5, r * 1.1).at(0, -L * 0.4, -r * 0.05).blend(0.03), 0.011), B.fur(bone([r * 0.4, -L * 0.5, -r * 0.5], [r * 0.5, -L * 1.02, -r * 0.6], r * 0.6, r * 0.2).blend(0.016), 0.012));
+  } else if (sp === 'orc') {
+    if (part === 'arm') p.push(stroke(r * 0.9, -L * 0.5, 0, 0.012, L * 0.2, r * 1.2, 0, 14).color(tone(C.skin, -0.02, -0.08, 0.13)).paint(0.003, 0.0012));
+    if (part === 'fore') p.push(sk4(B, S.ellipsoid(r * 0.72, L * 0.3, r * 0.8).at(r * 0.3, -L * 0.3, r * 0.05).blend(0.016)));                    // a forearm like a ham
+  } else if (sp === 'dwarf') {
+    if (part === 'fore') p.push(S.ellipsoid(r * 0.9, L * 0.36, r * 0.9).at(r * 0.5, -L * 0.45, -r * 0.2).color(mix(C.skin, B.face.hairCol ?? 0x5a3d24, 0.4)).paint(0.02, 0));
+  }
+}
+const sk4 = (B, x) => B.sk(x);
+/** bare pink skin (rat), over a whole hand or foot */
+const barePaint = (B, p, at, rad) => { if (B.C.pink) p.push(S.sphere(rad).at(at[0], at[1], at[2]).color(B.C.pink).pbr(0.6).paint(0.012, 0)); };
 
 function buildArm(B) {
   const { P, st, C, sk, sp } = B;
@@ -441,6 +573,7 @@ function buildArm(B) {
   if (sp === 'demon') hard.push(spike([0, -U + r * 0.1, -r * 0.8], [0, 0.35, -1], r * 1.5, r * 0.34, C.horn, [0, 1, 0], 0.3));   // elbow spur
   if (B.lord) p.push(S.capsule([r * 0.9, -r * 0.6, r * 0.5], [r * 0.6, -U * 0.5, r * 0.8], 0.005).color(C.ember).glow(1.7).paint(0.004, 0), S.capsule([r * 0.6, -U * 0.5, r * 0.8], [r * 0.9, -U * 0.8, r * 0.3], 0.005).color(C.ember).glow(1.7).paint(0.004, 0));
   if (sp === 'ghoul') p.push(S.capsule([-r * 0.3, -r, r * 0.8], [r * 0.1, -U * 0.9, r * 0.75], 0.004).color(0x3c4250).paint(0.004, 0.001));
+  limbDeco(B, 'arm', p, hard, U, r);
   hard.push(core(r * 1.0, r * 0.84, U, sp === 'harpy' ? C.plume : sp === 'minotaur' ? C.fur : C.skin));
   return { prims: p, hard };
 }
@@ -459,6 +592,7 @@ function buildForearm(B) {
   if (C.scorch) p.push(S.capsule([0, -F * 0.55, 0], [0, -F * 1.3, 0], r * 1.8).color(C.scorch).paint(0.035, 0), S.capsule([0, -F * 0.85, 0], [0, -F * 1.3, 0], r * 1.8).color(C.scorch2).paint(0.03, 0));
   if (sp === 'minotaur') p.push(S.cyl(r * 2, F * 0.5, 0.004).at(0, -F * 0.3, 0).color(C.fur).paint(0.03, 0));
   if (sp === 'ghoul') p.push(S.capsule([r * 0.5, -F * 0.1, r * 0.6], [r * 0.2, -F * 0.9, rw * 0.9], 0.004).color(0x3c4250).paint(0.004, 0.001));
+  limbDeco(B, 'fore', p, hard, F, r);
   hard.push(core(r * 0.96, rw * 1.0, F, C.skin));
   return { prims: p, hard };
 }
@@ -502,6 +636,7 @@ function openHand(B) {
   p.push(sk(S.capsule(t0, t1, fr * 1.22, fr * 1.1).blend(0.01)), sk(S.capsule(t1, t2, fr * 1.08, fr * 0.95).blend(0.004)));
   fingertip(B, p, hard, t1, t2, fr * 0.95, [0.5, 0, 0.86]);
   if (B.C.scorch) p.push(S.sphere(hr * 3).at(0, -hr, 0).color(B.C.scorch2).paint(0.02, 0));
+  barePaint(B, p, [0, -hr * 1.5, 0], hr * 2.2);
   return { prims: p, hard };
 }
 
@@ -537,6 +672,7 @@ function gripHand(B, gr, rot, pos) {
   p.push(sk(S.capsule([0, -P.rWrist * 0.2, 0], [pos[0] + palm.x, pos[1] + palm.y, pos[2] + palm.z], P.rWrist * 0.95, hr * 0.44).blend(0.014)));
   for (const x of q) p.push(place(x));
   if (B.C.scorch) p.push(S.sphere(hr * 3).at(pos[0], pos[1], pos[2]).color(B.C.scorch2).paint(0.02, 0));
+  barePaint(B, p, [pos[0], pos[1] - hr * 0.3, pos[2]], hr * 2.2);
   return { prims: p, hard: qh.map(place) };
 }
 
@@ -562,7 +698,8 @@ function buildLeg(B) {
     p.push(S.cyl(r * 1.7, L * (hem + 0.2), 0.01).at(0, -L * (hem - 0.2) / 2, 0).color(C.linen).tint(0.1, 60).pbr(0.92).paint(0.004, 0));
     p.push(S.cyl(r * 1.25, 0.012, 0.003).at(0, -L * (hem - 0.02), 0).color(tone(C.linen, 0, 0, -0.1)).pbr(0.92).paint(0.003, 0.0035));
   }
-  hard.push(core(r * 1.0, rc * 0.96, L, sp === 'harpy' ? C.plume : sp === 'minotaur' ? C.fur : C.skin));
+  limbDeco(B, 'leg', p, hard, L, r);
+  hard.push(core(r * 1.0, rc * 0.96, L, sp === 'harpy' ? C.plume : sp === 'minotaur' || sp === 'goat' ? C.fur : C.skin));
   return { prims: p, hard };
 }
 
@@ -606,6 +743,29 @@ function buildShin(B) {
     hard.push(core(ra * 0.95, ra * 0.8, L, C.scale), knob(ra * 0.5, ra * 0.9, FL * 0.85, C.scale, 'footRod').rot(90, 0, 0).scale(1.6, 0.5, 1).at(0, gy + ra * 0.5, FL * 0.22));
     return { prims: p, hard };
   }
+  if (st.feet === 'claw') {
+    // the look of a digitigrade leg: the shank runs down and back to a raised hock, a long instep slopes forward to the
+    // ground, and the weight sits on three splayed, clawed toes with a spur behind
+    const hock = [0, -L * 0.6, -rc * 1.2], ball = [0, gy + ra * 1.1, FL * 0.16];
+    p.push(sk(S.sphere(rc * 0.98)));
+    p.push(sk(bone([0, 0, 0], hock, rc * 0.95, ra * 1.2).blend(0.03)));
+    p.push(sk(S.ellipsoid(rc * 0.78, L * 0.22, rc * 0.84).at(0, -L * 0.24, -rc * 0.62).blend(0.022)));                  // drumstick
+    p.push(sk(S.sphere(ra * 1.22).at(hock[0], hock[1], hock[2]).blend(0.014)));
+    p.push(sk(bone(hock, ball, ra * 1.1, ra * 1.02).blend(0.016)));
+    p.push(sk(S.ellipsoid(fw * 0.5, ra * 1.0, FL * 0.17).at(0, gy + ra * 1.0, FL * 0.2).blend(0.016)));                 // ball of the foot
+    const toe = (dir, len, r0) => {
+      const a = [0, gy + r0 * 1.2, FL * 0.22], mid = add3(a, mul3(dir, len * 0.55)), b = add3(a, mul3(dir, len));
+      mid[1] = gy + r0 * 1.7; b[1] = gy + r0 * 0.85;
+      p.push(sk(S.capsule(a, mid, r0, r0 * 0.92).blend(0.006)), sk(S.capsule(mid, b, r0 * 0.92, r0 * 0.78).blend(0.004)), sk(S.sphere(r0 * 1.04).at(mid[0], mid[1], mid[2]).blend(0.004)));
+      hard.push(spike(add3(b, [0, r0 * 0.2, 0]), [dir[0], -0.3, dir[2]], r0 * 3.4, r0 * 0.8, C.claw, [0, -1, 0], 0.36));
+    };
+    const tr = ra * 0.56;
+    toe(norm3([-0.5, 0, 1]), FL * 0.5, tr); toe([0, 0, 1], FL * 0.6, tr * 1.08); toe(norm3([0.54, 0, 1]), FL * 0.48, tr); toe(norm3([-0.12, 0, -1]), FL * 0.34, tr * 0.8);
+    limbDeco(B, 'shin', p, hard, L * 0.6, rc);
+    p.push(S.box(0.4, 0.1, 0.6, 0).at(0, gy - 0.05, 0.05).cut(0.003).color(C.skin));
+    hard.push(core(rc * 0.96, ra * 1.1, L, C.skin), knob(fw * 0.42, fw * 0.55, FL * 1.0, C.skin, 'footRod').rot(90, 0, 0).scale(1, 0.62, 1).at(0, gy + 0.02, FL * 0.26));
+    return { prims: p, hard };
+  }
   p.push(sk(S.sphere(rc * 0.98)));
   p.push(sk(S.capsule([0, 0, 0], [0, -L, 0], rc * 0.88, ra).blend(0.03)));
   p.push(sk(S.ellipsoid(rc * 0.6, L * 0.27, rc * 0.72).at(-rc * 0.28, -L * 0.29, -rc * 0.48).blend(0.018)));            // calf: inner head
@@ -640,6 +800,8 @@ function buildShin(B) {
     }
   }
   scorchLeg();
+  limbDeco(B, 'shin', p, hard, L, rc);
+  barePaint(B, p, [0, gy + 0.02, FL * 0.25], FL * 0.62);
   p.push(S.box(0.4, 0.1, 0.5, 0).at(0, gy - 0.05, 0.05).cut(0.003));                                                   // flat sole on the ground
   hard.push(core(rc * 0.96, ra * 1.0, L, C.skin), knob(fw * 0.42, fw * 0.5, FL * 1.08, st.feet === 'shoe' ? C.shoe : C.skin, 'footRod').rot(90, 0, 0).scale(1, 0.62, 1).at(0, gy + 0.02, FL * 0.2));
   return { prims: p, hard };
@@ -672,6 +834,12 @@ const EYE_COLS = [0x4a6a8a, 0x5a7a4a, 0x5a4a2e, 0x4a3a2a, 0x6a7a8a];
 function faceFor(def, sp) {
   const id = def.id || 'unit';
   if (sp === 'harpy') return FACES.harpy;
+  if (sp === 'elf' || sp === 'dwarf' || sp === 'orc') {
+    const r = rng(hashStr(id + ':' + sp)), pick = (list) => list[Math.floor(r() * list.length)];
+    if (sp === 'elf') return { hair: 'long', hairCol: pick([0xd9c48a, 0xe6dfc6, 0x2a2018, 0x8a4a22, 0xb9b4a8]), beard: 'none', jaw: 0.84 + r() * 0.06, nose: 0.86 + r() * 0.1, brow: 0.78 + r() * 0.1, eye: pick([0x5a9ac8, 0x6ab07a, 0xb89a3a, 0x8a7ac8]) };
+    if (sp === 'dwarf') return { hair: pick(['swept', 'crop', 'long', 'bald']), hairCol: pick([0x8a3a1a, 0x5a3d24, 0x2c2018, 0xa8a49c, 0xb0702a]), beard: 'great', jaw: 1.12 + r() * 0.1, nose: 1.0 + r() * 0.12, brow: 1.3 + r() * 0.2, eye: pick([0x4a6a8a, 0x5a4a2e, 0x4a3a2a]) };
+    return { hair: pick(['topknot', 'bald', 'mohawk', 'bald']), hairCol: 0x16130f, beard: 'none' };
+  }
   if (FACES[id]) return FACES[id];
   const r = rng(hashStr(id));
   return { hair: HAIRS[Math.floor(r() * HAIRS.length)], hairCol: HAIR_COLS[Math.floor(r() * HAIR_COLS.length)], beard: BEARDS[Math.floor(r() * BEARDS.length)],
@@ -685,6 +853,7 @@ function humanHead(B) {
   const R = P.headR, L = P.headLen / 1.12, f = B.face;
   const p = [], hard = [];
   const jw = f.jaw ?? 1, nl = f.nose ?? 1, bh = f.brow ?? 1, gauntF = f.gauntFace || 0, old = f.old || 0, fem = f.female || 0;
+  const elf = B.sp === 'elf', dwarf = B.sp === 'dwarf';
   // skull, face mass
   p.push(sk(S.ellipsoid(R * 0.86, R * 0.92 * L, R * 0.98).at(0, R * 0.2, -R * 0.08)));
   p.push(sk(S.ellipsoid(R * 0.68, R * 0.85, R * 0.6).at(0, -R * 0.3, R * 0.3).blend(0.02)));
@@ -698,8 +867,16 @@ function humanHead(B) {
     sk(S.capsule([0, R * 0.26, R * 0.87], [R * 0.56, R * 0.3, R * 0.6], R * 0.092 * bh, R * 0.07 * bh).blend(0.014)),
   ]));
   if (gauntF) p.push(...S.mirrorX([S.ellipsoid(R * 0.14, R * 0.22, R * 0.16).at(R * 0.56, -R * 0.56, R * 0.64).cut(0.035).color(C.shade)]));
+  if (elf) p.push(...S.mirrorX([                                                                                               // high, sharp cheekbones over hollow cheeks
+    sk(S.ellipsoid(R * 0.2, R * 0.085, R * 0.2).rot(0, 0, 24).at(R * 0.52, -R * 0.2, R * 0.56).blend(0.018)),
+    S.ellipsoid(R * 0.12, R * 0.2, R * 0.14).at(R * 0.55, -R * 0.58, R * 0.66).cut(0.04).color(C.shade),
+  ]));
+  if (dwarf) p.push(...S.mirrorX([                                                                                             // broad cheeks, a shelf of brow
+    sk(S.ellipsoid(R * 0.27, R * 0.22, R * 0.24).at(R * 0.52, -R * 0.36, R * 0.52).blend(0.03)),
+    sk(S.ellipsoid(R * 0.3, R * 0.11, R * 0.16).at(R * 0.34, R * 0.34, R * 0.78).blend(0.02)),
+  ]));
   // nose
-  const ns = fem ? 0.82 : 1;
+  const ns = fem ? 0.82 : dwarf ? 1.5 : elf ? 0.86 : 1;
   p.push(sk(S.capsule([0, R * 0.1, R * 0.84], [0, -R * 0.34 * nl, R * (0.98 + 0.08 * nl)], R * 0.065 * ns, R * 0.09 * ns).blend(0.014)));
   p.push(sk(S.sphere(R * 0.105 * ns).at(0, -R * 0.37 * nl, R * (0.98 + 0.07 * nl)).blend(0.01)));
   p.push(...S.mirrorX([sk(S.sphere(R * 0.07 * ns).at(R * 0.11 * ns, -R * 0.4 * nl - R * 0.02, R * 0.93).blend(0.009))]));
@@ -707,7 +884,11 @@ function humanHead(B) {
   const my = -R * 0.66, mz = R * 0.875;
   p.push(sk(S.ellipsoid(R * 0.3, R * 0.2, R * 0.2).at(0, my + R * 0.01, R * 0.69).blend(0.018)));
   // ears (tagged 'ear' so gear can take them off under a hood or coif)
-  p.push(...S.mirrorX([
+  if (elf) {
+    // long blades swept up and back, clear of the hair
+    earBlade(B, p, [R * 0.8, -R * 0.04, -R * 0.08], [0.62, 0.62, -0.66], R * 0.58, R * 0.13, R * 0.045, mix(C.skin, C.blush, 0.5));
+    for (const x of p.slice(-3)) p.push(x.mirrorX());
+  } else p.push(...S.mirrorX([
     tagged(sk(S.ellipsoid(R * 0.07, R * 0.23, R * 0.16).rot(-12, 22, 0).at(R * 0.86, -R * 0.08, -R * 0.06).blend(0.01)), 'ear'),
     tagged(S.ellipsoid(R * 0.045, R * 0.14, R * 0.085).rot(-12, 22, 0).at(R * 0.935, -R * 0.07, -R * 0.03).cut(0.006).color(C.shade), 'ear'),
   ]));
@@ -719,9 +900,9 @@ function humanHead(B) {
     p.push(...S.mirrorX([sk(S.ellipsoid(R * 0.16, R * 0.08, R * 0.12).rot(0, 0, -20).at(R * 0.5, R * 0.3, R * 0.66).blend(0.012))]));   // a fiercer, swept brow
   }
   // eyes
-  const er = R * (fem ? 0.185 : 0.168);
+  const er = R * (fem || elf ? 0.185 : dwarf ? 0.15 : 0.168);
   eyeSet(p, hard, C, { x: R * 0.38, y: 0, r: er, z0: R * 2, look: { iris: f.eye, glow: f.glowEyes, ring: harpy ? 0x3a2408 : undefined, pupilSize: harpy ? 0.8 : 1 }, lash: fem ? 0x1c1014 : 0x2a1c14,
-    lidCol: harpy ? tone(mask, 0, 0, -0.04) : tone(C.skin, -0.005, -0.08, gauntF ? -0.26 : -0.2), socket: gauntF ? C.deep : undefined, lid: { upper: old ? 44 : harpy ? 44 : 37, roll: harpy ? -16 : -4 * (bh - 0.9) * 2.5, lower: harpy ? 14 : 0 } });
+    lidCol: harpy ? tone(mask, 0, 0, -0.04) : tone(C.skin, -0.005, -0.08, gauntF ? -0.26 : -0.2), socket: gauntF ? C.deep : undefined, lid: { upper: old ? 44 : harpy ? 44 : dwarf ? 42 : 37, roll: harpy ? -16 : elf ? -11 : -4 * (bh - 0.9) * 2.5, lower: harpy ? 14 : 0 } });
   if (harpy) p.push(...S.mirrorX([
     S.ellipsoid(R * 0.27, R * 0.17, R * 0.22).rot(0, 0, -16).at(R * 0.42, R * 0.04, R * 0.74).color(mask).pbr(0.85).paint(0.018, 0),
     stroke(R * 0.44, -R * 0.36, R * 0.74, R * 0.055, R * 0.24, R * 0.28, 0, 10).color(mask).pbr(0.85).paint(0.012, 0),
@@ -738,7 +919,7 @@ function humanHead(B) {
   ]));
   if (old || gauntF) p.push(...S.mirrorX([S.capsule([R * 0.19, -R * 0.42, R * 0.9], [R * 0.33, -R * 0.68, R * 0.78], R * 0.02).color(C.shade).paint(0.005, -0.003)]));
   const hc = f.hairCol ?? 0x3a2a1c;
-  p.push(...S.mirrorX([stroke(R * 0.36, R * (0.3 + 0.015 * bh), R * 0.84, R * 0.24, R * 0.05 * bh * (fem ? 0.7 : 1), R * 0.2, 24, harpy ? 22 : 5 - 8 * (bh - 1)).color(old ? 0xcfcac0 : harpy ? mask : fem ? 0x2a2030 : tone(hc, 0, 0, -0.06)).pbr(0.9).paint(0.004, 0.0028)]));
+  p.push(...S.mirrorX([stroke(R * 0.36, R * (0.3 + 0.015 * bh), R * 0.84, R * 0.24, R * 0.05 * bh * (fem ? 0.7 : 1), R * 0.2, 24, harpy ? 22 : elf ? 17 : 5 - 8 * (bh - 1)).color(old ? 0xcfcac0 : harpy ? mask : fem ? 0x2a2030 : tone(hc, 0, 0, -0.06)).pbr(0.9).paint(0.004, 0.0028)]));
   if (f.freckles) for (let i = 0; i < 9; i++) p.push(S.sphere(R * 0.022).at((noise3(i * 3.1, 2, 5) - 0.5) * R * 0.9, -R * 0.24 - noise3(i * 1.7, 9, 1) * R * 0.14, R * 0.84).color(tone(C.skin, -0.02, 0.1, -0.14)).paint(0.004, 0));
   if (f.scar) p.push(stroke(R * 0.52, R * 0.0, R * 0.7, R * 0.016, R * 0.4, R * 0.3, 0, -8).color(tone(C.skin, -0.02, -0.05, 0.1)).paint(0.004, 0.0012));
   if (f.beard === 'stubble') p.push(S.ellipsoid(R * 0.72, R * 0.4, R * 0.62).at(0, -R * 0.8, R * 0.32).color(mix(C.skin, hc, 0.4)).paint(0.02, 0));
@@ -794,6 +975,44 @@ function humanHair(B, f, hc) {
       for (const s of [-1, 1]) for (let j = 0; j < 3; j++) hard.push(feather([s * R * 0.84, R * (0.1 - j * 0.14), -R * 0.1], [s * 0.5, 0.15 - j * 0.25, -1], R * (0.9 - j * 0.12), R * 0.3, [s, 0.2, 0.3], cols, 1));
       break;
     }
+    case 'topknot':
+      // scraped up into a knot on the crown, bound with a thong, its tail falling behind
+      p.push(cap(0.05), faceCut(-0.3, 0.74, 0.8), napeCut(-12, -0.78));
+      p.push(hair(S.sphere(R * 0.27).at(0, R * (0.36 + 0.92 * L), -R * 0.26).blend(0.02), 0.008));
+      p.push(hair(bone([0, R * (0.42 + 0.92 * L), -R * 0.36], [0, R * 0.36, -R * 1.22], R * 0.15, R * 0.05).blend(0.02), 0.008));
+      p.push(S.cyl(R * 0.26, R * 0.075, 0).at(0, R * (0.2 + 0.92 * L), -R * 0.2).color(0x7a2a1e).pbr(0.8).paint(0.004, 0.003));
+      break;
+    case 'mohawk':
+      // the skull shaved but for a stiff crest from brow to nape
+      for (let i = 0; i < 9; i++) { const a = (-34 + i * 20) * DEG; p.push(hair(orient(S.ellipsoid(R * 0.16, R * (0.48 - Math.abs(i - 3) * 0.035), R * 0.12), [0, R * (0.2 + 0.94 * L * Math.cos(a)), R * (-0.08 - 1.0 * Math.sin(a))], [0, Math.cos(a) + 0.25, -Math.sin(a) - 0.5], [1, 0, 0]).blend(0.016), 0.008)); }
+      break;
+    case 'spiked': {
+      // stiffened with lime: bleached spikes raked back from the brow
+      const lime = mix(hc, 0xece6d2, 0.74);
+      p.push(cap(0.045).color(mix(hc, 0xece6d2, 0.3)), faceCut(-0.34, 0.74, 0.88), napeCut(-16, -0.92));
+      for (let i = 0; i < 5; i++) for (let j = -2; j <= 2; j++) {
+        const a = (-32 + i * 28) * DEG, b = j * 25 * DEG;
+        const n = [Math.sin(b), Math.cos(a) * Math.cos(b), -Math.sin(a) * Math.cos(b)];
+        const base = [n[0] * R * 0.82, R * 0.2 + n[1] * R * 0.88 * L, -R * 0.08 + n[2] * R * 0.94];
+        const len = R * (0.6 - Math.abs(j) * 0.07 + ((i * 3 + j + 7) % 3) * 0.09);
+        p.push(bone(base, add3(base, mul3(norm3([n[0] * 0.8, n[1] + 0.25, n[2] - 0.7]), len)), R * 0.105, R * 0.016).color(lime).tint(0.1, 30).pbr(0.92).blend(0.008));
+      }
+      break;
+    }
+    case 'braids': {
+      // parted in the middle and drawn into two long plaits that hang in front of the shoulders
+      const zf = P.chestD / 2 + 0.03, n = 8, tie = 0x7a2a1e;
+      p.push(cap(0.07, 0.22, -0.08), faceCut(-0.4, 0.72, 0.96), napeCut(-22, -1.1));
+      p.push(S.capsule([0, R * 1.3, R * 0.7], [0, R * 1.0, -R * 0.9], R * 0.025).color(tone(hc, 0, 0, -0.12)).paint(0.003, -0.003));
+      for (const s of [1, -1]) {
+        const path = (t) => [s * R * lerp(0.84, 0.74, t), -R * lerp(0.25, 3.0, t), lerp(-R * 0.1, zf, clamp(t * 2.6))];
+        p.push(hair(S.ellipsoid(R * 0.2, R * 0.42, R * 0.3).at(s * R * 0.78, -R * 0.16, -R * 0.2).blend(0.02)));
+        for (let i = 0; i < n; i++) { const q = path((i + 0.5) / n); p.push(hair(S.ellipsoid(R * 0.15, R * 0.21, R * 0.135).rot(0, 0, s * (i % 2 ? 18 : -18)).at(q[0], q[1], q[2]).blend(0.006), 0.004)); }
+        const e = path(1);
+        p.push(S.ellipsoid(R * 0.13, R * 0.07, R * 0.13).at(e[0], e[1] + R * 0.06, e[2]).color(tie).pbr(0.8).blend(0.004), hair(S.ellipsoid(R * 0.1, R * 0.16, R * 0.1).at(e[0], e[1] - R * 0.1, e[2]).blend(0.008), 0.006));
+      }
+      break;
+    }
     default:
   }
   const bc = tone(hc, 0, 0, 0.02);
@@ -814,6 +1033,53 @@ function humanHair(B, f, hc) {
       if (f.beard === 'long') p.push(beard(S.ellipsoid(R * 0.36, R * 0.62, R * 0.22).at(0, -R * 1.42, R * 0.62).blend(0.03)));
       p.push(S.ellipsoid(R * 0.2, R * 0.075, R * 0.3).at(0, my - R * 0.04, R * 0.9).cut(0.008).color(bc));                        // the mouth shows through
       break;
+    case 'great':
+    case 'braided':
+    case 'forked':
+    case 'curled': {
+      // the big beards hang down over the chest: they are measured against the body (how far out the chest is, where the belt sits)
+      const kind = f.beard, zc = Math.max(R * 0.66, P.chestD / 2 + 0.036 - R * 0.3), belt = P.torso + P.neck + R * P.headLen * 0.9 - 0.075 * (P.torso / 0.3);
+      const mouth = () => p.push(S.ellipsoid(R * 0.2, R * 0.07, R * 0.3).at(0, my - R * 0.04, R * 0.92).cut(0.008).color(bc));
+      const base = (w = 0.7) => {
+        p.push(...S.mirrorX([beard(S.ellipsoid(R * 0.3, R * 0.095, R * 0.11).rot(0, 16, -28).at(R * 0.2, my + R * 0.09, R * 0.9).blend(0.006), 0.004)]));    // a moustache to match
+        p.push(beard(S.ellipsoid(R * w, R * 0.46, R * 0.54).at(0, -R * 0.86, R * 0.36).blend(0.012), 0.007));
+        p.push(...S.mirrorX([beard(S.ellipsoid(R * 0.13, R * 0.34, R * 0.26).at(R * 0.74, -R * 0.42, R * 0.14).blend(0.016), 0.006)]));
+      };
+      if (kind === 'great') {
+        const len = clamp(belt * 0.66, R * 1.9, R * 3.1);
+        base(0.78);
+        p.push(beard(bone([0, -R * 1.0, R * 0.56], [0, -len * 0.62, zc], R * 0.66, R * 0.56).blend(0.03), 0.008));
+        p.push(beard(bone([0, -len * 0.62, zc], [0, -len, zc + R * 0.06], R * 0.54, R * 0.2).blend(0.02), 0.008));
+        p.push(...S.mirrorX([beard(bone([R * 0.5, -R * 0.9, R * 0.4], [R * 0.4, -len * 0.7, zc], R * 0.3, R * 0.16).blend(0.02), 0.008)]));
+      } else if (kind === 'braided') {
+        // three plaits to the belt, each ringed with metal
+        const len = clamp(belt, R * 2.4, R * 4.4);
+        base(0.72);
+        p.push(beard(bone([0, -R * 1.0, R * 0.56], [0, -R * 1.7, zc], R * 0.56, R * 0.4).blend(0.03), 0.007));
+        for (const s of [0, 1, -1]) {
+          const x0 = s * R * 0.36, l = len * (s ? 0.88 : 1), n = Math.max(4, Math.round((l - R * 1.5) / (R * 0.3)));
+          const zEnd = Math.max(zc, P.waistD / 2 * (1.32 + (B.st.gut || 0) * 0.5) + 0.016);
+          for (let i = 0; i < n; i++) { const t = (i + 0.5) / n, y = -lerp(R * 1.5, l, t); p.push(beard(S.ellipsoid(R * 0.17, R * 0.2, R * 0.15).rot(0, 0, i % 2 ? 20 : -20).at(x0 * lerp(1, 1.25, t), y, lerp(zc, zEnd, t) + R * 0.1).blend(0.006), 0.004)); }
+          hard.push(H.torus(R * 0.13, R * 0.045, 12, 6).rot(90, 0, 0).at(x0 * 1.25, -l - R * 0.02, zEnd + R * 0.1).color(0xc9a23a).pbr(0.35, 1).lod(1));
+          p.push(beard(S.ellipsoid(R * 0.1, R * 0.16, R * 0.1).at(x0 * 1.25, -l - R * 0.2, zEnd + R * 0.1).blend(0.006), 0.006));
+        }
+      } else if (kind === 'forked') {
+        const len = clamp(belt * 0.6, R * 1.9, R * 2.8);
+        base(0.68);
+        p.push(...S.mirrorX([beard(bone([R * 0.12, -R * 0.96, R * 0.6], [R * 0.3, -len * 0.7, zc + R * 0.1], R * 0.34, R * 0.22).blend(0.022), 0.007), beard(bone([R * 0.3, -len * 0.7, zc + R * 0.1], [R * 0.4, -len, zc + R * 0.14], R * 0.22, R * 0.03).blend(0.012), 0.007)]));
+      } else {
+        // oiled and curled: a squared block of ringlets in tiers
+        const len = clamp(belt * 0.5, R * 1.7, R * 2.4), oil = (x) => x.color(tone(hc, 0, 0, -0.04)).tint(0.1, 30).pbr(0.42).bump(0.008, 30, 'scales');
+        p.push(...S.mirrorX([oil(S.ellipsoid(R * 0.3, R * 0.1, R * 0.11).rot(0, 16, -18).at(R * 0.2, my + R * 0.09, R * 0.9).blend(0.006))]));
+        p.push(oil(S.ellipsoid(R * 0.72, R * 0.46, R * 0.54).at(0, -R * 0.86, R * 0.36).blend(0.012)));
+        p.push(...S.mirrorX([oil(S.ellipsoid(R * 0.13, R * 0.36, R * 0.26).at(R * 0.74, -R * 0.4, R * 0.14).blend(0.016))]));
+        const tiers = 4;
+        for (let i = 0; i < tiers; i++) { const t = (i + 0.5) / tiers, y = -lerp(R * 1.0, len, t); p.push(oil(S.box(R * (1.16 - t * 0.2), (len - R) / tiers * 1.2, R * 0.5, R * 0.12).at(0, y, lerp(R * 0.62, zc + R * 0.1, t)).blend(0.006))); }
+        for (let i = 1; i < tiers; i++) p.push(S.box(R * 1.6, R * 0.03, R * 1.2, 0).at(0, -lerp(R * 1.0, len, i / tiers), R * 0.9).color(tone(hc, 0, 0, -0.1)).paint(0.003, -0.004));
+      }
+      mouth();
+      break;
+    }
     default:
   }
   return p.length || hard.length ? { prims: p, hard } : null;
@@ -1248,6 +1514,328 @@ function fiendHead(B) {
   return { prims: p, hard, hair: null };
 }
 
+
+// =====================================================================================
+//  The wider races: orc, lizard, rat, goat, tiger, mummy (elf and dwarf are built on the human head)
+// =====================================================================================
+
+/** whiskers: thin tapering rods fanned from a muzzle pad at (+-root), close level only */
+function whiskers(hard, root, R, color, n = 3, len = 0.9) {
+  for (const s of [1, -1]) for (let i = 0; i < n; i++) {
+    const a = (i - (n - 1) / 2) * 0.34, L = R * len * (1 - Math.abs(i - (n - 1) / 2) * 0.12);
+    hard.push(orient(H.cyl(R * 0.004, R * 0.014, L, 4).at(0, L / 2, 0), [s * root[0], root[1] + (i - (n - 1) / 2) * R * 0.05, root[2]], [s, Math.sin(a) * 0.55 - 0.08, 0.16 - i * 0.14]).color(color).pbr(0.6).lod(0));
+  }
+}
+/** a round, cupped ear: a thick disc with a hollowed inner face, plus a flat stand-in for the farthest level (left side; mirror the prims) */
+function roundEar(B, at, rw, rh, thick, rot, back, inner) {
+  const out = [
+    S.ellipsoid(rw, rh, thick).rot(rot[0], rot[1], rot[2]).at(at[0], at[1], at[2]).color(back).tint(0.12, 30).pbr(0.8).blend(0.012),
+  ];
+  const e = new THREE.Euler(rot[0] * DEG, rot[1] * DEG, rot[2] * DEG, 'XYZ'), off = new THREE.Vector3(0, -rh * 0.06, thick * 0.9).applyEuler(e);
+  out.push(S.ellipsoid(rw * 0.7, rh * 0.72, thick * 0.9).rot(rot[0], rot[1], rot[2]).at(at[0] + off.x, at[1] + off.y, at[2] + off.z).cut(0.006).color(inner));
+  const far = H.cyl(rw * 0.9, rw * 0.9, thick * 0.8, 7).rot(90, 0, 0).scale(1, rh / rw, 1).rot(rot[0], rot[1], rot[2]).at(at[0], at[1], at[2]).color(back).pbr(0.8).far();
+  (B.farHard ||= []).push(far, far.mirrorX());
+  return out;
+}
+
+function orcHead(B) {
+  const { P, C, sk, def, o } = B;
+  const R = P.headR, p = [], hard = [];
+  const r = rng(hashStr((def.id || 'orc') + ':face'));
+  const boss = o.build === 'heavy', tusk = (boss ? 1.3 : 1) * (0.92 + r() * 0.22), eyeCol = [0xd8421a, 0xe8861a, 0xc8a01e][Math.floor(r() * 3)];
+  // a small flat-topped skull sunk between the shoulders, a slab of brow, and a jaw wider than the skull that juts past the upper lip
+  p.push(sk(S.ellipsoid(R * 0.86, R * 0.84, R * 0.96).at(0, R * 0.2, -R * 0.1)));
+  p.push(sk(S.ellipsoid(R * 0.78, R * 0.72, R * 0.62).at(0, -R * 0.2, R * 0.28).blend(0.025)));
+  p.push(sk(S.box(R * 1.66, R * 0.58, R * 1.02, R * 0.24).at(0, -R * 0.68, R * 0.26).blend(0.03)));
+  p.push(sk(S.box(R * 0.92, R * 0.38, R * 0.42, R * 0.15).at(0, -R * 0.82, R * 0.86).blend(0.028)));                          // square chin thrust forward
+  p.push(...S.mirrorX([
+    sk(S.ellipsoid(R * 0.24, R * 0.32, R * 0.3).at(R * 0.72, -R * 0.5, R * 0.12).blend(0.03)),                               // jaw muscle
+    sk(S.ellipsoid(R * 0.22, R * 0.12, R * 0.18).at(R * 0.56, -R * 0.12, R * 0.58).blend(0.026)),                            // cheekbone
+    sk(S.capsule([0, R * 0.2, R * 0.98], [R * 0.68, R * 0.26, R * 0.56], R * 0.16, R * 0.115).blend(0.014)),                  // brow like a lintel
+  ]));
+  p.push(sk(S.capsule([0, R * 0.56, R * 0.7], [0, R * 0.98, -R * 0.2], R * 0.09, R * 0.07).blend(0.02)));                    // ridge over the crown
+  // short upturned snout
+  p.push(sk(S.ellipsoid(R * 0.2, R * 0.15, R * 0.17).rot(-18, 0, 0).at(0, -R * 0.14, R * 0.99).blend(0.016)));
+  p.push(...S.mirrorX([sk(S.sphere(R * 0.105).at(R * 0.16, -R * 0.2, R * 0.93).blend(0.012)), S.sphere(R * 0.052).at(R * 0.085, -R * 0.2, R * 1.1).cut(0.004).color(C.mouth)]));
+  p.push(sk(S.ellipsoid(R * 0.52, R * 0.1, R * 0.17).at(0, -R * 0.6, R * 0.98).blend(0.012)));                               // lower lip shelf
+  p.push(neckStub(B, R, 1.08));
+  const inner = tone(C.skin, -0.04, 0.04, -0.15);
+  earBlade(B, p, [R * 0.84, R * 0.04, -R * 0.12], [0.62, 0.55, -0.56], R * 0.24, R * 0.12, R * 0.05, inner);
+  for (const x of p.slice(-3)) p.push(x.mirrorX());
+  if (r() > 0.5) p.push(S.sphere(R * 0.06).at(R * 1.08, R * 0.3, -R * 0.36).cut(0.004).color(inner));                         // a bite out of one ear
+  const base = p.slice();
+  p.push(stroke(0, -R * 0.47, R * 0.96, R * 0.44, R * 0.024, R * 0.26).color(C.mouth).paint(0.003, -0.0045));
+  p.push(stroke(0, -R * 0.61, R * 1.0, R * 0.42, R * 0.045, R * 0.24).color(C.lip).paint(0.005, 0));
+  // tusks from the lower jaw, a row of blunt teeth between them
+  for (const s of [1, -1]) {
+    const q = hit(base, [s * R * 0.36, -R * 0.56, R * 2], [0, 0, -1]);
+    hard.push(spike([q[0], q[1] - R * 0.05, q[2] - R * 0.07], [s * 0.2, 1, 0.16], R * 0.42 * tusk * (s < 0 && r() > 0.7 ? 0.6 : 1), R * 0.085, C.tooth, [0, 0, -1], 0.24).lod(99));
+  }
+  teethRow(base, hard, [-0.2, -0.07, 0.07, 0.2].map((x) => x * R), -R * 0.54, R * 2, R * 0.065, R * 0.034, C.tooth, 1, 0);
+  eyeSet(p, hard, C, { x: R * 0.35, y: R * 0.03, r: R * 0.13, z0: R * 2, look: { iris: eyeCol, white: 0xe6dcae, pupilSize: 0.75 }, lash: 0x16160e,
+    lidCol: tone(C.skin, 0, 0.02, -0.16), socket: tone(C.skin, -0.01, 0.02, -0.14), lid: { upper: 48, roll: -12, lower: 24 } });
+  // scars and weathering
+  const scar = tone(C.skin, -0.02, -0.08, 0.13);
+  p.push(stroke(-R * 0.32, R * 0.16, R * 0.8, R * 0.018, R * 0.34, R * 0.3, 0, 16).color(scar).paint(0.004, 0.0012));
+  if (r() > 0.4) p.push(stroke(R * 0.46, -R * 0.36, R * 0.74, R * 0.2, R * 0.016, R * 0.3, 0, 30).color(scar).paint(0.004, 0.0012));
+  for (let i = 0; i < 6; i++) p.push(S.sphere(R * (0.1 + r() * 0.1)).at((r() - 0.5) * R * 1.5, R * (0.4 + r() * 0.6), (r() - 0.6) * R * 1.4).color(tone(C.skin, -0.015, 0.02, -0.08)).paint(0.012, 0));
+  p.push(S.ellipsoid(R * 0.8, R * 0.36, R * 0.66).at(0, -R * 0.8, R * 0.4).color(tone(C.skin, -0.01, -0.04, -0.07)).paint(0.03, 0));       // dark jowls
+  return { prims: p, hard, hair: humanHair(B, B.face, B.face.hairCol ?? 0x16130f) };
+}
+
+function lizardHead(B) {
+  const { P, C, sk, def, o } = B;
+  const R = P.headR, p = [], hard = [];
+  const r = rng(hashStr((def.id || 'lizard') + ':face'));
+  const belly = (x) => sk(x).color(C.light);
+  // low wedge of a skull drawn out into a long, deep snout; the lower jaw is a separate, paler bar
+  p.push(sk(S.ellipsoid(R * 0.8, R * 0.72, R * 0.92).at(0, R * 0.16, -R * 0.12)));
+  p.push(sk(S.capsule([0, R * 0.06, R * 0.36], [0, -R * 0.26, R * 1.52], R * 0.5, R * 0.27).blend(0.04)));
+  p.push(sk(S.ellipsoid(R * 0.3, R * 0.2, R * 0.26).at(0, -R * 0.2, R * 1.62).blend(0.03)));                                  // bulb of the nose
+  p.push(...S.mirrorX([
+    sk(S.ellipsoid(R * 0.3, R * 0.36, R * 0.36).at(R * 0.56, -R * 0.34, R * 0.1).blend(0.03)),                               // jaw muscle
+    sk(S.capsule([R * 0.16, R * 0.34, R * 0.92], [R * 0.74, R * 0.5, R * 0.02], R * 0.13, R * 0.1).blend(0.014)),             // bony ridge over the eye, running back
+    sk(S.sphere(R * 0.085).at(R * 0.14, -R * 0.06, R * 1.72).blend(0.012)),                                                  // nostril mound
+  ]));
+  p.push(belly(S.capsule([0, -R * 0.56, R * 0.12], [0, -R * 0.66, R * 1.4], R * 0.34, R * 0.2).blend(0.01)));                // lower jaw
+  p.push(belly(S.ellipsoid(R * 0.44, R * 0.3, R * 0.5).at(0, -R * 0.78, R * 0.2).blend(0.03)));                              // throat pouch
+  p.push(neckStub(B, R, 1.12, -0.22));
+  const base = p.slice();
+  p.push(...S.mirrorX([S.ellipsoid(R * 0.04, R * 0.03, R * 0.06).rot(0, 30, 0).at(R * 0.16, -R * 0.04, R * 1.79).cut(0.004).color(0x120c0a)]));
+  // the gape: a dark line between the jaws, running back and up to the hinge
+  p.push(...S.mirrorX([S.capsule([R * 0.04, -R * 0.5, R * 1.62], [R * 0.4, -R * 0.44, R * 0.7], R * 0.03).color(C.mouth).paint(0.004, -0.004), S.capsule([R * 0.4, -R * 0.44, R * 0.7], [R * 0.62, -R * 0.3, R * 0.3], R * 0.03).color(C.mouth).paint(0.004, -0.004)]));
+  // teeth: a picket of cones along both jaws, the foremost upper pair longer
+  for (const s of [1, -1]) for (let i = 0; i < 6; i++) {
+    const z = R * (0.62 + i * 0.185), q = hit(base, [s * R * 1.2, -R * 0.4, z], [-s, 0, 0]);
+    hard.push(spike([q[0] - s * R * 0.03, q[1], q[2]], [s * 0.1, -1, 0.1], R * (i === 4 ? 0.2 : 0.12), R * 0.035, C.tooth, [0, 0, -1], 0.15));
+    if (i % 2 === 0) { const q2 = hit(base, [s * R * 1.2, -R * 0.58, z + R * 0.09], [-s, 0, 0]); hard.push(spike([q2[0] - s * R * 0.03, q2[1], q2[2]], [s * 0.1, 1, 0.1], R * 0.1, R * 0.03, C.tooth, [0, 0, -1], 0.15)); }
+  }
+  teethRow(base, hard, [-0.12, 0.12].map((x) => x * R), -R * 0.42, R * 3, R * 0.11, R * 0.03, C.tooth, -1, 0);
+  // eyes on the sides of the head: gold with a slit
+  eyeSet(p, hard, C, { x: R * 0.52, y: R * 0.14, r: R * 0.15, z0: R * 2, yaw: 34, look: { iris: 0xe8b21e, white: 0xd8a01a, slit: 1, ring: 0x6a3a08 }, lash: 0x14180c,
+    lidCol: tone(C.skin, 0, 0.02, -0.14), socket: tone(C.skin, 0, 0, -0.12), lid: { upper: 44, roll: -14, lower: 22 } });
+  // markings: a dark saddle over the skull, bands across the snout, pale lips
+  const dark = tone(C.skin, -0.02, 0.03, -0.11);
+  p.push(S.ellipsoid(R * 0.5, R * 0.3, R * 0.8).at(0, R * 0.74, -R * 0.2).color(dark).paint(0.03, 0));
+  for (let i = 0; i < 3; i++) p.push(stroke(0, R * (0.3 - i * 0.14), R * (0.8 + i * 0.3), R * 0.5, R * 0.3, R * 0.07).color(dark).paint(0.012, 0));
+  for (let i = 0; i < 6; i++) p.push(wart([(r() - 0.5) * R * 0.9, R * (0.3 + r() * 0.3), R * (0.3 + r() * 0.5)], R * (0.03 + r() * 0.02), tone(C.skin, 0, 0, 0.06)));
+  // crest: a sail of skin on spines from the brow to the nape (left off under a helm or hood)
+  if (!(o.helm || o.hood)) {
+    const out = [[-0.62, 0.5], [-0.5, 0.98], [-0.34, 1.34], [-0.2, 1.02], [0.0, 1.56], [0.2, 1.06], [0.42, 1.5], [0.6, 0.96], [0.86, 1.26], [0.98, 0.72], [1.24, 0.82], [1.16, 0.3], [0.9, -0.1], [0.4, 0.3], [-0.2, 0.4]].map((q) => [q[0] * R, q[1] * R]);
+    hard.push(H.extrude(out, R * 0.07, R * 0.02).at(0, 0, -R * 0.035).rot(0, 90, 0).color(C.crest).pbr(0.6).shade((x, y) => (y < R * 0.98 ? C.crestDeep : null)));
+    for (const [z, y, l] of [[0.34, 1.3, 0.2], [0.0, 1.5, 0.24], [-0.42, 1.44, 0.22], [-0.86, 1.2, 0.2], [-1.24, 0.78, 0.16]]) hard.push(spike([0, R * (y - 0.1), R * z], [0, 1, -0.25], R * l, R * 0.04, C.claw, [0, 0, -1], 0.2));
+  }
+  return { prims: p, hard, hair: null };
+}
+
+function ratHead(B) {
+  const { P, C, sk, def } = B;
+  const R = P.headR, p = [], hard = [];
+  const r = rng(hashStr((def.id || 'rat') + ':face'));
+  const pale = (x) => sk(x).color(C.light), fur = B.fur;
+  // narrow skull running straight into a long, tapering muzzle; a weak lower jaw tucked under it
+  p.push(sk(S.ellipsoid(R * 0.8, R * 0.78, R * 0.94).at(0, R * 0.16, -R * 0.12)));
+  p.push(sk(S.capsule([0, R * 0.04, R * 0.36], [0, -R * 0.36, R * 1.46], R * 0.5, R * 0.19).blend(0.045)));
+  p.push(...S.mirrorX([
+    sk(S.ellipsoid(R * 0.26, R * 0.3, R * 0.32).at(R * 0.5, -R * 0.36, R * 0.16).blend(0.03)),
+    sk(S.capsule([R * 0.12, R * 0.34, R * 0.84], [R * 0.66, R * 0.4, R * 0.36], R * 0.11, R * 0.09).blend(0.016)),
+    pale(S.ellipsoid(R * 0.17, R * 0.15, R * 0.2).at(R * 0.13, -R * 0.46, R * 1.36).blend(0.016)),                           // whisker pads
+  ]));
+  p.push(pale(S.capsule([0, -R * 0.56, R * 0.16], [0, -R * 0.66, R * 1.08], R * 0.3, R * 0.14).blend(0.012)));
+  p.push(S.sphere(R * 0.115).at(0, -R * 0.34, R * 1.64).color(C.pink).pbr(0.4).blend(0.012));                                 // nose
+  p.push(neckStub(B, R, 1.06, -0.2));
+  // great round ears, one of them torn
+  p.push(...S.mirrorX(roundEar(B, [R * 0.74, R * 0.72, -R * 0.26], R * 0.44, R * 0.5, R * 0.085, [-8, -28, -24], tone(C.skin, 0, -0.02, -0.04), C.pink)));
+  if (r() > 0.4) p.push(S.sphere(R * 0.13).at(R * 1.1, R * 1.14, -R * 0.4).cut(0.006).color(C.pink));
+  const base = p.slice();
+  // scruffy fur on the crown and cheeks
+  p.push(fur(S.ellipsoid(R * 0.44, R * 0.26, R * 0.6).at(0, R * 0.82, -R * 0.3).blend(0.03), 0.01));
+  p.push(...S.mirrorX([fur(S.ellipsoid(R * 0.2, R * 0.34, R * 0.34).rot(0, 0, 12).at(R * 0.66, -R * 0.4, -R * 0.06).blend(0.028), 0.01)]));
+  p.push(fur(S.ellipsoid(R * 0.8, R * 0.62, R * 0.44).at(0, R * 0.04, -R * 0.66).blend(0.03), 0.01));
+  // mouth line, and the long yellow incisors
+  p.push(...S.mirrorX([S.capsule([0, -R * 0.56, R * 1.42], [R * 0.34, -R * 0.5, R * 0.6], R * 0.026).color(C.mouth).paint(0.004, -0.004)]));
+  for (const s of [1, -1]) hard.push(H.box(R * 0.075, R * 0.26, R * 0.045, R * 0.012).rot(-10, 0, s * 3).at(s * R * 0.045, -R * 0.66, R * 1.44).color(C.tooth).pbr(0.3));
+  for (const s of [1, -1]) hard.push(H.box(R * 0.06, R * 0.12, R * 0.04, R * 0.01).rot(8, 0, 0).at(s * R * 0.036, -R * 0.7, R * 1.14).color(C.tooth).pbr(0.3).lod(1));
+  // beady eyes
+  eyeSet(p, hard, C, { x: R * 0.4, y: R * 0.14, r: R * 0.125, z0: R * 2, yaw: 22, sink: 0.02, look: { iris: 0x7a1410, white: 0x2a0e0c, ring: 0x1a0606, pupilSize: 1.3, glow: 0.25 }, lash: 0x100a08,
+    lidCol: tone(C.skin, 0, 0, -0.16), socket: tone(C.skin, 0, 0, -0.14), lid: { upper: 36, roll: -8, lower: 10 } });
+  whiskers(hard, [R * 0.26, -R * 0.44, R * 1.34], R, 0xd8d0c0, 3, 0.95);
+  // mange: bare pink patches, darker fur down the middle of the skull
+  p.push(S.ellipsoid(R * 0.3, R * 0.3, R * 0.9).at(0, R * 0.7, R * 0.0).color(tone(C.skin, 0, 0, -0.08)).paint(0.03, 0));
+  for (let i = 0; i < 2; i++) { const q = hit(base, [(r() - 0.5) * R, R * (0.2 + r() * 0.5), -R * 2], [0, 0, 1]); p.push(S.sphere(R * (0.08 + r() * 0.05)).at(q[0], q[1], q[2]).color(mix(C.skin, C.pink, 0.6)).paint(0.008, -0.002)); }
+  return { prims: p, hard, hair: null };
+}
+
+const GOAT_HORNS = {
+  curl: { pts: [[0.4, 0.78, -0.14], [0.78, 1.06, -0.56], [1.16, 0.74, -0.98], [1.3, 0.18, -0.76], [1.22, -0.16, -0.22], [1.34, 0.04, 0.3]], r: [0.24, 0.22, 0.19, 0.15, 0.1, 0] },
+  swept: { pts: [[0.34, 0.84, -0.08], [0.5, 1.36, -0.42], [0.66, 1.62, -1.02], [0.8, 1.56, -1.66], [0.9, 1.3, -2.2]], r: [0.2, 0.18, 0.14, 0.09, 0] },
+  long: { pts: [[0.32, 0.86, -0.04], [0.5, 1.5, -0.14], [0.76, 2.16, -0.36], [1.0, 2.74, -0.44], [1.16, 3.2, -0.3]], r: [0.19, 0.16, 0.12, 0.075, 0] },
+};
+function goatHead(B) {
+  const { P, C, sk, def, o } = B;
+  const R = P.headR, p = [], hard = [];
+  const r = rng(hashStr((def.id || 'goat') + ':face'));
+  const fur = B.fur, pale = (x) => sk(x).color(C.light);
+  // narrow skull, flat forehead, a long arched nose and a slim lower jaw
+  p.push(sk(S.ellipsoid(R * 0.8, R * 0.82, R * 0.9).at(0, R * 0.18, -R * 0.1)));
+  p.push(sk(S.ellipsoid(R * 0.6, R * 0.46, R * 0.4).at(0, R * 0.34, R * 0.46).blend(0.03)));
+  p.push(sk(S.capsule([0, R * 0.02, R * 0.46], [0, -R * 0.62, R * 1.3], R * 0.42, R * 0.26).blend(0.04)));
+  p.push(sk(S.ellipsoid(R * 0.2, R * 0.2, R * 0.3).rot(36, 0, 0).at(0, -R * 0.2, R * 1.06).blend(0.03)));                    // the arch of the nose
+  p.push(...S.mirrorX([
+    sk(S.ellipsoid(R * 0.26, R * 0.36, R * 0.3).at(R * 0.5, -R * 0.36, R * 0.18).blend(0.03)),
+    sk(S.capsule([R * 0.18, R * 0.3, R * 0.8], [R * 0.72, R * 0.3, R * 0.36], R * 0.13, R * 0.1).blend(0.016)),
+  ]));
+  p.push(pale(S.capsule([0, -R * 0.58, R * 0.26], [0, -R * 0.98, R * 1.12], R * 0.26, R * 0.17).blend(0.014)));
+  p.push(S.ellipsoid(R * 0.2, R * 0.14, R * 0.12).at(0, -R * 0.7, R * 1.5).color(0x2a1e1c).pbr(0.4).blend(0.016));           // nose pad
+  p.push(neckStub(B, R, 1.08, -0.2));
+  const inner = mix(C.skin, 0xd8a09a, 0.5);
+  earBlade(B, p, [R * 0.72, R * 0.12, -R * 0.3], [0.94, -0.3, -0.12], R * 0.4, R * 0.15, R * 0.05, inner);
+  for (const x of p.slice(-3)) p.push(x.mirrorX());
+  const base = p.slice();
+  p.push(...S.mirrorX([S.ellipsoid(R * 0.07, R * 0.035, R * 0.08).rot(0, 0, 34).at(R * 0.11, -R * 0.66, surfZ(base, R * 0.11, -R * 0.66, R * 2.6)).cut(0.005).color(0x120c0c)]));
+  p.push(S.capsule([0, -R * 0.78, R * 1.56], [0, -R * 0.92, R * 1.4], R * 0.02).color(0x1c1210).paint(0.003, -0.003));          // split lip
+  p.push(...S.mirrorX([S.capsule([R * 0.02, -R * 0.9, R * 1.36], [R * 0.34, -R * 0.68, R * 0.56], R * 0.028).color(0x1c1210).paint(0.004, -0.004)]));
+  p.push(S.ellipsoid(R * 0.34, R * 0.26, R * 0.44).at(0, -R * 0.58, R * 1.2).color(C.light).paint(0.05, 0));                   // pale muzzle
+  p.push(S.ellipsoid(R * 0.16, R * 0.5, R * 0.3).rot(40, 0, 0).at(0, R * 0.2, R * 0.86).color(tone(C.skin, 0, 0, -0.09)).paint(0.03, 0));   // dark blaze down the face
+  // matted forelock, shaggy cheeks and the beard
+  p.push(fur(S.ellipsoid(R * 0.4, R * 0.26, R * 0.36).at(0, R * 0.84, R * 0.24).blend(0.03), 0.013));
+  p.push(fur(S.ellipsoid(R * 0.84, R * 0.7, R * 0.5).at(0, R * 0.08, -R * 0.62).blend(0.03), 0.014));
+  p.push(...S.mirrorX([fur(S.ellipsoid(R * 0.2, R * 0.42, R * 0.34).at(R * 0.66, -R * 0.52, -R * 0.06).blend(0.03), 0.012)]));
+  p.push(fur(bone([0, -R * 1.0, R * 0.84], [0, -R * 1.5, R * 0.86], R * 0.17, R * 0.12).blend(0.02), 0.012), fur(bone([0, -R * 1.5, R * 0.86], [0, -R * 2.0, R * 0.74], R * 0.12, R * 0.03).blend(0.01), 0.012));
+  // horns
+  const hs = GOAT_HORNS[o.horns] || GOAT_HORNS.curl, big = o.build === 'heavy' ? 1.15 : 1;
+  const hp = [], hh = [];
+  horn(hp, hh, hs.pts.map((q) => [q[0] * R, R * 0.6 + (q[1] - 0.6) * R * big, q[2] * R * big]), hs.r.map((x) => x * R * big), C.hornA, C.horn, 0.007);
+  p.push(...hp, ...hp.map((x) => x.mirrorX())); hard.push(...hh, ...hh.map((x) => x.mirrorX()));
+  // eyes: pale gold with a bar for a pupil
+  eyeSet(p, hard, C, { x: R * 0.5, y: R * 0.06, r: R * 0.14, z0: R * 2, yaw: 30, look: { iris: 0xd8b84a, white: 0xcaa63a, slit: 'bar', ring: 0x5a3a10 }, lash: 0x140e0a,
+    lidCol: tone(C.skin, 0, 0, -0.12), socket: tone(C.skin, 0, 0, -0.1), lid: { upper: 40, roll: -6, lower: 18 } });
+  void r;
+  return { prims: p, hard, hair: null };
+}
+
+function tigerHead(B) {
+  const { P, C, sk, def } = B;
+  const R = P.headR, p = [], hard = [];
+  const r = rng(hashStr((def.id || 'tiger') + ':face'));
+  const white = (x) => sk(x).color(C.pale), black = C.stripe;
+  // broad round skull, short deep muzzle, heavy cheeks with a ruff
+  p.push(sk(S.ellipsoid(R * 0.92, R * 0.86, R * 0.92).at(0, R * 0.16, -R * 0.08)));
+  p.push(sk(S.ellipsoid(R * 0.7, R * 0.5, R * 0.5).at(0, R * 0.3, R * 0.42).blend(0.03)));
+  p.push(sk(S.capsule([0, R * 0.0, R * 0.5], [0, -R * 0.3, R * 1.02], R * 0.44, R * 0.32).blend(0.04)));
+  p.push(...S.mirrorX([
+    sk(S.ellipsoid(R * 0.3, R * 0.3, R * 0.3).at(R * 0.56, -R * 0.3, R * 0.36).blend(0.03)),                                 // cheek
+    sk(S.capsule([R * 0.16, R * 0.3, R * 0.86], [R * 0.7, R * 0.34, R * 0.44], R * 0.12, R * 0.1).blend(0.018)),              // brow
+    white(S.ellipsoid(R * 0.27, R * 0.22, R * 0.25).at(R * 0.19, -R * 0.5, R * 1.08).blend(0.016)),                          // whisker pads
+    white(S.ellipsoid(R * 0.2, R * 0.46, R * 0.3).rot(0, 0, 18).at(R * 0.82, -R * 0.44, R * 0.06).blend(0.03)).bump(0.01, 34, 'fur'),   // ruff
+  ]));
+  p.push(white(S.capsule([0, -R * 0.62, R * 0.2], [0, -R * 0.8, R * 0.94], R * 0.34, R * 0.2).blend(0.014)));                // lower jaw and chin
+  p.push(S.ellipsoid(R * 0.15, R * 0.1, R * 0.09).at(0, -R * 0.32, R * 1.32).color(0x8a4a44).pbr(0.4).blend(0.012));          // nose leather
+  p.push(neckStub(B, R, 1.1, -0.18));
+  // ears: round, black-backed with a white spot
+  p.push(...S.mirrorX(roundEar(B, [R * 0.62, R * 0.9, -R * 0.2], R * 0.26, R * 0.27, R * 0.09, [-10, -24, -16], black, C.pale)));
+  p.push(...S.mirrorX([S.sphere(R * 0.09).at(R * 0.68, R * 0.96, -R * 0.32).color(C.pale).paint(0.006, 0)]));
+  const base = p.slice();
+  p.push(S.capsule([0, -R * 0.38, R * 1.36], [0, -R * 0.56, R * 1.3], R * 0.02).color(black).paint(0.003, -0.003));             // the cleft under the nose
+  p.push(...S.mirrorX([S.capsule([0, -R * 0.58, R * 1.3], [R * 0.4, -R * 0.56, R * 0.7], R * 0.028).color(black).paint(0.004, -0.004)]));
+  for (const s of [1, -1]) { const q = hit(base, [s * R * 0.2, -R * 0.6, R * 2], [0, 0, -1]); hard.push(spike([q[0], q[1] + R * 0.02, q[2] - R * 0.05], [0, -1, 0.1], R * 0.2, R * 0.045, C.tooth, [0, 0, -1], 0.2)); }
+  // eyes: amber, rimmed in black, a white flash over each
+  eyeSet(p, hard, C, { x: R * 0.4, y: R * 0.08, r: R * 0.15, z0: R * 2, yaw: 14, look: { iris: 0xe8a81e, white: 0xd8c05a, ring: 0x4a2a08, pupilSize: 0.85 }, lash: 0x0e0a08,
+    lidCol: 0x1c1410, socket: 0x1c1410, lid: { upper: 42, roll: -12, lower: 18 } });
+  p.push(...S.mirrorX([S.ellipsoid(R * 0.2, R * 0.1, R * 0.2).rot(0, 0, 14).at(R * 0.4, R * 0.36, R * 0.8).color(C.pale).paint(0.012, 0)]));
+  // stripes: forehead chevrons, bars on the cheeks and over the skull
+  const st = (x) => x.color(black).pbr(0.85).paint(0.004, 0);
+  for (let i = 0; i < 3; i++) p.push(...S.mirrorX([st(stroke(R * (0.13 + i * 0.03), R * (0.52 + i * 0.13), R * (0.84 - i * 0.14), R * 0.15, R * 0.028, R * 0.3, 20, 26))]));
+  p.push(st(stroke(0, R * 0.6, R * 0.86, R * 0.022, R * 0.14, R * 0.3)));
+  for (let i = 0; i < 3; i++) p.push(...S.mirrorX([st(stroke(R * 0.78, -R * (0.14 + i * 0.2), R * 0.26, R * 0.22, R * 0.03, R * 0.36, 60, -12 - i * 8))]));
+  for (let i = 0; i < 4; i++) p.push(...S.mirrorX([st(S.ellipsoid(R * 0.4, R * 0.5, R * 0.035).rot(-10 - i * 14, 0, 0).at(R * 0.5, R * 0.5, -R * (0.1 + i * 0.24)))]));
+  whiskers(hard, [R * 0.38, -R * 0.5, R * 1.12], R, 0xf2ece0, 3, 0.9);
+  void r;
+  return { prims: p, hard, hair: null };
+}
+
+function mummyHead(B) {
+  const { P, C, sk, def, o } = B;
+  const R = P.headR, L = P.headLen / 1.12, p = [], hard = [];
+  const r = rng(hashStr((def.id || 'mummy') + ':face'));
+  const glow = o.glow ?? 0x8fe8c0;
+  // a skull under the wrappings: no nose to speak of, cheeks fallen in, the jaw bound shut
+  p.push(sk(S.ellipsoid(R * 0.86, R * 0.92 * L, R * 0.98).at(0, R * 0.2, -R * 0.08)));
+  p.push(sk(S.ellipsoid(R * 0.64, R * 0.82, R * 0.58).at(0, -R * 0.3, R * 0.3).blend(0.02)));
+  p.push(...S.mirrorX([sk(S.capsule([R * 0.5, -R * 0.48, R * 0.04], [R * 0.13, -R * 0.94, R * 0.6], R * 0.14, R * 0.115).blend(0.022))]));
+  p.push(sk(S.ellipsoid(R * 0.4, R * 0.26, R * 0.44).at(0, -R * 0.68, R * 0.24).blend(0.02)));
+  p.push(sk(S.ellipsoid(R * 0.18, R * 0.14, R * 0.14).at(0, -R * 0.98, R * 0.66).blend(0.016)));
+  p.push(...S.mirrorX([
+    sk(S.ellipsoid(R * 0.19, R * 0.11, R * 0.17).at(R * 0.5, -R * 0.24, R * 0.56).blend(0.024)),
+    sk(S.capsule([0, R * 0.26, R * 0.86], [R * 0.56, R * 0.3, R * 0.6], R * 0.09, R * 0.07).blend(0.014)),
+    S.ellipsoid(R * 0.14, R * 0.22, R * 0.18).at(R * 0.52, -R * 0.58, R * 0.56).cut(0.03).color(C.shade),
+  ]));
+  p.push(sk(S.capsule([0, R * 0.1, R * 0.86], [0, -R * 0.2, R * 0.95], R * 0.065, R * 0.06).blend(0.014)));
+  p.push(sk(S.ellipsoid(R * 0.28, R * 0.18, R * 0.2).at(0, -R * 0.64, R * 0.68).blend(0.016)));
+  p.push(neckStub(B, R, 1.0));
+  const base = p.slice();
+  // the wrappings have slipped from the eyes and one side of the jaw: dried flesh shows, the sockets are empty
+  const flesh = (x, raise = -0.004) => x.color(C.flesh).pbr(0.85).tint(0.2, 40).paint(0.004, raise);
+  p.push(flesh(S.ellipsoid(R * 0.72, R * 0.2, R * 0.4).rot(0, 0, 7).at(0, R * 0.03, R * 0.74), -0.006));
+  p.push(flesh(S.ellipsoid(R * 0.3, R * 0.2, R * 0.3).rot(0, 0, -20).at(-R * 0.3, -R * 0.66, R * 0.62), -0.006));
+  const ex = R * 0.36, ey = R * 0.02, sz = surfZ(base, ex, ey, R * 2);
+  p.push(...S.mirrorX([S.sphere(R * 0.2).at(ex, ey, sz - R * 0.02).cut(0.012).color(0x0c0a0a)]));
+  hard.push(...H.mirrorX([H.sphere(R * 0.062, 8).at(ex, ey, sz - R * 0.17).color(glow).pbr(0.4).glow(1.1)]));
+  p.push(...S.mirrorX([S.sphere(R * 0.1).at(ex, ey, sz - R * 0.17).color(glow).glow(0.5).blend(0)]));
+  // nose hole and the teeth of the bared side
+  const nz = surfZ(base, 0, -R * 0.28, R * 2);
+  p.push(S.ellipsoid(R * 0.07, R * 0.1, R * 0.1).at(0, -R * 0.26, nz).cut(0.005).color(0x0c0a0a));
+  teethRow(base, hard, [-0.4, -0.31, -0.22, -0.13].map((x) => x * R), -R * 0.6, R * 2, R * 0.085, R * 0.026, C.tooth, -1, 0);
+  teethRow(base, hard, [-0.36, -0.27, -0.18].map((x) => x * R), -R * 0.74, R * 2, R * 0.07, R * 0.024, C.tooth, 1, 0);
+  // the edges of the bands: creases winding round the skull at odd angles, a few stained
+  const edge = tone(C.skin, 0, 0, -0.22);
+  for (let i = 0; i < 7; i++) p.push(S.cyl(R * 2.6, R * 0.035, 0).rot(r() * 50 - 25, 0, r() * 60 - 30).at(0, R * (1.0 - i * 0.34), 0).color(edge).paint(0.003, -0.003));
+  for (let i = 0; i < 4; i++) p.push(S.sphere(R * (0.14 + r() * 0.12)).at((r() - 0.5) * R * 1.6, R * (r() * 1.4 - 0.5), (r() - 0.5) * R * 1.6).color(tone(C.skin, -0.02, 0.06, -0.12)).paint(0.014, 0));
+  // loose ends trailing from the back of the head
+  const strip = (w, len, at, rot) => H.box(w, len, R * 0.02, R * 0.006).at(0, -len / 2, 0).rot(rot[0], rot[1], rot[2]).at(at[0], at[1], at[2]).color(tone(C.skin, 0, 0, -0.06)).pbr(0.95).lod(1);
+  hard.push(strip(R * 0.26, R * 1.1, [R * 0.3, -R * 0.3, -R * 0.9], [-16, 0, 8]), strip(R * 0.2, R * 0.7, [-R * 0.5, -R * 0.5, -R * 0.74], [-10, 0, -14]));
+  return { prims: p, hard, hair: null };
+}
+
+/**
+ * Body paint (o.paint): swirls on the chest and shoulder blades, chevrons down the belly, a spiral and bands on each arm,
+ * bars across the cheeks and brow. Laid on as paint volumes after everything else, so it follows whatever shape is there.
+ */
+function warPaint(B, col, torso, head, arm, fore) {
+  const { P } = B, T = P.torso, k = T / 0.3, cw = P.chestW / 2, cd = P.chestD / 2, wd = P.waistD / 2, R = P.headR;
+  const ink = (x) => x.color(col).pbr(0.85).paint(0.0025, 0);
+  /** a spiral of short bars in the plane facing `axis` ('z' front/back, 'x' the side), deep enough to reach the surface */
+  const spiral = (c, rad, turns, w, depth, axis = 'z', hand = 1) => {
+    const out = [], n = Math.round(turns * 9);
+    let prev = null;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, a = t * turns * 6.2832, rr = rad * (0.1 + 0.9 * t), q = [Math.cos(a) * rr * hand, Math.sin(a) * rr];
+      if (prev) {
+        const du = q[0] - prev[0], dv = q[1] - prev[1], len = Math.hypot(du, dv) * 1.3, mu = (q[0] + prev[0]) / 2, mv = (q[1] + prev[1]) / 2;
+        out.push(axis === 'z' ? ink(S.box(len, w, depth, 0).rot(0, 0, Math.atan2(dv, du) / DEG).at(c[0] + mu, c[1] + mv, c[2])) : ink(S.box(depth, w, len, 0).rot(Math.atan2(-dv, du) / DEG, 0, 0).at(c[0], c[1] + mv, c[2] + mu)));
+      }
+      prev = q;
+    }
+    return out;
+  };
+  torso.prims.push(...S.mirrorX(spiral([cw * 0.5, T - 0.105 * k, cd * 0.9 + 0.035], 0.042 * k, 1.7, 0.0075 * k, 0.12)));
+  torso.prims.push(...S.mirrorX(spiral([cw * 0.5, T - 0.11 * k, -(cd * 0.9 + 0.035)], 0.05 * k, 1.7, 0.008 * k, 0.12, 'z', -1)));
+  for (let i = 0; i < 3; i++) torso.prims.push(...S.mirrorX([ink(S.box(0.05 * k, 0.0075 * k, 0.14, 0).rot(0, 0, -30).at(0.026 * k, (0.2 - i * 0.04) * k, wd + 0.04))]));
+  torso.prims.push(ink(S.box(0.0075 * k, 0.05 * k, 0.12, 0).at(0, T - 0.05 * k, cd * 0.9 + 0.035)));
+  const U = P.upper, r = P.rUpper, F = P.fore, rf = P.rFore;
+  arm.prims.push(...spiral([r * 0.95, -U * 0.34, 0], Math.min(r * 1.0, U * 0.26), 1.6, r * 0.17, r * 1.3, 'x'));
+  arm.prims.push(ink(S.cyl(r * 2.4, r * 0.2, 0).rot(0, 0, 10).at(0, -U * 0.74, 0)));
+  fore.prims.push(ink(S.cyl(rf * 2.4, rf * 0.22, 0).rot(0, 0, -12).at(0, -F * 0.3, 0)), ink(S.cyl(rf * 2.4, rf * 0.14, 0).rot(0, 0, -12).at(0, -F * 0.46, 0)));
+  if (head.prims.length) {
+    head.prims.push(...S.mirrorX([
+      ink(stroke(R * 0.5, -R * 0.3, R * 0.72, R * 0.2, R * 0.032, R * 0.3, 24, -34)),
+      ink(stroke(R * 0.46, -R * 0.46, R * 0.74, R * 0.16, R * 0.028, R * 0.3, 24, -34)),
+      ink(stroke(R * 0.4, R * 0.52, R * 0.78, R * 0.17, R * 0.03, R * 0.3, 20, 28)),
+    ]));
+    head.prims.push(ink(stroke(0, -R * 0.84, R * 0.8, R * 0.03, R * 0.1, R * 0.2)), ink(stroke(0, R * 0.62, R * 0.86, R * 0.03, R * 0.16, R * 0.3)));
+  }
+}
+
 // =====================================================================================
 //  Wings and tails (left wing, in the wing node's space: root at the origin, +X outward)
 // =====================================================================================
@@ -1329,7 +1917,36 @@ function buildTail(B, kind) {
   }
   const spec = { barb: { l: 0.2 * k, r: [0.052 * k, 0.04 * k, 0.028 * k, 0.014 * k], rot: [[-38, 0, 0], [22, 0, 0], [34, 0, 0]] },
     spade: { l: 0.13, r: [0.017, 0.013, 0.01, 0.007], rot: [[-30, 0, 0], [30, 0, 0], [44, 0, 0]] },
-    bull: { l: 0.115 * k, r: [0.017 * k, 0.013 * k, 0.011 * k, 0.01 * k], rot: [[-74, 0, 0], [-10, 0, 0], [8, 0, 0]] } }[kind];
+    bull: { l: 0.115 * k, r: [0.017 * k, 0.013 * k, 0.011 * k, 0.01 * k], rot: [[-74, 0, 0], [-10, 0, 0], [8, 0, 0]] },
+    lizard: { l: 0.165 * k, r: [0.066 * k, 0.05 * k, 0.032 * k, 0.011 * k], rot: [[-50, 0, 0], [16, 0, 0], [22, 0, 0]] },
+    rat: { l: 0.165, r: [0.017, 0.013, 0.009, 0.0045], rot: [[-58, 0, 0], [22, 0, 0], [30, 0, 0]] },
+    goat: { l: 0.04 * k, r: [0.024 * k, 0.022 * k, 0.017 * k, 0.008 * k], rot: [[36, 0, 0], [14, 0, 0], [10, 0, 0]] },
+    tiger: { l: 0.15 * k, r: [0.026 * k, 0.023 * k, 0.021 * k, 0.02 * k], rot: [[-68, 0, 0], [22, 0, 0], [42, 0, 0]] } }[kind];
+  if (!spec) return segs;
+  if (kind === 'lizard' || kind === 'rat' || kind === 'goat' || kind === 'tiger') {
+    const skin = kind === 'rat' ? (x) => x.color(C.pink).tint(0.14, 30).pbr(0.6) : kind === 'goat' ? (x) => B.fur(x, 0.008) : sk;
+    const col = kind === 'rat' ? C.pink : kind === 'goat' ? C.fur : C.skin, l = spec.l;
+    const ring = (z, w, c) => S.cyl(0.2, w, 0).rot(90, 0, 0).at(0, 0, z).color(c).pbr(0.85).paint(0.0035, 0);
+    for (let i = 0; i < 3; i++) {
+      const a = spec.r[i], b = spec.r[i + 1], p = [skin(S.sphere(a * 1.04)), skin(S.capsule([0, 0, 0], [0, 0, -l], a, b).blend(0.01)), skin(S.sphere(b * 1.02).at(0, 0, -l).blend(0.006))];
+      const hard = [H.cyl(a, b, l, 5).rot(90, 0, 0).at(0, 0, -l / 2).color(col).pbr(0.8).far()];
+      if (kind === 'lizard') {
+        p.push(S.ellipsoid(a * 0.8, a * 0.7, l * 0.7).at(0, -a * 0.7, -l * 0.5).color(C.light).paint(a * 0.3, 0));                               // pale underside
+        for (let j = 0; j < 2; j++) p.push(ring(-l * (0.3 + j * 0.45), l * 0.14, tone(C.skin, -0.02, 0.03, -0.11)));
+        p.push(S.ellipsoid(a * 0.8, a * 0.7, l * 0.7).at(0, -a * 0.7, -l * 0.5).color(C.light).paint(a * 0.3, 0));
+        for (let j = 0; j < 3; j++) { const t = (j + 0.4) / 3, rr = lerp(a, b, t); hard.push(spike([0, rr * 0.8, -l * t], [0, 1, -0.6], rr * 0.95, rr * 0.3, C.crest, [0, 0, -1], 0.3)); }
+      }
+      if (kind === 'rat') for (let j = 0; j < 4; j++) p.push(ring(-l * (0.12 + j * 0.25), 0.004, tone(C.pink, 0, -0.05, -0.12)));
+      if (kind === 'goat' && i === 2) p.push(B.fur(S.ellipsoid(b * 1.6, b * 1.6, l * 0.6).at(0, 0, -l * 1.0).blend(0.012), 0.009));
+      if (kind === 'tiger') {
+        for (let j = 0; j < 3; j++) p.push(ring(-l * (0.18 + j * 0.32), l * 0.11, C.stripe));
+        p.push(S.ellipsoid(a * 0.7, a * 0.6, l * 0.7).at(0, -a * 0.8, -l * 0.5).color(C.pale).paint(a * 0.3, 0));
+        if (i === 2) p.push(skin(S.sphere(b * 1.25).at(0, 0, -l).blend(0.01)), S.sphere(b * 2.2).at(0, 0, -l * 1.02).color(C.stripe).pbr(0.85).paint(0.006, 0));
+      }
+      segs.push({ rot: spec.rot[i], len: l, prims: p, hard });
+    }
+    return segs;
+  }
   for (let i = 0; i < 3; i++) {
     const a = spec.r[i], b = spec.r[i + 1], p = [sk(S.sphere(a * 1.04)), sk(S.capsule([0, 0, 0], [0, 0, -spec.l], a, b).blend(0.01)), sk(S.sphere(b * 1.02).at(0, 0, -spec.l).blend(0.006))], hard = [];
     if (kind === 'barb') {
@@ -1351,7 +1968,8 @@ function buildTail(B, kind) {
 //  Assembly
 // =====================================================================================
 
-const HEADS = { human: humanHead, harpy: humanHead, goblin: goblinHead, hobgoblin: goblinHead, ghoul: ghoulHead, troll: giantHead, ogre: giantHead, cyclops: giantHead, minotaur: bullHead, demon: fiendHead, imp: fiendHead };
+const HEADS = { human: humanHead, harpy: humanHead, goblin: goblinHead, hobgoblin: goblinHead, ghoul: ghoulHead, troll: giantHead, ogre: giantHead, cyclops: giantHead, minotaur: bullHead, demon: fiendHead, imp: fiendHead,
+  elf: humanHead, dwarf: humanHead, orc: orcHead, lizard: lizardHead, rat: ratHead, goat: goatHead, tiger: tigerHead, mummy: mummyHead };
 const SHIELD_SHAPE = { footman: 'round', knight: 'kite', paladin: 'tower', skeleton: 'round' };
 /** how each kind of weapon sits in the hand at rest: elevation of the business end above straight ahead, and lean toward the body */
 const HOLD = { one: { up: 24, lean: 0 }, two: { up: 46, lean: 10 }, pole: { up: 62, lean: 3 }, staff: { up: 82, lean: 0 }, bow: { up: 0, lean: 0 } };
@@ -1375,7 +1993,22 @@ export function humanoid(def = {}, o = {}) {
   const fur = (x, amp = 0.008) => x.color(C.fur).tint(0.2, 26).pbr(0.9).bump(amp, 34, 'fur');
   const plume = (x) => x.color(C.plume).tint(0.18, 28).pbr(0.85).bump(0.006, 40, 'scales');
   const featherCols = [tone(C.plume, 0, -0.05, -0.16), C.plume, tone(C.plume, 0.02, 0, -0.2), mix(C.plume, 0xe8e0d0, 0.35)];
-  const B = { def, o, P, st, C, sk, fur, plume, featherCols, sp, face: faceFor(def, sp), lord: sp === 'demon' && (def.id === 'infernalLord' || o.build === 'heavy') };
+  // Face and hide options any unit may set (unknown values are ignored: the hair is then left off, the species' own look kept):
+  //   hair: crop | bowl | swept | long | tonsure | bald | topknot | spiked (stiff lime-washed spikes) | braids (two long plaits) | mohawk
+  //   beard: none | stubble | moustache | short | goatee | long | great (a dwarf's default: down over the chest) |
+  //          braided (plaits to the belt) | curled (oiled ringlets in tiers) | forked
+  //   hairColor: hex for hair and beard          (hair and beard apply to the heads that grow them: human, elf, dwarf, orc)
+  //   paint: hex of body / war paint: swirls on face, chest, back and arms (any species)
+  //   horns: curl | swept | long (goat; anything else, such as `true`, is curl)      glow: hex of a mummy's eye-light
+  //   skin: hide / fur / scale colour (a mummy's dried flesh); cloth2: a mummy's wrappings (aged linen if absent)
+  let face = faceFor(def, sp);
+  if (typeof o.hair === 'string' || typeof o.beard === 'string' || typeof o.hairColor === 'number') {
+    face = { ...face };
+    if (typeof o.hair === 'string') face.hair = o.hair;
+    if (typeof o.beard === 'string') face.beard = o.beard;
+    if (typeof o.hairColor === 'number') face.hairCol = o.hairColor;
+  }
+  const B = { def, o, P, st, C, sk, fur, plume, featherCols, sp, face, lord: sp === 'demon' && (def.id === 'infernalLord' || o.build === 'heavy') };
   const det = st.det;
 
   // ---- what is carried ----
@@ -1390,6 +2023,7 @@ export function humanoid(def = {}, o = {}) {
   // ---- sculpt ----
   const torso = buildTorso(B), head = (HEADS[sp] || humanHead)(B), arm = buildArm(B), fore = buildForearm(B), leg = buildLeg(B), shin = buildShin(B);
   if (B.farHard) { head.hard.push(...B.farHard); B.farHard = null; }
+  if (typeof o.paint === 'number' && Number.isFinite(o.paint)) warPaint(B, o.paint, torso, head, arm, fore);
   const handR = held ? gripHand(B, gr, gripRot, gripAt) : openHand(B);
   const handL = bothHands ? gripHand(B, gr, [90 - 30, 0, 0], gripAt) : openHand(B);
 
