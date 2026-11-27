@@ -1149,7 +1149,7 @@ export function restyle(model, style, key) {
 }
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
-function buildRestyle(parts, st, style, key) {
+function buildRestyle(parts, st0, style, key) {
   // ---- gather the main meshes into one set of arrays, in the root's space ----
   let n = 0, ni = 0;
   for (const { mesh } of parts.main) { const g = mesh.geometry; n += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
@@ -1172,7 +1172,7 @@ function buildRestyle(parts, st, style, key) {
   const bb = { x0: 1e9, y0: 1e9, z0: 1e9, x1: -1e9, y1: -1e9, z1: -1e9 };
   for (let i = 0; i < n; i++) { const o = i * 3; bb.x0 = Math.min(bb.x0, P[o]); bb.x1 = Math.max(bb.x1, P[o]); bb.y0 = Math.min(bb.y0, P[o + 1]); bb.y1 = Math.max(bb.y1, P[o + 1]); bb.z0 = Math.min(bb.z0, P[o + 2]); bb.z1 = Math.max(bb.z1, P[o + 2]); }
   const id = (key.match(/^[A-Za-z]+/) || [''])[0], seed = hashStr(`${id}|${style}`), hx = Math.max(0.3, (bb.x1 - bb.x0) / 2), hz = Math.max(0.3, (bb.z1 - bb.z0) / 2), Hh = Math.max(0.4, bb.y1);
-  const ax = hz > hx ? 1 : 0, long = Math.max(hx, hz), short = Math.min(hx, hz);
+  const ax = hz > hx ? 1 : 0, long = Math.max(hx, hz), short = Math.min(hx, hz), st = styleFor(st0, id);
   const linked = LINKED.has(id) || (long > 2.6 && long / short >= 3.4);
   const k = { Ha: Math.min(Hh, 3.2), cx: (bb.x0 + bb.x1) / 2, cz: (bb.z0 + bb.z1) / 2, hx, hz, H: Hh, linked, ax, th: hash1(seed, 1) * TAU, s1: hash1(seed, 2) * 40, s2: hash1(seed, 3) * 40, s3: hash1(seed, 4) };
   k.ul = ax ? (x, z) => ((z - k.cz) / hz) * 1.5708 : (x) => ((x - k.cx) / hx) * 1.5708;   // position along the long axis, -pi/2..pi/2
@@ -1208,6 +1208,7 @@ function buildRestyle(parts, st, style, key) {
     if (y < 0.05) return;
     const w = smooth(0.05, 0.7, y) * smooth(0.03, 0.45, walkDist(x, y, z));
     if (w <= 0) return;
+    if (!st.disp) return;
     st.disp(x, y, z, k, o3);
     if (endFade) { const e = endFade(x, z); if (ax) { o3[0] *= 0.6; o3[2] *= e; } else { o3[0] *= e; o3[2] *= 0.6; } o3[1] *= 0.3 + 0.7 * e; }
     o3[0] *= w; o3[1] *= w; o3[2] *= w;
@@ -1224,6 +1225,8 @@ function buildRestyle(parts, st, style, key) {
   sum.fill(0); cnt.fill(0);   // joints and shadowed grooves drag the average down: measure against the faces only
   for (let i = 0; i < n; i++) if (lum[i] >= 0.6 * mean0[cls[i]]) { sum[cls[i]] += lum[i]; cnt[cls[i]]++; }
   const mean = Array.from(sum, (s, c) => (cnt[c] ? Math.max(1e-4, s / cnt[c]) : 1)), c3 = [0, 0, 0], a3 = [0, 0, 0], glow = st.glow;
+  // roofs: found by their tiles, so they can take their own colours and be re-covered (realm styles only)
+  const roof = st.roof ? findRoofs(P, N, A, cls, I, ni, n, pinned) : null, vr = roof ? roof.vr : null, rpal = vr && st.pal.roof;
   for (let i = 0; i < n; i++) {
     const o = i * 3, c = cls[i], x = P[o], y = P[o + 1], z = P[o + 2], rel = lum[i] / mean[c];
     a3[0] = A[o]; a3[1] = A[o + 1]; a3[2] = A[o + 2];
@@ -1232,21 +1235,56 @@ function buildRestyle(parts, st, style, key) {
     else if (c === C_LIQUID) { const l = clamp(lum[i] * 1.5, 0.3, 0.9); c3[0] = glow[0] * l; c3[1] = glow[1] * l; c3[2] = glow[2] * l; a3[2] = Math.max(a3[2], 0.5 * st.window); }
     else if (c === C_DARK) { c3[0] = C[o]; c3[1] = C[o + 1]; c3[2] = C[o + 2]; }
     else {
-      const e = st.pal[c] || st.pal[C_OTHER], sws = e[0], f = e[1];
+      const isRoof = rpal && vr[i], e = isRoof ? rpal : st.pal[c] || st.pal[C_OTHER], sws = e[0], f = e[1];
       const pick = noise3(x * f + k.s1 + c * 7.3, y * f * 1.3, z * f + k.s2) * sws.length * 1.6, s0 = sws[Math.floor(pick) % sws.length], sh = clamp(Math.pow(rel, e[2]), e[3], e[4]);
       c3[0] = s0[0] * sh; c3[1] = s0[1] * sh; c3[2] = s0[2] * sh;
-      if (st.trim && c === C_STONE && y > 0.3 && N[o + 1] > 0.45 && rel > 0.7) { const t = smooth(0.45, 0.75, N[o + 1]) * smooth(0.08, 0.2, walkDist(x, y, z)) * clamp(rel, 0.7, 1.2); if (t > 0) { c3[0] = lerp(c3[0], st.trim[0][0], t); c3[1] = lerp(c3[1], st.trim[0][1], t); c3[2] = lerp(c3[2], st.trim[0][2], t); } }
+      if (st.joint && c === C_STONE && !isRoof && rel < 0.66) { const t = smooth(0.66, 0.45, rel) * st.joint[3]; c3[0] = lerp(c3[0], st.joint[0], t); c3[1] = lerp(c3[1], st.joint[1], t); c3[2] = lerp(c3[2], st.joint[2], t); }
+      if (st.trim && c === C_STONE && !isRoof && y > 0.3 && N[o + 1] > 0.45 && rel > 0.7) { const t = smooth(0.45, 0.75, N[o + 1]) * smooth(0.08, 0.2, walkDist(x, y, z)) * clamp(rel, 0.7, 1.2); if (t > 0) { c3[0] = lerp(c3[0], st.trim[0][0], t); c3[1] = lerp(c3[1], st.trim[0][1], t); c3[2] = lerp(c3[2], st.trim[0][2], t); } }
     }
-    st.fx(c, x, y, z, N[o + 1], c3, a3, k);
+    if (vr) { k.rel = rel; k.nx = N[o]; k.nz = N[o + 2]; k.roof = vr[i]; }
+    if (st.fx) st.fx(c, x, y, z, N[o + 1], c3, a3, k);
     C[o] = c3[0]; C[o + 1] = c3[1]; C[o + 2] = c3[2]; A[o] = a3[0]; A[o + 1] = a3[1]; A[o + 2] = a3[2];
   }
-  // ---- torn roofs: triangles left out (decided where they lay before anything moved) ----
+  // ---- roofs to re-cover: which, how, and what has to come off first ----
+  const nt = ni / 3, jobs = [];
+  let cutv = null;
+  if (roof) for (const c of roof.clusters) {
+    const spec = c.ok ? roofSpec(st.roof, c, id) : null, mode = spec ? ROOF_MODE[spec.kind] : 0;
+    if (!spec || mode === undefined || (mode === 2 && c.type === 'main' && c.fill < 0.7)) continue;
+    let clear = 9;   // how far the new roof may reach past the old one before it would hang over a walk
+    for (let q = 0; q < 24; q++) { const t = (q % 6 + 0.5) / 6, s = Math.floor(q / 6), x = s === 0 ? c.x0 : s === 1 ? c.x1 : lerp(c.x0, c.x1, t), z = s === 2 ? c.z0 : s === 3 ? c.z1 : lerp(c.z0, c.z1, t); for (let l = 0; l < 3; l++) if (fields[l] && LEVELS[l] < c.rY + 0.5) clear = Math.min(clear, fieldAt(fields[l], x, z)); }
+    c.over = clamp(clear - 0.15, 0, 0.7); c.spec = spec; c.mode = mode; c.cutY = c.eY + Math.min(0.2, 0.12 * (c.rY - c.eY)); c.posts = [];
+    jobs.push(c);
+    if (mode === 2) cutv = cutv || new Uint8Array(n);
+  }
+  if (globalThis.__roofDebug) globalThis.__roofDebug.push(id + ' ' + roof?.clusters.map((c) => `[${c.type} ok=${c.ok} mode=${c.mode} kind=${c.spec && c.spec.kind} tris=${c.tris} cells=${c.cells} fill=${c.fill.toFixed(2)} x=${c.x0.toFixed(2)}..${c.x1.toFixed(2)} z=${c.z0.toFixed(2)}..${c.z1.toFixed(2)} y=${c.eY.toFixed(2)}..${c.rY.toFixed(2)} ax=${c.ax} rl=${c.rl.toFixed(2)} gable=${c.gable} over=${(c.over ?? -1).toFixed(2)}]`).join(' '));
+  if (cutv) { // everything that stands on a roof being replaced comes off with it, unless it towers over it (a turret, a spire, a flagpole)
+    const cut = jobs.filter((c) => c.mode === 2), col = new Map();
+    for (const c of cut) { const gx = c.gable && !c.ax ? 0.6 : 0.006, gz = c.gable && c.ax ? 0.6 : 0.006; c.q = [Math.max(bb.x0 - 0.01, c.x0 - gx), Math.min(bb.x1 + 0.01, c.x1 + gx), Math.max(bb.z0 - 0.01, c.z0 - gz), Math.min(bb.z1 + 0.01, c.z1 + gz)]; }
+    const regionOf = (x, z) => { for (const c of cut) if (c.type === 'cap' ? (x - c.cx) * (x - c.cx) + (z - c.cz) * (z - c.cz) < (c.r + 0.006) * (c.r + 0.006) : x > c.q[0] && x < c.q[1] && z > c.q[2] && z < c.q[3]) return c; return null; };
+    const seen = (x, y, z) => { if (!regionOf(x, z)) return; const key = cellKey(x, z), t = col.get(key); if (!t) col.set(key, { top: y, low: 9e9, c: null }); else if (y > t.top) t.top = y; };
+    for (let i = 0; i < n; i++) seen(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    for (const { mesh, m } of parts.other) { const p = mesh.geometry.attributes.position; for (let i = 0; i < p.count; i++) { v3.fromBufferAttribute(p, i).applyMatrix4(m); seen(v3.x, v3.y, v3.z); } }
+    for (let i = 0; i < n; i++) {
+      const o = i * 3, y = P[o + 1];
+      if (pinned[i]) continue;
+      const c = regionOf(P[o], P[o + 2]);
+      if (!c || y <= c.cutY + 0.004) continue;
+      const t = col.get(cellKey(P[o], P[o + 2]));
+      if (t.top <= c.rY + 0.75 || vr[i] === c.i + 1) cutv[i] = c.i + 1;
+      else { t.c = c; if (y < t.low) t.low = y; }
+    }
+    for (const [key, t] of col) if (t.c && t.low > t.c.cutY + 0.3) t.c.posts.push([(Math.floor(key / 4096) - 2048 + 0.5) * R_CELL, t.low, ((key % 4096) - 2048 + 0.5) * R_CELL]);
+    for (const c of cut) c.posts = c.posts.length && c.posts.length <= 10 ? [c.posts.reduce((a, b) => (b[1] < a[1] ? b : a))] : [];   // a flagpole left standing on the old roof gets a post under it
+  }
+  // ---- triangles left out: torn roofs (decided where they lay before anything moved), roofs being replaced ----
   // Large dark linings under roofs are left out too: with only a corner here and there they cannot follow the tiles.
   let I2 = I;
   {
     let q = 0; I2 = new Uint32Array(ni);
     for (let t = 0; t < ni; t += 3) {
       const a = I[t], b = I[t + 1], c = I[t + 2], ca = cls[a];
+      if (roof) { const f = roof.tf[t / 3]; if (f && roof.clusters[f - 1].mode) continue; if (cutv && cutv[a] && cutv[b] && cutv[c]) continue; }
       if (lum[a] < 0.09 && lum[b] < 0.09 && lum[c] < 0.09 && P[a * 3 + 1] + P[b * 3 + 1] + P[c * 3 + 1] > 3 && A[a * 3 + 2] < 0.3) {
         const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2], vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
         if (Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) > 0.5) continue;
@@ -1256,13 +1294,30 @@ function buildRestyle(parts, st, style, key) {
     }
     I2 = I2.subarray(0, q);
   }
+  let alive = null;
+  if (jobs.length) { alive = new Uint8Array(n); for (let i = 0; i < I2.length; i++) alive[I2[i]] = 1; }
+  // ---- the new roofs, built where the old ones stood ----
+  let rg = null;
+  if (jobs.length) {
+    rg = new Geo(); rg.moss = 0;
+    const env = { P, N, n, vr, alive, cls, k, id, seed, st, bb };
+    for (const c of jobs) {
+      try { ROOFS[c.spec.kind](rg, c, c.spec, env); } catch (err) { console.warn('[factions] roof failed for', key, style, c.spec.kind, err); }
+      rg.surf(K_WOOD, 0.9); for (const p of c.posts) rg.in(M(p[0], c.cutY, p[2]), () => rg.cyl(0.022, 0.022, p[1] - c.cutY + 0.02, 5, [0.16, 0.12, 0.09]));
+    }
+    if (cutv) for (let i = 0; i < n; i++) if (cutv[i]) P[i * 3 + 1] = roof.clusters[cutv[i] - 1].cutY;   // whatever straddled the cut is trimmed to it
+    if (!rg.n) rg = null;
+  }
   // ---- shape ----
   for (let i = 0; i < n; i++) {
     if (pinned[i]) continue;
     const o = i * 3;
+    k.cls = cls[i]; k.vnx = N[o]; k.vny = N[o + 1]; k.vnz = N[o + 2]; k.roof = vr ? vr[i] : 0;
     move(P[o], P[o + 1], P[o + 2]);
     P[o] += o3[0]; P[o + 1] += o3[1]; P[o + 2] += o3[2];
   }
+  k.cls = C_OTHER; k.vnx = k.vnz = 0; k.vny = 1; k.roof = 0;
+  if (rg) { const Q = rg.P; k.roof = 255; for (let i = 0; i < rg.n; i++) { const o = i * 3; move(Q[o], Q[o + 1], Q[o + 2]); Q[o] += o3[0]; Q[o + 1] += o3[1]; Q[o + 2] += o3[2]; } k.roof = 0; }
   const others = parts.other.map(({ mesh, m }) => {
     const g = mesh.geometry.clone().applyMatrix4(m), p = g.attributes.position, nr = g.attributes.normal;
     for (let i = 0; i < p.count; i++) {
@@ -1277,21 +1332,24 @@ function buildRestyle(parts, st, style, key) {
   let og = null;
   if (!BARE.has(id) && Hh >= 1.2 && ORNAMENTS[style]) {
     og = new Geo(); og.moss = 0;
-    try { ORNAMENTS[style](og, survey(P, n, bb, k, walkDist, walkCells, id, seed), k); } catch (err) { console.warn('[factions] ornaments failed for', key, style, err); og = null; }
+    let bb2 = bb;
+    if (rg) { bb2 = { ...bb }; const Q = rg.P; for (let i = 0; i < rg.n; i++) { const o = i * 3; if (Q[o + 1] > bb2.y1) bb2.y1 = Q[o + 1]; if (Q[o] < bb2.x0) bb2.x0 = Q[o]; if (Q[o] > bb2.x1) bb2.x1 = Q[o]; if (Q[o + 2] < bb2.z0) bb2.z0 = Q[o + 2]; if (Q[o + 2] > bb2.z1) bb2.z1 = Q[o + 2]; } }
+    try { const sv = survey(P, n, bb2, k, walkDist, walkCells, id, seed, alive, rg ? rg.P : null); sv.roofs = jobs; sv.id = id; sv.st = st; ORNAMENTS[style](og, sv, k); } catch (err) { console.warn('[factions] ornaments failed for', key, style, err); og = null; }
     if (og && !og.n) og = null;
   }
-  const geo = new THREE.BufferGeometry(), on = og ? og.n : 0, oi = og ? og.I.length : 0;
-  const cat = (a, b) => { if (!on) return a; const r = new Float32Array((n + on) * 3); r.set(a); r.set(b, n * 3); return r; };
+  const geo = new THREE.BufferGeometry(), ex = [rg, og].filter(Boolean), on = ex.reduce((s, g) => s + g.n, 0), oi = ex.reduce((s, g) => s + g.I.length, 0);
+  const cat = (a, f) => { if (!on) return a; const r = new Float32Array((n + on) * 3); r.set(a); let q = n * 3; for (const g of ex) { r.set(g[f], q); q += g.n * 3; } return r; };
   let idx = I2;
-  if (on) { idx = new Uint32Array(I2.length + oi); idx.set(I2); for (let i = 0; i < oi; i++) idx[I2.length + i] = og.I[i] + n; }
-  geo.setAttribute('position', new THREE.BufferAttribute(cat(P, og && og.P), 3));
-  geo.setAttribute('normal', new THREE.BufferAttribute(cat(N, og && og.N), 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(cat(C, og && og.C), 3));
-  geo.setAttribute('aPbr', new THREE.BufferAttribute(cat(A, og && og.A), 3));
+  if (on) { idx = new Uint32Array(I2.length + oi); idx.set(I2); let q = I2.length, base = n; for (const g of ex) { const J = g.I; for (let i = 0; i < J.length; i++) idx[q + i] = J[i] + base; q += J.length; base += g.n; } }
+  geo.setAttribute('position', new THREE.BufferAttribute(cat(P, 'P'), 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(cat(N, 'N'), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(cat(C, 'C'), 3));
+  geo.setAttribute('aPbr', new THREE.BufferAttribute(cat(A, 'A'), 3));
   geo.setIndex(new THREE.BufferAttribute(n + on > 65535 ? idx : Uint16Array.from(idx), 1));
   geo.computeBoundingBox(); geo.computeBoundingSphere();
   return { geo, others };
 }
+
 
 // ---------- ornaments: placed from a survey of the finished shape ----------
 /**
@@ -1299,12 +1357,12 @@ function buildRestyle(parts, st, style, key) {
  * part-way up each face, the top edge of long walls, and the two sides of its door (taken to face +Z). Every anchor
  * is { x, y, z, yaw } with local +Z pointing out of the building. add(est, fn) runs fn while the triangle budget lasts.
  */
-function survey(P, n, bb, k, walkDist, walkCells, id, seed) {
+function survey(P, n, bb, k, walkDist, walkCells, id, seed, alive = null, extra = null) {
   const cell = 0.125, w = Math.ceil((bb.x1 - bb.x0) / cell) + 1, h = Math.ceil((bb.z1 - bb.z0) / cell) + 1, hm = new Float32Array(w * h).fill(-1);
   const ny = Math.ceil(bb.y1 / cell) + 1, fz = [new Float32Array(w * ny).fill(-1e9), new Float32Array(w * ny).fill(-1e9)], fx = [new Float32Array(h * ny).fill(-1e9), new Float32Array(h * ny).fill(-1e9)];
-  for (let i = 0; i < n; i++) {
-    const o = i * 3, x = P[o], y = P[o + 1], z = P[o + 2];
-    if (y < 0) continue;
+  for (let pass = 0; pass < 2; pass++) for (let i = 0, Q = pass ? extra : P, m = pass ? (extra ? extra.length / 3 : 0) : n; i < m; i++) {
+    const o = i * 3, x = Q[o], y = Q[o + 1], z = Q[o + 2];
+    if (y < 0 || (alive && (pass ? x < bb.x0 || x > bb.x1 || z < bb.z0 || z > bb.z1 || y > bb.y1 : !alive[i]))) continue;
     const ci = Math.floor((x - bb.x0) / cell), cj = Math.floor((z - bb.z0) / cell), cy = Math.floor(y / cell);
     if (y > hm[cj * w + ci]) hm[cj * w + ci] = y;
     if (z > fz[0][cy * w + ci]) fz[0][cy * w + ci] = z; if (-z > fz[1][cy * w + ci]) fz[1][cy * w + ci] = -z;
@@ -1483,6 +1541,1157 @@ const ORNAMENTS = {
     void k;
   },
 };
+
+// =====================================================================================================
+// Realm styles: the machinery. A building's roofs are found by their tiles, taken off and re-covered in the
+// culture's own way (or kept and re-coloured); what stood under them is rebuilt as that culture builds.
+// =====================================================================================================
+const R_CELL = 0.2;
+const cellKey = (x, z) => (Math.floor(x / R_CELL) + 2048) * 4096 + Math.floor(z / R_CELL) + 2048;
+const HUMBLE = new Set(['house', 'hut', 'inn', 'stall', 'tent', 'dockhouse', 'alchemist', 'marketHall', 'tower', 'barracks', 'crates', 'cableTower']);
+const GRAND = new Set(['keep', 'palace', 'temple', 'bank', 'shrine']);
+const byCache = new Map();
+/** a style as it applies to one building: st.by = { humble | grand | plain | <model id>: overrides } (pal and roof merge key by key) */
+function styleFor(st, id) {
+  if (!st.by) return st;
+  const o1 = st.by[HUMBLE.has(id) ? 'humble' : GRAND.has(id) ? 'grand' : 'plain'], o2 = st.by[id];
+  if (!o1 && !o2) return st;
+  let m = byCache.get(st);
+  if (!m) byCache.set(st, m = new Map());
+  if (!m.has(id)) { const r = { ...st, ...o1, ...o2 }; r.pal = { ...st.pal, ...(o1 && o1.pal), ...(o2 && o2.pal) }; r.roof = { ...st.roof, ...(o1 && o1.roof), ...(o2 && o2.roof) }; m.set(id, r); }
+  return m.get(id);
+}
+const roofSpec = (r, c) => { const s = r[c.type]; return s && s.kind && s.kind !== 'keep' ? s : null; };
+// 0: the old roof stays and something is added; 1: its tiles come off and a skin is laid over what is left; 2: everything above the eaves goes
+const ROOF_MODE = { gables: 0, drape: 1, hip: 2, flat: 2, dome: 2, step: 2, hull: 2, shikhara: 2, cap: 2 };
+
+/**
+ * The roofs of a finished building: every run of roof tiles (small flat sloping faces with a roof's finish) or thatch,
+ * gathered into clusters by plan position and height. Returns vr (vertex -> cluster + 1, tiles and ridge pieces),
+ * tf (triangle -> cluster + 1), clusters [{ x0, x1, z0, z1, eY (eaves), rY (ridge), type 'main' | 'cap', ax, rl, gable, fill, ok }]
+ * and the plan cells the tiles lie in.
+ */
+function findRoofs(P, N, A, cls, I, ni, n, pinned) {
+  const rv = new Uint8Array(n), vr = new Uint8Array(n), nt = ni / 3, tf = new Uint8Array(nt), tk = new Float64Array(nt), cells = new Map(), clusters = [];
+  for (let i = 0; i < n; i++) {
+    const o = i * 3, r = A[o];
+    if (A[o + 1] > 0.3 || A[o + 2] > 0.3 || P[o + 1] < 0.6 || pinned[i]) continue;
+    if (r > 0.775 && r < 0.855) rv[i] = 1; else if (r > 0.975 && r < 0.985) rv[i] = 2; else if (r > 0.896 && r < 0.904 && (cls[i] === C_TIMBER || cls[i] === C_RED || cls[i] === C_SLATE)) rv[i] = 1;
+  }
+  for (let t = 0; t < nt; t++) {
+    const a = I[t * 3], b = I[t * 3 + 1], c = I[t * 3 + 2], ka = rv[a];
+    if (!ka || !rv[b] || !rv[c]) continue;
+    const a3 = a * 3, b3 = b * 3, c3 = c * 3;
+    if (ka !== 2 && (N[a3] * N[b3] + N[a3 + 1] * N[b3 + 1] + N[a3 + 2] * N[b3 + 2] < 0.999 || N[a3] * N[c3] + N[a3 + 1] * N[c3 + 1] + N[a3 + 2] * N[c3 + 2] < 0.999)) continue;
+    const ux = P[b3] - P[a3], uy = P[b3 + 1] - P[a3 + 1], uz = P[b3 + 2] - P[a3 + 2], vx = P[c3] - P[a3], vy = P[c3 + 1] - P[a3 + 1], vz = P[c3 + 2] - P[a3 + 2];
+    const fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx, l = Math.hypot(fx, fy, fz);
+    if (l < 1e-9 || (ka !== 2 && (l > 0.07 || l < 0.0065))) continue;   // a tile's upper face: not its thin foot and sides, not a big board
+    // pitch and downhill direction from the face's own (shared) normal: every triangle of one tile agrees
+    let qx = N[a3] + N[b3] + N[c3], qy = N[a3 + 1] + N[b3 + 1] + N[c3 + 1], qz = N[a3 + 2] + N[b3 + 2] + N[c3 + 2];
+    const ql = Math.hypot(qx, qy, qz) || 1, qs = qy < 0 ? -1 / ql : 1 / ql; qx *= qs; qy *= qs; qz *= qs;   // (some roofs are wound inside out: only the slope matters)
+    const s = qy;
+    if (s < 0.2 || (ka !== 2 && s > 0.975) || Math.abs(fy) / l < 0.12) continue;
+    const key = cellKey((P[a3] + P[b3] + P[c3]) / 3, (P[a3 + 2] + P[b3 + 2] + P[c3 + 2]) / 3) * 8 + Math.min(4, Math.floor(s * 5));   // cells are kept apart by pitch, so a spire never blurs into the roof beside it
+    let e = cells.get(key);
+    if (!e) cells.set(key, e = { y0: 9e9, y1: -9e9, n: 0, c: -1, ar: 0, py: 0, hx: 0, hz: 0 });
+    e.ar += l; e.py += qy * l; e.hx += qx * l; e.hz += qz * l;
+    const lo = Math.min(P[a3 + 1], P[b3 + 1], P[c3 + 1]), hi = Math.max(P[a3 + 1], P[b3 + 1], P[c3 + 1]);
+    if (lo < e.y0) e.y0 = lo; if (hi > e.y1) e.y1 = hi; e.n++;
+    tf[t] = 255; tk[t] = key;
+  }
+  if (!cells.size) return { vr, tf, clusters, cells };
+  for (const [k0, e0] of cells) {
+    if (e0.c >= 0) continue;
+    const ci = clusters.length, st = [k0]; e0.c = ci;
+    let cnt = 0;
+    while (st.length) {
+      const key = st.pop(), e = cells.get(key); cnt++;
+      const base = Math.floor(key / 8);
+      for (let d = 0; d < 45; d++) {
+        const q = Math.floor(d / 5), dx = (q % 3) - 1, dz = Math.floor(q / 3) - 1, nk = (base + dx * 4096 + dz) * 8 + (d % 5), f = cells.get(nk);
+        if (!f || f.c >= 0 || f.y0 > e.y1 + 0.2 || e.y0 > f.y1 + 0.2) continue;
+        if (Math.abs(e.py / e.ar - f.py / f.ar) > 0.16) continue;   // a different pitch: a spire on a nave, a turret by a hall
+        const ex = e.hx / e.ar, ez = e.hz / e.ar, gx = f.hx / f.ar, gz = f.hz / f.ar;
+        if ((dx || dz) && ex * gx + ez * gz < -0.08 && ex * dx + ez * dz > 0.05 && gx * dx + gz * dz < -0.05) continue;   // a valley between two roofs that face each other
+        f.c = ci; st.push(nk);
+      }
+    }
+    clusters.push(cnt);
+  }
+  { // two slopes parted by a ridge capping are one roof: join clusters of the same height and pitch that lie side by side
+    const pre = clusters.map(() => ({ x0: 9e9, x1: -9e9, z0: 9e9, z1: -9e9, y0: 9e9, y1: -9e9, py: 0, ar: 0 })), par = clusters.map((_, i) => i), find = (i) => { while (par[i] !== i) i = par[i] = par[par[i]]; return i; };
+    for (const [key, e] of cells) { if (e.c < 0) continue; const p = pre[e.c], b = Math.floor(key / 8), x = (Math.floor(b / 4096) - 2048) * R_CELL, z = ((b % 4096) - 2048) * R_CELL; if (x < p.x0) p.x0 = x; if (x + R_CELL > p.x1) p.x1 = x + R_CELL; if (z < p.z0) p.z0 = z; if (z + R_CELL > p.z1) p.z1 = z + R_CELL; if (e.y0 < p.y0) p.y0 = e.y0; if (e.y1 > p.y1) p.y1 = e.y1; p.py += e.py; p.ar += e.ar; }
+    const m = Math.min(pre.length, 60);
+    for (let i = 0; i < m; i++) for (let j = i + 1; j < m; j++) {
+      const a = pre[i], b = pre[j];
+      if (Math.abs(a.y1 - b.y1) > 0.12 || Math.abs(a.y0 - b.y0) > 0.3 || a.y1 - a.y0 < 0.3 || Math.abs(a.py / a.ar - b.py / b.ar) > 0.1) continue;
+      const gx = Math.max(a.x0 - b.x1, b.x0 - a.x1), gz = Math.max(a.z0 - b.z1, b.z0 - a.z1);
+      if (Math.max(gx, gz) < 0.45 && Math.min(gx, gz) < -0.5) par[find(j)] = find(i);
+    }
+    // keep the two hundred largest, renumbered
+    const size = clusters.map(() => 0), map = new Map();
+    for (const e of cells.values()) { e.c = find(e.c); size[e.c]++; }
+    const order = size.map((n, i) => [n, i]).filter((q) => q[0] > 0).sort((p, q) => q[0] - p[0]).slice(0, 200);
+    clusters.length = 0;
+    order.forEach(([cnt, i], k) => { map.set(i, k); clusters.push({ i: k, cells: cnt, tris: 0, x0: 9e9, x1: -9e9, z0: 9e9, z1: -9e9, eY: 9e9, rY: -9e9, a0: 9e9, a1: -9e9, b0: 9e9, b1: -9e9 }); });
+    for (const e of cells.values()) e.c = map.has(e.c) ? map.get(e.c) : -1;
+  }
+  for (let t = 0; t < nt; t++) {
+    if (!tf[t]) continue;
+    const e = cells.get(tk[t]);
+    if (e.c < 0) { tf[t] = 0; continue; }
+    vr[I[t * 3]] = vr[I[t * 3 + 1]] = vr[I[t * 3 + 2]] = e.c + 1;
+  }
+  const blank = (i) => ({ i, cells: 0, tris: 0, x0: 9e9, x1: -9e9, z0: 9e9, z1: -9e9, eY: 9e9, rY: -9e9, a0: 9e9, a1: -9e9, b0: 9e9, b1: -9e9, corner: 0 });
+  const measure = () => { // extents of every cluster from its tile vertices
+    for (const c of clusters) Object.assign(c, blank(c.i));
+    for (let i = 0; i < n; i++) { if (!vr[i]) continue; const c = clusters[vr[i] - 1], o = i * 3, x = P[o], y = P[o + 1], z = P[o + 2]; c.tris++; if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (z < c.z0) c.z0 = z; if (z > c.z1) c.z1 = z; if (y < c.eY) c.eY = y; if (y > c.rY) c.rY = y; }
+  };
+  measure();
+  { // a scrap of roof lying wholly inside a larger one (the cut tiles down a hip) is part of it
+    const to = clusters.map((_, i) => i);
+    for (const b of clusters) { if (!b.tris) continue; let best = null; for (const a of clusters) if (a !== b && a.tris > b.tris && b.x0 > a.x0 - 0.1 && b.x1 < a.x1 + 0.1 && b.z0 > a.z0 - 0.1 && b.z1 < a.z1 + 0.1 && b.eY > a.eY - 0.1 && b.rY < a.rY + 0.1 && (!best || a.tris > best.tris)) best = a; if (best) to[b.i] = best.i; }
+    for (let i = 0; i < n; i++) if (vr[i]) { let c = vr[i] - 1, q = 0; while (to[c] !== c && q++ < 8) c = to[c]; vr[i] = c + 1; }
+    for (const e of cells.values()) if (e.c >= 0) { let c = e.c, q = 0; while (to[c] !== c && q++ < 8) c = to[c]; e.c = c; }
+  }
+  { // a cone or spire that runs into a bigger roof is lifted out of it: round a peak, the tiles fall away alike on every side
+    const lists = clusters.map(() => []);
+    for (let i = 0; i < n; i++) if (vr[i]) lists[vr[i] - 1].push(i);
+    const NB = 15, sum = new Float64Array(NB * 8), n0 = clusters.length;
+    for (let ci = 0; ci < n0; ci++) {
+      let list = lists[ci];
+      for (let rep = 0; rep < 6 && list.length > 500 && clusters.length < 250; rep++) {
+        let top = -1e9, ti = -1, ax = 0, az = 0, cnt = 0;
+        for (const i of list) if (P[i * 3 + 1] > top) { top = P[i * 3 + 1]; ti = i; }
+        for (const i of list) if (P[i * 3 + 1] > top - 0.08 && Math.abs(P[i * 3] - P[ti * 3]) < 0.25 && Math.abs(P[i * 3 + 2] - P[ti * 3 + 2]) < 0.25) { ax += P[i * 3]; az += P[i * 3 + 2]; cnt++; }
+        ax /= cnt; az /= cnt;
+        sum.fill(-1e9);   // the highest tile in each ring and sector: the cone's own skin, whatever lies under its eaves
+        for (const i of list) { const dx = P[i * 3] - ax, dz = P[i * 3 + 2] - az, r = Math.hypot(dx, dz); if (r >= NB * 0.1) continue; const q = Math.floor(r / 0.1) * 8 + (Math.floor(((Math.atan2(dz, dx) + Math.PI) / TAU) * 8) & 7); if (P[i * 3 + 1] > sum[q]) sum[q] = P[i * 3 + 1]; }
+        let rmax = 0, yR = top;
+        for (let b = 0; b < NB; b++) {
+          let mean = 0, k = 0, ok = true;
+          for (let q = 0; q < 8; q++) if (sum[b * 8 + q] > -1e8) { mean += sum[b * 8 + q]; k++; }
+          if (k < (b ? 7 : 2)) break;
+          mean /= k;
+          for (let q = 0; q < 8; q++) if (sum[b * 8 + q] > -1e8 && Math.abs(sum[b * 8 + q] - mean) > 0.2) ok = false;
+          if (!ok || mean > yR + 0.05) break;
+          rmax = (b + 1) * 0.1; yR = mean;
+        }
+        if (rmax < 0.3 || top - yR < 0.45) break;
+        const inside = [], rest = [], kk = (top - yR) / rmax;
+        let corners = 0;
+        for (const i of list) {
+          const dx = P[i * 3] - ax, dz = P[i * 3 + 2] - az, r = Math.hypot(dx, dz), y = P[i * 3 + 1];
+          if (r <= rmax + 0.05 && y > yR - 0.15) inside.push(i);
+          else { rest.push(i); if (r < rmax * 1.5 && y > yR - 0.08 && Math.abs(y - (top - kk * Math.max(Math.abs(dx), Math.abs(dz)))) < 0.14) corners++; }
+        }
+        if (corners > inside.length * 0.04 || rest.length < 200) break;   // a pyramid (its corners carry on past the circle), or the whole cluster
+        const nc = clusters.length; clusters.push(blank(nc));
+        for (const i of inside) vr[i] = nc + 1;
+        list = rest;
+      }
+    }
+  }
+  measure();
+  { // the eaves are where the tiles begin in earnest: a stray tile lower down (a hatch, a hood) does not count
+    const NBH = 40, hist = clusters.map(() => new Uint32Array(NBH)), tot = clusters.map(() => 0);
+    for (let i = 0; i < n; i++) { if (!vr[i]) continue; const c = clusters[vr[i] - 1]; hist[c.i][Math.min(NBH - 1, Math.floor(((P[i * 3 + 1] - c.eY) / Math.max(1e-6, c.rY - c.eY)) * NBH))]++; tot[c.i]++; }
+    for (const c of clusters) { let acc = 0, b = 0; while (b < NBH - 1 && acc + hist[c.i][b] < tot[c.i] * 0.02) acc += hist[c.i][b++]; c.eY += ((c.rY - c.eY) * b) / NBH; }
+  }
+  const occ = clusters.map(() => new Set());
+  for (let i = 0; i < n; i++) { // where the ridge runs, how much of its outline a roof fills, whether its corners are tiled
+    if (!vr[i]) continue;
+    const c = clusters[vr[i] - 1], o = i * 3, x = P[o], z = P[o + 2];
+    occ[c.i].add(cellKey(x, z));
+    if (Math.abs(x - (c.x0 + c.x1) / 2) > 0.41 * (c.x1 - c.x0) && Math.abs(z - (c.z0 + c.z1) / 2) > 0.41 * (c.z1 - c.z0)) c.corner++;
+    if (P[o + 1] < c.rY - Math.max(0.06, 0.08 * (c.rY - c.eY))) continue;
+    if (x < c.a0) c.a0 = x; if (x > c.a1) c.a1 = x; if (z < c.b0) c.b0 = z; if (z > c.b1) c.b1 = z;
+  }
+  for (let t = 0; t < nt; t++) if (tf[t]) tf[t] = vr[I[t * 3]];
+  for (const c of clusters) {
+    c.tris = Math.round(c.tris / 1.7); c.cells = occ[c.i].size;
+    c.w = c.x1 - c.x0; c.d = c.z1 - c.z0; c.cx = (c.x0 + c.x1) / 2; c.cz = (c.z0 + c.z1) / 2; c.r = (c.w + c.d) / 4;
+    c.fill = Math.min(1, (c.cells * R_CELL * R_CELL) / Math.max(0.04, (c.w + R_CELL) * (c.d + R_CELL)));
+    const rw = c.a1 - c.a0, rd = c.b1 - c.b0, apex = rw < 0.5 && rd < 0.5, big = Math.max(c.w, c.d);
+    c.type = apex && Math.abs(c.w - c.d) < 0.35 && (big < 1.35 || (big < 2.7 && c.corner < 4)) ? 'cap' : 'main';
+    c.ok = c.tris >= 60 && c.cells >= 5 && c.rY - c.eY > 0.22 && c.i < 254 && (c.type === 'cap' || Math.min(c.w, c.d) > 0.7);
+    c.ax = apex ? (c.w >= c.d ? 0 : 1) : rw >= rd ? 0 : 1; c.rl = apex ? 0 : Math.max(rw, rd) / 2;
+    c.gable = !apex && (c.ax ? rd > c.d - 0.5 : rw > c.w - 0.5);
+  }
+  // ridge tiles, finials and flashings ride on the tiles: they go where the tiles go
+  for (let t = 0; t < nt; t++) {
+    if (tf[t]) continue;
+    const a = I[t * 3], b = I[t * 3 + 1], c = I[t * 3 + 2];
+    if (!(rv[a] || A[a * 3 + 1] > 0.5) || !(rv[b] || A[b * 3 + 1] > 0.5) || !(rv[c] || A[c * 3 + 1] > 0.5) || pinned[a] || pinned[b] || pinned[c]) continue;
+    const x = (P[a * 3] + P[b * 3] + P[c * 3]) / 3, z = (P[a * 3 + 2] + P[b * 3 + 2] + P[c * 3 + 2]) / 3, y = Math.min(P[a * 3 + 1], P[b * 3 + 1], P[c * 3 + 1]), key = cellKey(x, z);
+    let best = null;
+    for (let d = 0; d < 45; d++) { const q = Math.floor(d / 5), f = cells.get((key + ((q % 3) - 1) * 4096 + Math.floor(q / 3) - 1) * 8 + (d % 5)); if (f && f.c >= 0 && clusters[f.c].ok && y >= f.y0 - 0.06 && y < f.y1 + 0.7 && (!best || q === 4)) best = f; }
+    if (best) { tf[t] = best.c + 1; vr[a] = vr[b] = vr[c] = best.c + 1; }
+  }
+  return { vr, tf, clusters, cells };
+}
+/** the walls a roof sat on: for each side, the plane most wall faces stand in (searched just below the eaves) */
+function wallRect(c, env) {
+  if (c.rect) return c.rect;
+  const { P, N, n, vr } = env, y0 = c.eY - 0.9, y1 = c.cutY + 0.02, m = 0.1, B = 0.05, H = [new Map(), new Map(), new Map(), new Map()];
+  for (let i = 0; i < n; i++) {
+    const o = i * 3, y = P[o + 1], x = P[o], z = P[o + 2];
+    if (y < y0 || y > y1 || vr[i] || x < c.x0 - m || x > c.x1 + m || z < c.z0 - m || z > c.z1 + m) continue;
+    const nx = N[o], nz = N[o + 2], h = nx > 0.85 ? 0 : nx < -0.85 ? 1 : nz > 0.85 ? 2 : nz < -0.85 ? 3 : -1;
+    if (h < 0) continue;
+    const q = Math.round((h < 2 ? x : z) / B); H[h].set(q, (H[h].get(q) || 0) + 1);
+  }
+  const pick = (h, sign, mid, fall) => { let mx = 0; for (const [q, v] of H[h]) if ((q * B - mid) * sign > 0.15 && v > mx) mx = v; if (mx < 10) return fall; let best = null; for (const [q, v] of H[h]) if ((q * B - mid) * sign > 0.15 && v >= mx * 0.4 && (best === null || (q - best) * sign > 0)) best = q; return best * B; };
+  const inset = Math.min(0.22, c.w * 0.12, c.d * 0.12);
+  const r = { x1: pick(0, 1, c.cx, c.x1 - inset), x0: pick(1, -1, c.cx, c.x0 + inset), z1: pick(2, 1, c.cz, c.z1 - inset), z0: pick(3, -1, c.cz, c.z0 + inset) };
+  r.x0 = clamp(r.x0, c.x0, c.cx - 0.12); r.x1 = clamp(r.x1, c.cx + 0.12, c.x1); r.z0 = clamp(r.z0, c.z0, c.cz - 0.12); r.z1 = clamp(r.z1, c.cz + 0.12, c.z1);
+  return (c.rect = r);
+}
+/** the frame a roof is built in: X along its ridge. A, B = half sizes of the walls; EA, EB = how far the old eaves reached */
+function roofFrame(c, env) {
+  const r = wallRect(c, env), cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2, hx = (r.x1 - r.x0) / 2, hz = (r.z1 - r.z0) / 2;
+  const ex = Math.min(c.x1 - cx, cx - c.x0), ez = Math.min(c.z1 - cz, cz - c.z0);
+  return c.ax ? { m: M(cx, 0, cz, 0, 90, 0), A: hz, B: hx, EA: ez, EB: ex, cx, cz } : { m: M(cx, 0, cz), A: hx, B: hz, EA: ex, EB: ez, cx, cz };
+}
+/** flat polygon facing down whatever order its corners come in */
+function flatDown(g, pts, col) {
+  const a = pts[0], b = pts[1], c = pts[2];
+  if ((b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]) > 0) pts = pts.slice().reverse();
+  g.flat(pts, col);
+}
+/** a wall face W x H on the local XY plane facing +Z (origin at its lower left), fine enough to carry a painted pattern */
+function wallFace(g, W, H, col, d = 0.13) { g.sheet(Math.max(1, Math.round(W / d)), Math.max(1, Math.round(H / d)), (u, v) => [u * W, v * H, 0], col); }
+/**
+ * Four walls round a box A x B (half sizes) from y0 to y1, in the roof frame. w = { stone: hex, st: {...} } for coursed
+ * stone, or { col, kind, rough, frame (timber colour), every (post spacing), win: { col, glow, shape, trim } }.
+ */
+function wallBody(g, A, B, y0, y1, w, seed = 1) {
+  const H = y1 - y0;
+  if (H < 0.03) return;
+  if (w.stone !== undefined) stoneBox(g, A, B, y0, y1, stoneStyle(w.stone, { cell: 0.22 / qual(), chip: 0.08, ...w.st }), seed, { noFoot: true, quoin: w.quoin });
+  else {
+    g.surf(w.kind ?? K_PLASTER, w.rough ?? 0.92, w.metal || 0);
+    for (let s = 0; s < 4; s++) { const W = s % 2 ? B : A, D = s % 2 ? A : B; g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(-W, y0, D)), () => wallFace(g, 2 * W, H, w.col)); }
+    if (w.frame) { // posts at the corners and between, a rail top and bottom
+      g.surf(K_WOOD, 0.88);
+      const tc = woodTint(w.frame, seed), t = w.thick || 0.09;
+      for (let s = 0; s < 4; s++) {
+        const W = s % 2 ? B : A, D = s % 2 ? A : B, np = Math.max(1, Math.round((2 * W) / (w.every || 0.8)));
+        g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(0, y0, D)), () => {
+          for (let i = 0; i <= np; i++) g.in(M(-W + (2 * W * i) / np, H / 2, 0.012, 0, 0, 90), () => g.beam(H, t, 0.05, 0.008, tc, 1));
+          for (const y of w.rails || [0.04, H - 0.04]) g.in(M(0, y, 0.016), () => g.beam(2 * W + t, t, 0.05, 0.008, tc, 2));
+          if (w.brace && H > 0.4) for (let i = 0; i < np; i++) { const xa = -W + (2 * W * i) / np, xb = -W + (2 * W * (i + 1)) / np, f = i % 2 ? 1 : 0; g.beamTo([f ? xb : xa, 0.05, 0.01], [f ? xa : xb, H - 0.05, 0.01], t * 0.8, 0.04, 0.006, tc, 1, [0, 0, 1]); }
+        });
+      }
+    }
+  }
+  const wn = w.win;
+  if (wn && H > 0.42) for (let s = 0; s < 4; s++) {
+    const W = s % 2 ? B : A, D = s % 2 ? A : B, nw = Math.max(1, Math.round((2 * W) / (wn.every || 1.05))), ww = wn.w || 0.2, wh = Math.min(wn.h || 0.36, H * 0.6), yc = y0 + H * 0.52;
+    g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(0, yc, D + 0.02)), () => { for (let i = 0; i < nw; i++) g.in(M(-W + (2 * W * (i + 0.5)) / nw, 0, 0), () => windowPane(g, ww, wh, wn)); });
+  }
+}
+/** a small window on the local XY plane facing +Z, centred: shape 'sq' | 'round' | 'point' | 'horse' | 'screen' */
+function windowPane(g, w, h, o) {
+  const sh = o.shape || 'sq', pts = [[-w / 2, -h / 2], [w / 2, -h / 2]], y1 = h / 2 - (sh === 'sq' || sh === 'screen' ? 0 : w / 2);
+  if (sh === 'sq' || sh === 'screen') pts.push([w / 2, h / 2], [-w / 2, h / 2]);
+  else if (sh === 'point') pts.push([w / 2, y1], [w * 0.28, y1 + w * 0.42], [0, y1 + w * 0.8], [-w * 0.28, y1 + w * 0.42], [-w / 2, y1]);
+  else { const k = sh === 'horse' ? 1.22 : 1; for (let i = 0; i <= 6; i++) { const a = (i / 6) * Math.PI * (sh === 'horse' ? 1.3 : 1) - (sh === 'horse' ? 0.15 * Math.PI : 0); pts.push([Math.cos(a) * w * 0.5 * k, y1 + (sh === 'horse' ? w * 0.12 : 0) + Math.sin(a) * w * 0.5 * k]); } }
+  g.surf(K_PLAIN, 0.4, 0, o.glow ?? 0.9);
+  if (sh === 'screen') { g.sheet(4, 4, (u, v) => [(u - 0.5) * w, (v - 0.5) * h, 0], (x, y, z, nx, ny, nz, u, v) => ((Math.round(u * 4) % 2 === 0 && u > 0.01 && u < 0.99) || Math.abs(v - 0.5) < 0.01 ? mul(o.col, 0.82) : o.col)); }
+  else g.poly(pts.map((p) => [p[0], p[1], 0]), 0, 0, 1, o.col);
+  if (o.trim) {
+    g.surf(o.trimKind ?? K_STONE, 0.85, o.trimMetal || 0);
+    g.in(M(0, -h / 2 - 0.025, 0.01), () => g.cbox(w + 0.1, 0.045, 0.06, 0.008, o.trim));
+    if (sh === 'sq' || sh === 'screen') { g.in(M(0, h / 2 + 0.025, 0.01), () => g.cbox(w + 0.1, 0.045, 0.06, 0.008, o.trim)); for (const e of [-1, 1]) g.in(M(e * (w / 2 + 0.02), 0, 0.008), () => g.cbox(0.04, h, 0.04, 0.006, o.trim)); }
+    if (sh === 'screen') { g.in(M(0, 0, 0.006), () => g.cbox(0.025, h, 0.02, 0.004, o.trim)); g.in(M(0, 0, 0.006), () => g.cbox(w, 0.025, 0.02, 0.004, o.trim)); }
+  }
+}
+/** a solid slice: outline [[x, y], ...] (star-shaped about `hub`) on the local XY plane, `depth` thick about z = 0 */
+function prism(g, pts, depth, col, hub = null) {
+  const n = pts.length, h = hub || [pts.reduce((s, p) => s + p[0], 0) / n, pts.reduce((s, p) => s + p[1], 0) / n];
+  for (const s of [1, -1]) { const ce = g.vc(h[0], h[1], (s * depth) / 2, 0, 0, s, col), id = pts.map((p) => g.vc(p[0], p[1], (s * depth) / 2, 0, 0, s, col)); for (let i = 0; i < n; i++) g.tri(ce, id[i], id[(i + 1) % n]); }
+  for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; let nx = dy / l, ny = -dx / l; if (nx * ((a[0] + b[0]) / 2 - h[0]) + ny * ((a[1] + b[1]) / 2 - h[1]) < 0) { nx = -nx; ny = -ny; } g.quad(g.vc(a[0], a[1], depth / 2, nx, ny, 0, col), g.vc(b[0], b[1], depth / 2, nx, ny, 0, col), g.vc(b[0], b[1], -depth / 2, nx, ny, 0, col), g.vc(a[0], a[1], -depth / 2, nx, ny, 0, col)); }
+}
+const MERLON = {
+  square: (w, h) => [[-w / 2, 0], [w / 2, 0], [w / 2, h], [-w / 2, h]],
+  step: (w, h) => [[-w / 2, 0], [w / 2, 0], [w / 2, h * 0.36], [w * 0.3, h * 0.36], [w * 0.3, h * 0.7], [w * 0.12, h * 0.7], [w * 0.12, h], [-w * 0.12, h], [-w * 0.12, h * 0.7], [-w * 0.3, h * 0.7], [-w * 0.3, h * 0.36], [-w / 2, h * 0.36]],
+  round: (w, h) => [[-w / 2, 0], [w / 2, 0], [w / 2, h * 0.5], [w * 0.36, h * 0.8], [0, h], [-w * 0.36, h * 0.8], [-w / 2, h * 0.5]],
+  point: (w, h) => [[-w / 2, 0], [w / 2, 0], [w / 2, h * 0.45], [0, h], [-w / 2, h * 0.45]],
+  swallow: (w, h) => [[-w / 2, 0], [w / 2, 0], [w / 2, h], [w * 0.2, h * 0.72], [0, h * 0.6], [-w * 0.2, h * 0.72], [-w / 2, h]],
+};
+const CAVETTO = [[0, 0], [0.03, 0.012], [0.03, 0.045], [0, 0.06], [0.02, 0.12], [0.07, 0.19], [0.11, 0.22], [0.11, 0.25], [0, 0.25]];
+/** what runs round the edge of a flat roof A x B at height y: o.merlon = 'none' | 'cavetto' | a MERLON shape; returns its height */
+function roofEdge(g, A, B, y, o) {
+  const col = o.edge || [0.6, 0.58, 0.5], kind = o.merlon || 'none', mh = o.mh || 0.22;
+  g.surf(o.edgeKind ?? K_STONE, o.edgeRough ?? 0.9, o.edgeMetal || 0);
+  if (kind === 'cavetto') {
+    for (let s = 0; s < 4; s++) { const W = s % 2 ? B : A, D = s % 2 ? A : B; g.in(M(0, y - 0.06, 0, 0, s * 90, 0).multiply(M(0, 0, D)), () => g.mould(CAVETTO, 2 * W, col, 1, 1, Math.max(2, Math.round((2 * W) / 0.09)))); }
+    g.flat([[-A - 0.1, y + 0.19, B + 0.1], [A + 0.1, y + 0.19, B + 0.1], [A + 0.1, y + 0.19, -B - 0.1], [-A - 0.1, y + 0.19, -B - 0.1]], typeof col === 'function' ? col(0, 0.25, 0) : col);
+    return 0.19;
+  }
+  const rim = o.rim ?? 0.09, t = 0.11;
+  for (let s = 0; s < 4; s++) {
+    const W = s % 2 ? B : A, D = s % 2 ? A : B;
+    g.in(M(0, y, 0, 0, s * 90, 0).multiply(M(0, 0, D - t / 2 + 0.02)), () => {
+      g.in(M(0, rim / 2 - 0.02, 0), () => g.cbox(2 * W + 0.04, rim + 0.04, t, 0.012, col));
+      if (kind === 'none') return;
+      const mw = o.mw || 0.24, nm = Math.max(2, Math.round((2 * W) / (mw * (o.gap || 1.9)))), shape = MERLON[kind](mw, mh);
+      for (let i = 0; i < nm; i++) g.in(M(-W + (2 * W * (i + 0.5)) / nm, rim, 0), () => prism(g, shape, t, o.merlonCol || col, [0, mh * 0.2]));
+    });
+  }
+  return rim + (kind === 'none' ? 0 : mh);
+}
+/**
+ * One tier of tiled roof in the roof frame: eaves at +-A, +-B (height y0), rising h to a top rectangle +-a, +-b (a ridge when
+ * b = 0, a point when both are). o: pal, curve (>1 = concave, the eastern sweep), lift (how far the corners turn up),
+ * tw, th (tile size), round, ridge (colour), tip (corner horns), under (soffit colour), wall [Aw, Bw] where the soffit ends.
+ */
+function hipTier(g, A, B, a, b, y0, h, o, seed = 1) {
+  const p = o.curve ?? 1, lift = o.lift || 0, tw = o.tw || 0.2, th = o.th || 0.17;
+  const yAt = (k, u) => y0 + h * Math.pow(Math.max(0, k), p) + lift * Math.pow(Math.abs(2 * u - 1), 2.6) * (1 - k) * (1 - k);
+  const F = [[[-A, B], [A, B], [-a, b], [a, b]], [[A, -B], [-A, -B], [a, -b], [-a, -b]], [[A, B], [A, -B], [a, b], [a, -b]], [[-A, -B], [-A, B], [-a, -b], [-a, b]]];
+  F.forEach(([e0, e1, t0, t1], fi) => {
+    const wb = Math.hypot(e1[0] - e0[0], e1[1] - e0[1]), wt = Math.hypot(t1[0] - t0[0], t1[1] - t0[1]), run = fi < 2 ? B - b : A - a;
+    if (run < 0.02) return;
+    const rows = Math.max(2, Math.round(Math.hypot(h, run) / th));
+    g.surf(K_ROOF, o.rough ?? 0.8, o.metal || 0);
+    tiles(g, rows, (j) => Math.max(1, lerp(wb, wt, (j + 0.5) / rows) / tw), (u, v) => { const k = Math.min(v, 0.985); return [lerp(lerp(e0[0], e1[0], u), lerp(t0[0], t1[0], u), k), yAt(k, u), lerp(lerp(e0[1], e1[1], u), lerp(t0[1], t1[1], u), k)]; }, { pal: o.pal, lift: o.tlift || 0.02, seed: seed + fi, round: o.round, gap: o.gap });
+  });
+  const rc = o.ridge || mul(o.pal[0], 0.7), rr = o.ridgeR || 0.055, ns = lift || p !== 1 ? 4 : 1;
+  g.surf(K_ROOF, 0.7, o.ridgeMetal || 0);
+  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    let prev = null;
+    for (let q = 0; q <= ns; q++) { const k = q / ns, pt = [sx * lerp(A + 0.02, a, k), yAt(k, 1) + 0.012, sz * lerp(B + 0.02, b, k)]; if (prev) ridge(g, prev, pt, rr, rc, seed + sx * 3 + sz + q); prev = pt; }
+    if (o.tip) g.in(M(sx * (A + 0.02), yAt(0, 1) - 0.02, sz * (B + 0.02), 0, Math.atan2(sx, sz) / DEG, 0), () => { horn(g, [[0, 0, -0.12], [0, 0.02, 0.06], [0, 0.1, 0.2], [0, 0.24, 0.27]], 0.05, o.tip, mul(o.tip, 0.6), { rings: 0, nu: 6, nv: 8 }); g.surf(K_ROOF, 0.7, o.ridgeMetal || 0); });
+  }
+  if (b < 0.02 && a > 0.04) ridge(g, [-a - 0.07, y0 + h + 0.02, 0], [a + 0.07, y0 + h + 0.02, 0], rr * 1.25, rc, seed + 9);
+  else if (a < 0.02 && b > 0.04) ridge(g, [0, y0 + h + 0.02, -b - 0.07], [0, y0 + h + 0.02, b + 0.07], rr * 1.25, rc, seed + 9);
+  // the underside of the eaves
+  const [Aw, Bw] = o.wall || [A - 0.25, B - 0.25], dk = o.under || [0.05, 0.04, 0.035], nsf = lift ? 6 : 1;
+  g.surf(K_PLAIN, 1);
+  for (const [e0, e1, w0, w1] of [[[-A, B], [A, B], [-Aw, Bw], [Aw, Bw]], [[A, -B], [-A, -B], [Aw, -Bw], [-Aw, -Bw]], [[A, B], [A, -B], [Aw, Bw], [Aw, -Bw]], [[-A, -B], [-A, B], [-Aw, -Bw], [-Aw, Bw]]]) {
+    for (let i = 0; i < nsf; i++) { const u0 = i / nsf, u1 = (i + 1) / nsf; flatDown(g, [[lerp(e0[0], e1[0], u0), yAt(0, u0) - 0.014, lerp(e0[1], e1[1], u0)], [lerp(e0[0], e1[0], u1), yAt(0, u1) - 0.014, lerp(e0[1], e1[1], u1)], [lerp(w0[0], w1[0], u1), y0 - 0.014, lerp(w0[1], w1[1], u1)], [lerp(w0[0], w1[0], u0), y0 - 0.014, lerp(w0[1], w1[1], u0)]], dk); }
+  }
+}
+// dome and cap outlines: [radius, height] in units of the base radius, bottom to top
+const DOME = {
+  hemi: [[1, 0], [0.985, 0.17], [0.93, 0.36], [0.82, 0.57], [0.66, 0.75], [0.45, 0.89], [0.22, 0.975], [0, 1]],
+  low: [[1, 0], [0.97, 0.12], [0.88, 0.26], [0.72, 0.4], [0.5, 0.52], [0.25, 0.6], [0, 0.63]],
+  point: [[1, 0], [1.0, 0.2], [0.95, 0.45], [0.83, 0.72], [0.64, 0.98], [0.42, 1.2], [0.2, 1.37], [0.06, 1.47], [0, 1.5]],
+  onion: [[0.62, 0], [0.74, 0.08], [0.92, 0.24], [1.0, 0.44], [0.98, 0.64], [0.86, 0.85], [0.66, 1.05], [0.44, 1.24], [0.25, 1.42], [0.11, 1.6], [0.04, 1.8], [0, 1.92]],
+  bulb: [[0.8, 0], [0.95, 0.14], [1.0, 0.36], [0.92, 0.6], [0.72, 0.82], [0.46, 1.0], [0.22, 1.14], [0.08, 1.3], [0, 1.4]],
+  cone: [[1, 0], [0, 1]],
+  bell: [[1.08, 0], [0.86, 0.1], [0.62, 0.3], [0.42, 0.56], [0.26, 0.86], [0.13, 1.2], [0.04, 1.55], [0, 1.7]],
+  tent: [[1.04, 0], [0.96, 0.06], [0.66, 0.5], [0.36, 1.0], [0.1, 1.5], [0, 1.7]],
+  sweep: [[1.2, 0.1], [1.05, 0.02], [0.84, 0.08], [0.6, 0.24], [0.4, 0.46], [0.24, 0.72], [0.1, 1.0], [0, 1.12]],
+};
+const profTop = (p) => p[p.length - 1][1];
+/** what stands on the very top: o.finial = 'ball' | 'spike' | 'crystal' | 'lantern' | 'disc' | 'flame' | 'bud'; s = size */
+function finial(g, kind, s, o = {}) {
+  const col = o.fin || GOLD, keep = [g.kind, g.rough, g.metal, g.glow];
+  g.surf(K_PLAIN, 0.35, o.finMetal ?? 0.9);
+  if (kind === 'ball') g.lathe([[0.05, -0.04], [0.035, 0.03], [0.1, 0.1], [0.11, 0.18], [0.07, 0.26], [0.02, 0.3], [0.05, 0.36], [0.02, 0.42], [0.012, 0.6], [0, 0.66]].map(([r, y]) => [r * s, y * s]), nq(10), col);
+  else if (kind === 'spike') g.lathe([[0.06, -0.04], [0.04, 0.04], [0.07, 0.1], [0.03, 0.18], [0.02, 0.6], [0, 0.95]].map(([r, y]) => [r * s, y * s]), nq(8), col);
+  else if (kind === 'bud') g.lathe([[0.05, -0.04], [0.04, 0.05], [0.12, 0.12], [0.15, 0.24], [0.1, 0.4], [0.03, 0.56], [0, 0.62]].map(([r, y]) => [r * s, y * s]), nq(10), col);
+  else if (kind === 'disc') { g.lathe([[0.04, -0.04], [0.03, 0.2]].map(([r, y]) => [r * s, y * s]), 6, col); g.in(M(0, 0.42 * s, 0, 90, 0, 0), () => g.lathe([[0, 0.03], [0.2, 0.025], [0.24, 0], [0.2, -0.025], [0, -0.03]].reverse().map(([r, y]) => [r * s, y * s]), nq(14), col)); }
+  else if (kind === 'crystal') { g.lathe([[0.07, -0.04], [0.05, 0.06], [0.09, 0.1], [0.05, 0.14]].map(([r, y]) => [r * s, y * s]), nq(8), col); g.in(M(0, 0.12 * s, 0), () => crystal(g, 0.085 * s, 0.7 * s, o.seed || 3, { deep: o.deep, bright: o.bright, glow: o.cglow ?? 1.2 })); }
+  else if (kind === 'lantern') { g.surf(o.lanKind ?? K_STONE, 0.85); g.cyl(0.16 * s, 0.16 * s, 0.26 * s, nq(10), o.lan || [0.8, 0.78, 0.7], false, true); g.surf(K_PLAIN, 0.4, 0, 0.9); for (let i = 0; i < 4; i++) g.in(M(0, 0.13 * s, 0, 0, i * 90, 0).multiply(M(0, 0, 0.162 * s)), () => g.poly([[-0.04 * s, -0.08 * s, 0], [0.04 * s, -0.08 * s, 0], [0.04 * s, 0.06 * s, 0], [0, 0.1 * s, 0], [-0.04 * s, 0.06 * s, 0]], 0, 0, 1, o.lanGlow || [1, 0.7, 0.3])); g.surf(K_ROOF, 0.7, o.capMetal || 0); g.in(M(0, 0.26 * s, 0), () => g.lathe(DOME.hemi.map(([r, y]) => [r * 0.2 * s, y * 0.2 * s]), nq(10), o.capCol || col)); g.surf(K_PLAIN, 0.35, 0.9); g.in(M(0, 0.46 * s, 0), () => g.lathe([[0.03, 0], [0.045, 0.05], [0.012, 0.1], [0, 0.3]].map(([r, y]) => [r * s, y * s]), 6, col)); }
+  else if (kind === 'flame') { g.lathe([[0.1, -0.04], [0.14, 0.04], [0.16, 0.1], [0.1, 0.12]].map(([r, y]) => [r * s, y * s]), nq(8), col); g.in(M(0, 0.1 * s, 0), () => fire(g, 0.6 * s, o.flame || FIRE_HOT, o.seed || 1, o.fglow ?? 1.4)); }
+  [g.kind, g.rough, g.metal, g.glow] = keep;
+}
+/** a dome (or any DOME outline) of base radius R standing on the local origin, on a drum; returns its top */
+function domeOn(g, R, o, seed = 1) {
+  const prof = DOME[o.shape || 'hemi'], dh = R * (o.drum ?? 0.28), seg = nq(o.seg || 22), dc = o.drumCol || [0.75, 0.72, 0.65], top = dh + profTop(prof) * R * (o.hk || 1);
+  if (dh > 0.01) {
+    g.surf(o.drumKind ?? K_STONE, 0.9);
+    g.lathe([[R * 0.97, 0], [R * 0.97, dh * 0.82], [R * 1.03, dh * 0.86], [R * 1.03, dh]], seg, dc);
+    if (o.drumWin) { g.surf(K_PLAIN, 0.4, 0, o.drumGlow ?? 0.8); const nw = o.drumN || 8; for (let i = 0; i < nw; i++) g.in(M(0, dh * 0.42, 0, 0, (i + 0.5) * (360 / nw), 0).multiply(M(0, 0, R * 0.975)), () => g.poly([[-0.05 * R, -dh * 0.3, 0], [0.05 * R, -dh * 0.3, 0], [0.05 * R, dh * 0.16, 0], [0, dh * 0.3, 0], [-0.05 * R, dh * 0.16, 0]], 0, 0, 1, o.drumWin)); }
+  }
+  g.surf(o.kind ?? K_ROOF, o.rough ?? 0.6, o.metal || 0, o.glow || 0);
+  const H = profTop(prof) * R * (o.hk || 1), col = o.col;
+  g.in(M(0, dh, 0), () => g.lathe(prof.map(([r, y]) => [r * R, y * R * (o.hk || 1)]), seg, typeof col === 'function' ? (x, y, z) => col(Math.atan2(z, x), y / H, x, y, z, seed) : col));
+  if (o.finial) g.in(M(0, top - 0.01, 0), () => finial(g, o.finial, o.finS || clamp(R * 0.9, 0.35, 1.3), o));
+  return top + (o.finial ? 0.4 * (o.finS || clamp(R * 0.9, 0.35, 1.3)) : 0);
+}
+// dome and roof colourings: (angle, t 0..1 up the dome, x, y, z, seed) -> rgb
+const domeRibs = (base, rib, n = 8, w = 0.09) => (a, t, x, y, z) => (tri1((a / TAU) * n) < w * 2 ? rib : mul(base, 0.85 + 0.25 * noise3(x * 5, y * 5, z * 5) - 0.1 * tri1(t * 9)));
+const domeSpiral = (c1, c2, n = 6, tw = 1.6) => (a, t, x, y, z) => mul(tri1((a / TAU) * n + t * tw) > 0.5 ? c1 : c2, 0.86 + 0.22 * noise3(x * 6, y * 6, z * 6));
+const domeScales = (c1, c2, f = 7) => (a, t, x, y, z) => { const d = cells3(x * f, y * f, z * f); return mul(d > 0.42 ? c2 : c1, 0.75 + 0.5 * smooth(0.05, 0.45, d)); };
+const domeBands = (c1, c2, n = 5, w = 0.25) => (a, t, x, y, z) => mul(tri1(t * n) < w ? c2 : c1, 0.88 + 0.2 * noise3(x * 7, y * 7, z * 7));
+const domeTiles = (pal, f = 9) => (a, t, x, y, z) => mul(pal[Math.floor(hash1(Math.round((a / TAU) * f * 4 * (1.1 - t)), Math.round(t * f * 2)) * pal.length) % pal.length], 0.82 + 0.3 * tri1(t * f * 2));
+const ROOFS = {
+  /** a tiled hip roof, straight or swept, in one tier or two */
+  hip(g, c, o, env) {
+    const f = roofFrame(c, env), ov = o.ov ?? 0.26, A = Math.min(f.A + ov, f.EA + c.over), B = Math.min(f.B + ov, f.EB + c.over), y0 = c.cutY, H = clamp((c.rY - c.eY) * (o.hs ?? 0.85), 0.4, o.maxH || 9), sd = env.seed % 977;
+    const top = (a, b, hk) => (a >= b ? [Math.max(0, a - b * hk), 0] : [0, Math.max(0, b - a * hk)]);
+    g.in(f.m, () => {
+      g.surf(K_WOOD, 0.9); // the wall plate the roof sits on
+      for (let s = 0; s < 4; s++) { const W = s % 2 ? f.B : f.A, D = s % 2 ? f.A : f.B; g.in(M(0, y0 - 0.03, 0, 0, s * 90, 0).multiply(M(0, 0, D)), () => g.beam(2 * W + 0.1, 0.1, 0.1, 0.012, o.plate || woodTint(rgb(0x4a3323), s), 2)); }
+      if (o.tiers === 2 && Math.min(f.A, f.B) > 1.2 && H > 1.0) {
+        const s = o.shrink || 0.62, A2 = f.A * s, B2 = f.B * s, h1 = H * 0.4, hb = clamp(H * 0.24, 0.26, 0.5), h2 = H * 0.62, [a2, b2] = top(A2 + ov * 0.85, B2 + ov * 0.85, o.hipK ?? 1);
+        hipTier(g, A, B, A2, B2, y0, h1, { ...o, wall: [f.A, f.B] }, sd);
+        wallBody(g, A2, B2, y0 + h1 - 0.04, y0 + h1 + hb, o.band || { col: [0.5, 0.1, 0.07] }, sd + 3);
+        hipTier(g, A2 + ov * 0.85, B2 + ov * 0.85, a2, b2, y0 + h1 + hb, h2, { ...o, wall: [A2, B2] }, sd + 20);
+        c.top = y0 + h1 + hb + h2;
+      } else { const [a, b] = top(A, B, o.hipK ?? 1); hipTier(g, A, B, a, b, y0, H, { ...o, wall: [f.A, f.B] }, sd); c.top = y0 + H; }
+    });
+  },
+  /** a flat roof behind a parapet, on an upper storey of its own */
+  flat(g, c, o, env) {
+    const f = roofFrame(c, env), y0 = c.cutY - 0.01, y1 = y0 + clamp((c.rY - c.eY) * (o.f ?? 0.45), o.min ?? 0.25, o.max ?? 1.25), out = o.out || 0;
+    g.in(f.m, () => {
+      wallBody(g, f.A + out, f.B + out, y0, y1, o.wall, env.seed % 911);
+      g.surf(K_STONE, 0.95); g.flat([[-f.A, y1 + 0.004, f.B], [f.A, y1 + 0.004, f.B], [f.A, y1 + 0.004, -f.B], [-f.A, y1 + 0.004, -f.B]], o.floor || [0.5, 0.47, 0.4]);
+      const eh = roofEdge(g, f.A + out, f.B + out, y1, o);
+      c.top = y1 + eh;
+      if (o.on) c.top = Math.max(c.top, y1 + (o.on(g, f.A, f.B, y1, c, env) || 0));
+    });
+  },
+  /** a dome on a drum over the middle of a flat roof, lesser domes beside it when the roof is long */
+  dome(g, c, o, env) {
+    const f = roofFrame(c, env), y0 = c.cutY - 0.01, y1 = y0 + clamp((c.rY - c.eY) * (o.f ?? 0.3), o.min ?? 0.2, o.max ?? 1.0), sd = env.seed % 911;
+    g.in(f.m, () => {
+      wallBody(g, f.A, f.B, y0, y1, o.wall, sd);
+      g.surf(K_STONE, 0.95); g.flat([[-f.A, y1 + 0.004, f.B], [f.A, y1 + 0.004, f.B], [f.A, y1 + 0.004, -f.B], [-f.A, y1 + 0.004, -f.B]], o.floor || [0.5, 0.47, 0.4]);
+      roofEdge(g, f.A, f.B, y1, o);
+      const R = Math.min(f.A, f.B) * (o.rk ?? 0.78), long = f.A / f.B;
+      let top = 0;
+      g.in(M(0, y1, 0), () => { top = domeOn(g, R, o, sd); });
+      if (long > 1.4) for (const e of [-1, 1]) g.in(M(e * (f.A - R * 0.5 - 0.08), y1, 0), () => domeOn(g, R * 0.5, { ...o, drumWin: null }, sd + e));
+      else if (o.four && R > 0.75) for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) g.in(M(sx * (f.A - R * 0.26), y1, sz * (f.B - R * 0.26)), () => domeOn(g, R * 0.24, { ...o, drumWin: null, finS: 0.3 }, sd + sx + sz * 2));
+      c.top = y1 + top;
+    });
+  },
+  /** what a round turret wears instead of its cone */
+  cap(g, c, o, env) {
+    const R = c.r + (o.out || 0), y0 = c.cutY - 0.02;
+    g.in(M(c.cx, y0, c.cz), () => {
+      if (o.merlon) { g.surf(K_STONE, 0.93); g.cyl(R, R, 0.2, nq(16), o.edge || [0.6, 0.58, 0.5], false, true); const nm = Math.max(6, Math.round((TAU * R) / 0.34)), shape = MERLON[o.merlon](0.2, o.mh || 0.22); for (let i = 0; i < nm; i++) g.in(M(0, 0.2, 0, 0, (i * 360) / nm, 0).multiply(M(0, 0, R - 0.06)), () => prism(g, shape, 0.1, o.merlonCol || o.edge || [0.6, 0.58, 0.5], [0, 0.04])); c.top = y0 + 0.42; if (!o.shape) return; }
+      const Rd = o.merlon ? R * 0.6 : R * (o.rk ?? 1);
+      let top = 0;
+      g.in(M(0, o.merlon ? 0.2 : 0, 0), () => { top = domeOn(g, Rd, { drum: 0.12, hk: clamp(((c.rY - c.eY) / (profTop(DOME[o.shape || 'cone']) * Rd)) * (o.hs ?? 1), 0.7, 3.2), ...o }, env.seed % 577 + c.i); });
+      c.top = y0 + (o.merlon ? 0.2 : 0) + top;
+    });
+  },
+  /** stepped terraces, each smaller than the last */
+  step(g, c, o, env) {
+    const f = roofFrame(c, env), y0 = c.cutY - 0.01, n = o.n || 3, H = clamp((c.rY - c.eY) * (o.f ?? 0.7), 0.6, o.max ?? 2.2), ins = Math.min(o.inset || 0.26, (Math.min(f.A, f.B) * 0.6) / n), sd = env.seed % 911;
+    g.in(f.m, () => {
+      let y = y0;
+      for (let i = 0; i < n; i++) {
+        const A = f.A - i * ins, B = f.B - i * ins, h = (H / n) * (i === 0 ? 1.15 : 0.92);
+        wallBody(g, A, B, y, y + h, i === 0 && o.wall0 ? o.wall0 : o.wall, sd + i * 7);
+        g.surf(K_STONE, 0.95); g.flat([[-A, y + h + 0.003, B], [A, y + h + 0.003, B], [A, y + h + 0.003, -B], [-A, y + h + 0.003, -B]], o.floor || [0.5, 0.47, 0.4]);
+        if (o.band) { g.surf(o.bandKind ?? K_PLAIN, o.bandRough ?? 0.6, o.bandMetal || 0, o.bandGlow || 0); for (let s = 0; s < 4; s++) { const W = s % 2 ? B : A, D = s % 2 ? A : B; g.in(M(0, y + h - 0.045, 0, 0, s * 90, 0).multiply(M(0, 0, D + 0.012)), () => g.beam(2 * W + 0.05, 0.09, 0.05, 0.01, o.band, Math.max(2, Math.round(W * 6)))); } }
+        if (i === n - 1) { const eh = o.merlon ? roofEdge(g, A, B, y + h, o) : 0; c.top = y + h + eh; if (o.on) c.top = Math.max(c.top, y + h + (o.on(g, A, B, y + h, c, env) || 0)); }
+        y += h;
+      }
+    });
+  },
+  /** a ship's hull turned keel up */
+  hull(g, c, o, env) {
+    const f = roofFrame(c, env), y0 = c.cutY - 0.03, A = Math.min(f.A + 0.35, f.EA + c.over + 0.1), B = Math.min(f.B + 0.2, f.EB + c.over), H = clamp((c.rY - c.eY) * (o.hs ?? 0.95), 0.5, 3), sd = env.seed % 911;
+    const wood = o.pal || [rgb(0x4a4438), rgb(0x3e3c34), rgb(0x55503e), rgb(0x3a4038)];
+    const pt = (u, v) => { const x = (u * 2 - 1) * A, e = Math.abs(u * 2 - 1), wid = B * Math.pow(Math.max(0, 1 - Math.pow(e, 2.6)), 0.6), w = v * 2 - 1, rise = 0.22 * H * Math.pow(e, 3); return [x * (1 + 0.04 * (1 - Math.abs(w))), y0 + (H + rise) * (1 - Math.pow(Math.abs(w), 2.3)) - 0.02, w * wid]; };
+    g.in(f.m, () => {
+      g.surf(K_WOOD, 0.9);
+      g.sheet(nq(30), nq(16), pt, (x, y, z, nx, ny, nz, u, v) => {
+        const sk = Math.abs(v * 2 - 1) * 7, seam = tri1(sk) > 0.86 ? 0.45 : 1, pl = wood[Math.floor(hash1(Math.floor(sk), Math.floor(u * 5 + hash1(Math.floor(sk), 3) * 5), sd) * wood.length) % wood.length];
+        let col = mul(pl, seam * (0.75 + 0.4 * noise3(x * 2, y * 9, z * 9)));
+        const weed = smooth(0.5, 0.75, noise3(x * 2.2 + sd, y * 2.2, z * 2.2)) * 0.7; col = mix(col, [0.1, 0.22, 0.13], weed);
+        if (cells3(x * 9, y * 9, z * 9) < 0.16 && noise3(x * 1.4, y * 1.4 + 5, z * 1.4) > 0.5) col = [0.62, 0.62, 0.55];   // barnacles
+        return col;
+      });
+      // the keel along the top, rising at stem and stern
+      const kp = []; for (let i = 0; i <= 10; i++) { const u = i / 10, p = pt(u, 0.5); kp.push([p[0] * 1.04, p[1] + 0.03, 0]); }
+      limb(g, kp, kp.map(() => 0.06), { nu: 6, sq: 0.7, col: woodTint(mul(wood[0], 0.7), 3), capA: true, capB: true });
+      g.surf(K_PLAIN, 1);
+      flatDown(g, [[-f.A, y0 + 0.02, f.B], [f.A, y0 + 0.02, f.B], [f.A, y0 + 0.02, -f.B], [-f.A, y0 + 0.02, -f.B]], [0.04, 0.035, 0.03]);
+    });
+    c.top = y0 + H;
+  },
+  /** a curving temple tower over the middle, lesser ones at its shoulders */
+  shikhara(g, c, o, env) {
+    const f = roofFrame(c, env), y0 = c.cutY - 0.01, hb = clamp((c.rY - c.eY) * 0.22, 0.22, 0.5), R = Math.min(f.A, f.B) * 0.86, sd = env.seed % 911, H = clamp(Math.max((c.rY - c.eY) * 1.15, R * 2.1), 1.2, 4.2);
+    g.in(f.m, () => {
+      wallBody(g, f.A, f.B, y0, y0 + hb, o.wall, sd);
+      g.surf(K_STONE, 0.95); g.flat([[-f.A, y0 + hb + 0.003, f.B], [f.A, y0 + hb + 0.003, f.B], [f.A, y0 + hb + 0.003, -f.B], [-f.A, y0 + hb + 0.003, -f.B]], o.floor || [0.55, 0.42, 0.3]);
+      g.in(M(0, y0 + hb, 0), () => spire(g, R, H, o, sd));
+      const long = f.A / f.B, sm = long > 1.4 ? [[f.A - R * 0.5, 0], [-(f.A - R * 0.5), 0]] : R > 0.7 ? [[f.A - R * 0.3, f.B - R * 0.3], [-(f.A - R * 0.3), f.B - R * 0.3], [f.A - R * 0.3, -(f.B - R * 0.3)], [-(f.A - R * 0.3), -(f.B - R * 0.3)]] : [];
+      for (const [x, z] of sm) g.in(M(x, y0 + hb, z), () => spire(g, long > 1.4 ? R * 0.5 : R * 0.3, long > 1.4 ? H * 0.55 : H * 0.42, { ...o, lite: true }, sd + 5));
+    });
+    c.top = y0 + hb + H * 1.12;
+  },
+  /** a skin laid over the old roof's shape: thatch, hides, leaves, turf */
+  drape(g, c, o, env) {
+    const d = 0.14, { P, n, vr } = env, ci = c.i + 1, ring = Math.round(Math.min(o.over ?? 0.2, c.over) / d), pad = ring + 1, thick = o.thick ?? 0.1;
+    const gx0 = c.x0 - pad * d, gz0 = c.z0 - pad * d, w = Math.ceil((c.x1 - c.x0) / d) + 2 * pad + 2, h = Math.ceil((c.z1 - c.z0) / d) + 2 * pad + 2;
+    let Hm = new Float32Array(w * h).fill(-1e9);
+    for (let i = 0; i < n; i++) {
+      if (vr[i] !== ci) continue;
+      const o3 = i * 3, i0 = Math.floor((P[o3] - gx0) / d), j0 = Math.floor((P[o3 + 2] - gz0) / d), y = P[o3 + 1];
+      for (let q = 0; q < 4; q++) { const k = (j0 + (q >> 1)) * w + i0 + (q & 1); if (y > Hm[k]) Hm[k] = y; }
+    }
+    for (let r = 0; r < ring; r++) { // reach out past the old eaves, dropping as it goes
+      const Hn = Hm.slice();
+      for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) { const k = j * w + i; if (Hm[k] > -1e8) continue; const m = Math.max(Hm[k - 1], Hm[k + 1], Hm[k - w], Hm[k + w]); if (m > -1e8) Hn[k] = m - (o.drop ?? 0.11); }
+      Hm = Hn;
+    }
+    for (let s = 0; s < (o.smooth ?? 1); s++) {
+      const Hn = Hm.slice();
+      for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) { const k = j * w + i; if (Hm[k] < -1e8) continue; let sm = Hm[k] * 2, cnt = 2; for (const q of [k - 1, k + 1, k - w, k + w]) if (Hm[q] > -1e8) { sm += Hm[q]; cnt++; } Hn[k] = Math.max(sm / cnt, Hm[k] - 0.04); }
+      Hm = Hn;
+    }
+    const sd = env.seed % 911, lump = o.lump || 0, lf = o.lumpF || 2.4, Y = new Float32Array(w * h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const k = j * w + i; if (Hm[k] < -1e8) { Y[k] = -1e9; continue; } const x = gx0 + i * d, z = gz0 + j * d; Y[k] = Hm[k] + thick * (1 + lump * (2 * fbm3(x * lf + sd, Hm[k] * lf, z * lf, 2) - 1)) - (o.sag || 0) * noise3(x * 1.7 + sd, 3, z * 1.7); }
+    const ok = (i, j) => i >= 0 && j >= 0 && i < w && j < h && Y[j * w + i] > -1e8, id = new Int32Array(w * h).fill(-1), span = Math.max(0.2, c.rY - c.eY);
+    g.surf(o.surf ?? K_ROOF, o.rough ?? 0.96, 0, o.glow || 0);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      if (!ok(i, j)) continue;
+      const k = j * w + i, y = Y[k], x = gx0 + i * d, z = gz0 + j * d;
+      const nx = (ok(i - 1, j) ? Y[k - 1] : y) - (ok(i + 1, j) ? Y[k + 1] : y), nz = (ok(i, j - 1) ? Y[k - w] : y) - (ok(i, j + 1) ? Y[k + w] : y), l = Math.hypot(nx, 2 * d, nz);
+      id[k] = g.v(x, y, z, nx / l, (2 * d) / l, nz / l, o.col(x, y, z, nx / l, (2 * d) / l, nz / l, (y - c.eY) / span));
+    }
+    const cellOn = (i, j) => ok(i, j) && ok(i + 1, j) && ok(i, j + 1) && ok(i + 1, j + 1), sk = o.skirt ?? thick + 0.06, ec = o.edgeCol;
+    for (let j = 0; j < h - 1; j++) for (let i = 0; i < w - 1; i++) {
+      if (!cellOn(i, j)) continue;
+      const k = j * w + i;
+      g.quad(id[k], id[k + 1], id[k + w + 1], id[k + w]);
+      for (const [di, dj, a, b, ox, oz] of [[0, -1, k, k + 1, 0, -1], [0, 1, k + w, k + w + 1, 0, 1], [-1, 0, k, k + w, -1, 0], [1, 0, k + 1, k + w + 1, 1, 0]]) {
+        if (cellOn(i + di, j + dj)) continue;
+        const pa = [gx0 + (a % w) * d, Y[a], gz0 + Math.floor(a / w) * d], pb = [gx0 + (b % w) * d, Y[b], gz0 + Math.floor(b / w) * d];
+        const ca = ec ? ec(pa[0], pa[1], pa[2]) : mul(o.col(pa[0], pa[1], pa[2], ox, 0, oz, 0), 0.55), cb = ec ? ec(pb[0], pb[1], pb[2]) : mul(o.col(pb[0], pb[1], pb[2], ox, 0, oz, 0), 0.55);
+        g.quad(g.v(pa[0], pa[1], pa[2], ox, 0.3, oz, ca), g.v(pb[0], pb[1], pb[2], ox, 0.3, oz, cb), g.v(pb[0] - ox * 0.04, pb[1] - sk, pb[2] - oz * 0.04, ox, -0.2, oz, mul(cb, 0.6)), g.v(pa[0] - ox * 0.04, pa[1] - sk, pa[2] - oz * 0.04, ox, -0.2, oz, mul(ca, 0.6)));
+      }
+    }
+    c.top = c.rY + thick;
+    if (o.on) o.on(g, c, env, (x, z) => { const i = clamp(Math.round((x - gx0) / d), 0, w - 1), j = clamp(Math.round((z - gz0) / d), 0, h - 1); return Y[j * w + i] > -1e8 ? Y[j * w + i] : c.eY; });
+  },
+  /** the old roof stays; its gable ends are carried up as stepped (or scrolled) parapets */
+  gables(g, c, o, env) {
+    if (!c.gable || c.type !== 'main') return;
+    const f = roofFrame(c, env), n = o.steps || 5, Bq = Math.min(f.B + 0.08, f.EB), yb = c.eY + (c.rY - c.eY) * Math.max(0, 1 - Bq / f.EB) - 0.02, top = c.rY + (o.rise ?? 0.26), th = o.thick || 0.16, sd = env.seed % 911;
+    const st = stoneStyle(o.stone, { course: 0.12, len: [0.2, 0.34], cell: 0.4, r: 0.01, b: 0.01, chip: 0.03, ...o.st });
+    g.in(f.m, () => {
+      for (const e of [-1, 1]) g.in(M(e * (f.EA - th / 2 + 0.03), 0, 0), () => {
+        let y = yb - 0.3;
+        for (let i = 0; i < n; i++) {
+          const y1 = yb + ((i + 1) / n) * (top - yb), w = Bq * (1 - i / n) + (i ? 0.02 : 0.05);
+          stoneBox(g, th / 2, w, y, y1, { ...st, course: 0.12 }, sd + i * 5 + e, { noFoot: true, skip: [e > 0 ? 3 : 1] });
+          g.surf(K_STONE, 0.85); g.in(M(0, y1 + 0.02, 0), () => g.cbox(th + 0.06, 0.05, 2 * w + 0.06, 0.012, o.cope || [0.82, 0.8, 0.74]));
+          y = y1 - 0.01;
+        }
+        if (o.fin) g.in(M(0, top + 0.03, 0), () => finial(g, o.fin, 0.5, o));
+      });
+    });
+    c.top = top;
+  },
+};
+/** a curving temple tower R wide and H high on the local origin: banded, ribbed, crowned with a fluted disc and a gilded jar */
+function spire(g, R, H, o, seed = 1) {
+  const c1 = o.c1 || rgb(0xc98a52), c2 = o.c2 || rgb(0xa86a3c), nv = nq(o.lite ? 12 : 22), nu = nq(o.lite ? 16 : 28);
+  const rad = (t) => R * (1 - 0.72 * Math.pow(t, 1.7));
+  g.surf(K_STONE, 0.9);
+  g.sheet(nu, nv, (u, v) => { const a = u * TAU, co = Math.cos(a), si = Math.sin(a), k = Math.pow(Math.pow(Math.abs(co), 5) + Math.pow(Math.abs(si), 5), -1 / 5) * (1 + 0.05 * Math.cos(a * 12)), r = rad(v) * (0.94 + 0.06 * tri1(v * (o.lite ? 5 : 9))); return [co * k * r * 0.86, v * H, si * k * r * 0.86]; },
+    (x, y, z, nx, ny, nz, u, v) => { const band = tri1(v * (o.lite ? 5 : 9)), niche = !o.lite && band > 0.55 && tri1(u * 16) > 0.62; return niche ? mul(o.niche || [0.2, 0.1, 0.06], 1) : mul(band < 0.2 ? c2 : c1, 0.82 + 0.3 * noise3(x * 8 + seed, y * 8, z * 8)); }, true);
+  g.in(M(0, H, 0), () => {
+    g.surf(K_STONE, 0.85);
+    const ar = rad(1) * 1.5;
+    g.lathe([[ar * 0.6, -0.02], [ar, 0.04], [ar * 1.08, 0.1 * R], [ar, 0.16 * R + 0.04], [ar * 0.5, 0.2 * R + 0.06]], nq(16), (x, y, z) => mul(tri1((Math.atan2(z, x) / TAU) * 12) > 0.5 ? c1 : c2, 1.05));
+    g.in(M(0, 0.2 * R + 0.05, 0), () => finial(g, 'bud', clamp(R * 0.9, 0.3, 1), o));
+  });
+}
+// ---------- the realm ornament kit: "wall" pieces lie on the local XY plane facing +Z, "top" pieces stand on the origin ----------
+const tintTo = (c, p, t) => { c[0] += (p[0] - c[0]) * t; c[1] += (p[1] - c[1]) * t; c[2] += (p[2] - c[2]) * t; };
+/** top: a pole with a swallow-tailed pennant flying toward +X */
+function pennon(g, h, len, c1, c2, o = {}) {
+  g.surf(K_WOOD, 0.8); g.cyl(0.02, 0.014, h, 6, o.pole || rgb(0x4a3626), false, true);
+  if (o.knob !== false) { g.surf(K_PLAIN, 0.4, 0.9); g.in(M(0, h, 0), () => g.lathe([[0.02, -0.01], [0.035, 0.02], [0.02, 0.05], [0, 0.09]], 6, o.knob || GOLD)); }
+  const hg = o.hgt || len * 0.42;
+  g.surf(K_CLOTH, 0.9);
+  g.sheet(nq(10), 3, (u, v) => { const fork = o.square ? 0 : u > 0.6 ? (u - 0.6) / 0.4 : 0, wd = hg * (1 - (o.square ? 0 : 0.3) * u); return [0.02 + u * len - fork * (1 - Math.abs(v - 0.5) * 2) * len * 0.3, h - 0.04 - hg * 0.5 + (v - 0.5) * wd - u * u * 0.06, Math.sin(u * 7 + v + h) * 0.04 * u]; },
+    (x, y, z, nx, ny, nz, u, v) => (c2 && (o.bars ? Math.floor(u * o.bars) % 2 : Math.abs(v - 0.5) < 0.18) ? c2 : c1));
+}
+/** wall: a long banner hanging from a bar; device = [colour] paints a lozenge on it */
+function hanging(g, w, h, c1, c2, o = {}) {
+  g.surf(K_PLAIN, 0.5, 0.8); g.in(M(0, 0.02, 0.035), () => g.cbox(w + 0.12, 0.03, 0.03, 0.006, o.bar || IRON));
+  g.surf(K_CLOTH, 0.92);
+  g.sheet(nq(8), nq(8), (u, v) => { const tail = o.point ? Math.abs(u - 0.5) * 2 * 0.16 * h * v * v : 0; return [(u - 0.5) * w, -v * h + tail * (v > 0.9 ? 1 : 0.4), 0.03 + 0.03 * v * Math.sin(u * 6 + v * 3 + w * 9)]; },
+    (x, y, z, nx, ny, nz, u, v) => { const dv = Math.abs(u - 0.5) + Math.abs(v - 0.42) * 0.8; return mul(o.device && dv < 0.24 ? o.device : c2 && (Math.abs(u - 0.5) > 0.36 || (o.chief && v < 0.16)) ? c2 : c1, 0.82 + 0.25 * noise3(x * 7, y * 7, 2) - 0.2 * v); });
+}
+/** wall: a heater shield, parted in two colours with a boss */
+function heater(g, s, c1, c2, o = {}) {
+  const pts = [[-0.3, 0.36], [0.3, 0.36], [0.31, 0.05], [0.22, -0.2], [0, -0.42], [-0.22, -0.2], [-0.31, 0.05]].map(([x, y]) => [x * s, y * s]);
+  g.surf(K_PLAIN, 0.55, o.metal ?? 0.3);
+  g.in(M(0, 0, 0.03), () => prism(g, pts, 0.04, (x, y) => mul(o.quarter ? ((x > 0) === (y > 0) ? c1 : c2) : o.bend ? (y > x * 1.2 ? c1 : c2) : x > 0 ? c1 : c2, 0.9 + 0.2 * noise3(x * 20, y * 20, 1)), [0, 0]));
+  g.surf(K_PLAIN, 0.4, 0.9); g.in(M(0, 0, 0.05), () => g.stud(0.06 * s, o.boss || GOLD, 6));
+}
+/** a lantern hanging at the local origin (its top): shape 'box' | 'paper' | 'orb' | 'cage' */
+function lamp(g, s, glowCol, o = {}) {
+  const fr = o.frame || IRON, sh = o.shape || 'box', gl = o.glow ?? 1.5;
+  g.surf(K_PLAIN, 0.5, o.frameMetal ?? 0.8);
+  if (sh === 'paper') {
+    g.cyl(0.012 * s, 0.012 * s, 0.08 * s, 5, fr); g.in(M(0, -0.31 * s, 0), () => { g.lathe([[0.07, 0.26], [0.09, 0.3], [0.07, 0.31]].map(([r, y]) => [r * s, y * s]), nq(8), fr); g.lathe([[0.07, 0], [0.09, 0.012], [0.07, 0.03]].map(([r, y]) => [r * s, y * s]), nq(8), fr);
+      g.surf(K_PLAIN, 0.8, 0, gl); g.lathe([[0.075, 0.03], [0.13, 0.09], [0.15, 0.15], [0.13, 0.21], [0.075, 0.27]].map(([r, y]) => [r * s, y * s]), nq(10), (x, y, z) => mul(glowCol, 0.75 + 0.25 * tri1((Math.atan2(z, x) / TAU) * 8)));
+      if (o.tassel) { g.surf(K_CLOTH, 0.9); g.in(M(0, -0.12 * s, 0), () => g.cyl(0.008 * s, 0.02 * s, 0.12 * s, 5, o.tassel)); } });
+  } else if (sh === 'orb') { g.cyl(0.01 * s, 0.01 * s, 0.1 * s, 5, fr); g.surf(K_PLAIN, 0.3, 0, gl); g.in(M(0, -0.1 * s, 0), () => g.add(new THREE.SphereGeometry(0.1 * s, nq(10), nq(7)), glowCol)); }
+  else {
+    g.in(M(0, -0.34 * s, 0), () => { g.lathe([[0.085, 0.25], [0.03, 0.31], [0.012, 0.34]].map(([r, y]) => [r * s, y * s]), 6, fr); g.lathe([[0.065, 0], [0.085, 0.016], [0.085, 0.03]].map(([r, y]) => [r * s, y * s]), 6, fr);
+      for (let q = 0; q < (sh === 'cage' ? 6 : 4); q++) { const a = q * (sh === 'cage' ? 1.047 : 1.5708) + 0.5; g.in(M(Math.cos(a) * 0.075 * s, 0.14 * s, Math.sin(a) * 0.075 * s), () => g.cbox(0.012 * s, 0.23 * s, 0.012 * s, 0.002, fr)); }
+      g.surf(K_PLAIN, 1, 0, gl); g.lathe([[0.062 * s, 0.03 * s], [0.062 * s, 0.25 * s]], 6, glowCol); });
+  }
+}
+/** wall: a lantern on a bracket */
+function bracketLamp(g, s, glowCol, o = {}) {
+  g.surf(K_PLAIN, 0.55, 0.85); g.tube([[0, 0.02, 0], [0, 0.12 * s, 0.1 * s], [0, 0.1 * s, 0.24 * s]], 0.014 * s, 5, o.frame || IRON);
+  g.in(M(0, 0.1 * s, 0.24 * s), () => lamp(g, s, glowCol, o));
+}
+/** top: a plain spike (iron thorn, obsidian shard, icicle turned up) */
+function thorn(g, h, r, col, o = {}) {
+  g.surf(K_PLAIN, o.rough ?? 0.45, o.metal ?? 0.7, o.glow || 0);
+  const m = o.m || 5, bend = o.bend || 0;
+  limb(g, [[0, -0.1, 0], [bend * h * 0.2, h * 0.4, 0], [bend * h * 0.5, h * 0.75, 0], [bend * h, h, 0]], [r, r * 0.8, r * 0.45, 0.003], { nu: m, nv: 6, facets: o.round ? 0 : m, col });
+}
+/** top: a slender pinnacle for a parapet corner: a shaft and one of the DOME caps */
+function pinnacle(g, s, shape, o = {}) {
+  const sh = o.shaft ?? 0.5, r = o.r || 0.11;
+  g.surf(o.shaftKind ?? K_STONE, 0.9, o.shaftMetal || 0);
+  g.lathe([[r * 1.25 * s, -0.04], [r * 1.25 * s, 0.04 * s], [r * s, 0.07 * s], [r * s, sh * s], [r * 1.35 * s, (sh + 0.03) * s], [r * 1.35 * s, (sh + 0.07) * s]], o.sides || nq(8), o.shaftCol || [0.7, 0.68, 0.62]);
+  let top = 0;
+  g.in(M(0, (sh + 0.07) * s, 0), () => { top = domeOn(g, r * 1.3 * s * (o.capK || 1), { drum: 0, shape, col: o.col, kind: o.kind, rough: o.rough, metal: o.metal, glow: o.glow, hk: o.hk, seg: o.sides || 10, finial: o.finial, finS: (o.finS || 0.4) * s, fin: o.fin, deep: o.deep, bright: o.bright, seed: o.seed, flame: o.flame }); });
+  return (sh + 0.07) * s + top;
+}
+/** wall: a round disc with rays (a sun, a mirror, a gong) */
+function sunDisc(g, s, col, o = {}) {
+  g.surf(K_PLAIN, o.rough ?? 0.3, o.metal ?? 0.9, o.glow || 0);
+  g.in(M(0, 0, 0.02, 90, 0, 0), () => g.lathe([[0, 0.05], [0.12, 0.045], [0.2, 0.03], [0.24, 0], [0, 0]].reverse().map(([r, y]) => [r * s, y * s]), nq(16), (x, y, z) => mul(col, Math.hypot(x, z) < 0.1 * s ? 1.15 : 0.8 + 0.3 * tri1((Math.atan2(z, x) / TAU) * 12))));
+  const nr = o.rays ?? 12;
+  for (let i = 0; i < nr; i++) g.in(M(0, 0, 0.02, 0, 0, (i * 360) / nr), () => g.in(M(0, 0.25 * s, 0), () => prism(g, [[-0.035 * s, 0], [0.035 * s, 0], [0, (i % 2 ? 0.1 : 0.17) * s]], 0.02, o.ray || col, [0, 0.03 * s])));
+}
+/** top: a heap of skulls */
+function skullPile(g, s, n = 4, seed = 0) {
+  const rnd = rng(seed * 31 + 7);
+  for (let i = 0; i < n; i++) { const a = (i / Math.max(1, n - 1)) * TAU + rnd(), d = i === n - 1 ? 0 : 0.13 * s; g.in(M(Math.cos(a) * d, i === n - 1 && n > 2 ? 0.16 * s : 0, Math.sin(a) * d, (rnd() - 0.5) * 30, a / DEG + 90 + (rnd() - 0.5) * 60, (rnd() - 0.5) * 30), () => skull(g, s, true)); }
+}
+/** wall: a crouching beast jutting from the wall (+Z), sculpted once */
+function gargoyle(g, s, col) {
+  const geo = geoOnce('gargoyle', () => {
+    const c = 0x8a8a8a, P = [];
+    P.push(S.ellipsoid(0.1, 0.11, 0.2).at(0, 0, 0.14).color(c).tint(0.15, 20));
+    P.push(S.capsule([0, 0.04, 0.26], [0, 0.0, 0.42], 0.07, 0.055).color(c).blend(0.04));
+    P.push(S.ellipsoid(0.075, 0.07, 0.1).at(0, -0.02, 0.5).color(c).blend(0.03));
+    P.push(S.box(0.07, 0.05, 0.12, 0.02).at(0, -0.06, 0.58).color(c).blend(0.02));
+    P.push(...S.mirrorX([S.cone(0.022, 0.004, 0.12, 0.004).rot(-50, 0, -22).at(0.045, 0.06, 0.47).color(c).blend(0.01)]));
+    P.push(...S.mirrorX([S.ellipsoid(0.03, 0.14, 0.11).rot(18, 0, -38).at(0.14, 0.1, 0.14).color(c).blend(0.03)]));
+    P.push(...S.mirrorX([S.capsule([0.07, -0.06, 0.2], [0.09, -0.15, 0.3], 0.035, 0.03).color(c).blend(0.03)]));
+    P.push(...S.mirrorX([S.sphere(0.014).at(0.035, 0.005, 0.585).color(0x111111).cut(0.004)]));
+    return buildPartGeometry({ prims: P }, { res: 56 * qual(), ao: 0.8 });
+  });
+  const keep = g.kind; g.surf(K_STONE, 0.9);
+  g.in(M(0, 0, -0.04, 0, 0, 0, s), () => g.add(geo, (x, y, z) => mul(col, 0.75 + 0.4 * noise3(x * 14, y * 14, z * 14) + 0.1 * y)));
+  g.kind = keep;
+}
+/** wall: a bat spread flat (a carved or cut-out motif) */
+function batMotif(g, s, col, o = {}) {
+  const half = [[0, 0.1], [0.05, 0.16], [0.07, 0.08], [0.2, 0.16], [0.42, 0.1], [0.5, -0.02], [0.4, 0.0], [0.34, -0.08], [0.26, -0.02], [0.2, -0.1], [0.12, -0.03], [0.05, -0.12], [0, -0.14]];
+  const pts = [...half, ...half.slice(1, -1).reverse().map(([x, y]) => [-x, y])].map(([x, y]) => [x * s, y * s]);
+  g.surf(K_PLAIN, o.rough ?? 0.5, o.metal ?? 0.6, o.glow || 0);
+  g.in(M(0, 0, 0.025), () => prism(g, pts, 0.03, col, [0, 0]));
+}
+/** top: a gateway of two posts and two lintels standing across local X (the torii-like gate, a trilithon, a gallows frame) */
+function gateFrame(g, w, h, col, o = {}) {
+  const r = o.r || 0.07, tc = typeof col === 'function' ? col : woodTint(col, 3);
+  g.surf(o.kind ?? K_WOOD, o.rough ?? 0.7);
+  for (const e of [-1, 1]) g.in(M(e * w / 2, 0, 0, 0, 0, e * -(o.lean ?? 3)), () => { g.cyl(r, r * 0.9, h, nq(8), tc, false, true); if (o.foot) { g.surf(K_STONE, 0.9); g.cyl(r * 1.5, r * 1.3, 0.12, nq(8), o.foot, false, true); g.surf(o.kind ?? K_WOOD, o.rough ?? 0.7); } });
+  g.in(M(0, h * 0.8, 0), () => g.beam(w + 0.16, 0.09, 0.07, 0.01, tc, 2));
+  const cur = o.curve ?? 0.1;
+  g.in(M(0, h + 0.02, 0), () => g.beam(w * 1.4, 0.12, 0.12, 0.014, tc, 8, (x) => [cur * Math.pow(Math.abs(x) / (w * 0.7), 2.2), 0]));
+  if (o.cap) { g.surf(K_ROOF, 0.6); g.in(M(0, h + 0.1, 0), () => g.beam(w * 1.5, 0.05, 0.2, 0.012, o.cap, 8, (x) => [cur * 1.15 * Math.pow(Math.abs(x) / (w * 0.75), 2.2), 0])); }
+}
+/** a run of pipe through pts with flanged joints */
+function pipe(g, pts, r, col, o = {}) {
+  g.surf(K_PLAIN, o.rough ?? 0.4, o.metal ?? 0.85, o.glow || 0);
+  g.tube(pts, r, nq(8), col, true);
+  for (let i = 0; i < pts.length; i += o.every || 1) { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], f = along(a, b); g.in(new THREE.Matrix4().copy(f.m).setPosition(pts[i][0], pts[i][1], pts[i][2]).multiply(M(0, 0, 0, 0, 0, 90)), () => g.lathe([[r * 1.5, -r * 0.4], [r * 1.5, r * 0.4]], nq(8), typeof col === 'function' ? col(pts[i][0], pts[i][1], pts[i][2]) : mul(col, 0.8))); }
+}
+/** top: a puff of smoke or steam rising from the origin */
+function plume(g, s, col, seed = 0, glow = 0) {
+  g.surf(K_PLAIN, 1, 0, glow);
+  for (let i = 0; i < 4; i++) { const t = i / 3; g.in(M(Math.sin(seed + i * 1.7) * 0.1 * s * t, (0.1 + t * 0.55) * s, Math.cos(seed + i * 2.3) * 0.08 * s * t), () => g.add(new THREE.IcosahedronGeometry((0.09 + 0.1 * t) * s, 1), (x, y, z) => mul(col, 0.8 + 0.3 * noise3(x * 9 + seed, y * 9, z * 9) + 0.2 * t))); }
+}
+/** wall: rickety scaffolding: poles, a cross-brace and a plank walk */
+function scaffold(g, w, h, wood, seed = 0) {
+  const rnd = rng(seed * 53 + 3), tc = (i) => woodTint(mul(wood, 0.8 + 0.4 * rnd()), seed + i);
+  g.surf(K_WOOD, 0.92);
+  for (const e of [-1, 1]) g.in(M(e * w / 2, -h * 0.5, 0.2, (rnd() - 0.5) * 6, 0, (rnd() - 0.5) * 8), () => g.in(M(0, h * 0.55, 0, 0, 0, 90), () => g.beam(h * 1.15, 0.045, 0.045, 0.01, tc(e), 2)));
+  g.beamTo([-w / 2, -h * 0.4, 0.2], [w / 2, h * 0.3, 0.21], 0.035, 0.03, 0.006, tc(3), 2);
+  for (const y of [-0.05, 0.42]) { if (y * h > h * 0.5) continue; g.in(M(0, y * h, 0.12, (rnd() - 0.5) * 5, 0, (rnd() - 0.5) * 6), () => g.beam(w * 1.15, 0.03, 0.22, 0.006, tc(5 + y), 3)); for (const e of [-1, 1]) g.beamTo([e * w / 2, y * h - 0.03, 0], [e * w / 2, y * h - 0.03, 0.24], 0.04, 0.04, 0.006, tc(7), 1); }
+}
+/** wall: an awning in two colours on two props */
+function awning(g, w, d, c1, c2, o = {}) {
+  g.surf(K_CLOTH, 0.9);
+  g.sheet(nq(10), 3, (u, v) => [(u - 0.5) * w, -v * d * 0.45 - 0.03 * Math.sin(u * Math.PI * (o.scallop || 3)) * v, 0.02 + v * d], (x, y, z, nx, ny, nz, u) => mul(Math.floor(u * (o.n || 6)) % 2 ? c1 : c2, 0.85 + 0.2 * noise3(x * 6, y * 6, z * 6)));
+  g.surf(K_WOOD, 0.9);
+  if (o.props !== false) for (const e of [-1, 1]) g.beamTo([e * w * 0.48, -d * 0.45, d], [e * w * 0.48, -d * 0.45 - 0.5, d * 0.25], 0.03, 0.03, 0.006, woodTint(rgb(0x5a4630), e), 1);
+}
+/** wall: a creeper climbing h up from the origin (or hanging when h < 0): stems and leaves */
+function creeper(g, w, h, seed = 0, o = {}) {
+  const rnd = rng(seed * 71 + 9), leaf = o.leaf || [rgb(0x3f6a2a), rgb(0x55803a), rgb(0x2f5524)], n = o.n || 3, nl = o.leaves ?? 9;
+  for (let s = 0; s < n; s++) {
+    const x0 = (s / Math.max(1, n - 1) - 0.5) * w * 0.7, pts = [];
+    for (let q = 0; q <= 5; q++) { const t = q / 5; pts.push([x0 + (noise3(seed + s * 3.1, t * 2.2, 1) - 0.5) * w * 0.7 * t + (rnd() - 0.5) * 0.04, h * t * (0.75 + 0.25 * hash1(s, seed)), 0.02 + 0.015 * Math.sin(t * 9 + s)]); }
+    g.surf(K_WOOD, 0.95); g.tube(pts, 0.014, 4, o.stem || [0.2, 0.17, 0.09], false);
+    g.surf(K_LEAF, 0.8, 0, o.glow || 0);
+    for (let q = 0; q < nl; q++) { const t = (q + rnd()) / nl, i = Math.min(4, Math.floor(t * 5)), f = t * 5 - i, x = lerp(pts[i][0], pts[i + 1][0], f) + (rnd() - 0.5) * 0.12, y = lerp(pts[i][1], pts[i + 1][1], f) + (rnd() - 0.5) * 0.08, sz = (o.size || 0.07) * (0.7 + 0.6 * rnd()), c = mul(o.bloom && rnd() < o.bloomP ? o.bloom : leaf[Math.floor(rnd() * leaf.length)], 0.8 + 0.4 * rnd());
+      g.in(M(x, y, 0.035 + rnd() * 0.02, -20 + rnd() * 40, 0, rnd() * 360), () => g.poly([[0, -sz, 0], [sz * 0.6, 0, 0.012], [0, sz, 0], [-sz * 0.6, 0, 0.012]], 0, 0, 1, c)); }
+  }
+}
+/** wall: a garland slung between two points w apart, beads of two colours */
+function garland(g, w, sag, c1, c2, o = {}) {
+  const n = Math.max(6, Math.round(w / 0.07));
+  g.surf(K_LEAF, 0.8, 0, o.glow || 0);
+  for (let i = 0; i <= n; i++) { const t = i / n, x = (t - 0.5) * w, y = -sag * Math.sin(t * Math.PI); g.in(M(x, y, 0.04), () => g.add(new THREE.IcosahedronGeometry(o.r || 0.035, 0), i % 3 === 0 ? c2 : mul(c1, 0.85 + 0.3 * hash1(i, 7)))); }
+}
+/** wall: a staring eye, lidded, its iris alight */
+function eyeball(g, s, iris, o = {}) {
+  g.surf(K_PLAIN, 0.3, 0, 0.25); g.in(M(0, 0, 0.02), () => g.add(new THREE.SphereGeometry(0.14 * s, nq(12), nq(8)).scale(1.25, 0.8, 0.6), (x, y, z) => (Math.hypot(x, y) < 0.02 * s && z > 0 ? [0.01, 0.01, 0.01] : Math.hypot(x, y) < 0.075 * s && z > 0 ? iris : mix([0.85, 0.8, 0.7], [0.6, 0.15, 0.1], smooth(0.08, 0.2, Math.hypot(x, y) / s)))));
+  g.surf(K_PLAIN, 0.1, 0, 1.6); g.in(M(0, 0, 0.1 * s), () => g.add(new THREE.TorusGeometry(0.05 * s, 0.018 * s, 4, 10), iris));
+  g.surf(K_PLAIN, 0.6, o.lidMetal ?? 0.7);
+  for (const e of [-1, 1]) g.tube([[-0.2 * s, 0, 0.02], [-0.1 * s, e * 0.1 * s, 0.07 * s], [0.1 * s, e * 0.1 * s, 0.07 * s], [0.2 * s, 0, 0.02]], 0.022 * s, 5, o.lid || BRASS);
+}
+/** wall: a crust of barnacles and a hank of weed */
+function seaCrust(g, s, seed = 0) {
+  const rnd = rng(seed * 17 + 5);
+  g.surf(K_PLAIN, 0.9);
+  for (let i = 0; i < 9; i++) { const x = (rnd() - 0.5) * 0.5 * s, y = (rnd() - 0.5) * 0.4 * s, r = (0.025 + 0.035 * rnd()) * s; g.in(M(x, y, 0.01, 90, 0, 0), () => g.lathe([[r, 0], [r * 0.6, r * 0.9], [r * 0.35, r * 0.9], [r * 0.3, r * 0.3]], 6, mul([0.66, 0.66, 0.58], 0.7 + 0.5 * rnd()))); }
+  g.surf(K_CLOTH, 0.7);
+  for (let i = 0; i < 3; i++) g.in(M((i - 1) * 0.14 * s, -0.1 * s, 0.03), () => g.sheet(2, 6, (u, v) => [(u - 0.5) * 0.07 * s + 0.04 * s * Math.sin(v * 5 + i * 2), -v * (0.5 + 0.3 * rnd()) * s, 0.02 * Math.sin(v * 7 + i)], (x, y, z, nx, ny, nz, u, v) => mul([0.12, 0.3, 0.16], 0.7 + 0.6 * v)));
+}
+/** top: a standing stone h high: o.col, o.flat (slab), o.lean */
+function megalith(g, h, r, seed = 0, o = {}) {
+  g.surf(K_STONE, 0.96);
+  const col = rockCol(o.col || rgb(0x7d8078), seed, o.moss ?? 0.6, 6);
+  limb(g, [[0, -0.12, 0], [0.03 * h, h * 0.35, 0.02 * h], [(o.lean || 0) * h * 0.5, h * 0.75, 0], [(o.lean || 0) * h, h, 0]], [r * 1.1, r, r * 0.86, r * 0.5], { nu: nq(12), nv: nq(10), amp: 0.13, seed, nf: 2.2, sq: o.sq ?? 0.5, flat: o.flat || [1, 0.6], col: o.paint ? (x, y, z, nx, ny, nz, u, v) => o.paint(x, y, z, col(x, y, z, nx, ny), u, v) : col, capB: true });
+}
+/** top: a tapering obelisk with a capped point */
+function obeliskOn(g, h, r, col, cap, o = {}) {
+  g.surf(K_STONE, 0.85);
+  g.in(M(0, 0, 0, 0, 45, 0), () => { g.lathe([[r * 1.5, -0.05], [r * 1.5, 0.08], [r * 1.05, 0.1], [r * 0.72, h * 0.86]], 4, col); g.surf(K_PLAIN, 0.3, o.capMetal ?? 0.9, o.capGlow || 0); g.lathe([[r * 0.72, h * 0.86], [0, h]], 4, cap); });
+}
+/** top: a column h high: a drum base, a shaft (plain or painted in bands) and a spreading capital */
+function columnOn(g, h, r, col, cap, o = {}) {
+  g.surf(K_STONE, 0.85);
+  g.lathe([[r * 1.4, -0.03], [r * 1.4, 0.05], [r * 1.05, 0.08], [r, 0.1], [r * 0.9, h - r * 1.6]], nq(10), col);
+  g.surf(K_STONE, 0.8, o.capMetal || 0);
+  g.lathe([[r * 0.9, h - r * 1.6], [r * 1.0, h - r * 1.2], [r * 1.5, h - r * 0.4], [r * 1.6, h - r * 0.1], [r * 1.6, h], [0, h]], nq(10), cap);
+}
+/** wall: the outline of an arch standing on the origin: shape 'point' | 'horse' | 'round' | 'ogee'; fill paints the opening */
+function archFrame(g, w, h, shape, col, o = {}) {
+  const pts = [], n = 12, sp = h - (shape === 'horse' ? w * 0.56 : shape === 'point' || shape === 'ogee' ? w * 0.8 : w * 0.5);
+  pts.push([-w / 2, 0], [-w / 2, sp]);
+  for (let i = 1; i < n; i++) { const t = i / n; let x, y;
+    if (shape === 'horse') { const a = Math.PI * (1.18 - t * 1.36); x = Math.cos(a) * w * 0.56; y = sp + w * 0.1 + Math.sin(a) * w * 0.56; }
+    else if (shape === 'point') { const e = t < 0.5 ? -1 : 1, q = t < 0.5 ? t * 2 : (1 - t) * 2; x = e * (w / 2) * (1 - q * q); y = sp + w * 0.8 * Math.sin(q * Math.PI / 2); }
+    else if (shape === 'ogee') { const e = t < 0.5 ? -1 : 1, q = t < 0.5 ? t * 2 : (1 - t) * 2; x = e * (w / 2) * (1 - q) * (1 + 0.25 * Math.sin(q * Math.PI)); y = sp + w * 0.8 * (q * q * (3 - 2 * q)); }
+    else { const a = Math.PI * (1 - t); x = Math.cos(a) * w / 2; y = sp + Math.sin(a) * w / 2; }
+    pts.push([x, y]); }
+  pts.push([w / 2, sp], [w / 2, 0]);
+  if (o.fill) { g.surf(K_PLAIN, o.fillRough ?? 0.5, 0, o.fillGlow || 0); g.in(M(0, 0, 0.008), () => g.poly(pts.map((p) => [p[0], p[1], 0]), 0, 0, 1, o.fill)); }
+  g.surf(o.kind ?? K_STONE, o.rough ?? 0.85, o.metal || 0);
+  g.tube(pts.map((p) => [p[0], p[1], 0.02]), o.t || 0.035, 5, typeof col === 'function' ? col : (x, y, z, nx, ny, nz, t) => (o.stripe && Math.floor(t * 14) % 2 ? o.stripe : col), true);
+}
+/** wall: a small figure standing in a niche */
+function nicheFigure(g, s, col, o = {}) {
+  g.surf(K_PLAIN, 1); g.poly([[-0.1 * s, -0.16 * s, 0.004], [0.1 * s, -0.16 * s, 0.004], [0.1 * s, 0.12 * s, 0.004], [0, 0.22 * s, 0.004], [-0.1 * s, 0.12 * s, 0.004]], 0, 0, 1, o.back || [0.12, 0.06, 0.04]);
+  g.surf(K_STONE, 0.8, o.metal || 0);
+  g.in(M(0, -0.16 * s, 0.03), () => { g.lathe([[0.06, 0], [0.07, 0.03], [0.035, 0.09], [0.05, 0.16], [0.055, 0.22], [0.03, 0.25]].map(([r, y]) => [r * s, y * s]), 6, col); g.in(M(0, 0.29 * s, 0), () => g.add(new THREE.IcosahedronGeometry(0.04 * s, 0), col)); });
+  g.surf(K_STONE, 0.85); g.in(M(0, -0.18 * s, 0.03), () => g.cbox(0.26 * s, 0.04 * s, 0.07, 0.008, o.sill || col));
+}
+/** top: a glass-and-brass lamp or reactor vessel alight inside */
+function vessel(g, s, glowCol, o = {}) {
+  const m = o.metalCol || BRASS;
+  g.surf(K_PLAIN, 0.4, 0.85); g.lathe([[0.1, 0], [0.12, 0.03], [0.09, 0.07]].map(([r, y]) => [r * s, y * s]), nq(8), m);
+  g.surf(K_PLAIN, 0.15, 0, o.glow ?? 1.5); g.lathe([[0.08, 0.07], [0.1, 0.16], [0.1, 0.34], [0.08, 0.43]].map(([r, y]) => [r * s, y * s]), nq(8), (x, y, z) => mul(glowCol, 0.7 + 0.5 * noise3(x * 30, y * 30, z * 30)));
+  g.surf(K_PLAIN, 0.4, 0.85); g.lathe([[0.09, 0.43], [0.12, 0.46], [0.06, 0.52], [0.03, 0.6], [0, 0.62]].map(([r, y]) => [r * s, y * s]), nq(8), m);
+  for (let i = 0; i < 3; i++) g.in(M(Math.cos(i * 2.09) * 0.1 * s, 0.25 * s, Math.sin(i * 2.09) * 0.1 * s), () => g.cbox(0.014 * s, 0.38 * s, 0.014 * s, 0.003, m));
+}
+/** top: crossed gable beams ending in beast heads (set across local X at a ridge end) */
+function crossedBeams(g, s, col, o = {}) {
+  const tc = woodTint(col, 5);
+  for (const e of [-1, 1]) g.in(M(0, 0, 0, 0, 0, e * 32), () => {
+    g.surf(K_WOOD, 0.88); g.in(M(0, 0.25 * s, 0, 0, 0, 90), () => g.beam(1.1 * s, 0.07 * s, 0.06 * s, 0.01, tc, 2));
+    g.in(M(0, 0.8 * s, 0), () => horn(g, [[0, -0.05 * s, 0], [e * -0.03 * s, 0.12 * s, 0], [e * -0.16 * s, 0.24 * s, 0], [e * -0.3 * s, 0.22 * s, 0], [e * -0.36 * s, 0.14 * s, 0]], 0.05 * s, o.head || mul(col, 1.3), mul(col, 0.8), { rings: 18, nu: 6, nv: 10, rough: 0.8 }));
+  });
+}
+/** top: a rack of poles hung with bones and scraps of hide */
+function boneRack(g, w, h, seed = 0) {
+  for (const e of [-1, 1]) g.in(M(e * w / 2, 0, 0, 0, 0, e * -5), () => stake(g, 0.03, h, seed + e, rgb(0x5a4630)));
+  logTo(g, [-w / 2 - 0.06, h * 0.88, 0], [w / 2 + 0.06, h * 0.9, 0], 0.022, 0.02, seed + 3, { seg: 6, capB: true });
+  const n = Math.max(2, Math.round(w / 0.16));
+  for (let i = 0; i < n; i++) { const x = -w / 2 + (w * (i + 0.5)) / n, l = h * (0.25 + 0.3 * hash1(i, seed)); if (i % 3 === 1) { g.in(M(x, h * 0.88, 0.01), () => rag(g, 0.13, l, rgb(0x8a6a48), seed + i, 0.5)); } else bone(g, [x, h * 0.86, 0.01], [x + 0.02, h * 0.86 - l, 0.02], 0.016, seed + i); }
+}
+/** a daub of paint in the shape of a row of teeth, on a wall */
+function teethGlyph(g, w, s, col, n = 5) {
+  g.surf(K_PLAIN, 0.9);
+  for (let i = 0; i < n; i++) { const x = (i - (n - 1) / 2) * (w / n), up = i % 2 === 0; g.in(M(x, 0, 0.012 + 0.002 * i), () => g.poly(up ? [[-w / n * 0.5, -0.02 * s, 0], [w / n * 0.5, -0.02 * s, 0], [0.01 * s, 0.2 * s, 0]] : [[-w / n * 0.5, 0.2 * s, 0], [w / n * 0.5, 0.2 * s, 0], [-0.01 * s, -0.02 * s, 0]], 0, 0, 1, mul(col, 0.8 + 0.4 * hash1(i, 3)))); }
+}
+/** wall: an iron plate, riveted (basalt keeps, scrap forts) */
+function plate(g, w, h, col, o = {}) {
+  g.surf(K_PLAIN, o.rough ?? 0.6, o.metal ?? 0.8);
+  g.in(M(0, 0, 0.014), () => g.cbox(w, h, 0.026, 0.008, typeof col === 'function' ? col : (x, y, z) => mul(col, 0.75 + 0.45 * noise3(x * 13, y * 13, 3))));
+  const nx = Math.max(2, Math.round(w / 0.16)), ny = Math.max(2, Math.round(h / 0.16));
+  for (let i = 0; i < nx; i++) for (const e of [-1, 1]) g.in(M(-w / 2 + 0.035 + ((w - 0.07) * i) / (nx - 1), e * (h / 2 - 0.035), 0.027), () => g.stud(0.014, o.rivet || mul(typeof col === 'function' ? [0.2, 0.2, 0.2] : col, 1.5), 5));
+  for (let j = 1; j < ny - 1; j++) for (const e of [-1, 1]) g.in(M(e * (w / 2 - 0.035), -h / 2 + 0.035 + ((h - 0.07) * j) / (ny - 1), 0.027), () => g.stud(0.014, o.rivet || mul(typeof col === 'function' ? [0.2, 0.2, 0.2] : col, 1.5), 5));
+}
+/** wall: a bell in a little arched frame (set on top of a front) */
+function bellFrame(g, s, wall, bellCol = BRASS) {
+  g.surf(K_PLASTER, 0.9);
+  for (const e of [-1, 1]) g.in(M(e * 0.2 * s, 0.25 * s, 0), () => g.cbox(0.1 * s, 0.5 * s, 0.14, 0.012, wall));
+  g.in(M(0, 0.56 * s, 0), () => prism(g, [[-0.27 * s, -0.06 * s], [0.27 * s, -0.06 * s], [0.27 * s, 0.02 * s], [0.14 * s, 0.14 * s], [0, 0.2 * s], [-0.14 * s, 0.14 * s], [-0.27 * s, 0.02 * s]], 0.15, wall, [0, 0]));
+  g.surf(K_PLAIN, 0.35, 0.9); g.in(M(0, 0.18 * s, 0), () => g.lathe([[0.11, 0], [0.1, 0.03], [0.07, 0.12], [0.05, 0.2], [0.02, 0.24], [0, 0.3]].map(([r, y]) => [r * s, y * s]), nq(10), bellCol));
+}
+/** top: a fungus shelf cluster or toadstools in sickly colours */
+function fungi(g, s, cap, seed = 0, glow = 0.6) { for (const [x, z, h, r] of [[0, 0, 0.34, 0.2], [0.16, 0.05, 0.2, 0.12], [-0.12, 0.1, 0.15, 0.1]]) g.in(M(x * s, 0, z * s, 0, seed * 40 + x * 200, 0), () => mushroom(g, h * s, r * s, cap, seed + x * 9, glow)); }
+/** the driver: st = { ridge, apex, corner, face, door } each [triangle estimate, fn(a, i)] run in the anchor's frame */
+function dress(g, sv, o) {
+  const run = (list, e) => { if (e) list.forEach((a, i) => sv.add(g, e[0], () => sv.at(g, a, () => e[1](a, i)))); };
+  run(sv.ridge, o.ridge);
+  if (sv.apex && !sv.ridge.length) run([{ ...sv.apex, yaw: 0 }], o.apex || o.ridge);
+  if (sv.walky || sv.slim) run([...sv.corners, ...sv.edges], o.corner); else run(sv.corners, o.eave);
+  run(sv.door, o.door);
+  run(sv.faces, o.face);
+}
+// ---------- the realm styles ----------
+const PAL_KEY = { stone: C_STONE, plaster: C_PLASTER, timber: C_TIMBER, red: C_RED, slate: C_SLATE, moss: C_MOSS, gold: C_GOLD, iron: C_IRON, other: C_OTHER, roof: 'roof' };
+const PAL_DEF = { stone: [1.2, 0.95, 0.4, 1.5], plaster: [1.4, 0.85, 0.5, 1.3], timber: [2.3, 0.9, 0.4, 1.6], red: [2.6, 0.75, 0.5, 1.55], slate: [2.6, 0.75, 0.5, 1.55], moss: [2, 0.8, 0.5, 1.4], gold: [3, 0.6, 0.65, 1.35], iron: [3, 0.5, 0.6, 1.5], other: [1.5, 0.6, 0.5, 1.3], roof: [2.6, 0.75, 0.5, 1.55] };
+/** a palette from hex lists by material name; red and slate follow `roof` unless given */
+function palOf(o) {
+  const r = {};
+  for (const k in o) r[PAL_KEY[k]] = [sw(...o[k]), ...PAL_DEF[k]];
+  if (o.roof) { if (!o.red) r[C_RED] = r.roof; if (!o.slate) r[C_SLATE] = r.roof; }
+  return r;
+}
+/**
+ * A shape field from a recipe: lean, twist, wob (crooked), sag, crumble (the top slumps and breaks), batter (walls lean in),
+ * pinch and stretch (the top narrows and rises), jag (shards thrust up), squat, bulge, warp, logs (courses swell into logs).
+ */
+function shapeOf(p) {
+  return (x, y, z, k, o) => {
+    const hf = y / k.H, top = smooth(0.45, 1, hf), rx = x - k.cx, rz = z - k.cz, freeX = !(k.linked && !k.ax), freeZ = !(k.linked && k.ax);
+    let dx = 0, dy = 0, dz = 0;
+    if (p.lean && !k.linked) { const l = p.lean * (1 + 0.5 * hf) * y * (k.Ha / k.H); dx += Math.cos(k.th) * l; dz += Math.sin(k.th) * l; }
+    if (p.twist && !k.linked) { const t = p.twist * hf * (k.s3 > 0.5 ? 1 : -1); dx -= rz * t; dz += rx * t; }
+    if (p.wob) { dx += (noise3(y * 0.85 + k.s1, z * 0.45, 3.3) - 0.5) * p.wob * hf; dz += (noise3(x * 0.45, y * 0.85 + k.s2, 7.1) - 0.5) * p.wob * hf; }
+    if (p.sag) dy -= p.sag * k.Ha * top * (0.4 + noise3(x * 0.6 + k.s1, 2, z * 0.6));
+    if (p.crumble) dy -= k.Ha * top * p.crumble * smooth(0.5, 0.76, fbm3(x * 1.25 + k.s1, y * 0.7, z * 1.25 + k.s2, 2));
+    if (p.batter) { const b = p.batter * Math.min(1, y / k.Ha); if (freeX) dx -= rx * b; if (freeZ) dz -= rz * b; }
+    if (p.pinch && !k.linked) { const q = p.pinch * top * top; dx -= rx * q; dz -= rz * q; }
+    if (p.bulge) { const b = p.bulge * Math.sin(Math.PI * clamp(hf * 1.12, 0, 1)) + p.bulge * 0.7 * (noise3(x * 0.8 + k.s1, y * 0.8, z * 0.8 + k.s2) - 0.5); if (freeX) dx += rx * b; if (freeZ) dz += rz * b; }
+    if (p.stretch) dy += p.stretch * k.Ha * top * top;
+    if (p.jag) { const n = 1 - Math.abs(2 * noise3(x * 1.5 + k.s1, y * 0.35, z * 1.5 + k.s2) - 1); dy += k.Ha * top * top * p.jag * (n * n * n + 0.2); }
+    if (p.squat && !k.linked) dy -= p.squat * y;
+    if (p.warp) { dx += p.warp * Math.sin(y * 2.1 + k.s1) * hf; dz += p.warp * Math.cos(y * 1.7 + k.s2) * hf; dy += p.warp * 0.6 * Math.sin((x + z) * 1.3 + k.s1) * top; }
+    if (p.logs && k.cls === C_STONE && !k.roof && Math.abs(k.vny) < 0.5) { const b = p.logs * Math.sin(Math.PI * (((y / COURSE) % 1) + 1) % 1); dx += k.vnx * b; dz += k.vnz * b; }
+    o[0] = dx; o[1] = dy; o[2] = dz;
+  };
+}
+const thatchCol = (base, seed = 0, dark = 0.72, moss = 0) => (x, y, z, nx, ny, nz) => { const s = Math.abs(nx) > Math.abs(nz) ? z : x; let c = mul(base, (0.7 + 0.4 * noise3(s * 17 + seed, y * 2.2, 1.5)) * (0.84 + 0.16 * tri1(y * 3.3)) * (ny > 0.95 ? dark : 1)); if (moss) c = mix(c, [0.16, 0.24, 0.07], moss * smooth(0.45, 0.7, noise3(x * 1.6 + seed, y * 1.6, z * 1.6))); return c; };
+const leafCol = (pal, seed = 0, bloom = null) => (x, y, z, nx, ny) => { const d = cells3(x * 5.5 + seed, y * 5.5, z * 5.5), q = noise3(x * 1.9 + seed, y * 1.9, z * 1.9); if (bloom && d < 0.12 && q > 0.55) return bloom; return mul(pal[Math.floor(q * pal.length * 1.4) % pal.length], (0.55 + 0.8 * smooth(0.02, 0.5, d)) * (0.75 + 0.3 * (ny || 0.5))); };
+const hidePatch = (col, seed = 0) => { const alt = [col, mul(col, 0.7), mix(col, rgb(0x7a5a30), 0.6), mix(col, rgb(0xc8b070), 0.45)]; return (x, y, z) => { const cu = x * 2.3 + 0.4 * noise3(z * 3 + seed, 1, 2), cv = z * 2.3 + 0.4 * noise3(x * 3, seed, 5), iu = Math.floor(cu), iv = Math.floor(cv), e = Math.min(cu - iu, 1 - (cu - iu), cv - iv, 1 - (cv - iv)); return mul(alt[Math.floor(hash1(iu, iv, seed) * 4)], (e < 0.07 ? 0.5 : 1) * (0.75 + 0.4 * noise3(x * 8 + seed, y * 8, z * 8))); }; };
+const snowOn = (c, a, x, y, z, ny, k, amt = 0.5) => { if (ny > 0.3) { const t = smooth(0.3, 0.7, ny) * smooth(0.62 - amt * 0.6, 0.72 - amt * 0.6, noise3(x * 1.3 + k.s1, y * 0.9, z * 1.3 + k.s2)); tintTo(c, [0.86, 0.9, 0.96], t); a[0] = lerp(a[0], 0.55, t); a[1] *= 1 - t; } };
+const mossOn = (c, x, y, z, ny, k, amt = 0.6, col = [0.1, 0.17, 0.045]) => { const t = (ny > 0.15 ? smooth(0.15, 0.6, ny) : 0.35 * smooth(0.9, 0.1, y)) * smooth(0.6 - amt * 0.3, 0.8 - amt * 0.3, noise3(x * 1.5 + k.s1, y * 1.5, z * 1.5 + k.s2)) * amt * 1.3; if (t > 0) tintTo(c, col, Math.min(0.9, t)); };
+const STRAW = rgb(0xc9a956), STRAW_OLD = rgb(0x9a8a5a);
+const TILE_GREEN = sw(0x2f7a4a, 0x2a6a40, 0x3a8a55, 0x256038, 0x348050), TILE_GOLD = sw(0xd9a62e, 0xc8962a, 0xe0b440, 0xb88826), TILE_GREY = sw(0x565a62, 0x4a4e56, 0x62666e, 0x50545c);
+const TURQ = sw(0x1fa39c, 0x2ab4ae, 0x188c8c, 0x35bdb0, 0x1a98a8), TERRA = sw(0xc8643a, 0xb85830, 0xd47444, 0xa84e2c, 0xbe6a40), RED_TILE = sw(0xb8402a, 0xa83a26, 0xc64e30, 0x9c3422);
+const SLATE_BLUE = sw(0x34539a, 0x2d4a8c, 0x3e5fa8, 0x2a4480), SLATE_DARK = sw(0x3c4450, 0x343c48, 0x464e5a, 0x2e3640), BLACK_TILE = sw(0x26242a, 0x1e1c22, 0x2e2a32, 0x22202a), PALE_BLUE = sw(0x8fb4d8, 0x7fa6cc, 0x9fc0e0, 0x86acd4);
+const ONION = [[rgb(0x2a5ab0), rgb(0xe0b030)], [rgb(0xb8342a), rgb(0xeee8d8)], [rgb(0x2a8a5a), rgb(0xe0b030)], [rgb(0xe0b030), rgb(0xc8962a)]];
+const pagoda = (pal, ridgeC, tipC, band, extra = {}) => ({ kind: 'hip', curve: 1.55, lift: 0.34, ov: 0.36, hs: 0.8, tiers: 2, pal, round: true, ridge: ridgeC, tip: tipC, under: [0.22, 0.06, 0.04], band, ...extra });
+const TL_BAND = { col: (x) => (tri1(x * 1.6) > 0.8 ? [0.4, 0.07, 0.05] : [0.78, 0.72, 0.6]), frame: rgb(0x9a2418), every: 0.6 };
+const SG_BAND = { col: (x, y) => mul([0.9, 0.88, 0.82], 0.92 + 0.1 * noise3(x * 3, y * 3, 1)), frame: rgb(0x2a2420), every: 0.5, win: { col: [0.95, 0.9, 0.72], glow: 0.5, shape: 'screen', trim: rgb(0x2a2420), trimKind: K_WOOD, every: 1.0, w: 0.26, h: 0.26 } };
+const brickSt = { course: 0.1, len: [0.17, 0.3], cell: 0.4, r: 0.008, b: 0.008, chip: 0.03, var: 0.16 };
+Object.assign(STYLES, {
+  graal: {
+    glow: [1.0, 0.72, 0.3], window: 0.55, trim: [rgb(0xf2efe6)],
+    pal: palOf({ stone: [0xd9d5c8, 0xcfcabb, 0xe2ded2, 0xc8c6bc], plaster: [0xe6dcc0, 0xdcd0b0], timber: [0x4a3626, 0x3e2e20, 0x574030], roof: [0x34539a, 0x2d4a8c, 0x3e5fa8, 0x2a4480, 0x4666ae], moss: [0x4a6a34, 0x3c5a2c], gold: [0xe0aa2e, 0xd09a26], iron: [0x3a3c44, 0x2e3038], other: [0x2d4a9c, 0xe0aa2e, 0xb8342a] }),
+    roof: { cap: { kind: 'cap', shape: 'bell', hs: 1.25, col: domeTiles(SLATE_BLUE), finial: 'spike', finS: 0.5 } },
+    by: { humble: { roof: { main: { kind: 'drape', thick: 0.13, over: 0.16, col: thatchCol(STRAW, 3), skirt: 0.2 }, cap: { kind: 'cap', shape: 'tent', hs: 0.8, col: (a, t, x, y, z) => thatchCol(STRAW, 5)(x, y, z, 1, 0.5, 0), rough: 0.96 } },
+      pal: palOf({ stone: [0xd8c8a0, 0xcfbd92, 0xe0d2ac, 0xc8b88e], plaster: [0xdccba0, 0xd0be92], timber: [0x5a4632, 0x4a3a2a, 0x66503a] }) } },
+    fx(cls, x, y, z, ny, c, a) { // stained glass: every pane its own jewel colour
+      if (cls === C_GLOW || cls === C_GLASS) { const h = hash1(Math.round(x * 9), Math.round(y * 9), Math.round(z * 9)), p = h < 0.3 ? [0.85, 0.12, 0.1] : h < 0.6 ? [0.15, 0.3, 0.95] : h < 0.85 ? [1.0, 0.72, 0.15] : [0.15, 0.7, 0.3]; tintTo(c, p, 0.75); a[2] = Math.max(a[2], 0.9); }
+    },
+  },
+  aurelia: {
+    glow: [1.0, 0.6, 0.2], window: 0.6, trim: [rgb(0xc8b690)], joint: [0.5, 0.47, 0.42, 0.55],
+    pal: palOf({ stone: [0x7a4a38, 0x6e4232, 0x84523c, 0x5e3a2e, 0x744636], plaster: [0xd8c8a0, 0xccba90], timber: [0x2e241c, 0x261e18, 0x382c22], roof: [0x3c4450, 0x343c48, 0x464e5a, 0x2e3640], moss: [0x44582e, 0x384a28], gold: [0xc89a3a, 0xb88a30], iron: [0x2a2a2e, 0x222226], other: [0x8a2a22, 0xd8b83a, 0x26262a] }),
+    roof: { main: { kind: 'gables', stone: 0x7a4a38, st: brickSt, cope: rgb(0xc8b690), steps: 5, fin: 'ball' }, cap: { kind: 'cap', shape: 'bulb', hk: 1.15, drum: 0.2, col: domeTiles(SLATE_DARK), finial: 'ball', finS: 0.5 } },
+    by: { humble: { pal: palOf({ stone: [0xd8cba8, 0xcebf98, 0xe0d4b4, 0xc4b690] }), joint: null },
+      grand: { pal: palOf({ stone: [0xe2ded6, 0xd8d2c8, 0xeae6de, 0xcfcac2] }), joint: null, trim: [rgb(0xf4f2ec)] } },
+    fx(cls, x, y, z, ny, c, a, k) { // soot: a grime that thickens toward the eaves and runs down in streaks
+      if (cls === C_STONE || cls === C_PLASTER) { const s = (0.25 + 0.5 * smooth(0.3, 1, y / k.H)) * smooth(0.45, 0.8, noise3(x * 5.5 + k.s1, y * 0.5, z * 5.5 + k.s2)); c[0] *= 1 - 0.55 * s; c[1] *= 1 - 0.57 * s; c[2] *= 1 - 0.58 * s; }
+    },
+  },
+  aethel: {
+    glow: [0.45, 0.85, 1.0], window: 0.9, trim: [rgb(0xfbf8f0)],
+    pal: palOf({ stone: [0xeee8d8, 0xe6e0d0, 0xf4f0e4, 0xe0dccc], plaster: [0xf4f0e6, 0xece8dc], timber: [0xc2c8d2, 0xb4bcc8, 0xd0d4dc], roof: [0x8fb4d8, 0x7fa6cc, 0x9fc0e0, 0x86acd4], moss: [0x7ab08a, 0x6aa07c], gold: [0xdde2ea, 0xcfd6e0], iron: [0xb4bcc8, 0xa4aebc], other: [0x8fb4d8, 0xdde2ea, 0x6ac0d8] }),
+    roof: { main: { kind: 'hip', hs: 1.4, curve: 1.3, lift: 0.1, ov: 0.2, pal: PALE_BLUE, ridge: rgb(0xdde2ea), ridgeMetal: 0.8, under: [0.5, 0.52, 0.56], plate: rgb(0xe6e0d0) }, cap: { kind: 'cap', shape: 'bell', hs: 1.9, col: domeTiles(PALE_BLUE), finial: 'crystal', finS: 0.55, fin: rgb(0xdde2ea) } },
+    disp: shapeOf({ stretch: 0.07, pinch: 0.035 }),
+    fx(cls, x, y, z, ny, c, a) { if (cls === C_GOLD || cls === C_IRON) { a[0] = 0.3; a[1] = 0.9; } if (cls === C_TIMBER) { a[0] = 0.5; a[1] = 0.35; } },
+  },
+  kaelneth: {
+    glow: [1.0, 0.07, 0.05], window: 1.2,
+    pal: palOf({ stone: [0x1c1a22, 0x24202c, 0x16151b, 0x201c28], plaster: [0x3a3442, 0x322c3a], timber: [0x18161a, 0x1e1a20, 0x121014], roof: [0x1a181e, 0x221f28, 0x141318, 0x2a2430], moss: [0x2a1a22, 0x22161c], gold: [0x8a8a94, 0x7a7a86], iron: [0x16161a, 0x1e1e24], other: [0x8a1420, 0x6e101a, 0x24202c] }),
+    roof: { cap: { kind: 'cap', shape: 'bell', hs: 2.1, col: (a, t, x, y, z) => mul([0.07, 0.06, 0.09], 0.7 + 0.6 * tri1((a / TAU) * 6)), rough: 0.3, metal: 0.4, finial: 'spike', finS: 0.6, fin: [0.2, 0.2, 0.24] } },
+    disp: shapeOf({ jag: 0.3, pinch: 0.1 }),
+    fx(cls, x, y, z, ny, c, a, k) { // volcanic glass: slick, with a violet sheen along its facets
+      if (cls === C_STONE || k.roof) { a[0] = 0.32; const e = smooth(0.62, 0.8, noise3(x * 2.6 + k.s1, y * 2.6, z * 2.6 + k.s2)); tintTo(c, [0.2, 0.13, 0.3], e * 0.5); }
+      if (cls === C_IRON || cls === C_GOLD) { a[0] = 0.4; a[1] = 0.9; }
+    },
+  },
+  verdant: {
+    glow: [1.0, 0.62, 0.12], window: 0.9,
+    pal: palOf({ stone: [0x5e4a32, 0x52402a, 0x6a543a, 0x4a3a26], plaster: [0x8e7852, 0x826c48, 0x9a845c], timber: [0x4a3826, 0x3e2e20, 0x56422c], roof: [0x3f7a2e, 0x4f8a38, 0x2f6a26, 0x5a9440], moss: [0x4a7a30, 0x3c6a28, 0x5a8a38], gold: [0xe0962a, 0xd08622], iron: [0x3a2e22, 0x30261c], other: [0x6a8a3a, 0xe0962a, 0x8a5a3a] }),
+    roof: { main: { kind: 'drape', thick: 0.26, lump: 0.85, lumpF: 2.6, over: 0.24, drop: 0.14, smooth: 2, skirt: 0.24, surf: K_LEAF, rough: 0.85, col: leafCol(sw(0x3f7a2e, 0x4f8a38, 0x2f6a26, 0x5a9440, 0x6aa048), 2, rgb(0xe8c84a)) },
+      cap: { kind: 'cap', shape: 'bulb', rk: 1.25, hk: 1.0, drum: 0, kind2: 0, rough: 0.85, col: (a, t, x, y, z) => leafCol(sw(0x3f7a2e, 0x4f8a38, 0x2f6a26, 0x5a9440), 4)(x, y, z, 0, 0.6), finial: null } },
+    disp: shapeOf({ bulge: 0.07, wob: 0.07 }),
+    fx(cls, x, y, z, ny, c, a, k) { // bark: furrowed up and down, mossed wherever it faces the sky
+      if (cls === C_STONE || cls === C_TIMBER || cls === C_PLASTER) { const f = 0.72 + 0.5 * noise3(x * 8 + k.s1, y * 0.7, z * 8 + k.s2); c[0] *= f; c[1] *= f; c[2] *= f; }
+      if (cls !== C_GLOW && cls !== C_GLASS && !k.roof) mossOn(c, x, y, z, ny, k, 0.75, [0.14, 0.26, 0.06]);
+    },
+  },
+  grom: {
+    glow: [1.0, 0.5, 0.1], window: 0.8, trim: [rgb(0x8a8680)],
+    pal: palOf({ stone: [0x6e6a66, 0x62605c, 0x7a7672, 0x58544f, 0x747068], plaster: [0x8a8680, 0x7e7a74], timber: [0x9a6a2e, 0x8a5c26, 0xa87834], roof: [0x8a5a2a, 0x9a6830, 0x7a4e26, 0x6e5a3a], moss: [0x4a5a3a, 0x3e4e32], gold: [0xd8a43a, 0xc8942e], iron: [0x3a3632, 0x2e2a28], other: [0x9a6a2e, 0x3a6a8a, 0x8a2a22] }),
+    roof: { cap: { kind: 'cap', shape: 'low', hk: 1.1, drum: 0.3, drumCol: rgb(0x6e6a66), col: domeBands(rgb(0x8a5a2a), rgb(0xd8a43a), 3, 0.2), metal: 0.6, rough: 0.45, finial: 'ball', finS: 0.4 } },
+    disp: shapeOf({ squat: 0.13, batter: 0.05 }),
+    fx(cls, x, y, z, ny, c, a, k) {
+      if (cls === C_TIMBER || k.roof) { a[0] = 0.45; a[1] = 0.65; }   // doors, beams and roofs are bronze
+      if (cls === C_STONE && !k.roof) { // a bronze band of knotwork round the waist of every wall
+        const hf = y / k.H, band = smooth(0.4, 0.415, hf) * smooth(0.5, 0.485, hf);
+        if (band > 0) { const u = (x + z) * 2.2, kn = tri1(u) > Math.abs(hf - 0.45) * 22 ? 1 : 0.55; tintTo(c, mul([0.6, 0.38, 0.14], kn), band); a[0] = lerp(a[0], 0.45, band); a[1] = lerp(a[1], 0.7, band); }
+      }
+    },
+  },
+  xibalba: {
+    glow: [1.0, 0.7, 0.2], window: 0.5, trim: [rgb(0xe8e2cc)],
+    pal: palOf({ stone: [0xd8d2b8, 0xcec8ac, 0xe0dac2, 0xc4bea4], plaster: [0xe4dcc0, 0xdad2b4], timber: [0x5e4028, 0x503622, 0x6a4a30], roof: [0xb8a26a, 0xa8925c, 0xc4ae76], moss: [0x3f7a34, 0x34682c, 0x4c8a3c], gold: [0xe6b430, 0xd8a428], iron: [0x2aa89a, 0x229488], other: [0x2aa89a, 0xb8482e, 0xe6b430] }),
+    roof: { main: { kind: 'step', n: 3, f: 0.75, wall: { stone: 0xd8d2b8 }, floor: rgb(0xbcb69c), band: (x, y, z) => (Math.floor(x * 5) % 3 === 0 ? [0.1, 0.5, 0.46] : [0.62, 0.2, 0.12]), on: (g, A, B, y) => { const s = Math.min(A, B); g.surf(K_STONE, 0.92); g.in(M(0, y + 0.22, 0), () => g.cbox(s * 1.1, 0.44, s * 0.9, 0.02, stoneTint(rgb(0xd8d2b8), 3))); g.in(M(0, y + 0.5, 0), () => g.cbox(s * 1.3, 0.12, s * 1.05, 0.02, stoneTint(rgb(0xb8482e), 5))); g.in(M(0, y + 0.56, 0), () => prism(g, MERLON.step(s * 0.9, 0.42), 0.1, stoneTint(rgb(0xd8d2b8), 7), [0, 0.08])); for (const e of [0, 180]) g.in(M(0, y + 0.74, 0, 0, e, 0), () => g.in(M(0, 0, 0.055), () => sunDisc(g, 0.55, GOLD, { rays: 0 }))); g.surf(K_PLAIN, 1); g.in(M(0, y + 0.17, s * 0.451), () => g.poly([[-0.1, -0.16, 0], [0.1, -0.16, 0], [0.1, 0.12, 0], [-0.1, 0.12, 0]], 0, 0, 1, [0.03, 0.02, 0.02])); return 1.0; } },
+      cap: { kind: 'cap', merlon: 'step', mh: 0.26, edge: rgb(0xd8d2b8), shape: 'low', col: rgb(0xe6b430), metal: 0.9, rough: 0.3, kind2: 0, drum: 0.1 } },
+    by: { humble: { roof: { main: { kind: 'step', n: 2, f: 0.55, wall: { stone: 0xd8d2b8 }, floor: rgb(0xbcb69c), band: (x) => (Math.floor(x * 5) % 3 === 0 ? [0.1, 0.5, 0.46] : [0.62, 0.2, 0.12]), merlon: 'step', mh: 0.2, edge: rgb(0xd8d2b8) } } } },
+    fx(cls, x, y, z, ny, c, a, k) { // jungle: vines hang from every ledge, the plinth is painted red
+      if (cls === C_STONE || cls === C_PLASTER) {
+        const v = smooth(0.58, 0.8, noise3(x * 4.5 + k.s1, y * 0.45, z * 4.5 + k.s2)) * smooth(0.25, 0.9, noise3(x * 0.9, y * 0.9 + k.s2, z * 0.9));
+        tintTo(c, [0.08, 0.2, 0.05], v * 0.85);
+        const b = smooth(0.32, 0.26, y) * 0.7; tintTo(c, [0.42, 0.12, 0.06], b * (1 - v));
+      }
+    },
+  },
+  velikaya: {
+    glow: [1.0, 0.66, 0.25], window: 0.7, trim: [rgb(0xf0ede4)],
+    pal: palOf({ stone: [0xd8d4c8, 0xcecabc, 0xe2ded2, 0xc4c0b4], plaster: [0xeeeae0, 0xe4e0d4], timber: [0xa83a2a, 0x2a5aa0, 0x8a2e22, 0x2e7a4a, 0xc8a030], roof: [0x5a4634, 0x4e3c2c, 0x66503c, 0x44342a], moss: [0x3a5a3a, 0x2e4a30], gold: [0xe6b430, 0xd8a428], iron: [0x3a3a40, 0x2e2e34], other: [0xb8342a, 0x2a5ab0, 0xe6b430] }),
+    roof: { main: { kind: 'dome', shape: 'onion', f: 0.3, rk: 0.7, drum: 0.55, drumCol: rgb(0xe8e4d8), drumWin: [0.1, 0.12, 0.2], col: domeSpiral(ONION[0][0], ONION[0][1], 6, 1.4), finial: 'ball', four: true, wall: { stone: 0xd8d4c8 }, merlon: 'none', edge: rgb(0xe8e4d8), floor: rgb(0xa8a498) },
+      cap: { kind: 'cap', shape: 'onion', hk: 1.0, rk: 0.98, drum: 0.3, drumCol: rgb(0xe8e4d8), col: (a, t, x, y, z, sd) => domeSpiral(ONION[sd % 4][0], ONION[sd % 4][1], 6, 1.4)(a, t, x, y, z), finial: 'ball', finS: 0.5 } },
+    by: { humble: { roof: { main: { kind: 'keep' } }, pal: palOf({ stone: [0x94703e, 0x866436, 0xa07a46, 0x7a5a30], plaster: [0xa8834c, 0x9a7642] }), joint: [0.2, 0.14, 0.08, 0.7], trim: null, disp: shapeOf({ logs: 0.035 }) } },
+    fx(cls, x, y, z, ny, c, a, k) { if (cls !== C_GLOW && cls !== C_GLASS) snowOn(c, a, x, y, z, ny, k, 0.55); },
+  },
+  tianlong: {
+    glow: [1.0, 0.42, 0.12], window: 0.7, trim: [rgb(0xd8d4c8)],
+    pal: palOf({ stone: [0xb9b3a4, 0xaaa596, 0xc4beb0, 0x9e9a8e], plaster: [0xe8e0cc, 0xddd4be], timber: [0x9a2418, 0x8a1e16, 0xa82c1c, 0x7e1a14], roof: [0x2f7a4a, 0x2a6a40, 0x3a8a55, 0x256038], moss: [0x3a6a3a, 0x2f5a30], gold: [0xe6b030, 0xd8a028], iron: [0x5a4a2a, 0x4a3c22], other: [0xb8281c, 0xe6b030, 0x2f7a4a] }),
+    roof: { main: pagoda(TILE_GREEN, rgb(0x1f4a2e), GOLD, TL_BAND, { plate: woodTint(rgb(0x9a2418), 2) }), cap: { kind: 'cap', shape: 'sweep', hs: 0.8, out: 0.02, col: domeTiles(TILE_GREEN), finial: 'ball', finS: 0.5 } },
+    by: { grand: { pal: palOf({ roof: [0xd9a62e, 0xc8962a, 0xe0b440, 0xb88826] }), roof: { main: pagoda(TILE_GOLD, rgb(0x8a2a1a), rgb(0xb8281c), TL_BAND, { plate: woodTint(rgb(0x9a2418), 2), lift: 0.38 }), cap: { kind: 'cap', shape: 'sweep', hs: 0.8, out: 0.02, col: domeTiles(TILE_GOLD), finial: 'ball', finS: 0.5 } } },
+      hut: { pal: palOf({ timber: [0x6a4a30, 0x5c4028, 0x765438] }) } },
+  },
+  ironbound: {
+    glow: [0.95, 0.13, 0.05], window: 0.85,
+    pal: palOf({ stone: [0x2e2c2e, 0x262426, 0x363436, 0x2a282c], plaster: [0x4a4444, 0x3e3a3a], timber: [0x1e1c1c, 0x262222, 0x181616], roof: [0x3a2a24, 0x2c2422, 0x44302a, 0x302826], moss: [0x2a2a24, 0x22221e], gold: [0x8a6a34, 0x7a5c2c], iron: [0x1a1a1c, 0x222224], other: [0x6e1a12, 0x3a3436, 0x8a6a34] }),
+    roof: { main: { kind: 'flat', f: 0.35, wall: { stone: 0x2e2c2e, st: { len: [0.4, 0.8], course: 0.25 } }, merlon: 'point', mh: 0.36, mw: 0.2, gap: 1.5, merlonCol: [0.07, 0.065, 0.07], edge: [0.09, 0.085, 0.09], edgeKind: K_PLAIN, edgeRough: 0.5, edgeMetal: 0.8, floor: [0.08, 0.075, 0.08] },
+      cap: { kind: 'cap', merlon: 'point', mh: 0.34, edge: [0.09, 0.085, 0.09], merlonCol: [0.07, 0.065, 0.07] } },
+    by: { humble: { roof: { main: { kind: 'keep' } } } },
+    disp: shapeOf({ batter: 0.04 }),
+    fx(cls, x, y, z, ny, c, a, k) {
+      if (cls === C_TIMBER || cls === C_IRON || k.roof) { a[0] = 0.55; a[1] = 0.75; }   // everything that was wood is iron plate
+      if (cls === C_STONE && !k.roof) { const e = smooth(0.02, 0.005, Math.abs(noise3(x * 1.9 + k.s1, y * 1.9, z * 1.9 + k.s2) - 0.5)) * smooth(0.9, 0.2, y) * 0.8; if (e > 0.05) { tintTo(c, [0.9, 0.12, 0.03], e); a[2] = Math.max(a[2], e); } }
+    },
+  },
+  screaming: {
+    glow: [0.75, 1.0, 0.25], window: 1.1,
+    pal: palOf({ stone: [0x8a6aa0, 0x5aa0a0, 0xb0a890, 0x7a5a94, 0x9a8ab0, 0xa07a40], plaster: [0xb8c090, 0xa8b484, 0xc8c8a0], timber: [0x9a7a34, 0x8a6a2c, 0xa8883c], roof: [0x7a3aa8, 0x2a9a9a, 0xb83a8a, 0x4a6ad0, 0x3ab07a], moss: [0x8ab03a, 0x9ac040], gold: [0xe0b83a, 0xd0a830], iron: [0xd0c8a8, 0xbcb294], other: [0xb83a8a, 0x3ab07a, 0xe0b83a] }),
+    roof: { cap: { kind: 'cap', shape: 'bulb', hk: 1.6, rk: 1.0, drum: 0.1, col: domeSpiral(rgb(0x7a3aa8), rgb(0x2a9a9a), 5, 2.6), rough: 0.2, metal: 0.2, glow: 0.3, finial: 'flame', finS: 0.6, flame: [[0.7, 1.0, 0.3], [0.9, 0.3, 0.9], [0.3, 0.9, 0.8]], fin: BRASS } },
+    disp: shapeOf({ warp: 0.13, twist: 0.13, stretch: 0.06, jag: 0.1 }),
+    fx(cls, x, y, z, ny, c, a, k) {
+      if (k.roof) { a[0] = 0.2; a[1] = 0.25; a[2] = Math.max(a[2], 0.3); }   // crystal roofs lit from inside
+      if (cls === C_TIMBER) { a[0] = 0.4; a[1] = 0.8; }
+      if (cls === C_GLOW || cls === C_GLASS) { const h = noise3(x * 2.2 + k.s1, y * 2.2, z * 2.2); tintTo(c, h < 0.4 ? [1.0, 0.2, 0.85] : h < 0.6 ? [0.3, 1.0, 0.3] : [1.0, 0.9, 0.2], 0.8); }
+      if (cls === C_STONE) { const v = smooth(0.014, 0.003, Math.abs(noise3(x * 1.5 + k.s2, y * 1.5, z * 1.5 + k.s1) - 0.5)); if (v > 0.05) { tintTo(c, [0.9, 0.3, 0.9], v); a[2] = Math.max(a[2], v * 1.2); } }
+    },
+  },
+  cloven: {
+    glow: [1.0, 0.4, 0.1], window: 0.3,
+    pal: palOf({ stone: [0x6a6456, 0x5e584c, 0x767060, 0x545044], plaster: [0x857a62, 0x786e58], timber: [0x4a3a2a, 0x3e3024, 0x564432], roof: [0x5a4634, 0x4a3a2c, 0x66503a, 0x3e3228], moss: [0x4a6a2e, 0x3c5a26, 0x5a7a34], gold: [0xc8bc9c, 0xb4a888], iron: [0x3a342e, 0x2e2a26], other: [0x6e1a12, 0x8a6a48, 0x4a6a2e] }),
+    roof: { main: { kind: 'drape', thick: 0.06, sag: 0.16, over: 0.2, drop: 0.16, smooth: 1, surf: K_CLOTH, col: hidePatch(rgb(0x7a5a3c), 3), skirt: 0.07 }, cap: { kind: 'cap', shape: 'tent', hs: 0.9, rk: 1.05, drum: 0, col: (a, t, x, y, z) => hidePatch(rgb(0x7a5a3c), 5)(x, y, z), rough: 0.95, finial: null } },
+    by: { grand: { roof: { main: { kind: 'keep' } } }, plain: { roof: { main: { kind: 'keep' } } } },
+    disp: shapeOf({ crumble: 0.22, sag: 0.05, lean: 0.025 }),
+    drop: (cls, x, y, z, k) => (cls === C_RED || cls === C_SLATE || cls === C_STONE) && fbm3(x * 2.1 + k.s2, y * 2.1, z * 2.1 + k.s1, 2) > 0.6,
+    fx(cls, x, y, z, ny, c, a, k) { // overgrown, and daubed with blood: smears and crude rings
+      if (cls !== C_GLOW && cls !== C_GLASS && !k.roof) mossOn(c, x, y, z, ny, k, 0.85);
+      if (cls === C_STONE || cls === C_PLASTER) { const n = noise3(x * 1.7 + k.s1, y * 2.2, z * 1.7 + k.s2), ring = Math.abs(noise3(x * 0.9 + k.s2, y * 0.9, z * 0.9) - 0.5); if (y > 0.3 && (n > 0.7 || ring < 0.012)) tintTo(c, [0.32, 0.03, 0.02], 0.8); }
+      if (cls === C_GOLD || cls === C_IRON) { a[0] = 0.8; a[1] = 0; }
+    },
+  },
+  fimbul: {
+    glow: [1.0, 0.6, 0.2], window: 0.6,
+    pal: palOf({ stone: [0x8a8a86, 0x7c7c78, 0x969692, 0x70706c], plaster: [0x9a8a6a, 0x8c7c5e], timber: [0x5a4230, 0x4e3828, 0x664c38, 0x44302a], roof: [0x4a3a2c, 0x3e3026, 0x564434, 0x362a22], moss: [0x3a4a34, 0x2e3e2c], gold: [0xc8a44a, 0xb89440], iron: [0x4a4a50, 0x3c3c42], other: [0x8a2a22, 0x2a4a7a, 0xc8a44a] }),
+    roof: { cap: { kind: 'cap', shape: 'tent', hs: 1.3, col: domeTiles(sw(0x4a3a2c, 0x3e3026, 0x564434)), finial: 'spike', finS: 0.5, fin: [0.25, 0.25, 0.28] } },
+    by: { humble: { pal: palOf({ stone: [0x6a4e36, 0x5e442e, 0x76583e, 0x523c28], plaster: [0x7a5c40, 0x6c5038] }), joint: [0.14, 0.1, 0.07, 0.7], disp: shapeOf({ logs: 0.03, stretch: 0.2 }) } },
+    disp: shapeOf({ stretch: 0.12 }),
+    fx(cls, x, y, z, ny, c, a, k) { if (cls !== C_GLOW && cls !== C_GLASS) snowOn(c, a, x, y, z, ny, k, 0.8); },
+  },
+  ashur: {
+    glow: [1.0, 0.36, 0.05], window: 1.0, trim: [rgb(0xb08a3a)],
+    pal: palOf({ stone: [0x2a2630, 0x3e2a28, 0x22202a, 0x4a2e28, 0x302a34], plaster: [0x1e2a3a, 0x1a2432], timber: [0xb08a3a, 0xa07c32, 0xbc9642], roof: [0x2a2630, 0x22202a, 0x34303a], moss: [0x2a2a26, 0x222220], gold: [0xd0a440, 0xc09436], iron: [0x8a6a30, 0x7a5c28], other: [0x1e3a5a, 0xb08a3a, 0x6e1a12] }),
+    roof: { main: { kind: 'step', n: 3, f: 0.8, wall: { stone: 0x3a2c2c, st: { ...brickSt, course: 0.12 } }, floor: [0.07, 0.06, 0.07], band: [0.62, 0.45, 0.14], bandMetal: 0.85, bandRough: 0.35, merlon: 'step', mh: 0.26, mw: 0.26, edge: [0.1, 0.085, 0.09], on: (g, A, B, y, c, env) => { const r = Math.min(A, B) * 0.3; g.surf(K_STONE, 0.9); g.in(M(A * 0.25, y, 0), () => { g.lathe([[r * 1.2, 0], [r, 0.1], [r * 0.8, 0.9], [r * 0.95, 0.95], [r * 0.95, 1.05], [r * 0.6, 1.05]], nq(10), stoneTint([0.09, 0.07, 0.07], 3)); g.surf(K_PLAIN, 1, 0, 1.2); g.in(M(0, 1.03, 0), () => g.cyl(r * 0.6, r * 0.6, 0.001, 8, [1.0, 0.3, 0.04], false, true)); g.in(M(0, 1.0, 0), () => plume(g, 1.5, [0.05, 0.045, 0.045], env.seed % 7)); }); return 1.9; } },
+      cap: { kind: 'cap', merlon: 'step', mh: 0.26, edge: [0.12, 0.1, 0.1], shape: 'low', col: rgb(0xb08a3a), metal: 0.85, rough: 0.35, drum: 0.1 } },
+    by: { humble: { roof: { main: { kind: 'flat', f: 0.4, wall: { stone: 0x3a2c2c, st: { ...brickSt, course: 0.12 } }, merlon: 'step', mh: 0.24, mw: 0.24, edge: [0.1, 0.085, 0.09], floor: [0.07, 0.06, 0.07], on: (g, A, B, y, c, env) => { g.surf(K_STONE, 0.9); g.in(M(-A * 0.4, y, B * 0.3), () => { g.cyl(0.14, 0.11, 0.7, 8, stoneTint([0.09, 0.07, 0.07], 3), false, true); g.in(M(0, 0.68, 0), () => plume(g, 1.0, [0.05, 0.045, 0.045], env.seed % 5)); }); return 1.3; } } } } },
+    fx(cls, x, y, z, ny, c, a, k) {
+      if (cls === C_TIMBER || cls === C_GOLD || cls === C_IRON) { a[0] = 0.38; a[1] = 0.85; }   // brass plating
+      if (cls === C_STONE && !k.roof) { // glazed brick, and the furnace glow leaking from low vents
+        a[0] = lerp(a[0], 0.45, 0.6);
+        const vent = smooth(0.34, 0.3, y) * smooth(0.1, 0.14, y) * (tri1((x + z) * 1.3) > 0.72 ? 1 : 0);
+        if (vent > 0.3) { tintTo(c, [1.0, 0.3, 0.03], vent); a[2] = Math.max(a[2], 1.2 * vent); }
+      }
+    },
+  },
+  greenhide: {
+    glow: [1.0, 0.55, 0.12], window: 0.4,
+    pal: palOf({ stone: [0x6e5236, 0x62482e, 0x7a5c3e, 0x58402a], plaster: [0x8a6a44, 0x7c5e3c], timber: [0x4e3c28, 0x5a4630, 0x3e3020, 0x665038], roof: [0x7a4a2a, 0x5a5048, 0x8a5a30, 0x4a4440, 0x6a3a22], moss: [0x4a5226, 0x3e4620], gold: [0x8a4a22, 0x7a3e1c], iron: [0x4a3a30, 0x3e3028], other: [0xb8281c, 0xc8bc9c, 0x4a5226] }),
+    roof: { cap: { kind: 'cap', shape: 'cone', hs: 0.8, col: domeTiles(sw(0x7a4a2a, 0x5a5048, 0x8a5a30, 0x4a4440)), metal: 0.45, rough: 0.7, finial: 'spike', finS: 0.5, fin: [0.3, 0.2, 0.12] } },
+    disp: shapeOf({ lean: 0.055, wob: 0.13, sag: 0.09 }),
+    drop: (cls, x, y, z, k) => (cls === C_RED || cls === C_SLATE) && noise3(x * 2.9 + k.s1, y * 2.9, z * 2.9 + k.s2) > 0.86,
+    fx(cls, x, y, z, ny, c, a, k) {
+      if (k.roof || cls === C_IRON || cls === C_GOLD) { a[0] = 0.75; a[1] = 0.5; }   // roofs of scrap sheet
+      if (cls === C_STONE || cls === C_PLASTER) { // a row of red teeth daubed under the eaves, mud splashed up from the ground
+        const hf = y / k.H, band = smooth(0.52, 0.54, hf) * smooth(0.68, 0.66, hf);
+        if (band > 0 && tri1((x + z) * 2.1 + 0.3 * noise3(x, y * 3, z)) > (hf - 0.52) / 0.15) tintTo(c, [0.5, 0.04, 0.025], band * 0.9);
+        tintTo(c, [0.2, 0.14, 0.08], smooth(0.5, 0.05, y) * 0.6 * noise3(x * 3 + k.s1, 1, z * 3));
+      }
+    },
+  },
+  skar: {
+    glow: [0.3, 1.0, 0.18], window: 1.0,
+    pal: palOf({ stone: [0x5a5448, 0x4e4a40, 0x666052, 0x464238], plaster: [0x7a7260, 0x6c6454], timber: [0x3e3428, 0x4a3e30, 0x33291f, 0x54463a], roof: [0x4a4038, 0x5a4a3a, 0x3a3a34, 0x6a5a40, 0x7a5236], moss: [0x4a5230, 0x3c4428], gold: [0xb86a3c, 0xa85c32], iron: [0x4f8a74, 0x8a5a3a, 0x3f7a66], other: [0x7a2a22, 0x8a8a5a, 0x4a6a8a] }),
+    roof: { cap: { kind: 'cap', shape: 'tent', hs: 0.9, col: domeTiles(sw(0x4a4038, 0x5a4a3a, 0x3a3a34, 0x7a5236)), finial: 'spike', finS: 0.45, fin: rgb(0xb86a3c) } },
+    disp: shapeOf({ lean: 0.07, twist: 0.1, wob: 0.17, sag: 0.05 }),
+    drop: (cls, x, y, z, k) => (cls === C_RED || cls === C_SLATE) && noise3(x * 2.6 + k.s1, y * 2.6, z * 2.6 + k.s2) > 0.84,
+    fx(cls, x, y, z, ny, c, a, k) { // patches of new board over old, verdigris on every bit of copper
+      if (cls === C_STONE || cls === C_PLASTER || k.roof) { const p = noise3(x * 1.3 + k.s1, y * 1.6, z * 1.3 + k.s2); if (p > 0.68) tintTo(c, [0.42, 0.3, 0.16], 0.75); else if (p < 0.24) tintTo(c, [0.1, 0.09, 0.08], 0.5); }
+      if (cls === C_GOLD || cls === C_IRON) { a[0] = 0.45; a[1] = 0.8; }
+    },
+  },
+  crimson: {
+    glow: [0.95, 0.05, 0.07], window: 1.15, trim: [rgb(0x56545c)],
+    pal: palOf({ stone: [0x2e2c32, 0x26242a, 0x36343a, 0x2a2a30], plaster: [0x62606a, 0x56545e], timber: [0x221c1c, 0x1a1616, 0x2a2222], roof: [0x2a2228, 0x241c22, 0x32262c, 0x1e181c], moss: [0x2e3430, 0x262c28], gold: [0x9a9aa4, 0x8a8a94], iron: [0x1e1e22, 0x26262a], other: [0x7a0e16, 0x5a0a12, 0x36343a] }),
+    roof: { main: { kind: 'hip', hs: 1.9, curve: 1.2, ov: 0.14, pal: BLACK_TILE, ridge: [0.06, 0.06, 0.07], ridgeMetal: 0.7, under: [0.03, 0.03, 0.03], plate: [0.1, 0.09, 0.1], maxH: 3.4 }, cap: { kind: 'cap', shape: 'bell', hs: 2.3, col: domeTiles(BLACK_TILE), finial: 'spike', finS: 0.7, fin: [0.3, 0.3, 0.34] } },
+    disp: shapeOf({ crumble: 0.07, pinch: 0.03 }),
+    fx(cls, x, y, z, ny, c, a, k) { if (cls === C_STONE && !k.roof) { const e = smooth(0.55, 0.85, noise3(x * 3.2 + k.s1, y * 3.2, z * 3.2 + k.s2)) * smooth(0.5, 1, y / k.H); tintTo(c, [0.3, 0.3, 0.33], e * 0.5); } },
+  },
+  khemet: {
+    glow: [1.0, 0.7, 0.25], window: 0.5, trim: [rgb(0xecd8a4)],
+    pal: palOf({ stone: [0xd9b878, 0xcfae6e, 0xe2c488, 0xc6a466], plaster: [0xead8a8, 0xe0cc9a], timber: [0x6a4a2a, 0x5c4024, 0x765432], roof: [0xc8a868, 0xbc9c5e, 0xd4b474], moss: [0x5a7a3a, 0x4c6a30], gold: [0xe8b830, 0xdaa828], iron: [0x2a4aa0, 0x24408c], other: [0x2a4aa0, 0xb8402a, 0xe8b830] }),
+    roof: { main: { kind: 'flat', f: 0.4, wall: { stone: 0xd9b878 }, merlon: 'cavetto', edge: (x, y, z) => (y > 0.1 ? [[0.12, 0.25, 0.6], [0.82, 0.62, 0.12], [0.62, 0.16, 0.1], [0.82, 0.62, 0.12]][Math.floor(Math.abs(x) * 9) % 4] : rgb(0xe2c488)), floor: rgb(0xb89a62) },
+      cap: { kind: 'cap', shape: 'cone', hk: 0.9, rk: 0.8, drum: 0.5, drumCol: rgb(0xe2c488), col: rgb(0xe8b830), metal: 0.9, rough: 0.3, seg: 4 } },
+    disp: shapeOf({ batter: 0.1 }),
+    fx(cls, x, y, z, ny, c, a, k) { // a band of picture-writing in blue and gold, a painted dado
+      if (cls === C_STONE && !k.roof) {
+        const hf = y / k.H, band = smooth(0.6, 0.615, hf) * smooth(0.72, 0.705, hf);
+        if (band > 0) { const u = Math.floor((x + z) * 7), h = hash1(u, Math.floor(hf * 40)); tintTo(c, h < 0.4 ? [0.1, 0.2, 0.55] : h < 0.6 ? [0.8, 0.6, 0.1] : h < 0.7 ? [0.6, 0.15, 0.08] : [0.9, 0.82, 0.6], band * 0.9); }
+        const d = smooth(0.34, 0.3, y) * smooth(0.22, 0.26, y); tintTo(c, [0.1, 0.2, 0.55], d * 0.8);
+      }
+    },
+  },
+  drowned: {
+    glow: [0.3, 1.0, 0.6], window: 1.0,
+    pal: palOf({ stone: [0x5a6058, 0x4e554e, 0x666c62, 0x464c46], plaster: [0x8a9080, 0x7c8274], timber: [0x3a3a30, 0x44443a, 0x2e3028, 0x4e4a3c], roof: [0x4a4438, 0x3e3c34, 0x55503e, 0x3a4038], moss: [0x2e5a40, 0x264c36, 0x3a6a4a], gold: [0x4a9a84, 0x3f8a76], iron: [0x7a4a2a, 0x6a3e22, 0x8a5630], other: [0x2e5a50, 0x8a9080, 0x7a4a2a] }),
+    roof: { main: { kind: 'hull', hs: 0.95 }, cap: { kind: 'cap', shape: 'low', hk: 1.5, drum: 0.15, col: (a, t, x, y, z) => mul(tri1((a / TAU) * 10) > 0.85 ? [0.05, 0.05, 0.04] : [0.22, 0.2, 0.15], 0.8 + 0.4 * noise3(x * 7, y * 7, z * 7)), rough: 0.9, finial: 'lantern', finS: 0.7, lan: [0.14, 0.12, 0.09], lanKind: K_WOOD, lanGlow: [0.3, 1.0, 0.6], capCol: [0.2, 0.3, 0.25], fin: [0.3, 0.2, 0.12] } },
+    disp: shapeOf({ sag: 0.06, wob: 0.09, lean: 0.03 }),
+    fx(cls, x, y, z, ny, c, a, k) { // sea-wrack: barnacles low down, weed and wet above them
+      if (cls === C_GLOW || cls === C_GLASS) return;
+      const wet = smooth(1.3, 0.1, y); c[0] *= 1 - 0.3 * wet; c[1] *= 1 - 0.22 * wet; c[2] *= 1 - 0.2 * wet;
+      if (!k.roof && cells3(x * 8, y * 8, z * 8) < 0.2 && noise3(x * 1.2 + k.s1, y * 1.2, z * 1.2 + k.s2) > 0.48) tintTo(c, [0.62, 0.62, 0.54], 0.85);
+      else tintTo(c, [0.08, 0.2, 0.12], smooth(0.55, 0.8, noise3(x * 2 + k.s2, y * 0.8, z * 2 + k.s1)) * 0.7);
+      if (cls === C_IRON) { a[0] = 0.85; a[1] = 0.4; }
+    },
+  },
+  gorge: {
+    glow: [1.0, 0.5, 0.12], window: 0.4,
+    pal: palOf({ stone: [0x6a5e50, 0x5e5448, 0x766a5a, 0x544a40], plaster: [0xa88a60, 0x9a7c54, 0xb4966c], timber: [0xd9d0b4, 0xcbbf9c, 0xc0b490, 0xe0d8c0], roof: [0x9a7a50, 0x8a6c46, 0xa6865a], moss: [0x4a4a34, 0x3e3e2c], gold: [0xd9d0b4, 0xcbbf9c], iron: [0x3a342e, 0x2e2a26], other: [0x7a2a1a, 0xa88a60, 0xd9d0b4] }),
+    roof: { main: { kind: 'drape', thick: 0.07, sag: 0.1, over: 0.22, drop: 0.13, smooth: 2, surf: K_CLOTH, col: hidePatch(rgb(0xa88458), 7), skirt: 0.08, on: (g, c, env, topAt) => { const n = clamp(Math.round((c.ax ? c.d : c.w) / 0.7), 2, 6); for (let i = 0; i < n; i++) { const t = (i + 0.5) / n, x = c.ax ? c.cx : lerp(c.x0, c.x1, t), z = c.ax ? lerp(c.z0, c.z1, t) : c.cz, hw = (c.ax ? c.w : c.d) / 2; for (const e of [-1, 1]) { const ex = c.ax ? e * hw : 0, ez = c.ax ? 0 : e * hw; rib(g, [x + ex * 1.02, topAt(x + ex * 0.9, z + ez * 0.9) - 0.1, z + ez * 1.02], [x + ex * 0.06, c.rY + 0.3, z + ez * 0.06], [ex * 0.3, (c.rY - c.eY) * 0.45, ez * 0.3], 0.05, i + e); } } } },
+      cap: { kind: 'cap', shape: 'tent', hs: 0.9, rk: 1.05, drum: 0, col: (a, t, x, y, z) => hidePatch(rgb(0xa88458), 5)(x, y, z), rough: 0.95, finial: null } },
+    disp: shapeOf({ bulge: 0.05, sag: 0.04 }),
+    fx(cls, x, y, z, ny, c, a, k) { // soot and fat-smoke blacken everything above the fires
+      if (cls === C_GLOW || cls === C_GLASS) return;
+      const s = smooth(0.35, 1, y / k.H) * smooth(0.4, 0.75, noise3(x * 1.4 + k.s1, y * 0.6, z * 1.4 + k.s2)) * (cls === C_TIMBER ? 0.35 : 0.7); c[0] *= 1 - 0.7 * s; c[1] *= 1 - 0.72 * s; c[2] *= 1 - 0.72 * s;
+      if (cls === C_TIMBER || cls === C_GOLD) { a[0] = 0.7; a[1] = 0; }
+    },
+  },
+  westmark: {
+    glow: [1.0, 0.8, 0.45], window: 0.45, trim: [rgb(0xeeeae0)], joint: [0.72, 0.68, 0.6, 0.55],
+    pal: palOf({ stone: [0xa8482e, 0x9a4028, 0xb45236, 0x8c3a26, 0xa24a32], plaster: [0xeeeae0, 0xe4e0d4], timber: [0x26342a, 0x1e2a22, 0x2e3e32, 0x3a2a20], roof: [0x3a3c44, 0x32343c, 0x44464e, 0x2c2e36], moss: [0x4a6a3a, 0x3c5a30], gold: [0xe0aa2e, 0xd09a26], iron: [0x2a2a2e, 0x222226], other: [0xe07a1e, 0xeeeae0, 0x2a4a8a] }),
+    roof: { main: { kind: 'gables', stone: 0xa8482e, st: brickSt, cope: rgb(0xeeeae0), steps: 6, rise: 0.34, fin: 'ball' }, cap: { kind: 'cap', shape: 'bulb', hk: 1.2, drum: 0.25, drumCol: rgb(0xa8482e), col: domeTiles(sw(0x4a9a80, 0x3f8c74, 0x58a88c, 0x449078)), metal: 0.3, rough: 0.6, finial: 'ball', finS: 0.5 } },
+    by: { grand: { pal: palOf({ roof: [0x4a9a80, 0x3f8c74, 0x58a88c, 0x449078] }) } },
+    fx(cls, x, y, z, ny, c, a, k) { // bands of white stone through the brick
+      if (cls === C_STONE && !k.roof && ny < 0.4) { const f = ((y + 0.02) / 0.8) % 1; if (f < 0.11 && y > 0.5) tintTo(c, [0.86, 0.83, 0.76], 0.85); }
+    },
+  },
+  principalities: {
+    glow: [1.0, 0.72, 0.35], window: 0.5, trim: [rgb(0xf4efe2)],
+    pal: palOf({ stone: [0xe8cfa0, 0xe0c490, 0xf0d8ae, 0xd8bc88], plaster: [0xe0a878, 0xd89c6c, 0xe8b488], timber: [0x5a3e28, 0x4c3420, 0x664830], roof: [0xc8643a, 0xb85830, 0xd47444, 0xa84e2c], moss: [0x4a6a34, 0x3c5a2c], gold: [0xe0aa2e, 0xd09a26], iron: [0x3a3a3e, 0x2e2e32], other: [0x8a2a22, 0xe0aa2e, 0x2a5a3a] }),
+    roof: { main: { kind: 'hip', hs: 0.55, curve: 1, ov: 0.24, pal: TERRA, round: true, ridge: rgb(0xb85830), under: [0.3, 0.2, 0.14], plate: rgb(0xe8dcc0) }, cap: { kind: 'cap', shape: 'cone', hs: 0.5, out: 0.06, drum: 0.5, drumCol: rgb(0xe8cfa0), col: domeTiles(TERRA), finial: 'ball', finS: 0.4 } },
+    by: { grand: { roof: { main: { kind: 'dome', shape: 'hemi', f: 0.32, rk: 0.76, drum: 0.42, drumCol: stoneTint(rgb(0xf0e6cc), 3), drumWin: [0.1, 0.1, 0.14], col: domeRibs(TERRA[0], rgb(0xf0e6cc), 8, 0.07), finial: 'lantern', lan: rgb(0xf0e6cc), capCol: TERRA[0], wall: { stone: 0xe8cfa0 }, merlon: 'none', rim: 0.12, edge: rgb(0xf0e6cc), floor: rgb(0xc8a878) } } } },
+  },
+  sunkings: {
+    glow: [1.0, 0.75, 0.35], window: 0.5, trim: [rgb(0xd8a83a)],
+    pal: palOf({ stone: [0xf2efe6, 0xe8e4d8, 0xf8f6ee, 0xe0dcd0], plaster: [0xf4f0e6, 0xeae6da], timber: [0x4a3424, 0x3e2a1c, 0x56402e], roof: [0xb8402a, 0xa83a26, 0xc64e30, 0x9c3422], moss: [0x4a6a34, 0x3c5a2c], gold: [0xf0c030, 0xe0b028], iron: [0x1a1a1c, 0x222224], other: [0xb8281c, 0xf0c030, 0x2a4a9a] }),
+    roof: { main: { kind: 'hip', hs: 0.6, curve: 1, ov: 0.22, pal: RED_TILE, round: true, ridge: rgb(0x9c3422), under: [0.2, 0.14, 0.1], plate: rgb(0xf2efe6) }, cap: { kind: 'cap', shape: 'hemi', drum: 0.5, drumCol: rgb(0xf2efe6), col: (a, t, x, y, z) => (Math.floor((a / TAU) * 16 + Math.floor(t * 6) * 0.5) % 2 ? [0.12, 0.25, 0.62] : [0.86, 0.84, 0.78]), rough: 0.35, finial: 'ball', finS: 0.5 } },
+    by: { grand: { roof: { main: { kind: 'keep' } } } },
+  },
+  caliphate: {
+    glow: [1.0, 0.66, 0.25], window: 0.5, trim: [rgb(0xeadfc4)],
+    pal: palOf({ stone: [0xd6b684, 0xcaa876, 0xdfc292, 0xc4a06e], plaster: [0xead9b4, 0xe0cda6], timber: [0x5e4430, 0x4e3828, 0x6a4e38], roof: [0x1fa39c, 0x2ab4ae, 0x188c8c, 0x35bdb0], moss: [0x5a7a3a, 0x4a6a30], gold: [0xe2b23a, 0xd4a22e], iron: [0x9a7a34, 0x86682a], other: [0x1fa39c, 0xb8342a, 0xeadfc4] }),
+    roof: { main: { kind: 'dome', shape: 'point', f: 0.32, rk: 0.74, drum: 0.3, drumCol: stoneTint(rgb(0xd6b684), 3), drumWin: [0.08, 0.2, 0.3], col: domeBands(TURQ[0], rgb(0xe2b23a), 5, 0.12), finial: 'ball', wall: { stone: 0xd6b684 }, merlon: 'round', mh: 0.2, edge: rgb(0xdfc292), floor: rgb(0xb89a6a) },
+      cap: { kind: 'cap', shape: 'point', rk: 0.92, drum: 0.5, hk: 1, drumCol: rgb(0xdfc292), col: domeBands(TURQ[1], rgb(0xe2b23a), 4, 0.14), finial: 'ball', finS: 0.45 } },
+    by: { humble: { roof: { main: { kind: 'flat', f: 0.42, wall: { stone: 0xd6b684, st: { chip: 0.05 } }, merlon: 'none', rim: 0.14, edge: rgb(0xdfc292), floor: rgb(0xb89a6a), on: (g, A, B, y) => { g.in(M(A * 0.3, y, -B * 0.25), () => domeOn(g, Math.min(A, B) * 0.34, { shape: 'hemi', drum: 0.2, drumCol: rgb(0xdfc292), col: rgb(0xeadfc4), kind: K_PLASTER, rough: 0.9 })); return 0.5; } } } } },
+    fx(cls, x, y, z, ny, c, a, k) { // a frieze of glazed tile under the eaves
+      if (cls === C_STONE && !k.roof) { const hf = y / k.H, band = smooth(0.6, 0.612, hf) * smooth(0.68, 0.668, hf); if (band > 0) { tintTo(c, (Math.floor((x + z) * 6) + Math.floor(hf * 60)) % 2 ? [0.08, 0.5, 0.5] : [0.9, 0.86, 0.74], band * 0.9); a[0] = lerp(a[0], 0.4, band); } }
+    },
+  },
+  shogunate: {
+    glow: [1.0, 0.82, 0.5], window: 0.5, trim: [rgb(0x9a9a96)],
+    pal: palOf({ stone: [0x7c7c7a, 0x6e6e6c, 0x888886, 0x646462], plaster: [0xf0ede4, 0xe6e2d8], timber: [0x2a2420, 0x221c1a, 0x322a26], roof: [0x565a62, 0x4a4e56, 0x62666e, 0x50545c], moss: [0x3a5a3a, 0x2f4a30], gold: [0xc8a44a, 0xb89440], iron: [0x1e1e20, 0x262628], other: [0xa82a1e, 0xf0ede4, 0x2a2420] }),
+    roof: { main: pagoda(TILE_GREY, rgb(0x3a3e46), null, SG_BAND, { curve: 1.35, lift: 0.2, ov: 0.32, under: [0.1, 0.09, 0.08], plate: woodTint(rgb(0x2a2420), 2) }), cap: { kind: 'cap', shape: 'sweep', hs: 0.75, out: 0.02, col: domeTiles(TILE_GREY), finial: 'spike', finS: 0.4, fin: rgb(0xc8a44a) } },
+    by: { humble: { pal: palOf({ stone: [0xf0ede4, 0xe6e2d8, 0xf6f4ec, 0xdedad0] }), trim: null }, plain: { disp: shapeOf({ batter: 0.07 }) } },
+  },
+  mistisles: {
+    glow: [1.0, 0.6, 0.25], window: 0.35,
+    pal: palOf({ stone: [0x7d8078, 0x70746c, 0x8a8c84, 0x666a62, 0x767a70], plaster: [0xb8b8a8, 0xacac9c], timber: [0x5e5a4c, 0x524e42, 0x6a6656], roof: [0x8a8058, 0x7c724e, 0x968c62], moss: [0x4a6a34, 0x3c5a2c, 0x5a7a3c], gold: [0xa8a48c, 0x98947c], iron: [0x3a3c3a, 0x2e302e], other: [0x4a6a7a, 0x8a8c84, 0x6a5a3a] }),
+    roof: { main: { kind: 'drape', thick: 0.15, over: 0.18, smooth: 2, col: thatchCol(STRAW_OLD, 7, 0.7, 0.55), skirt: 0.22 }, cap: { kind: 'cap', shape: 'tent', hs: 0.95, rk: 1.08, drum: 0, col: (a, t, x, y, z) => thatchCol(STRAW_OLD, 9, 0.7, 0.5)(x, y, z, 1, 0.5, 0), rough: 0.96, finial: null } },
+    disp: shapeOf({ bulge: 0.045, wob: 0.05 }),
+    fx(cls, x, y, z, ny, c, a, k) { if (cls !== C_GLOW && cls !== C_GLASS && !k.roof) mossOn(c, x, y, z, ny, k, 0.7); },
+  },
+  thousandgods: {
+    glow: [1.0, 0.6, 0.15], window: 0.6, trim: [rgb(0xf0ebe0)],
+    pal: palOf({ stone: [0xc88a5a, 0xb87a4c, 0xd49a68, 0xa86c42, 0xc08458], plaster: [0xf0ebe0, 0xe6e0d4], timber: [0x5a3420, 0x4c2a1a, 0x663e28], roof: [0xc88a5a, 0xb87a4c, 0xd49a68], moss: [0x4a7a34, 0x3c6a2c], gold: [0xe8b430, 0xdaa428], iron: [0xb08a3a, 0xa07c32], other: [0xd8287a, 0xf0921e, 0x1a9a8a] }),
+    roof: { main: { kind: 'shikhara', wall: { stone: 0xc88a5a }, c1: rgb(0xc88a5a), c2: rgb(0xa86c42), floor: rgb(0xa87a52) }, cap: { kind: 'cap', shape: 'bulb', hk: 1.5, rk: 1.0, drum: 0.2, drumCol: rgb(0xc88a5a), col: domeBands(rgb(0xc88a5a), rgb(0xa86c42), 7, 0.3), finial: 'bud', finS: 0.5 } },
+    by: { humble: { roof: { main: { kind: 'flat', f: 0.4, wall: { stone: 0xc88a5a }, merlon: 'round', mh: 0.16, mw: 0.18, edge: rgb(0xd49a68), floor: rgb(0xa87a52), on: (g, A, B, y, c, env) => { g.in(M(-A * 0.35, y, -B * 0.3), () => spire(g, Math.min(A, B) * 0.36, Math.min(A, B) * 0.9, { lite: true }, env.seed % 9)); return Math.min(A, B) * 1.05; } } } } },
+    fx(cls, x, y, z, ny, c, a, k) { // every course carved: rows of little niches, a band of white inlay
+      if (cls === C_STONE && !k.roof && ny < 0.5) {
+        const row = ((y / 0.4) % 1 + 1) % 1, u = (x + z) * 5;
+        if (row > 0.3 && row < 0.8 && tri1(u) > 0.5) { const q = tri1(u) > 0.8 && row > 0.4 && row < 0.7; tintTo(c, q ? [0.78, 0.6, 0.4] : [0.2, 0.1, 0.06], 0.55); }
+        const hf = y / k.H, band = smooth(0.5, 0.51, hf) * smooth(0.56, 0.55, hf);
+        if (band > 0) tintTo(c, Math.floor(u * 0.8) % 3 === 0 ? [0.75, 0.1, 0.35] : [0.92, 0.9, 0.84], band * 0.9);
+      }
+    },
+  },
+});
 
 // =====================================================================================================
 // Goblin: scrap, hide and stolen timber

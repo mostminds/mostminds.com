@@ -363,7 +363,7 @@ export const REALMS = [
       ['fellBat', 'Giant Vampire Bat', 'bat', { body: 'bat', fur: 0x2a1a20, scale: 1.5 }, { k: 1.6, w: 0.07 }],
       ['wraith', 'Wraith', 'banshee', { body: 'elemental', glow: 0x9ad8c8, hood: true }, { k: 1.2, w: 0.05, fly: false, abilities: [{ type: 'protect', style: 'melee', reduction: 0.5 }] }],
       ['bloodKnight', 'Blood Knight', 'lancer', m.r('nobleDead', 'horse', 'lance', 0x14141a, { barding: true }), { k: 2.0, w: 0.07, abilities: [{ type: 'charge', mult: 2 }, { type: 'regen', amount: 3, every: 4 }] }],
-      ['vampire', 'Vampire Count', 'paladin', m.h('nobleDead', 'longsword', { hair: 'swept', hairCol: 0x14141a }), { k: 1.5, w: 0.05, abilities: [{ type: 'regen', amount: 5, every: 4 }, { type: 'cleave', radius: 1, mult: 0.5 }] }],
+      ['vampire', 'Vampire Count', 'paladin', m.h('nobleDead', 'longsword', { hair: 'swept', hairColor: 0x14141a }), { k: 1.5, w: 0.05, abilities: [{ type: 'regen', amount: 5, every: 4 }, { type: 'cleave', radius: 1, mult: 0.5 }] }],
       ['necroC', 'Necromancer', 'necromancer', { body: 'humanoid', outfit: 'necromancer', skin: 0xb8b8a8, cloth: 0x2a1f3a, weapon: 'staff', hood: true }, { w: 0.05 }],
       ['terrorBat', 'Carrion Colossus Bat', 'drake', { body: 'bat', fur: 0x3a3a34, scale: 4.2, bones: true }, { k: 0.9, w: 0.03 }],
       ['zombieDragon', 'Zombie Dragon', 'drake', m.d(0x5a6a4a, 1.5, { rot: true }), { k: 1.1, w: 0.02, as: true }],

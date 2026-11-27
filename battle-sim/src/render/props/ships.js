@@ -2072,7 +2072,8 @@ function fitOut(p, H, st) {
     p.push(X(top[0], top[1] - 0.12, top[2], 0, 90 - Math.atan2(n2[1], n2[0]) / DEG, 0)); anchor(p, clamp(0.08 * L, 0.36, 0.78)); p.pop();
   });
   const boatAt = (s, zf, len, beam, seed, up = 0.1) => on(s, zf, () => { chocks(p, len, beam, wood); p.push(X(0, up, 0)); shipsBoat(p, len, beam, hex(0xd8d2c0), hex(0x9a8560), seed); p.pop(); });
-  switch (k) {
+  switch (st.fitAs || k) {
+    case 'none': break;   // fleets.js furnishes its own decks
     case 'skiff': {
       const g = H.segs[0];
       // ribs, thwarts and stern sheets of an open boat
@@ -2351,6 +2352,7 @@ const KIT = { THREE, Pen, X, frame, aim, clamp, lerp, smooth, mul, mix, add3, su
   PAL: { TAR, HEMP, IRON, GILT, BRASS, DECK, SPAR, OAK, PITCH, GLASS, WHITE, OCHRE, RED, LAMP },
   grainX, grainY, mottle, makeHull, bothSides, MIRROR, strake, sweep, sweepHard, sweepCap, shell, bulwarkInside, railCap, deckPlanks, transom, backbone, balustrade, ladder, door, windowLight, bulkhead,
   gunBarrel, gunCarriage, portGeom, gunPorts, lantern, scroll, boss, sternWorks, headWorks, sculpted, hatch, capstan, shipWheel, barrel, crate, coil, bitts, skylight, deckhouse, anchor, swivelGun,
+  shipsBoat, chocks, binnacle, belfry, stovePipe, bucket, shotRack, fifeRail, pinRail,
   squareSail, gaffSail, triSail, clothTone, rope, block, yard, fightingTop, logTimber, lashing, styleFor, buildSailingShip, stage, rig, fitOut, sideWorks, WIND,
   get far() { return far; }, get lite() { return lite; }, get eco() { return eco; } };
 
