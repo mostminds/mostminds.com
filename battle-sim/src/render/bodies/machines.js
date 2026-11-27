@@ -91,13 +91,14 @@ const wooden = (p, c = 0x6b4a2e) => p.color(c).pbr(0.85, 0);
 
 // ---------- nodes ----------
 function node(name, parent, o, extra = {}) { return { name, parent, o, prims: [], hard: [], ...extra }; }
-function finish(nodes) {
+function finish(nodes, k = 1) {
   const by = new Map(nodes.map((n) => [n.name, n]));
   return nodes.map((n) => {
     const par = n.parent ? by.get(n.parent) : null;
-    const pos = n.pos ?? (par ? sub3(n.o, par.o) : n.o);
+    let pos = n.pos ?? (par ? sub3(n.o, par.o) : n.o);
     const prims = flat(n.prims), hard = flat(n.hard);
     if (n.o[0] || n.o[1] || n.o[2]) { for (const p of prims) p.at(-n.o[0], -n.o[1], -n.o[2]); for (const h of hard) h.at(-n.o[0], -n.o[1], -n.o[2]); }
+    if (k !== 1) { pos = [pos[0] * k, pos[1] * k, pos[2] * k]; for (const p of prims) p.scale(k); for (const h of hard) h.scale(k); }   // the whole model built to a different size
     const out = { name: n.name, pos, prims, hard };
     if (n.parent) out.parent = n.parent;
     for (const k of ['rig', 'rot', 'detail', 'minRes']) if (n[k] !== undefined) out[k] = n[k];
@@ -860,7 +861,7 @@ function daemonEngine(def, o = {}) {
       Lg.hard.push(N(iron(rod([P0[0] + d[0] * 0.05, CYy + 0.1, P0[2] + d[2] * 0.05], [lerp(P0[0], K[0], 0.7), lerp(P0[1], K[1], 0.7) + 0.06, lerp(P0[2], K[2], 0.7)], 0.016, 4), STEEL)));
     }
   }
-  return { kind: 'daemonEngine', attack: 'swing', nodes: finish(nodes), crawler: crawler ? nl : 0 };
+  return { kind: 'daemonEngine', attack: 'swing', nodes: finish(nodes, 0.84), crawler: crawler ? nl : 0 };
 }
 
 function engineAnim(rig, inner, c, base) {
@@ -922,7 +923,7 @@ function balloon(def, o = {}) {
     if (y > 1.1 && y < 1.44 && Math.abs(f - 0.5) < 0.16 * (1 - Math.abs(y - 1.27) / 0.17)) return k ? cw : ct;
     return k ? ca : cb;
   };
-  env.hard.push(N(H.lathe(prof(40), 48).shade(silk).color(COL).pbr(0.62, 0)), Fr(H.lathe(prof(9), 12).shade((x, y) => (y > 1.5 && y < 1.69 ? ct : null)).color(COL).pbr(0.62, 0)));
+  env.hard.push(N(H.lathe(prof(40), 48).shade(silk).color(COL).pbr(0.62, 0)), Fr(H.lathe(prof(13), 24).shade(silk).color(COL).pbr(0.62, 0)));
   env.hard.push(N(brassy(H.lathe([[0.03, 0], [0.04, 0.04], [0.015, 0.09], [0.001, 0.13]], 8).at(0, 2.2, 0), TRIM)));
   for (let k = 0; k < 24; k++) {
     const a = ((k + 0.5) / 24) * Math.PI * 2, r = 0.578;

@@ -1281,14 +1281,14 @@ function smoke(g, s, h, seed = 0, c0 = [0.07, 0.07, 0.08], c1 = [0.36, 0.36, 0.3
       g.add(new THREE.IcosahedronGeometry(r, 1).scale(1, 0.82, 1), (x, y, z) => mul(cc, 0.75 + 0.4 * noise3(x * 3 / s + seed, y * 3 / s, z * 3 / s) + 0.15 * (y / r))));
   }
 }
-/** pale ground mist: flattened puffs lying round the inside edge of a footprint w x h */
-function mist(g, w, h, seed = 0, n = 10, col = [0.6, 0.65, 0.7]) {
+/** pale ground mist: thin wisps lying along the inside edge of a footprint w x h, in two layers */
+function mist(g, w, h, seed = 0, n = 10, col = [0.5, 0.55, 0.6]) {
   const rnd = rng(seed * 61 + 3);
-  g.surf(K_PLAIN, 1, 0, 0.1);
+  g.surf(K_PLAIN, 1, 0, 0.06);
   for (let i = 0; i < n; i++) {
-    const a = ((i + rnd() * 0.7) / n) * TAU, k = 1 / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a))), rx = 0.22 + 0.2 * rnd(), d = 0.82 + 0.1 * rnd();
-    const x = clamp(Math.cos(a) * k * (w / 2) * d, -w / 2 + rx, w / 2 - rx), z = clamp(Math.sin(a) * k * (h / 2) * d, -h / 2 + rx * 0.8, h / 2 - rx * 0.8);
-    g.in(M(x, 0.05 + 0.08 * rnd(), z, 0, rnd() * 180, 0), () => g.add(new THREE.IcosahedronGeometry(1, 1).scale(rx, 0.06 + 0.07 * rnd(), rx * 0.75), (px, py, pz) => mul(col, 0.85 + 0.25 * noise3(px * 5 + seed, py * 9, pz * 5))));
+    const side = i % 4, L = side % 2 ? h : w, len = Math.min(L * 0.48, 0.35 + 0.5 * rnd()), wid = 0.1 + 0.1 * rnd(), t = (rnd() - 0.5) * (L - 2 * len), d = (side % 2 ? w : h) / 2 - wid - 0.02 - 0.12 * rnd(), y = i % 3 === 0 ? 0.2 + 0.12 * rnd() : 0.06 + 0.05 * rnd();
+    const x = side === 0 ? t : side === 2 ? -t : side === 1 ? d : -d, z = side === 0 ? d : side === 2 ? -d : side === 1 ? t : -t;
+    g.in(M(x, y, z, 0, side % 2 ? 90 : 0, 0), () => g.add(new THREE.IcosahedronGeometry(1, 1).scale(len, 0.025 + 0.03 * rnd(), wid), (px, py, pz) => mul(col, 0.8 + 0.35 * noise3(px * 4 + seed, py * 9, pz * 4))));
   }
 }
 /** a deck of planks running along X: x0..x1 by z0..z1, top face at height y. o: pw (plank width), rag (how uneven the ends are), skip(z) */
@@ -1533,13 +1533,13 @@ const warpAt = (f, pal = WARP) => { f = ((f % 1) + 1) % 1 * pal.length; const i 
  * o: m, twist (radians over its height), bend (sideways sweep), fat (0 = widest low, 1 = widest high), glow, ns
  */
 function warpShard(g, r, h, seed, o = {}) {
-  const m = o.m || 5, ns = nq(o.ns || 10), tw = o.twist ?? 1.2, glow = o.glow ?? 0.6, rnd = rng(seed * 173 + 9), ph = rnd() * TAU, fat = o.fat ?? 0.3, bend = o.bend || 0;
+  const m = o.m || 5, ns = nq(o.ns || 10), tw = o.twist ?? 1.2, glow = o.glow ?? 0.32, rnd = rng(seed * 173 + 9), ph = rnd() * TAU, fat = o.fat ?? 0.3, bend = o.bend || 0;
   const rv = []; for (let i = 0; i < m; i++) rv.push(0.78 + 0.44 * rnd());
   const keep = [g.rough, g.metal, g.glow, g.kind];
   g.kind = K_PLAIN; g.rough = 0.12; g.metal = 0.3;
   const prof = (t) => r * (0.62 + 0.38 * Math.exp(-Math.pow((t - fat) / 0.42, 2))) * (t > 0.7 ? Math.pow((1 - t) / 0.3, 0.8) : 1);
   const P = (i, j) => { const t = j / ns, a = ph + (i / m) * TAU + tw * t, rr = prof(t) * rv[i % m]; return [bend * h * t * t + Math.cos(a) * rr, t * h, Math.sin(a) * rr]; };
-  const C = (i, j) => mul(warpAt(seed * 0.137 + i * 0.19 + j * 0.085 + 0.25 * hash1(i, j, seed)), 0.5 + 0.75 * hash1(j, i, seed + 5));
+  const C = (i, j) => mul(warpAt(seed * 0.137 + i * 0.19 + j * 0.085 + 0.25 * hash1(i, j, seed)), 0.3 + 0.6 * hash1(j, i, seed + 5));
   for (let i = 0; i < m; i++) for (let j = 0; j < ns; j++) {
     const t = (j + 0.5) / ns, ce = [bend * h * t * t, t * h, 0];
     g.glow = glow * (0.35 + 0.9 * hash1(i, j, seed + 2));
@@ -1572,14 +1572,17 @@ function warpSpire(g) {
   g.glow = 0;
   // the spire: three great shards that lean through one another, and a fourth run through them like a skewer
   let pA, pC;
-  g.in(M(-0.18, -0.15, 0.1, 2, 0, -6), () => { pA = warpShard(g, 0.68, 5.6, 1, { m: 5, twist: 1.5, fat: 0.22, ns: 12 }); g.in(M(0, 1.25, 0), () => brassBand(g, pA(1.25 / 5.6) * 0.98, 0.18, 1)); g.in(M(0, 2.9, 0, 0, 0, 3), () => brassBand(g, pA(2.9 / 5.6) * 0.98, 0.15, 2)); g.in(M(0, 2.05, 0, 0, -25, 0).multiply(M(0, 0, pA(2.05 / 5.6) * 0.86, -4, 0, 0)), () => flameEye(g, 2.0, [1.0, 0.25, 0.7], 1)); });
-  g.in(M(0.55, -0.15, -0.4, -5, 0, 15), () => { const p = warpShard(g, 0.44, 4.5, 2, { m: 4, twist: -1.1, fat: 0.35, ns: 10 }); g.in(M(0, 1.7, 0), () => brassBand(g, p(1.7 / 4.5) * 0.98, 0.14, 3)); g.in(M(0, 2.5, 0, 0, 75, 0).multiply(M(0, 0, p(2.5 / 4.5) * 0.84)), () => flameEye(g, 1.3, [0.5, 1.0, 0.25], 2)); });
-  g.in(M(0.3, 3.1, 0.02, 4, 0, 7), () => { pC = warpShard(g, 0.46, 5.6, 3, { m: 5, twist: 2.4, fat: 0.5, ns: 12, bend: -0.04 }); g.in(M(-0.04 * 5.6 * 0.2, 2.5, 0), () => brassBand(g, pC(2.5 / 5.6) * 0.98, 0.14, 4)); g.in(M(-0.05, 3.1, 0, 0, 10, 0).multiply(M(0, 0, pC(3.1 / 5.6) * 0.86)), () => flameEye(g, 1.5, [0.3, 0.9, 1.0], 3)); });
+  g.in(M(-0.18, -0.15, 0.1, 2, 0, -6), () => { pA = warpShard(g, 0.68, 5.6, 1, { m: 6, twist: 1.5, fat: 0.22, ns: 22 }); g.in(M(0, 1.25, 0), () => brassBand(g, pA(1.25 / 5.6) * 0.98, 0.18, 1)); g.in(M(0, 2.9, 0, 0, 0, 3), () => brassBand(g, pA(2.9 / 5.6) * 0.98, 0.15, 2)); g.in(M(0, 2.05, 0, 0, -25, 0).multiply(M(0, 0, pA(2.05 / 5.6) * 0.86, -4, 0, 0)), () => flameEye(g, 2.0, [1.0, 0.25, 0.7], 1)); });
+  g.in(M(0.55, -0.15, -0.4, -5, 0, 15), () => { const p = warpShard(g, 0.44, 4.5, 2, { m: 5, twist: -1.1, fat: 0.35, ns: 16 }); g.in(M(0, 1.7, 0), () => brassBand(g, p(1.7 / 4.5) * 0.98, 0.14, 3)); g.in(M(0, 2.5, 0, 0, 75, 0).multiply(M(0, 0, p(2.5 / 4.5) * 0.84)), () => flameEye(g, 1.3, [0.5, 1.0, 0.25], 2)); });
+  g.in(M(0.3, 3.1, 0.02, 4, 0, 7), () => { pC = warpShard(g, 0.46, 5.6, 3, { m: 5, twist: 2.4, fat: 0.5, ns: 22, bend: -0.04 }); g.in(M(-0.04 * 5.6 * 0.2, 2.5, 0), () => brassBand(g, pC(2.5 / 5.6) * 0.98, 0.14, 4)); g.in(M(-0.05, 3.1, 0, 0, 10, 0).multiply(M(0, 0, pC(3.1 / 5.6) * 0.86)), () => flameEye(g, 1.5, [0.3, 0.9, 1.0], 3)); });
   g.in(M(-0.95, 2.1, -0.15, 0, 20, -68), () => warpShard(g, 0.2, 2.5, 4, { m: 4, twist: 0.8, fat: 0.5, ns: 7 }));
   g.in(M(0.5, 4.5, 0.35, 60, 0, -32), () => warpShard(g, 0.15, 1.7, 5, { m: 4, twist: 1.0, fat: 0.45, ns: 6 }));
+  g.in(M(-0.5, -0.1, -0.55, -14, 0, 10), () => warpShard(g, 0.3, 3.0, 6, { m: 4, twist: 1.3, fat: 0.3, ns: 8 }));
+  g.in(M(0.1, 5.2, -0.1, -30, 40, 50), () => warpShard(g, 0.14, 1.5, 7, { m: 3, twist: 0.6, fat: 0.4, ns: 5 }));
+  g.in(M(-0.35, 3.6, 0.3, 40, 0, 48), () => warpShard(g, 0.16, 1.6, 8, { m: 4, twist: 0.9, fat: 0.4, ns: 6 }));
   // lesser shards round the foot
   const rnd = rng(4011);
-  for (let i = 0; i < 7; i++) { const a = (i / 7) * TAU + 0.5, d = 0.85 + 0.3 * rnd(), t = 12 + 22 * rnd(); g.in(M(Math.cos(a) * d, -0.05, Math.sin(a) * d, Math.sin(a) * t, rnd() * 90, -Math.cos(a) * t), () => warpShard(g, 0.1 + 0.1 * rnd(), 0.6 + 1.0 * rnd(), 10 + i, { m: 4, twist: 0.7, ns: 5, glow: 0.7 })); }
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU + 0.5, d = 0.85 + 0.3 * rnd(), t = 12 + 22 * rnd(); g.in(M(Math.cos(a) * d, -0.05, Math.sin(a) * d, Math.sin(a) * t, rnd() * 90, -Math.cos(a) * t), () => warpShard(g, 0.1 + 0.1 * rnd(), 0.6 + 1.0 * rnd(), 10 + i, { m: 5, twist: 0.7, ns: 8, glow: 0.45 })); }
   // bone buttresses: great ribs springing from the ground to hold the thing up, propped with lesser bones
   for (const [a, R, y1, r1, sd] of [[0.6, 1.3, 2.5, 0.42, 1], [2.3, 1.32, 2.2, 0.5, 2], [3.7, 1.3, 2.7, 0.45, 3], [5.2, 1.28, 2.0, 0.55, 4]]) {
     const co = Math.cos(a), si = Math.sin(a), A = [co * R, -0.05, si * R], B = [co * r1, y1, si * r1];
@@ -1588,10 +1591,10 @@ function warpSpire(g) {
     g.in(M(A[0], 0.02, A[2]), () => g.in(M(0, 0, 0, 0, 0, 0, 0.6), () => boulder(g, 0.2, 0.14, 0.18, sd + 60, rgb(0x3a3040), nq(16))));
   }
   // fragments that hang in the air round the top, and will not fall
-  for (let i = 0; i < 12; i++) {
-    const t = i / 11, a = i * 2.4 + 0.7, R = 0.75 + 0.5 * hash1(i, 61), y = 4.3 + 4.0 * t, s = 0.07 + 0.09 * hash1(i, 63);
-    g.surf(K_PLAIN, 0.12, 0.3, 0.8 + 0.5 * hash1(i, 65));
-    g.in(M(Math.cos(a) * R, y, Math.sin(a) * R, hash1(i, 67) * 180, i * 40, hash1(i, 69) * 180), () => g.add(new THREE.OctahedronGeometry(s, 0).scale(1, 2.2 + hash1(i, 71), 0.8), (x, yy) => mul(warpAt(i * 0.21 + yy * 1.5), 0.7 + 0.5 * hash1(Math.round(x * 90), i))));
+  for (let i = 0; i < 26; i++) {
+    const t = i / 25, a = i * 2.4 + 0.7, R = 0.75 + 0.5 * hash1(i, 61), y = 4.3 + 4.0 * t, s = 0.07 + 0.09 * hash1(i, 63);
+    g.surf(K_PLAIN, 0.12, 0.3, 0.45 + 0.3 * hash1(i, 65));
+    g.in(M(Math.cos(a) * R, y, Math.sin(a) * R, hash1(i, 67) * 180, i * 40, hash1(i, 69) * 180), () => g.add(new THREE.OctahedronGeometry(s, 0).scale(1, 2.2 + hash1(i, 71), 0.8), (x, yy) => mul(warpAt(i * 0.21 + yy * 1.5), 0.45 + 0.4 * hash1(Math.round(x * 90), i))));
   }
   // a brass ring that turns round the top, studded with eyes
   g.in(M(0.52, 6.6, 0.3, 14, 0, 8), () => { g.surf(K_PLAIN, 0.35, 0.9); g.in(M(0, 0, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.72, 0.035, 6, nq(30)), (x, y, z) => mul(BRASS, 0.75 + 0.5 * noise3(x * 6, y * 6, z * 6)))); for (let k = 0; k < 3; k++) g.in(M(0, 0, 0, 0, k * 120 + 20, 0).multiply(M(0, 0, 0.74)), () => eyeball(g, 0.9, warpAt(k * 0.3 + 0.1), { lid: BRASS })); });
@@ -1608,20 +1611,20 @@ function puffball(g, r, seed = 0, burst = 0, col = rgb(0xc9c08a)) {
 function fungalGarden(g) {
   g.moss = 1.4;
   pad(g, 3, 3, 0.07, (x, y, z) => mix(mul(rgb(0x2e3220), 0.6 + 0.7 * fbm3(x * 3, y * 5, z * 3, 3)), [0.3, 0.12, 0.3], 0.4 * smooth(0.55, 0.75, noise3(x * 1.9 + 3, 2, z * 1.9))), 411, { nu: 64, nv: 12 });
-  const SLIME = [[0.7, 1.0, 0.25], [0.3, 0.85, 0.1], [0.06, 0.3, 0.05]], PURPLE = rgb(0x8a3a9a), BILE = rgb(0xb8a832), FLESH = rgb(0xc86a7a), TEAL = rgb(0x2f8a82), LIVID = rgb(0x6a4ab0);
+  const SLIME = [[0.35, 0.9, 0.08], [0.14, 0.6, 0.04], [0.03, 0.2, 0.03]], PURPLE = rgb(0x6e3470), BILE = rgb(0x9a8f2c), FLESH = rgb(0xa86a66), TEAL = rgb(0x3a7868), LIVID = rgb(0x4e3c86);
   // slime pools
   for (const [x, z, R, sd] of [[0.35, 0.55, 0.56, 1], [-0.95, 0.75, 0.34, 2], [0.95, -0.1, 0.3, 3]]) {
-    g.in(M(x, 0.085, z, 0, sd * 50, 0), () => pool(g, R, SLIME, sd, 1.25, [0.03, 0.08, 0.02]));
+    g.in(M(x, 0.085, z, 0, sd * 50, 0), () => pool(g, R, SLIME, sd, 0.32, [0.03, 0.08, 0.02]));
     g.surf(K_PLAIN, 0.85);
     g.in(M(x, 0.07, z, 90, 0, 0), () => g.add(new THREE.TorusGeometry(R, 0.05, 5, nq(22)), (px, py, pz) => mul([0.16, 0.18, 0.08], 0.6 + 0.8 * noise3(px * 6, py * 6, pz * 6))));
-    g.surf(K_PLAIN, 0.2, 0, 1.0);
-    for (let i = 0; i < 3; i++) g.in(M(x + Math.cos(i * 2.3 + sd) * R * 0.45, 0.085, z + Math.sin(i * 2.3 + sd) * R * 0.45), () => g.add(new THREE.SphereGeometry(0.035 + 0.025 * hash1(i, sd), 8, 5, 0, TAU, 0, Math.PI / 2), [0.55, 1.0, 0.2]));
+    g.surf(K_PLAIN, 0.2, 0, 0.5);
+    for (let i = 0; i < 3; i++) g.in(M(x + Math.cos(i * 2.3 + sd) * R * 0.45, 0.085, z + Math.sin(i * 2.3 + sd) * R * 0.45), () => g.add(new THREE.SphereGeometry(0.035 + 0.025 * hash1(i, sd), 8, 5, 0, TAU, 0, Math.PI / 2), [0.3, 0.8, 0.1]));
   }
   // the giants
   for (const [x, z, h, R, cap, sd, glow, rx, rz] of [[-0.6, -0.5, 2.05, 0.82, PURPLE, 1, 0.8, 3, 4], [0.72, -0.78, 1.45, 0.6, FLESH, 2, 0.6, -5, -6], [0.0, -1.05, 2.75, 0.5, LIVID, 3, 0.9, 4, -2], [-1.02, 0.2, 1.1, 0.4, BILE, 4, 0.5, 0, 9], [1.02, 0.72, 0.9, 0.36, TEAL, 5, 0.9, 6, -8]])
     g.in(M(x, 0, z, rx, sd * 70, rz), () => mushroom(g, h, R, cap, sd * 3, glow));
   // lesser toadstools in clumps
-  for (const [x, z, s, cap, sd] of [[-0.3, 1.15, 1.3, FLESH, 1], [1.2, -1.15, 1.2, BILE, 2], [-1.2, -1.15, 1.5, TEAL, 3], [0.25, -0.2, 1.1, PURPLE, 4], [-0.62, 0.42, 0.9, BILE, 5], [1.25, 0.2, 0.9, LIVID, 6]]) g.in(M(x, 0.03, z, 0, sd * 60, 0), () => fungi(g, s, cap, sd, 0.7));
+  for (const [x, z, s, cap, sd] of [[1.2, -1.15, 1.2, BILE, 2], [-1.2, -1.15, 1.5, TEAL, 3], [-0.62, 0.42, 0.9, FLESH, 5]]) g.in(M(x, 0.03, z, 0, sd * 60, 0), () => fungi(g, s, cap, sd, 0.7));
   // puffballs, two of them burst
   for (const [x, z, r, sd, b] of [[0.2, 1.1, 0.3, 1, 0], [-1.12, -0.55, 0.36, 2, 1], [1.08, -0.52, 0.24, 3, 0], [-0.1, 0.25, 0.2, 4, 1], [0.78, 1.18, 0.17, 5, 0], [-0.75, 1.2, 0.14, 6, 0]]) g.in(M(x, 0.02, z, 0, sd * 80, 0), () => puffball(g, r, sd, b, sd % 2 ? rgb(0xc9c08a) : rgb(0xb89aa0)));
   // rotting stumps hung with bracket fungus, a fallen log
@@ -1642,6 +1645,1206 @@ function fungalGarden(g) {
 }
 
 // =====================================================================================================
+// Cloven: raw stone, hide and antler
+// =====================================================================================================
+const horned = (g, s, seed = 0) => { skull(g, s, true); for (const e of [-1, 1]) horn(g, [[e * 0.07 * s, 0.17 * s, -0.02 * s], [e * 0.2 * s, 0.22 * s, -0.05 * s], [e * 0.3 * s, 0.36 * s, 0.0], [e * 0.26 * s, 0.52 * s, 0.08 * s]], 0.04 * s, rgb(0x3a3028), rgb(0xa89878), { rings: 30, nu: 7, nv: 12 }); };
+function herdstone(g) {
+  g.moss = 0.5;
+  pad(g, 2, 2, 0.1, (x, y, z) => mix(mul(rgb(0x4e3e2c), 0.65 + 0.6 * fbm3(x * 3, y * 5, z * 3, 3)), [0.2, 0.03, 0.02], 0.6 * smooth(0.75, 0.2, Math.hypot(x, z - 0.3)) * smooth(0.4, 0.6, noise3(x * 3, 1, z * 3))), 501);
+  const rc = rockCol(rgb(0x6f6a60), 51, 0.35, 6);
+  const stoneC = (x, y, z, nx, ny) => {
+    const c = rc(x, y, z, nx, ny);
+    const streak = smooth(0.6, 0.8, noise3(x * 8 + 3, y * 0.5, z * 8)) * smooth(1.0, 3.8, y), daub = smooth(0.6, 0.74, noise3(x * 2.4, y * 2.4 + 5, z * 2.4)) * smooth(2.4, 1.4, y) * smooth(0.3, 0.9, y);
+    return mix(c, [0.17, 0.02, 0.016], Math.min(0.8, streak * 0.7 + daub * 0.55));
+  };
+  // the stone: a leaning fang of rock, split at the top, two lesser fangs against it
+  g.surf(K_STONE, 0.96);
+  limb(g, [[0, -0.15, -0.1], [0.04, 1.3, -0.08], [-0.08, 2.8, -0.1], [0.06, 3.9, -0.06], [0.2, 4.75, -0.05]], [0.62, 0.58, 0.48, 0.36, 0.05], { nu: nq(22), nv: nq(28), amp: 0.14, seed: 51, nf: 1.7, sq: 0.6, flat: [1, 0.6], col: stoneC, capB: true });
+  limb(g, [[-0.2, 3.0, -0.12], [-0.34, 3.7, -0.1], [-0.36, 4.3, -0.12]], [0.3, 0.2, 0.03], { nu: nq(12), nv: nq(10), amp: 0.16, seed: 53, nf: 2.2, sq: 0.5, flat: [1, 0.6], col: stoneC, capB: true });
+  limb(g, [[-0.62, -0.1, -0.3], [-0.66, 1.0, -0.3], [-0.78, 2.1, -0.34]], [0.32, 0.27, 0.04], { nu: nq(14), nv: nq(12), amp: 0.15, seed: 55, nf: 2, sq: 0.5, flat: [1, 0.7], col: stoneC, capB: true });
+  limb(g, [[0.6, -0.1, -0.36], [0.66, 0.8, -0.38], [0.74, 1.5, -0.36]], [0.28, 0.22, 0.04], { nu: nq(14), nv: nq(10), amp: 0.15, seed: 57, nf: 2, sq: 0.5, flat: [1, 0.7], col: stoneC, capB: true });
+  // crude glyphs scratched and daubed on its face
+  for (const [x, y, s, sd, c] of [[-0.18, 1.25, 0.5, 1, [0.78, 0.74, 0.62]], [0.2, 1.75, 0.42, 2, [0.5, 0.06, 0.04]], [-0.12, 2.35, 0.44, 3, [0.78, 0.74, 0.62]], [0.12, 0.72, 0.36, 4, [0.5, 0.06, 0.04]], [0.02, 2.95, 0.34, 5, [0.78, 0.74, 0.62]]])
+    g.in(M(x, y, lerp(0.3, 0.2, y / 3) + 0.0, -3, x * 30, sd * 7 - 14), () => sigil(g, 500 + sd, s, c, 0, 0.055));
+  // antlers lashed to it, a horned skull at its brow
+  for (const e of [-1, 1]) g.in(M(e * 0.3, 3.05, -0.02, 0, e > 0 ? 0 : 180, e * -18), () => antler(g, 0.95, e + 2));
+  g.in(M(0, 2.55, 0.12), () => lashing(g, 0.5, 3, 0.016));
+  g.in(M(0.02, 3.2, 0.22, -6, 0, 4), () => horned(g, 1.5, 1));
+  // the heap at its foot: skulls, bones, antlers, bowls of blood, spears
+  g.in(M(-0.15, 0.08, 0.5, 0, 10, 0), () => skullPile(g, 1.0, 5, 3));
+  g.in(M(0.45, 0.07, 0.42, 0, -40, 0), () => skullPile(g, 0.9, 4, 5));
+  g.in(M(-0.62, 0.07, 0.3, 0, 60, 0), () => horned(g, 1.2, 2));
+  g.in(M(0.75, 0.05, 0.05, -70, 30, 0), () => antler(g, 0.7, 5));
+  g.in(M(-0.4, 0.06, 0.78, -80, -50, 0), () => antler(g, 0.6, 6));
+  for (const [a, b, sd] of [[[-0.5, 0.08, 0.75], [-0.05, 0.1, 0.9], 1], [[0.2, 0.08, 0.8], [0.6, 0.07, 0.7], 2], [[0.3, 0.12, 0.62], [0.1, 0.3, 0.4], 3], [[-0.3, 0.1, 0.62], [-0.48, 0.34, 0.36], 4]]) bone(g, a, b, 0.024, sd);
+  for (let k = 0; k < 5; k++) rib(g, [0.62 + k * 0.07, 0.03, 0.72 - k * 0.02], [0.62 + k * 0.07, 0.03, 0.42 - k * 0.02], [0, 0.2, 0], 0.014, k);
+  for (const [x, z, sd] of [[0.1, 0.78, 1], [-0.8, 0.62, 2]]) g.in(M(x, 0.05, z), () => {
+    g.surf(K_PLAIN, 0.9); g.lathe([[0.05, 0], [0.11, 0.03], [0.14, 0.09], [0.13, 0.1], [0.1, 0.04], [0, 0.03]], nq(12), mul(rgb(0x7a5a42), 0.8 + 0.2 * sd));
+    g.surf(K_PLAIN, 0.15); g.in(M(0, 0.075, 0), () => g.cyl(0.115, 0.115, 0.001, nq(12), [0.22, 0.015, 0.012], false, true));
+  });
+  // ragged hide banners on crooked poles
+  for (const [x, z, h, ry, sd] of [[-0.82, -0.72, 3.3, 20, 1], [0.84, -0.7, 2.8, -25, 2], [0.86, 0.72, 2.1, -60, 3]]) g.in(M(x, 0, z, (hash1(sd, 1) - 0.5) * 9, ry, (hash1(sd, 2) - 0.5) * 9), () => {
+    stake(g, 0.04, h, sd + 60, rgb(0x4a3a28));
+    logTo(g, [-0.3, h - 0.32, 0.02], [0.3, h - 0.26, 0.02], 0.022, 0.018, sd + 3, { seg: 6, capB: true });
+    g.in(M(0, h - 0.3, 0), () => lashing(g, 0.045, 3));
+    g.in(M(0, h - 0.3, 0.035), () => rag(g, 0.52, h * 0.36, sd % 2 ? HIDE : HIDE_DARK, sd + 8, 0.6, OCHRE));
+    g.in(M(0, h - 0.1, 0, 0, 0, 0), () => horned(g, 0.9, sd));
+    for (const e of [-1, 1]) { rope(g, [[e * 0.28, h - 0.3, 0.02], [e * 0.29, h - 0.6, 0.03]], 0.007, rgb(0x8a7450), 4); bone(g, [e * 0.29, h - 0.6, 0.03], [e * 0.3, h - 0.85, 0.03], 0.015, sd + e); }
+  });
+  for (const [x, z, rz, sd] of [[-0.3, -0.85, 8, 1], [0.35, -0.88, -6, 2]]) g.in(M(x, 0, z, -8, 0, rz), () => { stake(g, 0.02, 2.0, sd + 70, rgb(0x5a4630)); g.surf(K_PLAIN, 0.5, 0.6); g.in(M(0, 1.92, 0), () => g.lathe([[0.012, 0], [0.04, 0.06], [0, 0.26]], 4, [0.3, 0.3, 0.32])); g.in(M(0, 1.8, 0.02), () => rag(g, 0.08, 0.35, OCHRE, sd, 0.5)); });
+}
+function hideTent(g) {
+  g.moss = 0.5;
+  pad(g, 2, 2, 0.06, rgb(0x54432e), 511);
+  const B = [-0.2, 1.38, -0.86], F = [-0.14, 1.86, 0.3], W = (u) => lerp(0.6, 0.78, u), wood = rgb(0x5a4630);
+  const R = (u) => v3(B, F, u);
+  const side = (k) => (u, v) => {
+    const s = v < 0.5 ? -1 : 1, t = Math.abs(2 * v - 1), r = R(u), sag = 0.11 * Math.sin(Math.PI * t) * (0.6 + 0.4 * Math.sin(u * 9.4 + 1));
+    return [r[0] + s * W(u) * Math.pow(t, 0.92) * k, Math.max(0.02 + 0.05 * Math.abs(Math.sin(u * 14)) * (t > 0.98 ? 1 : 0), (r[1] + 0.04) * (1 - t) - sag) * (k < 1 ? 0.97 : 1), r[2] - (1 - u) * 0.1 * t];
+  };
+  hideSheet(g, 30, 34, side(1), HIDE, 61);
+  g.surf(K_PLAIN, 1);
+  g.sheet(8, 12, side(0.97), (x, y) => mul([0.06, 0.045, 0.03], 0.4 + 0.5 * y), false, true);
+  // the back is closed with one pelt, the front with two that hang apart
+  hideSheet(g, 12, 10, (u, v) => { const gx = B[0] + (u * 2 - 1) * 0.6, p = v3([B[0], B[1], B[2] - 0.02], [gx, 0.02, B[2] - 0.1 - 0.1 * Math.sin(Math.PI * u)], v); return [p[0], p[1] - 0.05 * Math.sin(Math.PI * v), p[2]]; }, HIDE_DARK, 63, true);
+  for (const s of [-1, 1]) hideSheet(g, 8, 12, (u, v) => { const o = v3(F, [F[0] + s * 0.78, 0.02, F[2]], v), i = v3(F, [F[0] + s * (0.2 + 0.1 * s), 0.02, F[2] + 0.12], v), p = v3(o, i, u); return [p[0], p[1] - 0.04 * Math.sin(Math.PI * v) * u, p[2] + 0.05 * Math.sin(u * Math.PI) * v]; }, s > 0 ? HIDE : mix(HIDE, HIDE_DARK, 0.5), 64 + s, s > 0);
+  g.surf(K_PLAIN, 1);
+  g.flat([[F[0] - 0.3, 0.01, F[2] - 0.04], [F[0] + 0.4, 0.01, F[2] - 0.04], [F[0], F[1] - 0.2, F[2] - 0.04]], [0.012, 0.01, 0.008]);
+  // crooked poles: two pairs crossed, the ridge pole through their crotches, more leaning on
+  for (const [P0, sd] of [[F, 1], [B, 2]]) for (const s of [-1, 1]) { const foot = [P0[0] + s * (W(sd === 1 ? 1 : 0) + 0.1), -0.05, P0[2] + (sd === 1 ? 0.06 : -0.06)], top = v3(foot, [P0[0], P0[1] + 0.03, P0[2]], 1.24); logTo(g, foot, top, 0.045, 0.03, sd * 5 + s, { seg: 8, bark: wood, amp: 0.2 }); }
+  logTo(g, v3(B, F, -0.2), v3(B, F, 1.22), 0.04, 0.035, 9, { seg: 8, bark: wood, capB: true });
+  for (const p of [F, B]) g.in(M(p[0], p[1] + 0.05, p[2]), () => lashing(g, 0.08, 3, 0.014));
+  for (const [u, s, sd] of [[0.35, -1, 1], [0.7, 1, 2], [0.5, 1, 3]]) { const r = R(u); logTo(g, [r[0] + s * (W(u) + 0.04), -0.05, r[2]], [r[0] - s * 0.1, r[1] + 0.2, r[2] + 0.03], 0.03, 0.022, 20 + sd, { seg: 7, bark: wood, amp: 0.2 }); }
+  // stones on the skirts, a horned skull over the door, tusks at the threshold
+  for (let k = 0; k < 9; k++) { const u = hash1(k, 71), s = k % 2 ? 1 : -1, r = R(u); g.in(M(r[0] + s * (W(u) + 0.02), 0.03, r[2], 0, k * 70, 0), () => boulder(g, 0.09, 0.06, 0.08, 80 + k, rgb(0x77736a), nq(14))); }
+  g.in(M(F[0], F[1] - 0.26, F[2] + 0.07, -12, 0, 0), () => horned(g, 1.25, 4));
+  for (const s of [-1, 1]) g.in(M(F[0] + s * 0.36, 0, F[2] + 0.16, 0, s > 0 ? 180 : 0, 0), () => g.in(M(0, 0, 0, 0, 0, -8), () => horn(g, [[0, -0.1, 0], [0.02, 0.2, 0], [0.1, 0.45, 0], [0.22, 0.62, 0]], 0.05, mul(BONE, 1.05), rgb(0x8a7a5a), { rings: 20, nu: 8, nv: 12 })));
+  // the bone rack and a pelt on a stretching frame
+  g.in(M(0.82, 0, -0.42, 0, 82, 0), () => boneRack(g, 0.8, 1.25, 7));
+  // the fire pit, smoking
+  g.in(M(0.52, 0.04, 0.68), () => {
+    for (let k = 0; k < 8; k++) g.in(M(Math.cos(k * 0.785) * 0.24, 0, Math.sin(k * 0.785) * 0.24, 0, k * 50, 0), () => boulder(g, 0.08, 0.06, 0.07, 90 + k, rgb(0x6a665e), nq(14)));
+    g.surf(K_PLAIN, 1, 0, 0.9); g.in(M(0, 0.03, 0), () => g.cyl(0.19, 0.19, 0.001, nq(12), (x, y, z) => mix([0.03, 0.02, 0.02], [1.0, 0.25, 0.03], smooth(0.5, 0.8, noise3(x * 30, 1, z * 30))), false, true));
+    for (let k = 0; k < 3; k++) { const a = k * 2.1 + 0.3; logTo(g, [Math.cos(a) * 0.18, 0.05, Math.sin(a) * 0.18], [-Math.cos(a) * 0.1, 0.13, -Math.sin(a) * 0.1], 0.035, 0.03, 40 + k, { seg: 7, capB: true, bark: [0.06, 0.05, 0.045], heart: [0.5, 0.12, 0.03] }); }
+    g.in(M(0, 0.06, 0), () => fire(g, 0.26, FIRE_RED, 3, 0.9));
+    g.in(M(0, 0.3, 0), () => smoke(g, 0.07, 1.3, 5, [0.2, 0.2, 0.21], [0.45, 0.45, 0.46], 6, 0.2));
+    // a spit over it
+    for (const s of [-1, 1]) g.in(M(s * 0.3, 0, 0, 0, 0, s * 4), () => stake(g, 0.02, 0.5, s + 5, wood));
+    logTo(g, [-0.36, 0.46, 0], [0.36, 0.47, 0], 0.014, 0.012, 8, { seg: 5, capB: true });
+    g.surf(K_PLAIN, 0.7); g.in(M(0, 0.45, 0, 0, 0, 90), () => g.add(new THREE.SphereGeometry(0.07, nq(10), nq(7)).scale(1, 1.9, 1), (x, y, z) => mul([0.36, 0.14, 0.07], 0.7 + 0.5 * noise3(x * 20, y * 20, z * 20))));
+  });
+}
+
+// =====================================================================================================
+// Fimbul: timber, whalebone and snow
+// =====================================================================================================
+const FIM_WOOD = [rgb(0x5a4632), rgb(0x6a5238), rgb(0x4c3a2a), rgb(0x705a40)], FIM_PAINT = [[rgb(0xa82a22), rgb(0xe6dcc0)], [rgb(0x2a4a8a), rgb(0xd8b23a)], [rgb(0x1e1c1a), rgb(0xd8b23a)], [rgb(0x2f6a3e), rgb(0xe6dcc0)], [rgb(0xe6dcc0), rgb(0xa82a22)]];
+const snowCol = (seed = 0) => (x, y, z, nx, ny) => mul(mix([0.6, 0.7, 0.86], SNOW, smooth(0.2, 0.8, ny ?? 1)), 0.9 + 0.14 * noise3(x * 4 + seed, y * 4, z * 4));
+const snowGround = (earth, seed, amt = 0.5) => (x, y, z) => mix(mul(earth, 0.65 + 0.6 * fbm3(x * 3, y * 5, z * 3, 3)), SNOW, smooth(0.62 - amt * 0.4, 0.72 - amt * 0.4, noise3(x * 1.3 + seed, 2, z * 1.3)));
+/** a drift of snow on the local origin */
+function drift(g, rx, ry, rz, seed = 0) { g.surf(K_PLAIN, 0.6); g.sheet(nq(14), nq(5), (u, v) => { const a = u * TAU, k = 1 + 0.25 * noise3(Math.cos(a) * 1.3 + seed, 1, Math.sin(a) * 1.3); return [Math.cos(a) * rx * v * k, v > 0.99 ? -0.03 : ry * Math.pow(1 - v * v, 0.7), Math.sin(a) * rz * v * k]; }, snowCol(seed), true); }
+/** a carved dragon's head for a gable or a prow: its neck rises from the local origin, it looks toward +X. Sculpted once. */
+function dragonHead(g, s = 1) {
+  const geo = geoOnce('dragonHead', () => {
+    const w = 0x5e4630, red = 0x9a2a1e, gold = 0xd8a62a, P = [];
+    P.push(...S.limb([[-0.14, -0.14, 0], [-0.02, 0.1, 0], [0.06, 0.3, 0], [0.16, 0.42, 0]], [0.075, 0.07, 0.065, 0.075]).map((p) => p.color(w).tint(0.16, 14).bump(0.004, 30, 'scales')));
+    P.push(S.ellipsoid(0.13, 0.085, 0.075).rot(0, 0, 12).at(0.25, 0.46, 0).color(w).tint(0.16, 14).blend(0.04));
+    P.push(S.capsule([0.3, 0.48, 0], [0.5, 0.5, 0], 0.06, 0.045).color(w).blend(0.04));
+    P.push(S.sphere(0.05).at(0.52, 0.53, 0).color(w).blend(0.03));
+    P.push(S.capsule([0.24, 0.39, 0], [0.47, 0.36, 0], 0.04, 0.028).color(w).blend(0.02));
+    P.push(S.box(0.26, 0.035, 0.2, 0.01).rot(0, 0, 4).at(0.4, 0.425, 0).color(red).cut(0.012));
+    for (let i = 0; i < 4; i++) for (const e of [-1, 1]) P.push(S.cone(0.014, 0.003, 0.05, 0.002).rot(180, 0, 0).at(0.33 + i * 0.05, 0.45, e * 0.04).color(0xe8e0c8).blend(0.004));
+    P.push(...[-1, 1].map((e) => S.sphere(0.024).at(0.29, 0.5, e * 0.06).color(gold).blend(0.006)));
+    P.push(...[-1, 1].map((e) => S.sphere(0.011).at(0.3, 0.502, e * 0.08).color(0x111111).blend(0.003)));
+    P.push(...S.limb([[0.14, 0.52, 0], [0.04, 0.62, 0], [-0.06, 0.6, 0], [-0.08, 0.52, 0]], [0.04, 0.035, 0.028, 0.014]).map((p) => p.color(red).blend(0.02)));
+    P.push(S.torus(0.078, 0.014).rot(0, 0, 80).at(-0.02, 0.1, 0).color(gold).paint(0.004, 0.005));
+    P.push(S.torus(0.072, 0.014).rot(0, 0, 68).at(0.06, 0.3, 0).color(red).paint(0.004, 0.005));
+    return buildPartGeometry({ prims: P }, { res: 52 * qual(), ao: 0.8 });
+  });
+  const k = g.kind; g.surf(K_WOOD, 0.8);
+  g.in(M(0, 0, 0, 0, 0, 0, s), () => g.add(geo));
+  g.kind = k;
+}
+/** a carved and painted post standing on the local origin */
+function carvedPost(g, r, h, seed = 0) {
+  g.surf(K_WOOD, 0.8);
+  g.sheet(nq(12), nq(16), (u, v) => { const a = u * TAU, k = 1 + 0.1 * Math.sin(v * 18) * smooth(0.1, 0.2, v) * smooth(0.95, 0.85, v) + (v < 0.08 || v > 0.92 ? 0.25 : 0); return [Math.cos(a) * r * k, v * h, Math.sin(a) * r * k]; },
+    (x, y, z, nx, ny, nz, u, v) => { const s = tri1(u * 2 + v * 5 + seed * 0.3); return v < 0.08 || v > 0.92 ? mul(FIM_WOOD[2], 0.8) : s > 0.72 ? rgb(0xa82a22) : s < 0.2 ? rgb(0xd8b23a) : mul(FIM_WOOD[0], 0.7 + 0.4 * noise3(x * 30, y * 4, z * 30)); }, true);
+}
+function longhouse(g) {
+  g.moss = 0.3;
+  const hl = 2.12, hz = 0.98, w0 = 0.16, wy = 1.24, eZ = 1.3, eY = 1.1, rY = 3.0, xl = hl + 0.26;
+  const ridgeY = (x) => rY + 0.17 * Math.pow(Math.abs(x) / xl, 2);
+  pad(g, 5, 3, 0.05, snowGround(rgb(0x4e4232), 3, 0.6), 601, { nu: 70 });
+  const st = stoneStyle(0x77736a, { seed: 602, course: w0, len: [0.25, 0.5], chip: 0.25 });
+  stoneBox(g, hl + 0.05, hz + 0.05, 0, w0, st, 603);
+  // stave walls between stout posts
+  for (let s = 0; s < 4; s++) {
+    const W = s % 2 ? hz : hl, D = s % 2 ? hl : hz;
+    g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(-W, w0, D)), () => {
+      plankWall(g, 2 * W, wy - w0 + 0.04, FIM_WOOD, 610 + s, { even: true, tilt: 1.2, pw: 0.17, skip: s === 0 ? (x) => Math.abs(x - W) < 0.3 : null });
+      const np = s % 2 ? 2 : 6;
+      for (let i = 0; i <= np; i++) { if (s === 0 && i === np / 2) continue; g.in(M((2 * W * i) / np, -w0, 0.02), () => log(g, 0.075, 0.07, wy + 0.02, s * 9 + i, { seg: nq(9), bark: mul(FIM_WOOD[2], 0.9) })); }
+      g.surf(K_WOOD, 0.9);
+      g.in(M(W, wy - w0 - 0.03, 0.035), () => g.beam(2 * W + 0.1, 0.1, 0.06, 0.012, woodTint(FIM_WOOD[2], s), 6));
+      // round shields hung along the wall
+      const n = s % 2 ? 2 : 7;
+      for (let i = 0; i < n; i++) { const x = s % 2 ? W + (i - 0.5) * 0.8 : (2 * W * (i + 0.5)) / n; if (s === 0 && Math.abs(x - W) < 0.5) continue; const pc = FIM_PAINT[(i + s * 2) % FIM_PAINT.length]; g.in(M(x, 0.56, 0.075, -6, 0, (hash1(i, s) - 0.5) * 30), () => roundShield(g, 0.205, pc[0], pc[1], i + s * 7)); }
+    });
+  }
+  // gable ends: boards up to the roof, a smoke vent
+  for (const e of [-1, 1]) {
+    g.surf(K_WOOD, 0.9);
+    const n = 9;
+    for (let i = 0; i < n; i++) { const z = -hz + ((i + 0.5) * 2 * hz) / n, top = lerp(eY + 0.1, ridgeY(hl) - 0.06, 1 - Math.abs(z) / eZ); g.in(M(e * (hl - 0.01), (wy + top) / 2 - 0.02, z, 0, 0, 90), () => g.beam(top - wy + 0.1, 0.035, (2 * hz) / n - 0.008, 0.006, woodTint(FIM_WOOD[(i + (e > 0 ? 1 : 0)) % 4], i + e * 5), 3)); }
+    g.surf(K_PLAIN, 1);
+    g.in(M(e * (hl + 0.012), 2.2, 0, 0, e * 90, 0), () => g.flat([[-0.12, -0.14, 0], [0.12, -0.14, 0], [0, 0.16, 0]], [0.015, 0.012, 0.01]));
+  }
+  // the roof: steep, shingled, its ridge rising toward the gables like a ship's sheer
+  const roof = (s) => (u, v) => { const x = lerp(-xl, xl, u), k = Math.min(v, 0.99); return [x, lerp(eY, ridgeY(x), k) - 0.1 * Math.sin(Math.PI * k), s * lerp(eZ, 0, k)]; };
+  g.surf(K_ROOF, 0.9);
+  for (const s of [1, -1]) tiles(g, nq(15), () => 5 / 0.19, roof(s), { pal: SHINGLE, lift: 0.028, seed: 620 + s });
+  g.surf(K_PLAIN, 1);
+  for (const s of [1, -1]) g.sheet(6, 4, (u, v) => { const p = roof(s)(u, v * 0.98); return [p[0] * 0.985, p[1] - 0.03, p[2] * 0.985]; }, [0.035, 0.028, 0.022], false, s > 0);
+  // snow lying on the upper slopes and along the ridge
+  g.surf(K_PLAIN, 0.6);
+  for (const s of [1, -1]) g.sheet(nq(44), nq(7), (u, v) => { const v0 = 0.46 + 0.34 * noise3(u * 6 + s, 3, 1) + 0.07 * Math.sin(u * 40 + s), p = roof(s)(u * 0.98 + 0.01, lerp(v0, 1.0, v)), th = 0.06 * Math.sin(Math.PI * Math.min(1, v * 1.6 + 0.12)) + 0.05 * v; return [p[0], p[1] + th + 0.045 + (v > 0.98 ? 0.03 : 0), p[2] + s * th * 0.6]; }, snowCol(s), false, s < 0);
+  // ridge beam, bargeboards crossed at the gables and carved into dragons
+  g.surf(K_WOOD, 0.9);
+  g.in(M(0, rY + 0.02, 0), () => g.beam(2 * xl + 0.1, 0.1, 0.1, 0.02, woodTint(FIM_WOOD[2], 31), 14, (x) => [0.17 * Math.pow(Math.abs(x) / xl, 2), 0]));
+  for (const e of [-1, 1]) for (const s of [-1, 1]) {
+    const x = e * (xl + 0.03), a = [x, eY - 0.1, s * (eZ + 0.04)], top = [x + e * 0.02 * s, ridgeY(xl), 0], b = v3(a, top, 1.13);
+    g.surf(K_WOOD, 0.9);
+    g.beamTo(a, b, 0.05, 0.17, 0.012, (px, py, pz) => (tri1(px * 3.2) > 0.8 ? rgb(0xa82a22) : mul(FIM_WOOD[1], 0.75 + 0.4 * noise3(px * 2, py * 20, pz * 20))), 8, [e, 0, 0]);
+    g.in(M(b[0], b[1] - 0.06, b[2], 0, s > 0 ? 90 : -90, 0), () => dragonHead(g, 1.5));
+  }
+  // the smoke hole: a little louvred roof astride the ridge, smoke climbing out
+  g.in(M(0.5, rY + 0.02, 0), () => {
+    g.surf(K_WOOD, 0.9);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.in(M(sx * 0.2, 0.12, sz * 0.1), () => g.cbox(0.045, 0.3, 0.045, 0.008, woodTint(FIM_WOOD[2], sx + sz * 3)));
+    for (const sz of [-1, 1]) g.in(M(0, 0.34, sz * 0.12, sz * 52, 0, 0), () => g.cbox(0.56, 0.03, 0.34, 0.008, woodTint(FIM_WOOD[0], sz + 9)));
+    g.in(M(0, 0.44, 0), () => drift(g, 0.3, 0.07, 0.12, 4));
+    g.surf(K_PLAIN, 1); g.in(M(0, 0.2, 0), () => g.cbox(0.34, 0.2, 0.16, 0.01, [0.012, 0.01, 0.01]));
+    for (const sz of [-1, 1]) g.in(M(0.02, 0.26, sz * 0.14), () => smoke(g, 0.1, 1.5, 3 + sz, [0.25, 0.25, 0.26], [0.62, 0.62, 0.64], 5, 0.3));
+  });
+  // the door under its own gabled porch, between carved posts
+  g.in(M(0, w0, hz + 0.02), () => {
+    plankDoor(g, 0.56, 1.02, rgb(0x4c3626), 5);
+    g.surf(K_WOOD, 0.9);
+    g.in(M(0, 1.06, 0.03), () => g.beam(0.78, 0.09, 0.07, 0.014, (x, y, z) => (tri1(x * 5) > 0.7 ? rgb(0xd8b23a) : mul(FIM_WOOD[2], 0.8 + 0.3 * noise3(x * 3, y * 20, z * 20))), 8));
+    for (const e of [-1, 1]) g.in(M(e * 0.34, -w0, 0.03), () => carvedPost(g, 0.05, 1.22, e + 1));
+  });
+  for (const e of [-1, 1]) g.in(M(e * 0.46, 0, hz + 0.4), () => carvedPost(g, 0.065, 1.38, e + 4));
+  g.surf(K_WOOD, 0.9);
+  const pr = (s) => (u, v) => [s * lerp(0.62, 0, v), lerp(1.36, 1.84, v) - 0.03 * Math.sin(Math.PI * v), lerp(hz + 0.5, 0.8, u)];
+  g.surf(K_ROOF, 0.9);
+  for (const s of [1, -1]) tiles(g, 4, () => 4, (u, v) => pr(s)(u, Math.min(v, 0.98)), { pal: SHINGLE, lift: 0.025, seed: 640 + s });
+  g.surf(K_WOOD, 0.9);
+  for (const s of [-1, 1]) g.beamTo([s * 0.66, 1.32, hz + 0.52], [s * -0.1, 1.94, hz + 0.52], 0.04, 0.12, 0.01, woodTint(FIM_WOOD[1], s + 12), 3, [0, 0, 1]);
+  g.in(M(0, 1.86, hz + 0.5, 0, -90, 0), () => dragonHead(g, 0.6));
+  g.in(M(0, 1.85, hz + 0.44), () => drift(g, 0.3, 0.07, 0.12, 5));
+  g.surf(K_PLAIN, 1);
+  g.flat([[-0.58, 1.34, hz + 0.47], [0.58, 1.34, hz + 0.47], [0, 1.8, hz + 0.47]], mul(FIM_WOOD[2], 0.5));
+  // outside: a woodpile, casks, drifts against the walls
+  for (let i = 0; i < 9; i++) g.in(M(-1.95 + (i % 4) * 0.12 + (i > 3 ? 0.06 : 0) + (i > 6 ? 0.06 : 0), 0.08 + (i > 6 ? 0.2 : i > 3 ? 0.1 : 0), hz + 0.34, 90, 0, 0), () => g.in(M(0, -0.2, 0), () => log(g, 0.055, 0.05, 0.4, i + 30, { seg: 7, capB: true })));
+  g.in(M(1.7, 0.02, hz + 0.3), () => barrel(g, 0.14, 0.34, rgb(0x6b4a2e), 3));
+  g.in(M(1.98, 0.02, hz + 0.24), () => barrel(g, 0.11, 0.28, rgb(0x5b3f28), 4));
+  for (const [x, z, rx, rz, sd] of [[-1.1, hz + 0.3, 0.5, 0.2, 1], [1.0, hz + 0.26, 0.4, 0.16, 2], [-0.6, -hz - 0.28, 0.7, 0.2, 3], [1.4, -hz - 0.26, 0.6, 0.2, 4], [-2.3, 0.3, 0.14, 0.5, 5], [2.3, -0.4, 0.14, 0.4, 6]]) g.in(M(x, 0.02, z), () => drift(g, rx, 0.12, rz, sd));
+}
+function whaleShrine(g) {
+  g.moss = 0.2;
+  pad(g, 2, 2, 0.06, snowGround(rgb(0x4a4438), 7, 0.75), 651);
+  const old = rgb(0xcfc8ae);
+  const great = (a, b, bow, r, seed) => { const pts = []; for (let k = 0; k <= 6; k++) { const t = k / 6, s = Math.sin(t * Math.PI * 0.9); pts.push([lerp(a[0], b[0], t) + bow[0] * s, lerp(a[1], b[1], t) + bow[1] * s, lerp(a[2], b[2], t) + bow[2] * s]); } g.surf(K_PLAIN, 0.7); limb(g, pts, [r * 1.35, r * 1.2, r * 1.05, r, r * 0.85, r * 0.62, r * 0.34], { nu: nq(10), nv: nq(26), flat: [1, 0.6], amp: 0.05, nf: 5, seed, col: boneCol(seed, old), capA: true, capB: true }); };
+  // the two jawbones make the front arch; three pairs of ribs behind them carry the spine
+  for (const e of [-1, 1]) great([e * 0.82, -0.1, 0.62], [e * 0.03, 3.7, 0.52], [e * 0.34, 0.25, 0.04], 0.085, e + 2);
+  const sp = (t) => [0, lerp(3.35, 2.05, t), lerp(0.5, -0.82, t)];
+  [[0.22, 0.78], [0.55, 0.72], [0.88, 0.62]].forEach(([t, bx], i) => { const p = sp(t); for (const e of [-1, 1]) great([e * bx, -0.1, p[2] - 0.02], [e * 0.03, p[1] + 0.04, p[2]], [e * 0.3, 0.2, 0], 0.055, i * 3 + e + 9); });
+  for (let i = 0; i < 9; i++) {
+    const p = sp(i / 8), c = boneCol(i + 20, old);
+    g.surf(K_PLAIN, 0.7);
+    g.in(M(p[0], p[1], p[2], 90 - 44.5, 0, 0), () => {
+      g.in(M(0, -0.065, 0), () => g.lathe([[0, 0], [0.07, 0], [0.085, 0.02], [0.065, 0.065], [0.085, 0.11], [0.07, 0.13], [0, 0.13]], nq(9), c));
+      g.in(M(0, 0, 0, -90, 0, 0), () => g.in(M(0, 0.06, 0), () => g.cyl(0.03, 0.012, 0.14, 5, c, false, true)));
+      for (const e of [-1, 1]) g.in(M(0, 0, 0, -90, 0, e * 80), () => g.in(M(0, 0.06, 0), () => g.cyl(0.026, 0.01, 0.12, 5, c, false, true)));
+    });
+  }
+  // lashed where they meet; charms hang from the arch
+  g.in(M(0, 3.42, 0.52), () => lashing(g, 0.12, 4, 0.018));
+  for (const [x, l, kind, sd] of [[-0.3, 0.7, 0, 1], [-0.12, 1.05, 1, 2], [0.1, 0.85, 2, 3], [0.3, 0.6, 0, 4], [0.0, 0.5, 1, 5]]) {
+    const y0 = 3.2 - Math.abs(x) * 1.6, z = 0.54;
+    rope(g, [[x, y0, z], [x + 0.01, y0 - l * 0.5, z + 0.01], [x, y0 - l, z]], 0.007, rgb(0x8a7450), 4);
+    if (kind === 0) bone(g, [x, y0 - l, z], [x + 0.02, y0 - l - 0.24, z], 0.016, sd);
+    else if (kind === 1) { g.surf(K_PLAIN, 0.4, 0.8); g.in(M(x, y0 - l - 0.07, z, 0, sd * 40, 0), () => { g.in(M(0, 0, 0, 90, 0, 0), () => g.cyl(0.07, 0.07, 0.012, nq(10), mul(BRASS, 0.8), true, true)); g.in(M(0, 0, 0.008), () => sigil(g, 660 + sd, 0.1, [0.3, 0.75, 1.0], 0.9, 0.09)); }); }
+    else { g.in(M(x, y0 - l, z), () => rag(g, 0.07, 0.3, rgb(0x2a3a5a), sd, 0.3)); g.in(M(x + 0.05, y0 - l, z), () => rag(g, 0.05, 0.24, rgb(0xd8d2c0), sd + 1, 0.3)); }
+  }
+  // the rune stone: a slab carved with a serpent band, the runes coloured red, some of them alight
+  g.surf(K_STONE, 0.95);
+  const rc = rockCol(rgb(0x7a7e84), 61, 0.3, 6);
+  limb(g, [[0, -0.12, -0.2], [0.02, 0.7, -0.2], [-0.02, 1.35, -0.21], [0.03, 1.72, -0.22]], [0.4, 0.38, 0.33, 0.14], { nu: nq(18), nv: nq(16), amp: 0.07, seed: 61, nf: 2.2, sq: 0.6, flat: [1, 0.36], capB: true,
+    col: rc });
+  for (const [x, y, s, sd, lit] of [[-0.1, 1.12, 0.3, 1, 1], [0.1, 0.84, 0.3, 2, 0], [-0.08, 0.54, 0.3, 3, 0], [0.1, 0.3, 0.26, 4, 1]]) g.in(M(x, y, -0.2 + 0.125, 0, 0, 0), () => sigil(g, 670 + sd, s, lit ? [0.3, 0.75, 1.0] : [0.55, 0.07, 0.04], lit ? 1.0 : 0, 0.07));
+  g.in(M(0, 1.72, -0.2), () => drift(g, 0.16, 0.07, 0.08, 9));
+  // the offering bowl on a flat stone, a lamp of whale oil, vertebrae for seats, a harpoon
+  g.in(M(0, 0.02, 0.36), () => {
+    boulder(g, 0.26, 0.1, 0.2, 71, rgb(0x6f7074), nq(20));
+    g.surf(K_PLAIN, 0.4, 0.85); g.in(M(0, 0.12, 0), () => g.lathe([[0.04, 0], [0.07, 0.015], [0.05, 0.04], [0.13, 0.1], [0.16, 0.13], [0.15, 0.135], [0.11, 0.09], [0, 0.07]], nq(14), (x, y, z) => mul(mix(BRASS, VERDIGRIS, 0.35 * smooth(0.4, 0.7, noise3(x * 20, y * 20, z * 20))), 0.8)));
+    g.surf(K_PLAIN, 0.3, 0.6); g.in(M(0, 0.21, 0), () => g.add(new THREE.SphereGeometry(0.11, nq(10), 4, 0, TAU, 0, 1.2).scale(1, 0.35, 1), (x, y, z) => mul(hash1(Math.round(x * 60), Math.round(z * 60)) > 0.5 ? [0.75, 0.55, 0.12] : [0.6, 0.62, 0.66], 0.9)));
+    g.in(M(0.02, 0.24, 0.01), () => fire(g, 0.16, FIRE_FROST, 2, 0.9));
+  });
+  for (const [x, z, sd] of [[-0.62, 0.3, 1], [0.66, 0.1, 2]]) g.in(M(x, 0.02, z, 0, sd * 40, 0), () => { g.surf(K_PLAIN, 0.7); g.lathe([[0.15, 0], [0.19, 0.03], [0.15, 0.12], [0.19, 0.21], [0.16, 0.24], [0, 0.24]], nq(12), boneCol(sd + 40, old)); g.in(M(0, 0.24, 0), () => drift(g, 0.13, 0.04, 0.11, sd)); });
+  g.in(M(0.84, 0, -0.5, -10, 0, 7), () => { stake(g, 0.018, 1.9, 5, rgb(0x5a4630)); g.surf(K_PLAIN, 0.4, 0.85); g.in(M(0, 1.84, 0), () => g.lathe([[0.012, 0], [0.045, 0.05], [0.016, 0.1], [0, 0.34]], 4, [0.3, 0.3, 0.33])); rope(g, [[0, 1.5, 0.02], [0.03, 1.0, 0.04], [0.0, 0.5, 0.02], [0.08, 0.05, 0.1]], 0.008, rgb(0x8a7450), 4); });
+  for (const [x, z, rx, rz, sd] of [[-0.75, -0.7, 0.3, 0.25, 1], [0.6, 0.78, 0.36, 0.18, 2], [-0.7, 0.8, 0.22, 0.16, 3]]) g.in(M(x, 0.03, z), () => drift(g, rx, 0.1, rz, sd + 20));
+}
+
+// =====================================================================================================
+// Ashur: glazed black brick, brass and fire
+// =====================================================================================================
+const ASH_BRICK = [rgb(0x2a2630), rgb(0x2a2630), rgb(0x221f28), rgb(0x34303a), rgb(0x3e1c1e), rgb(0x1c2c34), rgb(0x2e2a26), rgb(0x1a181e)];
+const ashBrick = (seed, o) => stoneStyle(0x2a2630, { seed, pal: ASH_BRICK, mortar: [0.012, 0.011, 0.012], chip: 0.1, r: 0.012, ...o });
+const brassC = (seed = 0, k = 1) => (x, y, z) => mul(BRASS, k * (0.65 + 0.6 * noise3(x * 7 + seed, y * 7, z * 7)));
+const lavaC = (g, seed = 0, glow = 0.9) => (x, y, z) => { const n = noise3(x * 4 + seed, y * 4, z * 4), hot = smooth(0.3, 0.62, n); g.glow = glow * (0.25 + 0.5 * hot); return mix([0.2, 0.015, 0.01], [1.0, 0.2, 0.015], hot); };
+/** set the finish of everything added since vertex n0 (the coursed-stone pieces always come out matt) */
+const refinish = (g, n0, rough, metal = null) => { for (let i = n0; i < g.n; i++) { g.A[i * 3] = rough; if (metal !== null) g.A[i * 3 + 1] = metal; } };
+/** a square smoke stack on the local origin: battered brick, a brass crown, soot inside */
+function stack(g, hw, h, seed, smog = 0) {
+  const c = (x, y, z) => mul(ASH_BRICK[Math.floor(hash1(Math.floor(y / 0.14), Math.floor((x + z) * 4 + (Math.floor(y / 0.14) % 2) * 0.5), seed) * 8)], (y % 0.14) < 0.02 ? 0.4 : 0.9 + 0.3 * noise3(x * 9, y * 9, z * 9));
+  g.surf(K_STONE, 0.5);
+  for (let s = 0; s < 4; s++) g.in(M(0, 0, 0, 0, s * 90, 0), () => { const nv = Math.max(2, Math.round(h / 0.07)); g.sheet(3, nv, (u, v) => { const w = lerp(hw, hw * 0.72, v); return [(u * 2 - 1) * w, v * h, w + 0.002]; }, c); });
+  g.surf(K_PLAIN, 0.35, 0.9);
+  g.in(M(0, h, 0, 0, 45, 0), () => g.lathe([[hw * 0.72 * 1.42, -0.12], [hw * 0.72 * 1.6, -0.1], [hw * 0.72 * 1.72, 0.02], [hw * 0.72 * 1.6, 0.08], [hw * 0.72 * 1.2, 0.08], [hw * 0.72 * 1.1, -0.02]], 4, brassC(seed)));
+  g.in(M(0, h * 0.55, 0, 0, 45, 0), () => g.lathe([[lerp(hw, hw * 0.72, 0.55) * 1.42, -0.05], [lerp(hw, hw * 0.72, 0.55) * 1.5, -0.03], [lerp(hw, hw * 0.72, 0.55) * 1.5, 0.03], [lerp(hw, hw * 0.72, 0.55) * 1.42, 0.05]], 4, brassC(seed + 1, 0.85)));
+  g.surf(K_PLAIN, 1, 0, 0.5);
+  g.flat([[-hw * 0.7, h + 0.02, -hw * 0.7], [-hw * 0.7, h + 0.02, hw * 0.7], [hw * 0.7, h + 0.02, hw * 0.7], [hw * 0.7, h + 0.02, -hw * 0.7]], [0.5, 0.08, 0.01]);
+  if (smog) g.in(M(0, h + 0.05, 0), () => smoke(g, hw * 1.15 * smog, 1.3 + hw * 2.2 * smog, seed, [0.025, 0.025, 0.03], [0.11, 0.11, 0.12], 6, 0.3));
+}
+/** a winged bull with a king's head, in low relief on the local XY plane, striding toward +X: about 1.1 long. Sculpted once. */
+function wingedBull(g, s = 1, flip = false) {
+  const geo = geoOnce('wingedBull', () => {
+    const b = 0xb8862e, P = [], Q = (p) => p.color(b).pbr(0.42, 0.85).tint(0.2, 16);
+    P.push(Q(S.ellipsoid(0.33, 0.17, 0.07).at(-0.02, 0.52, 0.02)));
+    P.push(Q(S.sphere(0.19).scale(1).at(0.26, 0.58, 0)).blend(0.05));
+    for (const [x, x2] of [[-0.3, -0.34], [-0.17, -0.14], [0.2, 0.17], [0.33, 0.37]]) { P.push(Q(S.capsule([x, 0.45, 0.02], [x2, 0.06, 0.03], 0.062, 0.045)).blend(0.03)); P.push(Q(S.box(0.11, 0.06, 0.08, 0.015).at(x2 + 0.01, 0.03, 0.03)).blend(0.01)); }
+    P.push(Q(S.capsule([0.3, 0.7, 0.01], [0.34, 0.88, 0.02], 0.1, 0.085)).blend(0.04));
+    P.push(Q(S.sphere(0.1).at(0.36, 0.96, 0.02)).blend(0.03));
+    P.push(Q(S.box(0.13, 0.2, 0.07, 0.03).at(0.42, 0.8, 0.03)).blend(0.02).bump(0.006, 40, 'ridges'));
+    P.push(Q(S.cyl(0.095, 0.2, 0.02).at(0.35, 1.11, 0.02)).blend(0.015));
+    P.push(Q(S.torus(0.097, 0.018).at(0.35, 1.03, 0.02)).blend(0.006));
+    P.push(S.sphere(0.014).at(0.43, 0.98, 0.085).color(0x1a1408).cut(0.004));
+    P.push(Q(S.capsule([0.4, 1.0, 0.03], [0.46, 0.93, 0.04], 0.022, 0.016)).blend(0.01));
+    // the wing: three tiers of feathers swept back and up
+    for (let i = 0; i < 3; i++) P.push(Q(S.ellipsoid(0.36 - i * 0.05, 0.085, 0.035).rot(0, 0, -16 - i * 9).at(-0.1 - i * 0.03, 0.78 + i * 0.13, 0.05 - i * 0.012)).blend(0.012));
+    for (let i = 0; i < 9; i++) P.push(S.box(0.012, 0.5, 0.1, 0.002).rot(0, 0, 62 - i * 3).at(-0.34 + i * 0.065, 0.92, 0.07).color(0x4a3410).cut(0.006));
+    P.push(...S.limb([[-0.33, 0.56, 0.02], [-0.42, 0.42, 0.02], [-0.4, 0.2, 0.03]], [0.035, 0.028, 0.04]).map((p) => Q(p).blend(0.015)));
+    P.push(S.box(1.4, 1.4, 0.2, 0).at(0, 0.6, -0.1).color(0x3a2a10).cut(0.004));
+    return buildPartGeometry({ prims: P }, { res: 60 * qual(), ao: 0.85 });
+  });
+  const k = [g.kind, g.rough, g.metal]; g.kind = K_PLAIN;
+  g.in(new THREE.Matrix4().makeScale(flip ? -s : s, s, s), () => g.add(geo));
+  [g.kind, g.rough, g.metal] = k;
+}
+function forgeZiggurat(g) {
+  g.moss = 0;
+  const T = [[2.72, 0, 1.6], [2.12, 1.6, 3.0], [1.52, 3.0, 4.2], [0.98, 4.2, 5.2]], floor = [0.03, 0.028, 0.032];
+  pad(g, 6, 6, 0.04, rgb(0x262224), 801, { nu: 48, nv: 6 });
+  T.forEach(([hw, y0, y1], k) => {
+    const st = ashBrick(810 + k * 9, { cell: 0.36 / qual(), len: [0.42, 0.74] }), n0 = g.n, r = st.r;
+    stoneBox(g, hw, hw, y0, y1, st, 811 + k * 9, { noFoot: k > 0, holes: k === 0 ? [[[hw - r - 0.9, 0, hw - r + 0.9, 1.2]], null, null, null] : null });
+    refinish(g, n0, 0.42);
+    g.surf(K_STONE, 0.6);
+    g.flat([[-hw, y1 - 0.004, -hw], [-hw, y1 - 0.004, hw], [hw, y1 - 0.004, hw], [hw, y1 - 0.004, -hw]], floor);
+    // a brass band below the battlements, and the stepped battlements themselves
+    for (let s = 0; s < 4; s++) g.in(M(0, y1, 0, 0, s * 90, 0).multiply(M(0, 0, hw)), () => {
+      g.surf(K_PLAIN, 0.38, 0.9);
+      g.in(M(0, -0.13, 0.012), () => g.beam(2 * hw + 0.05, 0.11, 0.03, 0.01, brassC(k + s), Math.round(hw * 5)));
+      g.surf(K_STONE, 0.45);
+      const nm = Math.round((2 * hw) / 0.44), skip = s === 0 && k < 3;
+      for (let i = 0; i < nm; i++) { const x = -hw + ((i + 0.5) * 2 * hw) / nm; if (skip && Math.abs(x) < 0.62) continue; g.in(M(x, 0, -0.07), () => prism(g, MERLON.step(0.3, 0.32), 0.13, mul(ASH_BRICK[(i + s + k) % 8], 1.1), [0, 0.1])); }
+      // glowing vents with brass surrounds on the upper tiers; brass plates between them
+      if (k > 0 && k < 3) { const nv = k === 1 ? 4 : 2; for (let i = 0; i < nv; i++) { const x = (i - (nv - 1) / 2) * (k === 1 ? 0.98 : 1.5); if (s === 0 && Math.abs(x) < 0.7) continue; g.in(M(x, -(y1 - y0) + 0.3, 0.01), () => archFrame(g, 0.3, 0.62, 'round', brassC(i), { kind: K_PLAIN, rough: 0.38, metal: 0.9, t: 0.04, fill: [0.85, 0.13, 0.012], fillGlow: 0.55 })); } }
+      if (k === 1 && s > 0) for (const x of [0]) g.in(M(x, -0.74, 0.004), () => plate(g, 0.36, 0.7, brassC(s, 0.9), { rough: 0.4, metal: 0.9, rivet: mul(BRASS, 1.3) }));
+    });
+  });
+  // the furnace mouth in the lowest tier: a brass-jawed maw, fire far back in it
+  const hw = T[0][0];
+  g.in(M(0, 0, hw), () => {
+    g.surf(K_PLAIN, 1);
+    for (const e of [-1, 1]) g.flat([[e * 0.9, 0, 0], [e * 0.9, 1.2, 0], [e * 0.8, 1.2, -0.7], [e * 0.8, 0, -0.7]], [[0.25, 0.04, 0.01], [0.08, 0.02, 0.01], [0.3, 0.05, 0.01], [0.5, 0.08, 0.01]]);
+    g.flat([[-0.9, 1.2, 0], [0.9, 1.2, 0], [0.8, 1.2, -0.7], [-0.8, 1.2, -0.7]], [0.06, 0.015, 0.01]);
+    g.surf(K_PLAIN, 1, 0, 0.9);
+    g.in(M(0, 0, -0.7), () => g.sheet(nq(14), nq(10), (u, v) => [(u - 0.5) * 1.6, v * 1.2, 0], lavaC(g, 5, 0.95)));
+    g.in(M(0, 0.03, -0.7), () => g.sheet(nq(12), nq(6), (u, v) => [(u - 0.5) * lerp(1.6, 1.3, v), 0.02 * Math.sin(u * 20), v * 0.92], lavaC(g, 9, 0.85)));
+    g.glow = 0;
+    // jambs, lintel and teeth of brass
+    g.surf(K_PLAIN, 0.38, 0.9);
+    for (const e of [-1, 1]) g.in(M(e * 0.98, 0.66, 0.05), () => g.beam(0.2, 1.36, 0.16, 0.025, brassC(e + 2), 1));
+    g.in(M(0, 1.36, 0.06), () => g.beam(2.3, 0.26, 0.18, 0.03, brassC(7), 10));
+    g.in(M(0, 1.52, 0.07), () => g.beam(2.5, 0.08, 0.22, 0.02, brassC(8, 1.15), 10));
+    for (let i = 0; i < 7; i++) g.in(M((i - 3) * 0.24, 1.24, 0.06, 0, 0, 180), () => prism(g, [[-0.09, 0], [0.09, 0], [0, 0.34 - 0.06 * (i % 2)]], 0.1, brassC(i, 1.1), [0, 0.08]));
+    for (let i = 0; i < 6; i++) g.in(M((i - 2.5) * 0.28, 0, 0.1), () => prism(g, [[-0.08, 0], [0.08, 0], [0, 0.22]], 0.1, brassC(i + 9, 1.05), [0, 0.06]));
+    // the winged bulls that guard it
+    for (const e of [-1, 1]) g.in(M(e * 1.9, 0.14, 0.0), () => {
+      g.surf(K_STONE, 0.5); g.in(M(0, 0.62, 0.02), () => g.cbox(1.36, 1.34, 0.05, 0.015, stoneTint([0.035, 0.03, 0.035], e, 5)));
+      g.surf(K_PLAIN, 0.38, 0.9); for (const y of [-0.06, 1.3]) g.in(M(0, y, 0.05), () => g.beam(1.44, 0.07, 0.07, 0.014, brassC(y + e), 6));
+      g.in(M(e * 0.02, -0.02, 0.045), () => wingedBull(g, 1.05, e > 0));
+    });
+  });
+  // lava runs down the middle of the front in a brass-kerbed chute, a flight of steps either side of it
+  for (let k = 0; k < 3; k++) {
+    const [h0, , y0] = T[k], [h1, , y1] = T[k + 1], run = h0 - h1, rise = y1 - y0, n = 6;
+    for (const e of [-1, 1]) for (let i = 0; i < n; i++) { g.surf(K_STONE, 0.5); g.in(M(e * 0.38, y0 + ((i + 1) * rise) / n / 2, h0 - ((i + 0.5) * run) / n), () => g.cbox(0.4, ((i + 1) * rise) / n, run / n + 0.004, 0.012, mul(ASH_BRICK[(i + k) % 8], 1.25))); }
+    g.surf(K_PLAIN, 0.38, 0.9);
+    for (const e of [-1, 1]) for (const x of [0.15, 0.6]) g.beamTo([e * x, y0 + 0.1, h0 + 0.02], [e * x, y1 + 0.1, h1 + 0.02], 0.2, 0.06, 0.012, brassC(k + e + x), 3);
+    g.surf(K_PLAIN, 0.8, 0, 0.9);
+    g.sheet(4, nq(10), (u, v) => [(u - 0.5) * 0.26, lerp(y0 + 0.06, y1 + 0.06, v) + 0.02 * Math.sin(v * 15), lerp(h0 + 0.03, h1 + 0.03, v)], lavaC(g, k * 3 + 1, 0.9));
+    g.glow = 0;
+  }
+  g.surf(K_PLAIN, 0.8, 0, 0.9);
+  g.sheet(4, 4, (u, v) => [(u - 0.5) * 0.26, lerp(1.66, 1.5, v), lerp(2.75, 2.92, v * v)], lavaC(g, 2, 0.9));
+  g.glow = 0;
+  // the forge-shrine on top: a brick block with a fiery arch in each face, the great stack rising out of it
+  const top = T[3][2];
+  { const st = ashBrick(880, { cell: 0.36 / qual(), len: [0.3, 0.5] }), n0 = g.n; stoneBox(g, 0.62, 0.62, top, top + 0.8, st, 881, { noFoot: true }); refinish(g, n0, 0.42); }
+  for (let s = 0; s < 4; s++) g.in(M(0, top, 0, 0, s * 90, 0).multiply(M(0, 0, 0.63)), () => { archFrame(g, 0.5, 0.64, 'round', brassC(s), { kind: K_PLAIN, rough: 0.38, metal: 0.9, t: 0.05, fill: [0.9, 0.14, 0.012], fillGlow: 0.6 }); g.surf(K_PLAIN, 0.5, 0.85); for (const x of [-0.12, 0, 0.12]) g.in(M(x, 0.26, 0.02), () => g.cbox(0.025, 0.5, 0.025, 0.005, IRON)); });
+  g.surf(K_PLAIN, 0.38, 0.9);
+  g.in(M(0, top + 0.8, 0, 0, 45, 0), () => g.lathe([[0.86, 0], [0.98, 0.04], [0.98, 0.1], [0.7, 0.2], [0.56, 0.2]], 4, brassC(3)));
+  g.in(M(0, top + 0.98, 0), () => stack(g, 0.4, 1.75, 5, 1.0));
+  T.slice(1, 3).forEach(([hw2, , y1], k) => { for (const e of [-1, 1]) for (const f of [-1, 1]) g.in(M(e * (hw2 - 0.3), y1, f * (hw2 - 0.3)), () => stack(g, 0.2 - k * 0.03, 1.5 - k * 0.3, e * 2 + f + k * 5, f < 0 || k ? 1 : 0.8)); });
+  // braziers and slag at the foot
+  for (const e of [-1, 1]) g.in(M(e * 1.15, 0.03, 2.86), () => g.in(M(0, 0, 0, 0, 0, 0, 0.5), () => fireBowl(g, 1, FIRE_DEEP, mul(BRASS, 0.6), e, 0.8)));
+}
+function blastFurnace(g) {
+  g.moss = 0;
+  pad(g, 3, 3, 0.05, (x, y, z) => mul(rgb(0x2a2524), 0.6 + 0.7 * fbm3(x * 3, y * 5, z * 3, 3)), 901);
+  const cx = -0.36, cz = -0.38, D = [[0.96, 0, 1.4], [0.82, 1.4, 2.8], [0.68, 2.8, 4.0]];
+  g.in(M(cx, 0, cz), () => {
+    D.forEach(([R, y0, y1], k) => {
+      const st = ashBrick(910 + k, { course: 0.14, len: [0.24, 0.38], cell: 0.3 / qual(), pal: [...ASH_BRICK, rgb(0x4a2a20), rgb(0x3a2420)] }), n0 = g.n;
+      g.surf(K_STONE, 0.9);
+      g.in(M(0, y0, 0), () => g.bend(R - st.r, () => g.ashlar((R - st.r) * TAU, y1 - y0, { ...st, wrap: true })));
+      refinish(g, n0, 0.55);
+      if (k === 0) footing(g, 0, 0, st.pal[0]);
+      // the ledge where it steps in is cased in brass
+      g.surf(K_PLAIN, 0.38, 0.9);
+      if (k < 2) g.lathe([[R + 0.03, y1 - 0.1], [R + 0.05, y1 - 0.06], [R + 0.03, y1], [D[k + 1][0] + 0.03, y1 + 0.12], [D[k + 1][0], y1 + 0.14]], nq(28), brassC(k));
+      g.in(M(0, lerp(y0, y1, 0.42), 0), () => brassBand(g, R, 0.16, k));
+      for (let i = 0; i < 6; i++) g.in(M(0, 0, 0, 0, i * 60 + k * 30, 0).multiply(M(0, (y0 + y1) / 2, R + 0.02)), () => g.cbox(0.09, y1 - y0 - 0.1, 0.035, 0.01, brassC(i + k * 6, 0.85)));
+    });
+    // the throat: a brass crown, fire in it, smoke out of it
+    g.surf(K_PLAIN, 0.38, 0.9);
+    g.lathe([[0.7, 3.92], [0.78, 4.0], [0.8, 4.2], [0.72, 4.32], [0.56, 4.32], [0.5, 4.1]], nq(24), brassC(5));
+    for (let i = 0; i < 8; i++) g.in(M(0, 4.3, 0, 0, i * 45, 0).multiply(M(0, 0, 0.66, 30, 0, 0)), () => thorn(g, 0.34, 0.05, brassC(i), { metal: 0.9, rough: 0.38, m: 4 }));
+    g.surf(K_PLAIN, 1, 0, 0.9);
+    g.in(M(0, 4.14, 0), () => g.sheet(nq(16), 3, (u, v) => { const a = u * TAU; return [Math.cos(a) * 0.52 * v, 0.03 * Math.sin(a * 5), Math.sin(a) * 0.52 * v]; }, lavaC(g, 3, 0.9), true));
+    g.glow = 0;
+    g.in(M(0, 4.1, 0), () => fire(g, 0.9, FIRE_DEEP, 2, 0.8));
+    g.in(M(0, 4.75, 0), () => smoke(g, 0.34, 1.7, 4, [0.025, 0.025, 0.03], [0.12, 0.12, 0.13], 6, 0.3));
+    // a blast main of copper round its waist, dropping to the tuyeres
+    g.surf(K_PLAIN, 0.4, 0.85);
+    g.in(M(0, 1.02, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(1.12, 0.06, nq(8), nq(36)), (x, y, z) => mul(mix(COPPER, VERDIGRIS, 0.5 * smooth(0.5, 0.75, noise3(x * 5, y * 5, z * 5))), 0.8)));
+    for (let i = 0; i < 6; i++) { const a = i * 1.047 + 0.5; pipe(g, [[Math.cos(a) * 1.12, 1.02, Math.sin(a) * 1.12], [Math.cos(a) * 1.1, 0.6, Math.sin(a) * 1.1], [Math.cos(a) * 0.95, 0.4, Math.sin(a) * 0.95]], 0.04, mul(COPPER, 0.8), { every: 2 }); }
+    // tapping arches at its foot
+    for (const ang of [0]) g.in(M(0, 0, 0, 0, ang, 0).multiply(M(0, 0, 0.975)), () => { archFrame(g, 0.5, 0.62, 'round', brassC(ang), { kind: K_PLAIN, rough: 0.38, metal: 0.9, t: 0.055, fill: [0.9, 0.14, 0.012], fillGlow: 0.6 }); });
+  });
+  // the runner: molten iron down a stone channel to the casting bed
+  const runner = (a, b, seed) => { const f = along(a, b); g.in(f.m, () => { g.surf(K_STONE, 0.9); for (const e of [-1, 1]) g.in(M(0, 0, e * 0.11), () => g.beam(f.L, 0.12, 0.07, 0.015, stoneTint([0.1, 0.09, 0.09], seed + e, 6), 3)); g.surf(K_PLAIN, 0.6, 0, 0.9); g.in(M(0, 0.03, 0), () => g.sheet(nq(8), 2, (u, v) => [(u - 0.5) * f.L, 0.006 * Math.sin(u * 30), (v - 0.5) * 0.16], lavaC(g, seed, 0.9))); g.glow = 0; }); };
+  runner([cx, 0.07, cz + 0.95], [cx + 0.02, 0.05, 0.98], 1);
+  g.in(M(cx + 0.02, 0.02, 1.2), () => {
+    g.surf(K_STONE, 0.95); g.in(M(0, 0.03, 0), () => g.cbox(1.0, 0.1, 0.46, 0.02, stoneTint([0.16, 0.13, 0.1], 3, 6)));
+    g.surf(K_PLAIN, 0.6, 0, 0.9);
+    g.in(M(0, 0.085, -0.17), () => g.sheet(nq(8), 1, (u, v) => [(u - 0.5) * 0.9, 0, (v - 0.5) * 0.08], lavaC(g, 4, 0.9)));
+    for (let i = 0; i < 5; i++) g.in(M(-0.36 + i * 0.18, 0.085, 0.03), () => { const cool = i / 4; g.glow = 0.9 * (1 - cool * 0.8); g.sheet(1, 3, (u, v) => [(u - 0.5) * 0.1, 0, (v - 0.5) * 0.32], mix([1.0, 0.3, 0.03], [0.2, 0.05, 0.03], cool)); });
+    g.glow = 0;
+  });
+  // the bellows: boards, pleated hide, a brass nozzle into the furnace, a pole to work it
+  g.in(M(cx + 0.78, 0, cz + 0.1, 0, 8, 0, 0.66), () => {
+    const wd = woodTint(rgb(0x5a4026), 3);
+    g.surf(K_WOOD, 0.9);
+    for (const [x, z] of [[0.35, 0.2], [0.35, -0.2], [0.95, 0.22], [0.95, -0.22]]) g.in(M(x, 0.3, z), () => g.cbox(0.07, 0.62, 0.07, 0.012, wd));
+    g.in(M(0.65, 0.5, 0), () => g.cbox(0.8, 0.05, 0.56, 0.012, wd));
+    const board = (y, tilt) => g.in(M(0.34, y, 0, 0, 0, tilt), () => g.in(M(0.36, 0, 0), () => prism3(g, 0.72, 0.035, 0.5, wd)));
+    board(0.55, 0); board(0.57, 24);
+    g.surf(K_CLOTH, 0.9);
+    g.sheet(nq(20), 8, (u, v) => { const a = u * TAU, t = Math.max(0, Math.cos(a) * 0.5 + 0.5), px = 0.36 + 0.72 * (0.5 + 0.5 * Math.cos(a)) * 0.98, pz = Math.sin(a) * 0.25 * (0.4 + 0.6 * (px - 0.34) / 0.72 + 0.2), open = (px - 0.34) * Math.tan(24 * DEG); return [px + (v % 0.25 > 0.12 ? 0.02 : -0.01) * Math.cos(a), 0.57 + v * open, pz * (1 + (Math.round(v * 8) % 2 ? 0.14 : 0))]; }, (x, y, z, nx, ny, nz, u, v) => mul(HIDE_DARK, (Math.round(v * 8) % 2 ? 1.0 : 0.6) * (0.8 + 0.3 * noise3(x * 9, y * 9, z * 9))), true);
+    g.surf(K_PLAIN, 0.38, 0.9);
+    g.in(M(0.3, 0.56, 0, 0, 0, 90), () => g.lathe([[0.07, 0], [0.05, 0.12], [0.03, 0.4], [0.035, 0.42]], nq(10), brassC(3)));
+    g.surf(K_WOOD, 0.9);
+    g.beamTo([1.02, 0.9, 0], [1.5, 1.25, 0.0], 0.05, 0.05, 0.01, wd, 2);
+    for (const z of [-1, 1]) g.in(M(1.2, 0.5, z * 0.3), () => g.cbox(0.06, 1.1, 0.06, 0.01, wd));
+  });
+  // a slag heap, still warm in places
+  g.in(M(1.02, 0, -1.08), () => { const hot = (x, y, z) => { const e = smooth(0.7, 0.82, noise3(x * 6, y * 6, z * 6)); g.glow = 0.8 * e; return mix(mul([0.09, 0.085, 0.09], 0.5 + 0.9 * fbm3(x * 5, y * 5, z * 5, 2)), [0.9, 0.2, 0.02], e); }; pad(g, 0.9, 0.8, 0.34, hot, 9, { kind: K_PLAIN, nu: 30, nv: 8, sq: 2.4 }); g.glow = 0; for (let i = 0; i < 5; i++) g.in(M(Math.cos(i * 1.4) * 0.3, 0.05 + 0.05 * (i % 2), Math.sin(i * 1.4) * 0.26, i * 30, i * 50, 0), () => boulder(g, 0.1, 0.08, 0.09, 30 + i, [0.07, 0.065, 0.07], nq(12))); });
+  // a length of brass-plated rail and an ore cart on it
+  g.in(M(0.72, 0.03, 1.22), () => {
+    g.surf(K_WOOD, 0.9);
+    for (let i = 0; i < 6; i++) g.in(M(-0.62 + i * 0.25, 0.025, 0, 0, 90 + (hash1(i, 3) - 0.5) * 6, 0), () => g.beam(0.44, 0.05, 0.1, 0.01, woodTint(rgb(0x3a2a1e), i), 1));
+    g.surf(K_PLAIN, 0.38, 0.9);
+    for (const e of [-1, 1]) { g.in(M(0, 0.085, e * 0.15), () => g.beam(1.5, 0.07, 0.045, 0.012, brassC(e, 1.1), 8)); for (let i = 0; i < 6; i++) g.in(M(-0.62 + i * 0.25, 0.06, e * 0.185, -90, 0, 0), () => g.stud(0.016, IRON, 5)); }
+    g.in(M(0.12, 0.12, 0), () => {
+      g.surf(K_PLAIN, 0.5, 0.85);
+      for (const x of [-0.17, 0.17]) { g.in(M(x, 0.08, 0, 90, 0, 0), () => g.in(M(0, -0.19, 0), () => g.cyl(0.018, 0.018, 0.38, 6, IRON, true, true))); for (const e of [-1, 1]) g.in(M(x, 0.08, e * 0.15, 90, 0, 0), () => g.in(M(0, -0.02, 0), () => g.lathe([[0, 0], [0.085, 0], [0.085, 0.03], [0.1, 0.03], [0.1, 0.04], [0, 0.04]], nq(12), [0.06, 0.058, 0.06]))); }
+      g.surf(K_PLAIN, 0.6, 0.7);
+      g.in(M(0, 0.17, 0, 0, 45, 0), () => g.lathe([[0.2, 0], [0.33, 0.3], [0.35, 0.3], [0.35, 0.33], [0.3, 0.33], [0.18, 0.04], [0, 0.04]], 4, (x, y, z) => mul(mix([0.07, 0.065, 0.07], RUST, 0.5 * smooth(0.4, 0.7, noise3(x * 9, y * 9, z * 9))), 0.9)));
+      g.surf(K_PLAIN, 0.38, 0.9); g.in(M(0, 0.49, 0, 0, 45, 0), () => g.lathe([[0.345, -0.02], [0.37, 0], [0.345, 0.02]], 4, brassC(4)));
+      for (let i = 0; i < 9; i++) g.in(M((hash1(i, 5) - 0.5) * 0.34, 0.47 + 0.07 * hash1(i, 9), (hash1(i, 7) - 0.5) * 0.3, i * 40, i * 70, 0), () => { g.surf(K_PLAIN, 0.6, 0.3); g.add(new THREE.IcosahedronGeometry(0.07 + 0.03 * hash1(i, 11), 0), mul(i % 3 ? [0.16, 0.1, 0.08] : [0.35, 0.16, 0.08], 0.8 + 0.4 * hash1(i, 13))); });
+    });
+  });
+}
+/** a plain board along X: L x h x d, centred */
+function prism3(g, L, h, d, c) { g.beam(L, h, d, 0.008, c, 3); }
+
+// =====================================================================================================
+// Greenhide: hacked timber, scrap iron and trophies
+// =====================================================================================================
+const GH_WOOD = [rgb(0x6b5236), rgb(0x7a6040), rgb(0x54422c), rgb(0x5c5434), rgb(0x7a4a2c)], GH_RED = rgb(0xa8281c), GH_WHITE = rgb(0xe6dcc0);
+function idol(g) {
+  g.moss = 0.6;
+  pad(g, 2, 2, 0.08, rgb(0x54432e), 1001);
+  g.surf(K_WOOD, 0.9);
+  g.add(geoOnce('ghIdol', () => {
+    const wood = 0x6e5234, red = 0xa8281c, white = 0xe6dcc0, dark = 0x1a120c, P = [];
+    const W = (p) => p.color(wood).tint(0.18, 7);
+    P.push(W(S.cone(0.68, 0.52, 4.5, 0.1).at(0, 2.25, 0)).bump(0.012, 14, 'ridges'));
+    for (let i = 0; i < 5; i++) { const a = i * 1.257 + 0.9; P.push(W(S.capsule([Math.cos(a) * 0.4, 0.55, Math.sin(a) * 0.4], [Math.cos(a) * 0.86, -0.02, Math.sin(a) * 0.86], 0.24, 0.12)).blend(0.12)); }
+    // the face: an overhanging brow, sunk eyes, a slab of a nose, a leering mouth with a jutting jaw
+    P.push(W(S.box(1.16, 0.34, 0.5, 0.12).rot(-12, 0, 0).at(0, 3.42, 0.4)).blend(0.07));
+    P.push(...S.mirrorX([W(S.ellipsoid(0.24, 0.3, 0.18).at(0.44, 2.6, 0.36)).blend(0.09)]));
+    P.push(W(S.box(1.12, 0.3, 0.42, 0.1).at(0, 1.5, 0.46)).blend(0.07));
+    P.push(...S.mirrorX([S.ellipsoid(0.2, 0.15, 0.2).at(0.27, 3.08, 0.52).color(dark).cut(0.03)]));
+    P.push(...S.mirrorX([S.sphere(0.1).at(0.27, 3.06, 0.46).color(white).blend(0.006), S.sphere(0.045).at(0.275, 3.05, 0.545).color(0xc81e10).glow(0.5).blend(0.004)]));
+    P.push(W(S.capsule([0, 3.2, 0.48], [0, 2.62, 0.74], 0.12, 0.2)).blend(0.05));
+    P.push(...S.mirrorX([S.sphere(0.055).at(0.09, 2.52, 0.86).color(dark).cut(0.015)]));
+    P.push(S.box(0.98, 0.5, 0.5, 0.1).at(0, 2.02, 0.55).color(0x2a0c08).cut(0.04));
+    P.push(...S.mirrorX([S.ellipsoid(0.16, 0.2, 0.3).rot(0, 0, -30).at(0.52, 2.28, 0.5).color(0x2a0c08).cut(0.04)]));
+    P.push(...S.mirrorX([S.cone(0.1, 0.02, 0.66, 0.01).rot(0, 0, -7).at(0.4, 2.08, 0.66).color(0xe2d8b8).blend(0.01)]));
+    P.push(...S.mirrorX([W(S.box(0.12, 0.62, 0.36, 0.05).rot(0, 20, -14).at(0.68, 2.95, 0.02)).blend(0.04)]));
+    // stub arms
+    P.push(...S.mirrorX([W(S.capsule([0.5, 2.1, 0], [0.98, 2.5, 0.12], 0.17, 0.12)).blend(0.08).bump(0.01, 14, 'ridges')]));
+    // splintered crown
+    for (let i = 0; i < 5; i++) { const a = i * 1.257 + 0.3; P.push(W(S.cone(0.17, 0.03, 0.7 + 0.25 * (i % 2), 0.02).rot(Math.sin(a) * 10, 0, -Math.cos(a) * 10).at(Math.cos(a) * 0.3, 4.7 + 0.1 * (i % 2), Math.sin(a) * 0.3)).blend(0.05)); }
+    // war paint: a red mask, white slashes on the cheeks, a ring and teeth on the belly, red hands on the roots
+    P.push(S.box(1.5, 0.3, 1.2, 0.05).at(0, 3.08, 0.3).color(red).paint(0.02, 0));
+    for (const e of [-1, 1]) for (let i = 0; i < 3; i++) P.push(S.box(0.06, 0.36, 0.5, 0.01).rot(0, 0, e * -24).at(e * (0.3 + i * 0.12), 2.62, 0.5).color(white).paint(0.008, 0));
+    P.push(S.torus(0.3, 0.06).rot(90, 0, 0).at(0, 0.98, 0.62).color(white).paint(0.01, 0));
+    P.push(S.sphere(0.13).at(0, 0.98, 0.64).color(red).paint(0.01, 0));
+    P.push(S.box(1.6, 0.1, 1.6, 0.02).at(0, 3.75, 0).color(white).paint(0.01, 0));
+    P.push(S.box(1.6, 0.12, 1.6, 0.02).at(0, 0.5, 0).color(red).paint(0.01, 0));
+    for (let i = 0; i < 6; i++) P.push(S.cone(0.07, 0.01, 0.2, 0.005).rot(0, 0, i % 2 ? 180 : 0).at(-0.4 + i * 0.16, 4.05, 0.5).scale(1).color(i % 2 ? red : white).paint(0.012, 0));
+    return buildPartGeometry({ prims: P }, { res: 21 * qual(), ao: 0.85 });
+  }));
+  // scrap-iron teeth nailed into the mouth
+  g.surf(K_PLAIN, 0.7, 0.6);
+  for (let i = 0; i < 6; i++) { const x = (i - 2.5) * 0.14; g.in(M(x, 2.26, 0.58 + 0.03 * Math.cos(x * 3), 0, 0, 180 + (hash1(i, 3) - 0.5) * 16), () => prism(g, [[-0.065, 0], [0.065, 0], [0.01, 0.2 + 0.1 * hash1(i, 5)]], 0.025, rustCol(i), [0, 0.06])); }
+  for (let i = 0; i < 5; i++) { const x = (i - 2) * 0.13; g.in(M(x, 1.66, 0.66, 0, 0, (hash1(i, 7) - 0.5) * 16), () => prism(g, [[-0.06, 0], [0.06, 0], [-0.01, 0.16 + 0.1 * hash1(i, 9)]], 0.025, rustCol(i + 9), [0, 0.05])); }
+  // great horns, scrap plates on the brow and the back of the skull
+  for (const e of [-1, 1]) horn(g, [[e * 0.5, 3.55, 0.05], [e * 0.86, 3.6, 0.0], [e * 1.12, 3.95, 0.02], [e * 1.12, 4.5, 0.1], [e * 0.9, 4.95, 0.2]], 0.17, rgb(0x3a3028), rgb(0xa89878), { rings: 44, nu: nq(12), nv: nq(24) });
+  g.in(M(0, 3.78, 0.6, -14, 0, 3), () => scrapPlate(g, 0.62, 0.3, 3));
+  g.in(M(-0.36, 1.42, 0.66, 0, -8, -6), () => scrapPlate(g, 0.34, 0.3, 5));
+  for (const e of [-1, 1]) g.in(M(e * 0.58, 4.1, 0, 0, e * 90, e * 6), () => g.in(M(0, 0, 0.04), () => scrapPlate(g, 0.5, 0.44, 7 + e)));
+  // a string of skulls round its neck, trophies on its arms
+  const neck = []; for (let k = 0; k <= 12; k++) { const th = -0.25 + (k / 12) * (Math.PI + 0.5); neck.push([Math.cos(th) * 0.72, 1.36 - 0.2 * Math.sin((k / 12) * Math.PI), Math.sin(th) * 0.66 + 0.06]); }
+  rope(g, neck, 0.016, rgb(0x8a7450));
+  for (let k = 1; k < 12; k += 2) { const p = neck[k]; g.in(M(p[0] * 1.04, p[1] - 0.2, p[2] * 1.04, 4, 90 - Math.atan2(p[2], p[0]) / DEG, 0), () => skull(g, 0.95, true)); }
+  for (const e of [-1, 1]) {
+    g.in(M(e * 0.92, 2.3, 0.3, 0, e * 20, e * -8), () => roundShield(g, 0.3, e > 0 ? rgb(0x7a5c38) : rgb(0x5c5434), e > 0 ? GH_RED : GH_WHITE, e + 5));
+    chain(g, [[e * 0.98, 2.42, 0.0], [e * 1.02, 1.9, 0.02], [e * 1.0, 1.5, 0.0]], 0.06, [0.07, 0.06, 0.055], 0.7);
+    g.in(M(e * 1.0, 1.24, 0.0, 0, e * 60, 0), () => skull(g, 1.1, true));
+  }
+  g.in(M(-0.98, 2.46, -0.2), () => rag(g, 0.34, 0.9, GH_RED, 3, 0.5, GH_WHITE));
+  // at its feet: skulls, stakes, a loot of shields
+  g.in(M(0.5, 0.08, 0.8, 0, 20, 0), () => skullPile(g, 0.95, 4, 3));
+  g.in(M(-0.6, 0.08, 0.78, 0, -30, 0), () => skullPile(g, 0.9, 3, 4));
+  for (const [x, z, h, sd] of [[-0.88, 0.2, 1.2, 1], [0.9, 0.0, 1.0, 2], [0.86, -0.8, 1.35, 3], [-0.85, -0.82, 1.1, 4]]) g.in(M(x, 0, z, (hash1(sd, 1) - 0.5) * 14, 0, (hash1(sd, 2) - 0.5) * 14), () => skullStake(g, h, sd, rgb(0x5a4630)));
+  g.in(M(0.05, 0.16, 0.9, -68, 10, 0), () => roundShield(g, 0.24, rgb(0x6b5236), GH_RED, 9));
+}
+function boneTower(g) {
+  g.moss = 0.6;
+  pad(g, 2, 2, 0.07, rgb(0x54432e), 1011);
+  const feet = [[-0.74, -0.72], [0.76, -0.7], [0.72, 0.74], [-0.78, 0.72]], py = 3.3, bark = rgb(0x5a4630);
+  const at = (i, y) => { const f = feet[i], t = y / 4.0; return [f[0] * (1 - 0.3 * t) + 0.05 * Math.sin(i * 2 + y), y, f[1] * (1 - 0.3 * t) + 0.05 * Math.cos(i * 3 + y)]; };
+  // four wonky legs, lashed rails and braces
+  for (let i = 0; i < 4; i++) {
+    const f = feet[i];
+    logTo(g, [f[0], -0.1, f[1]], at(i, 2.0), 0.085, 0.075, i * 3 + 1, { seg: nq(9), bark, amp: 0.16 });
+    logTo(g, at(i, 1.9), at(i, 4.1 + 0.3 * hash1(i, 3)), 0.075, 0.055, i * 3 + 2, { seg: nq(9), bark, amp: 0.16 });
+    g.in(M(...at(i, 1.95)), () => lashing(g, 0.09, 4, 0.016));
+    const j = (i + 1) % 4;
+    for (const [y, dy] of [[1.0, 0.12], [2.25, -0.1], [3.12, 0.02]]) { const a = at(i, y + dy * 0.5), b = at(j, y - dy * 0.5); logTo(g, v3(a, b, -0.1), v3(a, b, 1.1), 0.05, 0.04, i * 7 + y * 3, { seg: 7, bark, capB: true, amp: 0.16 }); g.in(M(...a), () => lashing(g, 0.085, 2, 0.013)); }
+    if (i !== 2) logTo(g, at(i, 0.35), at(j, 2.2), 0.04, 0.035, i * 11 + 5, { seg: 7, bark, capB: true, amp: 0.16 });
+  }
+  // the ribcage of some great beast braces it: backbone up the rear, ribs wrapping round to the front
+  for (let k = 0; k < 11; k++) { const y = 0.4 + k * 0.25, z = -0.66 + 0.02 * k, c = boneCol(k); g.surf(K_PLAIN, 0.7); g.in(M(0, y, z), () => { g.lathe([[0, 0], [0.085, 0], [0.1, 0.03], [0.075, 0.1], [0.1, 0.17], [0.085, 0.2], [0, 0.2]], nq(9), c); g.in(M(0, 0.1, -0.05, -75, 0, 0), () => g.cyl(0.04, 0.012, 0.22, 5, c, false, true)); }); }
+  for (let k = 0; k < 5; k++) { const y = 0.95 + k * 0.48, w = 0.86 - 0.07 * k; for (const e of [-1, 1]) rib(g, [e * 0.06, y, -0.62 + 0.04 * k], [e * 0.22, y - 0.34, 0.6 - 0.05 * k], [e * w, 0.2, 0.25], 0.055, k * 2 + e); }
+  // the platform and its shields of scrap
+  for (const z of [-0.5, 0.5]) logTo(g, [-0.78, py - 0.09, z], [0.78, py - 0.07, z], 0.05, 0.045, z * 9 + 60, { seg: 7, bark, capB: true });
+  g.in(M(0, 0, 0, 0, 90, 0), () => deck(g, -0.68, 0.68, -0.72, 0.72, py, GH_WOOD, 31, { rag: 0.16, skew: 3 }));
+  const rnd = rng(1013);
+  for (let s = 0; s < 4; s++) g.in(M(0, py, 0, 0, s * 90, 0).multiply(M(0, 0, 0.72)), () => {
+    let x = -0.7;
+    while (x < 0.55) { const w = 0.36 + 0.26 * rnd(), h = 0.46 + 0.3 * rnd(); if (s === 0 && x < -0.1 && x + w > -0.35) { x += 0.42; continue; } g.in(M(x + w / 2, h / 2 - 0.08 + 0.1 * rnd(), 0.02 * rnd(), (rnd() - 0.5) * 8, 0, (rnd() - 0.5) * 12), () => scrapPlate(g, w, h, s * 10 + x * 7)); x += w * 0.92; }
+    g.surf(K_WOOD, 0.9); g.in(M(0, 0.4, -0.03, 0, 0, (rnd() - 0.5) * 4), () => g.beam(1.5, 0.05, 0.04, 0.01, woodTint(GH_WOOD[s], s), 3));
+    if (s === 1) g.in(M(0.1, 0.36, 0.06, 0, 0, 14), () => roundShield(g, 0.27, rgb(0x6b5236), GH_RED, 5));
+    if (s === 3) g.in(M(-0.1, 0.34, 0.06, 0, 0, -10), () => roundShield(g, 0.25, rgb(0x5c5434), GH_WHITE, 6));
+    for (let i = 0; i < 3; i++) g.in(M(-0.5 + i * 0.5, -0.06, 0.02, 115 + 20 * rnd(), 0, (rnd() - 0.5) * 20), () => stake(g, 0.03, 0.4 + 0.15 * rnd(), s * 5 + i, bark));
+  });
+  // a hide awning on the leg tops, a horned skull and tusks over the front
+  hideSheet(g, 14, 14, (u, v) => { const a = v3(at(3, 4.2), at(2, 4.05), u), b = v3(at(0, 4.3), at(1, 4.15), u), p = v3(a, b, v); return [p[0] * 1.25, p[1] - 0.22 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v) + 0.03 * Math.sin(u * 20), p[2] * 1.25]; }, HIDE, 71);
+  g.in(M(0.0, py + 0.78, 0.74, -8, 0, 0), () => horned(g, 1.5, 3));
+  for (const e of [-1, 1]) g.in(M(e * 0.5, py + 0.1, 0.76, 0, e > 0 ? 180 : 0, 0), () => g.in(M(0, 0, 0, -10, 0, -12), () => horn(g, [[0, -0.1, 0], [0.03, 0.3, 0], [0.14, 0.62, 0], [0.32, 0.86, 0]], 0.07, mul(BONE, 1.05), rgb(0x8a7a5a), { rings: 24, nu: 8, nv: 14 })));
+  // the glyph banner on its own long pole
+  g.in(M(-0.56, py - 0.3, -0.5, -3, 0, 5), () => {
+    stake(g, 0.035, 2.95, 77, bark);
+    logTo(g, [-0.05, 2.6, 0.04], [0.62, 2.66, 0.04], 0.022, 0.018, 78, { seg: 6, capB: true });
+    g.in(M(0.3, 2.62, 0.05), () => rag(g, 0.54, 1.15, GH_RED, 6, 0.45));
+    g.in(M(0.3, 2.2, 0.1), () => { teethGlyph(g, 0.36, 1.0, GH_WHITE, 4); g.in(M(0, -0.34, 0.02), () => sigil(g, 1020, 0.34, [0.9, 0.86, 0.75], 0, 0.07)); });
+    g.in(M(0, 2.82, 0), () => skull(g, 1.0, true));
+  });
+  // the ladder, skulls on stakes
+  ladder(g, [0.3, 0.02, 0.98], [0.26, py + 0.2, 0.74], 0.32, 5, RAW_WOOD);
+  for (const [x, z, h, sd] of [[-0.9, 0.9, 1.1, 1], [0.92, 0.92, 0.9, 2], [0.9, -0.2, 1.2, 3]]) g.in(M(x, 0, z, (hash1(sd, 1) - 0.5) * 14, 0, (hash1(sd, 2) - 0.5) * 14), () => skullStake(g, h, sd + 5, bark));
+  g.in(M(-0.4, 0.07, 0.86, 0, 30, 0), () => skullPile(g, 0.9, 3, 9));
+}
+
+// =====================================================================================================
+// Skar: scavenged timber, patched copper and blight-stone
+// =====================================================================================================
+const SKAR_WOOD = [rgb(0x5a4a36), rgb(0x6a5a40), rgb(0x4a3e2e), rgb(0x54502f), rgb(0x6e5038)], SKAR_RAG = [rgb(0x7a2a22), rgb(0x8a7a34), rgb(0x4a5a44), rgb(0x5a4a5a)];
+const blightLamp = (g, s = 1) => lamp(g, s, [0.14, 0.85, 0.05], { shape: 'cage', glow: 0.75, frame: [0.07, 0.06, 0.05] });
+/** a crooked pole from a to b */
+const pole = (g, a, b, r, seed) => logTo(g, a, b, r, r * 0.8, seed, { seg: 7, bark: mul(SKAR_WOOD[Math.floor(hash1(seed, 3) * 5)], 0.85), amp: 0.16, capB: true });
+function reactor(g) {
+  g.moss = 0.2;
+  pad(g, 3, 3, 0.06, (x, y, z) => mix(mul(rgb(0x3a3428), 0.6 + 0.7 * fbm3(x * 3, y * 5, z * 3, 3)), [0.1, 0.3, 0.05], 0.6 * smooth(0.9, 0.2, Math.hypot(x, z))), 1101);
+  const cy = 2.4, R = 1.0;
+  // the boiler: a ball of patched plate, the blight showing green through its cracks
+  const plateC = (x, y, z, nx, ny, nz, u, v) => {
+    const row = Math.floor(v * 7), cu = u * (row === 0 || row === 6 ? 5 : 10) + hash1(row, 3), col = Math.floor(cu), h = hash1(col, row, 7), fu = cu - col, fv = v * 7 - row, edge = Math.min(fu, 1 - fu, fv, 1 - fv);
+    const base = h < 0.42 ? COPPER : h < 0.62 ? mix(COPPER, VERDIGRIS, 0.7) : h < 0.85 ? [0.09, 0.085, 0.09] : RUST;
+    const crack = smooth(0.016, 0.004, Math.abs(noise3(x * 2.1 + 3, y * 2.1, z * 2.1) - 0.5)) * smooth(0.4, 0.6, noise3(x * 0.8, y * 0.8 + 7, z * 0.8));
+    g.glow = 0.8 * crack; g.metal = h < 0.62 ? 0.85 : 0.6; g.rough = h < 0.42 ? 0.4 : 0.65;
+    return crack > 0.05 ? mix(mul(base, 0.5), [0.15, 0.85, 0.06], crack) : mul(base, (edge < 0.035 ? 0.4 : 1) * (0.7 + 0.5 * noise3(x * 9, y * 9, z * 9)));
+  };
+  g.surf(K_PLAIN, 0.5, 0.8);
+  g.in(M(0, cy, 0), () => g.sheet(nq(48), nq(28), (u, v) => { const a = u * TAU, b = (v - 0.5) * Math.PI, row = Math.floor(v * 7), cu = u * (row === 0 || row === 6 ? 5 : 10) + hash1(row, 3), lift = 0.012 * hash1(Math.floor(cu), row, 9); const r = R + lift; return [Math.cos(a) * Math.cos(b) * r, Math.sin(b) * r, Math.sin(a) * Math.cos(b) * r]; }, plateC, true));
+  g.surf(K_PLAIN, 0.5, 0.85);
+  for (let row = 1; row < 7; row++) { const b = (row / 7 - 0.5) * Math.PI, n = nq(22); for (let i = 0; i < n; i++) { const a = (i / n) * TAU + row; g.in(M(0, cy, 0, 0, 90 - a / DEG, 0).multiply(M(0, Math.sin(b) * (R + 0.012), Math.cos(b) * (R + 0.012), -b / DEG, 0, 0)), () => g.stud(0.02, [0.12, 0.1, 0.08], 5)); } }
+  // portholes
+  for (const [ang, el] of [[10, 8], [100, 14], [190, 6], [275, 16]]) g.in(M(0, cy, 0, 0, ang, 0).multiply(M(0, Math.sin(el * DEG) * R, Math.cos(el * DEG) * R * 0.99, -el, 0, 0)), () => {
+    g.surf(K_PLAIN, 0.35, 0.9); g.add(new THREE.TorusGeometry(0.2, 0.045, 6, nq(18)), brassC(ang));
+    for (let k = 0; k < 8; k++) g.in(M(Math.cos(k * 0.785) * 0.2, Math.sin(k * 0.785) * 0.2, 0.04), () => g.stud(0.018, mul(BRASS, 1.3), 5));
+    g.surf(K_PLAIN, 0.15, 0, 0.6); g.in(M(0, 0, 0.0, 90, 0, 0), () => g.lathe([[0.17, 0.02], [0.12, 0.05], [0, 0.065]], nq(14), (x, y, z) => mul([0.12, 0.8, 0.05], 0.6 + 0.5 * noise3(x * 20, y * 20, z * 20 + ang))));
+    g.surf(K_PLAIN, 0.5, 0.85); for (const rz of [0, 90]) g.in(M(0, 0, 0.06, 0, 0, rz), () => g.cbox(0.36, 0.022, 0.02, 0.005, IRON));
+  });
+  // the firebox under it, a green pool below that
+  g.surf(K_PLAIN, 0.6, 0.75);
+  g.lathe([[0.3, 0.72], [0.36, 0.78], [0.4, 1.2], [0.6, 1.62]], nq(14), (x, y, z) => mul(mix([0.08, 0.075, 0.08], RUST, 0.6 * smooth(0.4, 0.7, noise3(x * 6, y * 6, z * 6))), 0.9));
+  g.surf(K_PLAIN, 1, 0, 1.0);
+  for (let k = 0; k < 6; k++) g.in(M(0, 1.02, 0, 0, k * 60, 0).multiply(M(0, 0, 0.385, -8, 0, 0)), () => g.flat([[-0.05, -0.16, 0], [0.05, -0.16, 0], [0.05, 0.16, 0], [-0.05, 0.16, 0]], [0.12, 0.8, 0.05]));
+  g.in(M(0, 0.72, 0), () => g.cyl(0.29, 0.29, 0.001, nq(12), [0.12, 0.8, 0.05], true, false));
+  g.in(M(0, 0.1, 0), () => pool(g, 0.55, [[0.35, 0.9, 0.08], [0.14, 0.6, 0.04], [0.03, 0.2, 0.03]], 5, 0.6, [0.03, 0.08, 0.02]));
+  // the cradle: six legs, two rings of rails, braces, all of it out of true
+  const leg = (i, y) => { const a = (i * 60 + 30) * DEG + 0.06 * Math.sin(i * 5), t = y / (cy - 0.1), r = lerp(1.36, 1.07, t) + 0.03 * Math.sin(i * 3 + y * 2); return [Math.cos(a) * r, y, Math.sin(a) * r]; };
+  for (let i = 0; i < 6; i++) {
+    pole(g, leg(i, -0.1), leg(i, cy + 0.25 + 0.3 * hash1(i, 5)), 0.075, i + 1);
+    const j = (i + 1) % 6;
+    for (const [y, dy] of [[1.15, 0.1], [cy - 0.2, -0.08]]) { const a = leg(i, y + dy * 0.5), b = leg(j, y - dy * 0.5); pole(g, v3(a, b, -0.12), v3(a, b, 1.12), 0.048, i * 7 + y * 3); g.in(M(...a), () => lashing(g, 0.085, 3, 0.014)); }
+    if (i % 2 === 0) pole(g, leg(i, 0.2), leg(j, cy - 0.3), 0.04, i * 11 + 5); else pole(g, leg(j, 0.3), leg(i, 1.1), 0.04, i * 11 + 6);
+    // struts in to the boiler
+    const s = leg(i, cy - 0.1); pole(g, s, [s[0] * 0.86, cy - 0.25, s[2] * 0.86], 0.045, i * 13 + 2);
+  }
+  // a plank walk round the front of it, a ladder up
+  for (let k = 0; k < 9; k++) { const a = (-18 + k * 14.5) * DEG, r0 = 1.0, r1 = 1.5, c = mul(SKAR_WOOD[k % 5], 0.8 + 0.4 * hash1(k, 3)); g.surf(K_WOOD, 0.9); g.in(M(Math.cos(a) * (r0 + r1) / 2, 1.24 + 0.02 * (k % 2), Math.sin(a) * (r0 + r1) / 2, 0, -a / DEG + (hash1(k, 5) - 0.5) * 8, 0), () => g.beam(r1 - r0 + 0.1 * hash1(k, 7), 0.04, 0.24, 0.008, woodTint(c, k), 2)); }
+  ladder(g, [1.02, 0.02, 1.34], [0.92, 1.36, 1.08], 0.3, 7, SKAR_WOOD[1]);
+  g.in(M(0.2, 1.26, 1.36, 0, 10, 0), () => { for (const e of [-1, 1]) g.in(M(e * 0.3, 0, 0), () => stake(g, 0.025, 0.6, e + 5, SKAR_WOOD[2])); logTo(g, [-0.36, 0.52, 0], [0.36, 0.5, 0], 0.02, 0.018, 9, { seg: 6, capB: true }); });
+  // copper pipes: one over the top and down to a condenser, one round the waist with a valve wheel
+  const cop = (x, y, z) => mul(mix(COPPER, VERDIGRIS, 0.6 * smooth(0.5, 0.72, noise3(x * 4, y * 4, z * 4))), 0.85);
+  pipe(g, [[-0.25, cy + 0.94, 0.2], [-0.5, cy + 1.25, 0.42], [-0.95, cy + 1.05, 0.75], [-1.16, cy + 0.3, 0.98], [-1.12, 1.5, 1.04], [-1.1, 0.78, 1.06]], 0.065, cop, { every: 1 });
+  g.in(M(-1.1, 0, 1.06), () => { g.surf(K_PLAIN, 0.4, 0.85); g.lathe([[0.2, 0], [0.24, 0.05], [0.24, 0.62], [0.16, 0.76], [0.07, 0.8]], nq(14), cop); for (const y of [0.12, 0.56]) g.lathe([[0.245, y - 0.03], [0.26, y], [0.245, y + 0.03]], nq(14), brassC(y)); g.surf(K_PLAIN, 0.15, 0, 1.0); g.in(M(0, 0.36, 0.238), () => g.flat([[-0.035, -0.12, 0], [0.035, -0.12, 0], [0.035, 0.12, 0], [-0.035, 0.12, 0]], [0.12, 0.8, 0.05])); });
+  g.surf(K_PLAIN, 0.4, 0.85);
+  g.in(M(0, cy - 0.42, 0, 90 + 7, 0, 4), () => g.add(new THREE.TorusGeometry(R * 0.93, 0.05, nq(8), nq(40)), cop));
+  g.in(M(0, cy - 0.42, 0, 0, -50, 0).multiply(M(0, 0.04, R * 0.98)), () => { g.surf(K_PLAIN, 0.5, 0.8); g.in(M(0, 0, 0.1), () => { g.add(new THREE.TorusGeometry(0.13, 0.018, 5, nq(14)), [0.5, 0.06, 0.04]); for (const rz of [0, 60, 120]) g.in(M(0, 0, 0, 0, 0, rz), () => g.cbox(0.25, 0.018, 0.018, 0.004, [0.5, 0.06, 0.04])); }); g.in(M(0, 0, 0.05, 90, 0, 0), () => g.in(M(0, -0.05, 0), () => g.cyl(0.02, 0.02, 0.1, 6, IRON))); });
+  pipe(g, [[0.7, cy - 0.66, -0.3], [1.0, cy - 0.9, -0.5], [1.12, 0.9, -0.62], [1.1, 0.0, -0.66]], 0.05, cop, { every: 1 });
+  // lightning rods with coils; sparks jump between them
+  const tips = [];
+  for (const [ang, lean, h, sd] of [[20, 9, 2.0, 1], [150, 13, 1.6, 2], [260, 11, 1.35, 3]]) {
+    const a = ang * DEG, b = [Math.cos(a) * 0.36, cy + R * 0.93, Math.sin(a) * 0.36], t = [b[0] + Math.cos(a) * Math.sin(lean * DEG) * h, b[1] + Math.cos(lean * DEG) * h, b[2] + Math.sin(a) * Math.sin(lean * DEG) * h];
+    tips.push(t);
+    g.surf(K_PLAIN, 0.45, 0.85);
+    g.tube([b, v3(b, t, 0.5), t], [0.035, 0.028, 0.012], 6, [0.07, 0.065, 0.07]);
+    g.in(M(b[0], b[1] - 0.03, b[2]), () => g.lathe([[0.1, 0], [0.1, 0.05], [0.05, 0.09]], 8, brassC(sd)));
+    for (let k = 0; k < 5; k++) { const p = v3(b, t, 0.2 + k * 0.09); g.in(M(p[0], p[1], p[2], 90 + (hash1(k, sd) - 0.5) * 16, 0, 0), () => g.add(new THREE.TorusGeometry(0.075 - k * 0.006, 0.016, 5, nq(12)), cop)); }
+    g.surf(K_PLAIN, 0.3, 0, 0.9); g.in(M(...t), () => g.add(new THREE.IcosahedronGeometry(0.06, 1), [0.2, 1.0, 0.08]));
+  }
+  g.surf(K_PLAIN, 1, 0, 1.0);
+  for (let k = 0; k < 3; k++) { const a = tips[k], b = tips[(k + 1) % 3], pts = [a]; for (let q = 1; q < 6; q++) { const p = v3(a, b, q / 6); pts.push([p[0] + (hash1(q, k, 3) - 0.5) * 0.3, p[1] + (hash1(q, k, 5) - 0.5) * 0.3, p[2] + (hash1(q, k, 7) - 0.5) * 0.3]); } pts.push(b); for (let q = 0; q < pts.length - 1; q++) g.tube([pts[q], pts[q + 1]], 0.013, 4, [0.2, 1.0, 0.08], false); }
+  for (let k = 0; k < 3; k++) { const t = tips[k]; for (let q = 0; q < 2; q++) { const d = [(hash1(k, q, 11) - 0.5) * 0.7, (hash1(k, q, 13) - 0.7) * 0.6, (hash1(k, q, 15) - 0.5) * 0.7], m = [t[0] + d[0] * 0.5 + 0.08, t[1] + d[1] * 0.5 + 0.06, t[2] + d[2] * 0.5]; g.tube([t, m], 0.01, 4, [0.2, 1.0, 0.08], false); g.tube([m, [t[0] + d[0], t[1] + d[1], t[2] + d[2]]], 0.008, 4, [0.2, 1.0, 0.08], false); } }
+  // lamps, a warning rag, lumps of the stone lying about
+  for (const i of [0, 2, 4]) { const p = leg(i, cy - 0.3); g.in(M(p[0] * 1.06, p[1], p[2] * 1.06), () => blightLamp(g, 1.1)); }
+  g.in(M(...leg(5, cy + 0.2), 0, -60, 0), () => g.in(M(0, 0, 0.06), () => rag(g, 0.3, 0.7, SKAR_RAG[0], 3, 0.6, SKAR_RAG[1])));
+  for (const [x, z, s, sd] of [[-1.15, -1.0, 0.24, 1], [1.2, 0.5, 0.16, 2], [-0.5, 1.25, 0.13, 3]]) g.in(M(x, 0.0, z, sd * 9, sd * 40, 0), () => crystal(g, s * 0.6, s * 1.8, sd + 30, { deep: rgb(0x0f4a12), bright: rgb(0x8cf03c), glow: 0.5, m: 5, ns: 3 }));
+}
+function scaffoldWarren(g) {
+  g.moss = 0.5;
+  const earth = (x, y, z) => mul(rgb(0x4a3c2a), 0.6 + 0.7 * fbm3(x * 3, y * 5, z * 3, 3));
+  pad(g, 4, 3, 0.07, earth, 1151, { nu: 60 });
+  const xs = [-1.76, -0.6, 0.56, 1.72], zs = [-1.22, 0, 1.2], hs = [[5.0, 4.0, 2.9], [5.3, 4.2, 2.8], [4.2, 4.6, 2.75], [4.0, 3.9, 2.95]];
+  const P = (i, j, y) => [xs[i] + 0.1 * Math.sin(i * 3 + j * 5 + y * 0.8) + (i - 1.5) * -0.02 * y, y, zs[j] + 0.08 * Math.cos(i * 7 + j * 2 + y * 0.9)];
+  // the frame: crooked posts spliced at each storey
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) { const H = hs[i][j]; let y = -0.1, k = 0; while (y < H - 0.05) { const y1 = Math.min(H, y + 1.55); pole(g, P(i, j, y), P(i, j, y1 + 0.12), 0.07 - k * 0.006, i * 20 + j * 5 + k); if (k) g.in(M(...P(i, j, y + 0.06)), () => lashing(g, 0.075, 3, 0.014)); y = y1; k++; } }
+  // storeys: [height, x0, x1, z0, z1]
+  const decks = [[1.25, -1.9, 1.86, -0.12, 1.34], [2.45, -1.9, 1.86, -1.36, 0.16], [2.5, 0.45, 1.86, 0.16, 0.86], [3.62, -1.9, 0.72, -1.36, -0.08], [4.62, -1.92, -0.44, -1.38, -0.5]];
+  decks.forEach(([y, x0, x1, z0, z1], k) => {
+    for (const z of [z0 + 0.08, z1 - 0.08]) pole(g, [x0 - 0.1, y - 0.1 + 0.03 * Math.sin(k), z], [x1 + 0.1, y - 0.1 - 0.03 * Math.sin(k), z], 0.05, k * 9 + z * 5);
+    for (const x of xs) if (x > x0 - 0.2 && x < x1 + 0.2) pole(g, [x + 0.07, y - 0.17, z0 - 0.08], [x + 0.07, y - 0.17, z1 + 0.08], 0.045, k * 13 + x * 3);
+    g.in(M(0, 0, 0, 0, 0, Math.sin(k * 2.1) * 1.2), () => deck(g, x0, x1, z0, z1, y, SKAR_WOOD, 50 + k, { rag: 0.2, skew: 2.5, pw: 0.19, skip: (z) => hash1(Math.round(z * 31), k) < 0.07 }));
+  });
+  // braces
+  for (const [a, b, sd] of [[P(0, 2, 0.2), P(1, 2, 1.15), 1], [P(2, 2, 1.2), P(3, 2, 0.15), 2], [P(3, 1, 1.3), P(3, 0, 2.35), 3], [P(0, 0, 0.3), P(0, 1, 1.2), 4], [P(1, 0, 2.5), P(2, 0, 3.55), 5], [P(0, 1, 2.5), P(0, 0, 3.55), 6], [P(3, 0, 2.5), P(2, 0, 3.6), 7], [P(0, 0, 3.7), P(1, 0, 4.55), 8], [P(1, 1, 1.3), P(2, 1, 2.4), 9], [P(3, 2, 1.3), P(3, 1, 2.4), 10]]) pole(g, a, b, 0.04, 70 + sd);
+  // shacks on the storeys
+  for (const [x, y, z, w, d, h, ry, sd, pp] of [[-1.15, 1.25, 0.62, 1.0, 0.8, 0.74, 4, 1, 0], [0.98, 1.25, 0.66, 0.84, 0.7, 0.68, -7, 2, 1], [-0.42, 2.45, -0.66, 1.1, 0.86, 0.78, -3, 3, 0], [1.26, 2.45, -0.7, 0.82, 0.8, 0.66, 6, 4, 1], [-0.1, 3.62, -0.74, 0.92, 0.78, 0.7, 5, 5, 1], [1.26, 0.03, -0.5, 0.9, 0.8, 0.8, -5, 6, 0]])
+    g.in(M(x, y, z, (hash1(sd, 1) - 0.5) * 4, ry, (hash1(sd, 2) - 0.5) * 5), () => shack(g, w, d, h, SKAR_WOOD, 1160 + sd * 7, { pipe: pp, lit: [0.14, 0.8, 0.05], pw: 0.19 }));
+  // the crow's nest: a rail, a bell, a ragged flag
+  g.in(M(-1.18, 4.62, -0.94), () => {
+    for (const [x, z] of [[-0.7, 0.42], [0.7, 0.42], [0.7, -0.42], [-0.7, -0.42]]) g.in(M(x, 0, z), () => stake(g, 0.025, 0.5, x * 3 + z, SKAR_WOOD[2]));
+    for (const [a, b] of [[[-0.74, 0.4, 0.42], [0.74, 0.44, 0.42]], [[0.7, 0.42, 0.46], [0.7, 0.4, -0.46]], [[-0.7, 0.42, 0.46], [-0.7, 0.44, -0.46]]]) pole(g, a, b, 0.022, a[0] * 5 + 80);
+    g.in(M(0.3, 0, -0.3, 2, 0, -4), () => { stake(g, 0.03, 1.5, 91, SKAR_WOOD[0]); g.in(M(0, 1.4, 0), () => pennon(g, 0.0, 0.62, SKAR_RAG[0], SKAR_RAG[1], { knob: false, hgt: 0.36 })); });
+    g.surf(K_PLAIN, 0.4, 0.9); g.in(M(-0.4, 0.5, 0.42), () => { g.cyl(0.006, 0.006, 0.1, 4, IRON); g.in(M(0, -0.2, 0), () => g.lathe([[0.1, 0], [0.09, 0.03], [0.06, 0.12], [0.03, 0.2], [0, 0.22]], nq(10), brassC(3))); });
+  });
+  // ladders between the storeys
+  ladder(g, [0.02, 0.02, 1.46], [0.06, 1.42, 1.3], 0.3, 1, SKAR_WOOD[1]);
+  ladder(g, [-0.2, 1.25, 0.8], [-0.26, 2.6, 0.14], 0.28, 2, SKAR_WOOD[0]);
+  ladder(g, [1.0, 2.45, -0.1], [0.6, 3.74, -0.2], 0.28, 3, SKAR_WOOD[3]);
+  ladder(g, [-0.7, 3.62, -0.2], [-0.8, 4.74, -0.52], 0.26, 4, SKAR_WOOD[1]);
+  // rag awnings and washing
+  g.in(M(-1.15, 1.25 + 0.82, 0.62 + 0.42), () => awning(g, 0.9, 0.36, SKAR_RAG[0], SKAR_RAG[1], { n: 5 }));
+  g.in(M(-0.42, 2.45 + 0.86, -0.66 + 0.45), () => awning(g, 1.0, 0.4, SKAR_RAG[2], SKAR_RAG[3], { n: 4 }));
+  g.in(M(1.26, 2.5 + 0.74, 0.86, 0, 0, 0), () => awning(g, 0.9, 0.3, SKAR_RAG[1], SKAR_RAG[0], { n: 6, props: false }));
+  for (const [x, y, z, w, l, c, sd, ry] of [[0.2, 1.14, 1.36, 0.3, 0.5, 0, 1, 0], [1.5, 1.14, 1.36, 0.26, 0.42, 1, 2, 0], [-1.5, 2.34, 0.18, 0.3, 0.52, 2, 3, 0], [0.1, 2.34, 0.18, 0.24, 0.44, 3, 4, 0], [-1.2, 3.5, -0.06, 0.3, 0.5, 1, 5, 0], [1.9, 2.34, -0.6, 0.3, 0.5, 0, 6, 90], [-1.94, 1.14, 0.6, 0.3, 0.45, 2, 7, -90]]) g.in(M(x, y, z, 0, ry, 0), () => rag(g, w, l, SKAR_RAG[c], sd, 0.6));
+  rope(g, [P(2, 2, 2.6), [1.1, 2.4, 1.1], P(3, 2, 2.7)], 0.008, rgb(0x8a7450), 4);
+  for (let k = 0; k < 3; k++) g.in(M(0.8 + k * 0.28, 2.44 - 0.03 * (k === 1 ? 2 : 1), 1.13 - 0.03 * k), () => rag(g, 0.14, 0.26, SKAR_RAG[k + 1], k + 9, 0.4));
+  // green lamps
+  for (const [x, y, z] of [[-0.6, 1.1, 1.38], [1.2, 1.1, 1.38], [-1.92, 2.3, -0.5], [0.3, 2.3, 0.2], [1.3, 2.36, 0.9], [-0.9, 3.48, -0.04], [0.74, 3.48, -0.8], [-0.44, 4.5, -0.9]]) g.in(M(x, y, z), () => blightLamp(g, 1.0));
+  // burrow mouths at the foot: mounds of spoil, holes shored with timber
+  for (const [mx, mz, mw, md, mh, holes, sd] of [[-1.0, 0.98, 1.8, 0.95, 0.55, [-0.42, 0.36], 1], [0.72, 1.06, 1.0, 0.8, 0.42, [0], 2]]) g.in(M(mx, 0, mz), () => {
+    pad(g, mw, md, mh, earth, 1170 + sd, { sq: 2.4, nu: 36, nv: 8, kind: K_PLAIN });
+    for (const hx of holes) g.in(M(hx, 0.02, md * 0.3, -14, hx * 20, 0), () => {
+      g.surf(K_PLAIN, 1);
+      g.poly(Array.from({ length: 12 }, (_, k) => [Math.cos(k * 0.5236) * 0.2, 0.2 + Math.sin(k * 0.5236) * 0.24, 0.05]), 0, 0, 1, [0.008, 0.007, 0.006]);
+      for (const e of [-1, 1]) pole(g, [e * 0.24, -0.05, 0.07], [e * 0.2, 0.46, 0.07], 0.04, sd * 5 + e + hx * 9);
+      pole(g, [-0.3, 0.47, 0.08], [0.3, 0.45, 0.08], 0.045, sd * 7 + hx * 5);
+      g.surf(K_PLAIN, 0.3, 0, 0.9); for (const e of [-1, 1]) g.in(M(e * 0.05, 0.22, 0.055), () => g.add(new THREE.SphereGeometry(0.014, 6, 4), [0.4, 1.0, 0.15]));
+    });
+  });
+  g.in(M(1.75, 0.03, 0.9), () => barrel(g, 0.13, 0.32, rgb(0x5a4026), 5));
+  for (let i = 0; i < 5; i++) g.in(M(-0.2 + i * 0.1, 0.07 + (i > 2 ? 0.1 : 0), -1.3 + (i > 2 ? 0.05 : 0), 0, 90, 0), () => g.in(M(0, 0, 0, 0, 0, 90), () => g.in(M(0, -0.3, 0), () => log(g, 0.05, 0.045, 0.6, i + 50, { seg: 7, capB: true }))));
+}
+
+// =====================================================================================================
+// Crimson: black stone, iron and blood-red glass
+// =====================================================================================================
+const TOMB_SLATE = [rgb(0x24222c), rgb(0x2e2a36), rgb(0x1c1b22), rgb(0x333340), rgb(0x2a3038)], BLOOD_GLASS = [0.75, 0.03, 0.03];
+const tombStone = (seed, o) => stoneStyle(0x2f2f38, { seed, chip: 0.4, cell: 0.17 / qual(), ...o });
+const grey = [rgb(0x5a5850), rgb(0x6a665c), rgb(0x4c4a44), rgb(0x55504a)];
+/** the outline of a true pointed arch standing on the local origin, on the XY plane: two arcs struck from the springing points */
+function ogive(g, w, h, col, o = {}) {
+  const sp = Math.max(0.02, h - w * 0.866), pts = [[-w / 2, 0], [-w / 2, sp]], n = 6;
+  for (let i = 1; i <= n; i++) { const a = Math.PI - (i / n) * (Math.PI / 3); pts.push([w / 2 + Math.cos(a) * w, sp + Math.sin(a) * w]); }
+  for (let i = n - 1; i >= 0; i--) { const a = (i / n) * (Math.PI / 3); pts.push([-w / 2 + Math.cos(a) * w, sp + Math.sin(a) * w]); }
+  pts.push([w / 2, 0]);
+  if (o.fill) { g.surf(K_PLAIN, o.fillRough ?? 0.5, 0, o.fillGlow || 0); g.in(M(0, 0, 0.008), () => g.poly(pts.map((p) => [p[0], p[1], 0]), 0, 0, 1, o.fill)); }
+  g.surf(K_STONE, 0.85);
+  g.tube(pts.map((p) => [p[0], p[1], 0.02]), o.t || 0.035, 5, col, true);
+}
+/** a lancet of blood-red glass in a stone surround on the local XY plane: tracery bars across it */
+function lancet(g, w, h, col, glow = 0.6) {
+  ogive(g, w, h, col, { t: 0.04, fill: BLOOD_GLASS, fillGlow: glow, fillRough: 0.2 });
+  g.surf(K_PLAIN, 0.5, 0.8);
+  g.in(M(0, h * 0.42, 0.014), () => g.cbox(0.02, h * 0.84, 0.012, 0.003, IRON));
+  for (const y of [0.3, 0.58]) g.in(M(0, h * y, 0.014), () => g.cbox(w * 0.9, 0.018, 0.012, 0.003, IRON));
+}
+/** a crow perched on the local origin, looking toward +Z. Sculpted once. */
+function crow(g, s = 1) {
+  const geo = geoOnce('crow', () => {
+    const c = 0x0d0d12, P = [];
+    P.push(S.ellipsoid(0.055, 0.06, 0.1).rot(-28, 0, 0).at(0, 0.11, 0).color(c).tint(0.3, 40));
+    P.push(S.sphere(0.042).at(0, 0.18, 0.07).color(c).blend(0.03));
+    P.push(S.cone(0.02, 0.004, 0.07, 0.003).rot(98, 0, 0).at(0, 0.172, 0.13).color(0x2a2a30).blend(0.006));
+    P.push(S.box(0.07, 0.014, 0.14, 0.006).rot(-40, 0, 0).at(0, 0.06, -0.11).color(c).blend(0.02));
+    P.push(...S.mirrorX([S.ellipsoid(0.02, 0.05, 0.09).rot(-30, 0, 0).at(0.052, 0.115, -0.01).color(0x15151c).blend(0.012)]));
+    P.push(...S.mirrorX([S.capsule([0.022, 0.07, 0.01], [0.024, 0.0, 0.02], 0.008, 0.007).color(0x2a2a30).blend(0.004)]));
+    P.push(...S.mirrorX([S.sphere(0.008).at(0.03, 0.19, 0.095).color(0x9a9aa0).blend(0.002)]));
+    return buildPartGeometry({ prims: P }, { res: 96 * qual(), ao: 0.7 });
+  });
+  const k = g.kind; g.surf(K_PLAIN, 0.6);
+  g.in(M(0, 0, 0, 0, 0, 0, s), () => g.add(geo));
+  g.kind = k;
+}
+/** a leaning headstone on the local origin, facing +Z */
+function headstone(g, w, h, seed) {
+  const c = stoneTint(mul(rgb(0x3d3d47), 1.1), seed, 4);
+  g.surf(K_STONE, 0.95);
+  g.in(M(0, h * 0.4 - 0.06, 0), () => g.cbox(w, h * 0.8 + 0.12, 0.09, 0.016, c));
+  g.in(M(0, h * 0.8, 0, 90, 0, 0), () => g.in(M(0, -0.045, 0), () => g.cyl(w / 2, w / 2, 0.09, nq(12), c, true, true)));
+}
+function mausoleum(g) {
+  g.moss = 0.9;
+  pad(g, 3, 4, 0.05, (x, y, z) => mul(rgb(0x2a2a24), 0.6 + 0.7 * fbm3(x * 3, y * 5, z * 3, 3)), 1201, { nu: 56 });
+  const st = tombStone(1202), col = st.pal[0], trim = mul(col, 1.5), hx = 1.1, hz = 1.42, cz = -0.2, p0 = 0.3, wy = 2.3, fz = hz;
+  g.in(M(0, 0, cz), () => {
+    stoneBox(g, hx + 0.14, hz + 0.14, 0, p0, tombStone(1203, { course: 0.15 }), 1204);
+    g.surf(K_STONE, 0.95); g.flat([[-hx - 0.14, p0 - 0.003, -hz - 0.14], [-hx - 0.14, p0 - 0.003, hz + 0.14], [hx + 0.14, p0 - 0.003, hz + 0.14], [hx + 0.14, p0 - 0.003, -hz - 0.14]], mul(col, 0.5));
+    stoneBox(g, hx, hz, p0, wy, st, 1210, { noFoot: true, each: (s, W) => {
+      if (s % 2) for (const u of [0.5, 1.25, 2.0]) g.in(M(u * (2 * W - 0.03) / 2.5, 0.5, 0.012), () => lancet(g, 0.3, 1.15, stoneTint(trim, s + u, 5)));
+      if (s === 2) g.in(M(W - 0.016, 0.9, 0.012), () => { g.surf(K_PLAIN, 0.2, 0, 0.6); g.in(M(0, 0, 0, 90, 0, 0), () => g.cyl(0.36, 0.36, 0.01, nq(20), (x, y, z) => mul(BLOOD_GLASS, 0.6 + 0.5 * tri1(Math.atan2(z, x) / TAU * 8)), false, true)); g.surf(K_STONE, 0.9); g.add(new THREE.TorusGeometry(0.38, 0.05, 6, nq(22)), stoneTint(trim, 4, 5)); g.surf(K_PLAIN, 0.5, 0.8); for (let k = 0; k < 4; k++) g.in(M(0, 0, 0.02, 0, 0, k * 45), () => g.cbox(0.74, 0.02, 0.012, 0.003, IRON)); });
+    } });
+    // cornice
+    for (let s = 0; s < 4; s++) { const W = s % 2 ? hz : hx, D = s % 2 ? hx : hz; g.surf(K_STONE, 0.9); g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(0, wy - 0.12, D)), () => g.mould([[0, 0], [0.05, 0.03], [0.05, 0.07], [0.1, 0.11], [0.1, 0.17], [0, 0.17]], 2 * W, stoneTint(trim, s, 4), 1, 1, 6)); }
+    // the front: iron doors under a pointed arch, a gable over with a bat spread on it
+    g.in(M(0, p0, fz + 0.012), () => {
+      ogive(g, 0.96, 1.66, stoneTint(trim, 7, 5), { t: 0.075, fill: [0.045, 0.043, 0.05], fillRough: 0.5 });
+      ogive(g, 1.24, 1.92, stoneTint(mul(col, 1.2), 8, 5), { t: 0.05 });
+      g.surf(K_PLAIN, 0.5, 0.85);
+      g.in(M(0, 0.7, 0.014), () => g.cbox(0.02, 1.4, 0.014, 0.004, [0.02, 0.02, 0.022]));
+      for (const e of [-1, 1]) { for (const y of [0.25, 0.75, 1.15]) g.in(M(e * 0.24, y, 0.014), () => g.cbox(0.4, 0.045, 0.014, 0.004, [0.09, 0.085, 0.09])); for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) g.in(M(e * (0.1 + i * 0.13), 0.12 + j * 0.3, 0.012), () => g.stud(0.016, [0.14, 0.13, 0.13], 5)); g.in(M(e * 0.09, 0.62, 0.03), () => g.add(new THREE.TorusGeometry(0.05, 0.011, 4, 10), [0.14, 0.13, 0.13])); }
+      for (const e of [-1, 1]) g.in(M(e * 0.82, 1.2, 0), () => bracketLamp(g, 0.9, [0.9, 0.08, 0.04], { glow: 0.8, shape: 'cage' }));
+    });
+    g.surf(K_STONE, 0.93);
+    g.in(M(0, wy + 0.05, fz - 0.08), () => prism(g, [[-hx - 0.04, 0], [hx + 0.04, 0], [0.12, 1.05], [0, 1.28], [-0.12, 1.05]], 0.2, (x, y, z) => mul(col, (0.85 + 0.3 * noise3(x * 3, y * 9, z * 3)) * (Math.abs((y % 0.2) - 0.1) > 0.085 ? 0.55 : 1)), [0, 0.3]));
+    for (const e of [-1, 1]) g.beamTo([e * (hx + 0.1), wy + 0.04, fz + 0.03], [0, wy + 1.4, fz + 0.03], 0.1, 0.12, 0.015, stoneTint(trim, e + 9, 4), 6, [0, 0, 1]);
+    g.in(M(0, wy + 0.5, fz + 0.03), () => batMotif(g, 1.1, [0.05, 0.048, 0.055], { metal: 0.8 }));
+    g.in(M(0, wy + 1.36, fz + 0.03), () => { g.surf(K_PLAIN, 0.5, 0.85); g.cyl(0.02, 0.008, 0.6, 5, IRON); g.in(M(0, 0.36, 0.0), () => batMotif(g, 0.5, [0.05, 0.048, 0.055], { metal: 0.8 })); });
+    // buttresses with pinnacles (one has fallen), gargoyles at the eaves
+    const but = [[-1, 1, 0], [1, 1, 0], [-1, -1, 0], [1, -1, 1], [-1, 0, 0], [1, 0, 0]];
+    for (const [ex, ez, broken] of but) g.in(M(ex * (hx + 0.06), 0, ez * (hz - 0.14)), () => {
+      g.surf(K_STONE, 0.93);
+      g.in(M(0, (wy + 0.2) / 2, 0), () => g.cbox(0.3, wy + 0.2, 0.32, 0.02, stoneTint(mul(col, 1.1), ex + ez * 3, 4)));
+      g.in(M(ex * 0.07, 0.55, 0), () => g.cbox(0.34, 1.1, 0.38, 0.03, stoneTint(col, ex * 2 + ez, 4)));
+      g.in(M(0, wy + 0.2, 0), () => { g.cbox(0.36, 0.08, 0.38, 0.02, stoneTint(trim, ex + ez, 4)); if (broken) { g.in(M(0, 0.04, 0, 0, 45, 0), () => g.lathe([[0.13, 0], [0.11, 0.2], [0.04, 0.26]], 4, mul(col, 1.2))); } else obeliskOn(g, 1.0, 0.1, stoneTint(mul(col, 1.25), ex, 4), [0.05, 0.05, 0.055], {}); });
+      if (ez !== 0) g.in(M(0, wy - 0.02, 0, 0, Math.atan2(ex, ez) / DEG, 0).multiply(M(0, 0, 0.14)), () => gargoyle(g, 1.25, mul(col, 1.5)));
+    });
+    for (const e of [-1, 1]) g.in(M(e * (hx + 0.06), wy - 0.1, 0.72, 0, e * 90, 0).multiply(M(0, 0, 0.0)), () => gargoyle(g, 1.0, mul(col, 1.5)));
+    // the roof, and on it a drum of red lancets under a cracked dome
+    hipRoof(g, hx + 0.12, hz + 0.12, wy + 0.04, wy + 0.85, 0.02, TOMB_SLATE, 1220, { ridgeCol: [0.05, 0.05, 0.055] });
+    const dy = wy + 0.42, dr = 0.66, dh = 0.8;
+    g.surf(K_STONE, 0.93);
+    g.in(M(0, dy, 0, 0, 22.5, 0), () => { g.lathe([[dr * 1.08, 0], [dr * 1.08, 0.12], [dr, 0.16], [dr, dh - 0.1], [dr * 1.1, dh - 0.04], [dr * 1.1, dh + 0.04], [dr * 0.96, dh + 0.06]], 8, (x, y, z) => mul(col, 1.05 + 0.3 * noise3(x * 4, y * 9, z * 4))); });
+    for (let k = 0; k < 8; k++) g.in(M(0, dy + 0.18, 0, 0, k * 45, 0).multiply(M(0, 0, dr * 0.925 + 0.004)), () => lancet(g, 0.22, 0.52, stoneTint(trim, k, 5), 0.7));
+    const dome = (v) => { const t = v * Math.PI / 2; return [dr * 0.98 * Math.pow(Math.cos(t), 0.75), dy + dh + 0.06 + 0.95 * Math.sin(t) * (0.85 + 0.15 * v)]; };
+    const crackAt = (a, v) => Math.abs(((a - (1.1 + 0.5 * Math.sin(v * 9) + 0.25 * Math.sin(v * 23)) + Math.PI * 3) % TAU) - Math.PI) * (0.4 + 0.6 * v);
+    g.surf(K_ROOF, 0.6, 0.3);
+    g.sheet(nq(48), nq(16), (u, v) => { const a = u * TAU, [r, y] = dome(v), rib = 1 + 0.035 * Math.pow(Math.abs(Math.cos(a * 4)), 6), ck = crackAt(a, v) < 0.06 && v > 0.1 && v < 0.9 ? 0.93 : 1; return [Math.cos(a) * r * rib * ck, y - (ck < 1 ? 0.03 : 0), Math.sin(a) * r * rib * ck]; },
+      (x, y, z, nx, ny, nz, u, v) => { const a = u * TAU, ck = crackAt(a, v), inC = ck < 0.06 && v > 0.1 && v < 0.9; g.glow = inC ? 0.5 : 0; return inC ? [0.5, 0.02, 0.015] : mul(mix([0.12, 0.13, 0.15], [0.2, 0.32, 0.28], 0.5 * smooth(0.45, 0.7, noise3(x * 3, y * 3, z * 3))), (0.7 + 0.4 * noise3(x * 9, y * 9, z * 9)) * (ck < 0.11 ? 0.5 : 1)); }, true);
+    g.glow = 0;
+    g.surf(K_PLAIN, 0.5, 0.85);
+    g.in(M(0, dy + dh + 0.98, 0), () => { g.lathe([[0.1, 0], [0.12, 0.05], [0.05, 0.12], [0.07, 0.2], [0.03, 0.3], [0.012, 0.95], [0, 1.0]], 8, [0.05, 0.048, 0.055]); g.in(M(0, 0.6, 0), () => batMotif(g, 0.62, [0.05, 0.048, 0.055], { metal: 0.8 })); });
+    // dead creeper on the walls
+    const dead = { leaf: [rgb(0x3a2e22), rgb(0x4a3020), rgb(0x2a2a1e)], stem: [0.1, 0.08, 0.06], n: 4, leaves: 12 };
+    for (const e of [-1, 1]) g.in(M(e * (hx + 0.02), p0, -0.5, 0, e * 90, 0), () => creeper(g, 1.0, 1.7, e + 3, dead));
+    g.in(M(0.3, p0, -hz - 0.02, 0, 180, 0), () => creeper(g, 1.3, 1.5, 6, dead));
+  });
+  // steps, the fallen pinnacle, headstones, mist
+  g.surf(K_STONE, 0.93);
+  for (let k = 0; k < 3; k++) g.in(M(0, p0 - 0.05 - k * 0.1 - 0.06, cz + fz + 0.22 + k * 0.13), () => g.cbox(1.36 + k * 0.1, 0.22, 0.2, 0.014, stoneTint(mul(col, 0.9 + 0.1 * (k % 2)), k, 4)));
+  g.in(M(1.3, 0.1, -1.78, 80, 30, 0), () => g.in(M(0, 0, 0, 0, 45, 0), () => g.lathe([[0.11, 0], [0.075, 0.6], [0, 0.74]], 4, mul(col, 1.25))));
+  for (const [x, z, w, h, rx, rz, sd] of [[-1.22, 1.62, 0.3, 0.6, -8, 6, 1], [1.2, 1.7, 0.26, 0.5, 6, -10, 2], [-0.85, 1.78, 0.22, 0.4, 10, 4, 3]]) g.in(M(x, 0, z, rx, sd * 9 - 10, rz), () => headstone(g, w, h, sd));
+  for (const e of [-1, 1]) g.in(M(e * 0.86, 0, cz + fz + 0.36), () => { g.surf(K_STONE, 0.93); g.in(M(0, 0.2, 0), () => g.cbox(0.24, 0.4, 0.24, 0.02, stoneTint(col, e, 4))); g.surf(K_STONE, 0.9); g.in(M(0, 0.4, 0), () => g.lathe([[0.06, 0], [0.09, 0.03], [0.05, 0.08], [0.11, 0.2], [0.12, 0.3], [0.09, 0.34], [0, 0.34]], nq(10), stoneTint(trim, e + 2, 5))); });
+  mist(g, 3, 4, 5, 16);
+}
+function gallows(g) {
+  g.moss = 0.5;
+  pad(g, 2, 1, 0.04, rgb(0x3e382c), 1251, { nu: 30, nv: 5 });
+  const tb = (sd) => woodTint(mul(grey[((Math.round(sd) % 4) + 4) % 4], 0.85 + 0.25 * hash1(Math.round(sd), 3)), sd), py = 0.5, x0 = -0.5, x1 = 0.92, hz = 0.4;
+  // the platform: six posts, bearers, a plank deck with a trap in it, steps at one end
+  g.surf(K_WOOD, 0.95);
+  for (const x of [x0 + 0.05, (x0 + x1) / 2, x1 - 0.05]) for (const z of [-hz + 0.05, hz - 0.05]) g.in(M(x, py / 2 - 0.05, z, 0, 0, (hash1(x * 9, z * 9) - 0.5) * 4), () => g.cbox(0.09, py + 0.06, 0.09, 0.012, tb(Math.round(x * 7 + z * 3))));
+  for (const z of [-hz + 0.05, hz - 0.05]) { g.in(M((x0 + x1) / 2, py - 0.1, z), () => g.beam(x1 - x0 + 0.06, 0.09, 0.07, 0.012, tb(7), 4)); g.beamTo([x0 + 0.08, 0.06, z], [(x0 + x1) / 2 - 0.05, py - 0.14, z], 0.05, 0.04, 0.008, tb(9), 2); g.beamTo([x1 - 0.08, 0.06, z], [(x0 + x1) / 2 + 0.05, py - 0.14, z], 0.05, 0.04, 0.008, tb(11), 2); }
+  g.in(M(0, 0, 0, 0, 90, 0), () => deck(g, -hz - 0.03, hz + 0.03, x0 - 0.02, x1 + 0.02, py, grey, 21, { rag: 0.05, pw: 0.15, skew: 1 }));
+  g.surf(K_PLAIN, 1);
+  g.in(M(0.3, py + 0.004, 0.02), () => { for (const [a, b] of [[[-0.3, -0.24], [0.3, -0.24]], [[0.3, -0.24], [0.3, 0.24]], [[0.3, 0.24], [-0.3, 0.24]], [[-0.3, 0.24], [-0.3, -0.24]]]) g.beamTo([a[0], 0, a[1]], [b[0], 0, b[1]], 0.006, 0.02, 0.001, [0.02, 0.018, 0.015], 1); });
+  g.surf(K_PLAIN, 0.55, 0.8); for (const z of [-0.12, 0.14]) g.in(M(0.0, py + 0.006, z, -90, 0, 0), () => g.cbox(0.16, 0.04, 0.01, 0.003, IRON));
+  g.surf(K_WOOD, 0.95);
+  for (let k = 0; k < 3; k++) { const x = -0.92 + k * 0.15, y = 0.12 + k * 0.125; g.in(M(x, y, 0, 0, 90, 0), () => g.beam(2 * hz - 0.1, 0.04, 0.15, 0.008, tb(30 + k), 2)); for (const z of [-hz + 0.1, hz - 0.1]) g.in(M(x, y / 2 - 0.03, z), () => g.cbox(0.05, y + 0.02, 0.05, 0.008, tb(33 + k))); }
+  // the gibbet: two posts through the deck, the beam, braces
+  const bz = -0.08, by = 3.05;
+  for (const [x, sd] of [[-0.36, 1], [0.8, 2]]) { g.in(M(x, by / 2 - 0.06, bz, 0, 0, (sd - 1.5) * 1.6), () => g.in(M(0, 0, 0, 0, 0, 90), () => g.beam(by + 0.12, 0.12, 0.12, 0.016, tb(40 + sd), 10))); }
+  g.in(M(0.0, by + 0.04, bz, 0, 0, -1), () => g.beam(1.98, 0.13, 0.13, 0.018, tb(45), 10));
+  for (const [x, e] of [[-0.36, 1], [0.8, -1], [-0.36, -1]]) g.beamTo([x, by - 0.6, bz], [x + e * 0.5, by - 0.03, bz], 0.07, 0.07, 0.01, tb(50 + x * 3 + e), 3);
+  g.surf(K_PLAIN, 0.55, 0.8);
+  for (const x of [-0.36, 0.8]) for (const y of [by - 0.02, py + 0.06]) g.in(M(x, y, bz + 0.065), () => { g.cbox(0.2, 0.05, 0.012, 0.004, IRON); for (const e of [-1, 1]) g.in(M(e * 0.07, 0, 0.006), () => g.stud(0.012, [0.12, 0.11, 0.11], 5)); });
+  // two nooses
+  for (const [x, l, sd] of [[0.14, 0.72, 1], [0.48, 0.62, 2]]) { g.in(M(x, by + 0.04, bz), () => { g.in(M(0, 0, 0, 0, 90, 0), () => lashing(g, 0.075, 4, 0.014)); }); g.in(M(x, by - 0.03, bz), () => noose(g, l, sd)); }
+  // the cage on a chain from the long end of the beam: iron hoops and bars, what is left of someone inside
+  g.in(M(-0.78, by - 0.03, bz), () => {
+    chain(g, [[0, 0.0, 0], [0, -0.48, 0]], 0.055);
+    g.in(M(0, -0.5, 0), () => {
+      g.surf(K_PLAIN, 0.6, 0.8);
+      const prof = (t) => 0.2 * (0.55 + 0.45 * Math.sin(Math.PI * (0.12 + 0.8 * t))), col = rustCol(3);
+      for (let k = 0; k < 8; k++) { const a = k * 0.785, pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([Math.cos(a) * prof(t), -t * 1.05, Math.sin(a) * prof(t)]); } g.tube(pts, 0.011, 4, col, false); }
+      for (const t of [0.08, 0.36, 0.66, 0.96]) g.in(M(0, -t * 1.05, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(prof(t), 0.014, 4, nq(14)), col));
+      g.in(M(0, -1.06, 0), () => g.cyl(prof(1), prof(1), 0.02, 8, col, true, true));
+      g.in(M(0, 0.02, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.04, 0.012, 4, 8), IRON));
+      g.in(M(0.0, -0.62, 0.02, 20, 30, 10), () => skull(g, 0.85, true));
+      bone(g, [-0.05, -1.0, 0.0], [0.08, -0.72, 0.04], 0.016, 1); bone(g, [0.06, -1.02, -0.05], [-0.07, -1.0, 0.07], 0.014, 2);
+      for (let k = 0; k < 4; k++) rib(g, [0, -0.7 - k * 0.05, -0.06], [0.0, -0.74 - k * 0.05, 0.08], [0.09 * (k % 2 ? 1 : -1), 0, 0.02], 0.009, k);
+    });
+  });
+  // crows
+  g.in(M(0.66, by + 0.105, bz, 0, 200, 0), () => crow(g, 1.25));
+  g.in(M(-0.56, by + 0.105, bz + 0.01, 0, 20, 0), () => crow(g, 1.2));
+  g.in(M(0.8, by + 0.11, bz, 0, -40, 0), () => crow(g, 1.15));
+  g.in(M(0.86, py + 0.01, 0.26, 0, 70, 0), () => crow(g, 1.2));
+  // a lantern on the post, a stool of a barrel, mist
+  g.in(M(0.8, 1.7, bz + 0.07), () => bracketLamp(g, 0.9, [0.9, 0.5, 0.15], { glow: 0.6 }));
+  mist(g, 2, 1, 9, 9, [0.62, 0.66, 0.7]);
+}
+
+// =====================================================================================================
+// Khemet: sandstone, gold and lapis
+// =====================================================================================================
+const SANDSTONE = 0xd2b47e, LAPIS = rgb(0x1f4fa8), KH_PAINT = [rgb(0x1f4fa8), rgb(0xe0aa2e), rgb(0x1f4fa8), rgb(0xe0aa2e), rgb(0xb8342a), rgb(0x1f8a7a)], KH_BACK = rgb(0xe8dcb8);
+const sandStone = (seed, o) => stoneStyle(SANDSTONE, { seed, chip: 0.1, var: 0.07, cell: 0.3 / qual(), len: [0.42, 0.8], pal: [rgb(0xd2b47e), rgb(0xd2b47e), rgb(0xc8a870), rgb(0xdcc08c), rgb(0xc4a268), rgb(0xd8b884)], ...o });
+const sandC = (seed = 0, k = 1) => (x, y, z) => mul(rgb(SANDSTONE), k * (0.88 + 0.2 * noise3(x * 2.3 + seed, y * 5, z * 2.3)));
+const goldC = (seed = 0) => (x, y, z) => mul(GOLD, 0.75 + 0.4 * noise3(x * 6 + seed, y * 6, z * 6));
+const GORGE = [[0, 0], [0.025, 0.01], [0.025, 0.04], [0, 0.055], [0.02, 0.11], [0.07, 0.18], [0.1, 0.2], [0.1, 0.235], [0, 0.235]];
+/** a cavetto cornice round a box of half sizes hx, hz at height y, with a painted roll under it */
+function gorge(g, hx, hz, y, col, cx = 0, cz = 0, s = 1) {
+  for (let f = 0; f < 4; f++) { const W = f % 2 ? hz : hx, D = f % 2 ? hx : hz; g.surf(K_STONE, 0.9); g.in(M(cx, y, cz, 0, f * 90, 0).multiply(M(0, 0, D)), () => g.mould(GORGE.map(([o, v]) => [o * s, v * s]), 2 * W, (x, yy, z) => (yy > 0.06 * s && yy < 0.19 * s ? mul(KH_PAINT[(Math.floor(x / (0.09 * s)) % 3 + 3) % 3 === 0 ? 0 : (Math.floor(x / (0.09 * s)) % 3 + 3) % 3 === 1 ? 1 : 4], 0.9) : col(x, yy, z)), 1, 1, Math.max(2, Math.round((2 * W) / (0.09 * s))))); }
+}
+/** a lotus column standing on the local origin, h high: banded shaft, an open-flower capital painted petal by petal */
+function lotusColumn(g, r, h, seed = 0) {
+  const cap = h - r * 2.6, sc = sandC(seed, 1.08);
+  g.surf(K_STONE, 0.85);
+  g.lathe([[r * 1.55, -0.03], [r * 1.55, 0.05], [r * 1.25, 0.09]], nq(14), sc);
+  const bands = [[0.1, 4], [0.14, 1], [0.18, 0], [0.22, 1]], prof = [];
+  const rad = (y) => r * (1.12 - 0.2 * Math.pow((y - 0.09) / (cap - 0.09), 1.5)) * (y < 0.4 ? 0.88 + 0.12 * (y - 0.09) / 0.31 : 1);
+  const ys = [0.09, 0.099, 0.1, 0.139, 0.14, 0.179, 0.18, 0.219, 0.22, 0.259, 0.26, 0.6, cap * 0.5, cap - 0.3, cap - 0.291, cap - 0.24, cap - 0.231, cap - 0.18, cap - 0.171, cap - 0.12, cap - 0.111, cap - 0.06, cap - 0.051, cap].sort((a, b) => a - b);
+  for (const y of ys) prof.push([rad(y), y]);
+  g.lathe(prof, nq(14), (x, y, z) => { for (const [y0, c] of bands) if (y > y0 - 0.0005 && y < y0 + 0.0395) return mul(KH_PAINT[c], 0.9); const k = (cap - y) / 0.06; if (k > 0.8 && k < 5) return mul(KH_PAINT[[1, 0, 4, 0, 1][Math.floor(k - 0.01) % 5]], 0.9); return sc(x, y, z); });
+  g.sheet(nq(32), nq(8), (u, v) => { const a = u * TAU, pet = 1 + 0.07 * v * Math.abs(Math.sin(a * 6)), rr = r * lerp(0.92, 2.15, Math.pow(v, 1.5)) * pet; return [Math.cos(a) * rr, cap + v * r * 2.0, Math.sin(a) * rr]; },
+    (x, y, z, nx, ny, nz, u, v) => { const p = tri1(u * 12); return mul(p > 0.72 ? KH_PAINT[1] : v > 0.72 ? KH_PAINT[4] : v < 0.3 ? KH_PAINT[5] : KH_PAINT[0], 0.85 + 0.2 * v); }, true);
+  g.lathe([[r * 2.15, cap + r * 2.0], [r * 1.5, cap + r * 2.1], [0, cap + r * 2.1]], nq(14), mul(rgb(SANDSTONE), 0.7));
+  g.in(M(0, h - r * 0.25, 0), () => g.cbox(r * 2.7, r * 0.5, r * 2.7, 0.012, sc));
+}
+/** a winged sun on the local XY plane, facing +Z */
+function wingedSun(g, s) {
+  g.surf(K_PLAIN, 0.3, 0.9, 0.15);
+  g.in(M(0, 0, 0.02, 90, 0, 0), () => g.lathe([[0, 0.05], [0.1, 0.045], [0.16, 0.02], [0.17, 0], [0, 0]].reverse().map(([r, y]) => [r * s, y * s]), nq(14), goldC(1)));
+  for (const e of [-1, 1]) for (let k = 0; k < 3; k++) { g.surf(K_PLAIN, 0.5, 0.3); g.in(M(e * 0.16 * s, (0.06 - k * 0.07) * s, 0.012 + k * 0.004), () => prism(g, [[0, -0.035 * s], [e * (0.74 - k * 0.14) * s, -0.02 * s], [e * (0.8 - k * 0.14) * s, 0.03 * s], [0, 0.04 * s]], 0.02, mul(KH_PAINT[[1, 0, 4][k]], 0.9), [e * 0.2 * s, 0])); }
+}
+function pyramid(g) {
+  g.moss = 0;
+  const sandy = (x, y, z) => mul(rgb(0xc8a86a), 0.8 + 0.3 * fbm3(x * 2, y * 5, z * 2, 3));
+  pad(g, 7, 7, 0.04, sandy, 1301, { nu: 48, nv: 6 });
+  const cz = -0.72, hb = 2.68, plH = 0.5, apex = 7.35, capY = 6.25, st = sandStone(1302);
+  const wAt = (y) => (hb * (apex - y)) / (apex - plH);
+  // the plinth, a band of signs round it
+  g.in(M(0, 0, cz), () => {
+    stoneBox(g, hb + 0.1, hb + 0.1, 0, plH, st, 1303);
+    g.surf(K_STONE, 0.9); g.flat([[-hb - 0.1, plH - 0.003, -hb - 0.1], [-hb - 0.1, plH - 0.003, hb + 0.1], [hb + 0.1, plH - 0.003, hb + 0.1], [hb + 0.1, plH - 0.003, -hb - 0.1]], mul(rgb(SANDSTONE), 0.8));
+    for (let f = 0; f < 4; f++) g.in(M(0, 0.3, 0, 0, f * 90, 0).multiply(M(0, 0, hb + 0.1 + 0.014)), () => glyphBand(g, 2 * hb - 0.1, 0.17, 1310 + f, KH_PAINT, KH_BACK));
+    // the courses: each a low battered riser and a narrow tread, the blocks picked out one by one
+    const n = Math.round((capY - plH) / 0.2), rnd = rng(1320), base = rgb(SANDSTONE), GB = 8;
+    for (let f = 0; f < 4; f++) g.in(M(0, 0, 0, 0, f * 90, 0), () => {
+      for (let k = 0; k < n; k++) {
+        const y0 = plH + (k * (capY - plH)) / n, y1 = plH + ((k + 1) * (capY - plH)) / n, w0 = wAt(y0), w1 = wAt(y1), wm = w0 - (w0 - w1) * 0.45, nb = Math.max(1, Math.round((2 * w0) / 0.62)), off = rnd() * 0.6;
+        const band = k === GB || k === GB + 1;
+        g.surf(K_STONE, 0.9);
+        let xa = -w0;
+        for (let b = 0; b <= nb; b++) {
+          const xb = b === nb ? w0 : Math.min(w0, -w0 + ((b + off) * 2 * w0) / nb);
+          if (xb - xa < 0.01) { xa = xb; continue; }
+          const c = band ? mul(LAPIS, 0.75 + 0.3 * rnd()) : mul(base, 0.82 + 0.3 * rnd()), k0 = wm / w0, k1 = w1 / w0;
+          g.flat([[xa, y0, w0], [xb, y0, w0], [xb * k0, y1, wm], [xa * k0, y1, wm]], [mul(c, 0.86), mul(c, 0.86), c, c]);
+          g.flat([[xa * k0, y1, wm], [xb * k0, y1, wm], [xb * k1, y1, w1], [xa * k1, y1, w1]], mul(c, 1.16));
+          xa = xb;
+        }
+        if (k === GB) { g.in(M(0, (y0 + y1) / 2, (w0 + wm) / 2 + 0.006, -Math.atan2(w0 - wm, y1 - y0) / DEG, 0, 0), () => glyphBand(g, 2 * wm - 0.2, 0.15, 1330 + f, [GOLD, mul(GOLD, 1.15), rgb(0xe8dcb8)], null)); }
+        if (k === GB + 1) { g.surf(K_PLAIN, 0.3, 0.9, 0.1); g.flat([[-wm, y1 - 0.05, wm + 0.004], [wm, y1 - 0.05, wm + 0.004], [wm, y1 - 0.012, wm + 0.004], [-wm, y1 - 0.012, wm + 0.004]], mul(GOLD, 0.95)); g.flat([[-w0, y0 + 0.01, w0 + 0.004 - (w0 - wm) * 0.05], [w0, y0 + 0.01, w0 + 0.004 - (w0 - wm) * 0.05], [w0, y0 + 0.045, w0 + 0.004 - (w0 - wm) * 0.2], [-w0, y0 + 0.045, w0 + 0.004 - (w0 - wm) * 0.2]], mul(GOLD, 0.95)); }
+      }
+      // the gold cap
+      const wc = wAt(capY) + 0.02;
+      g.surf(K_PLAIN, 0.22, 0.95, 0.14);
+      g.flat([[-wc, capY, wc], [wc, capY, wc], [0, apex + 0.05, 0]], [mul(GOLD, 0.85), mul(GOLD, 0.85), mul(GOLD, 1.25)]);
+      g.flat([[-wc - 0.02, capY - 0.07, wc + 0.02], [wc + 0.02, capY - 0.07, wc + 0.02], [wc, capY, wc], [-wc, capY, wc]], mul(GOLD, 0.7));
+    });
+  });
+  // the chapel against the south face: a battered block with a gorge cornice, its door under a winged sun
+  const fz = cz + hb + 0.1, chz = 1.82, chx = 1.42, chd = 0.5, chT = 2.55;
+  { const stc = sandStone(1340); stoneBox2(g, chx, chd, plH - 0.02, chT, stc, 1341, chz); }
+  g.surf(K_STONE, 0.9); g.flat([[-chx, chT, chz - chd], [-chx, chT, chz + chd], [chx, chT, chz + chd], [chx, chT, chz - chd]], mul(rgb(SANDSTONE), 0.85));
+  gorge(g, chx, chd, chT - 0.01, sandC(4, 1.05), 0, chz, 1.15);
+  g.in(M(0, plH, chz + chd + 0.012), () => {
+    g.surf(K_PLAIN, 1); g.flat([[-0.3, 0, 0], [0.3, 0, 0], [0.3, 1.3, 0], [-0.3, 1.3, 0]], [0.015, 0.012, 0.01]);
+    g.surf(K_STONE, 0.9);
+    for (const e of [-1, 1]) g.in(M(e * 0.36, 0.68, 0.02), () => g.cbox(0.12, 1.36, 0.06, 0.012, sandC(e, 1.1)));
+    g.surf(K_PLAIN, 0.3, 0.9, 0.1); g.in(M(0, 1.4, 0.03), () => g.beam(0.9, 0.12, 0.07, 0.014, goldC(3), 4));
+    g.in(M(0, 1.64, 0.0), () => wingedSun(g, 0.62));
+    g.in(M(0, 1.9, 0.004), () => glyphBand(g, 2 * chx - 0.2, 0.15, 1350, KH_PAINT, KH_BACK));
+    for (const e of [-1, 1]) g.in(M(e * 0.92, 0.75, 0.004, 0, 0, 90), () => glyphBand(g, 1.3, 0.15, 1352 + e, KH_PAINT, KH_BACK));
+  });
+  // the portico before it: four lotus columns on a podium, an architrave with a gorge, a stair down to the causeway
+  const pz0 = chz + chd, pz1 = 2.98, colZ = 2.74, colH = 1.72;
+  { const stp = sandStone(1360); stoneBox2(g, 1.5, (pz1 - pz0) / 2 + 0.02, 0, plH, stp, 1361, (pz0 + pz1) / 2); }
+  g.surf(K_STONE, 0.9); g.flat([[-1.5, plH - 0.002, pz0], [-1.5, plH - 0.002, pz1 + 0.02], [1.5, plH - 0.002, pz1 + 0.02], [1.5, plH - 0.002, pz0]], mul(rgb(SANDSTONE), 0.9));
+  for (const x of [-1.24, -0.44, 0.44, 1.24]) g.in(M(x, plH, colZ), () => lotusColumn(g, 0.105, colH, x * 5));
+  g.surf(K_STONE, 0.9);
+  g.in(M(0, plH + colH + 0.1, colZ), () => g.beam(2.94, 0.2, 0.3, 0.015, sandC(7, 1.06), 8));
+  g.in(M(0, plH + colH + 0.1, colZ + 0.156), () => glyphBand(g, 2.8, 0.13, 1370, KH_PAINT, KH_BACK));
+  for (const e of [-1, 1]) g.in(M(e * 1.32, plH + colH + 0.1, (pz0 + colZ) / 2), () => g.cbox(0.3, 0.2, colZ - pz0 + 0.3, 0.015, sandC(e + 8, 1.03)));
+  g.in(M(0, plH + colH + 0.215, (pz0 + colZ) / 2 + 0.07), () => g.cbox(2.94, 0.05, colZ - pz0 + 0.44, 0.012, sandC(11, 0.95)));
+  gorge(g, 1.47, (colZ - pz0) / 2 + 0.22, plH + colH + 0.23, sandC(5, 1.05), 0, (pz0 + colZ) / 2 + 0.07, 0.9);
+  g.surf(K_PLAIN, 1); g.flat([[-1.45, plH + colH - 0.004, pz0], [1.45, plH + colH - 0.004, pz0], [1.45, plH + colH - 0.004, colZ + 0.14], [-1.45, plH + colH - 0.004, colZ + 0.14]], [0.2, 0.16, 0.1]);
+  for (let k = 0; k < 5; k++) { g.surf(K_STONE, 0.92); g.in(M(0, plH - (k + 1) * 0.1 + 0.05 - 0.1, pz1 + 0.06 + k * 0.088), () => g.cbox(1.24, 0.3, 0.1, 0.01, sandC(k, 0.96 + 0.05 * (k % 2)))); }
+  for (const e of [-1, 1]) { g.surf(K_STONE, 0.92); g.in(M(e * 0.74, 0.22, pz1 + 0.24), () => g.cbox(0.22, 0.52, 0.5, 0.02, sandC(e + 20, 1.04))); g.in(M(e * 0.74, 0.48, pz1 + 0.24), () => { g.surf(K_PLAIN, 0.3, 0.9, 0.08); g.lathe([[0.05, 0], [0.1, 0.03], [0.13, 0.1], [0.12, 0.11], [0.08, 0.05], [0, 0.04]], nq(10), goldC(e)); g.in(M(0, 0.08, 0), () => fire(g, 0.22, FIRE_RED, e, 0.85)); }); }
+  // cedar masts with pennons against the chapel
+  for (const e of [-1, 1]) g.in(M(e * 1.12, plH, pz0 + 0.07, 0, e > 0 ? 0 : 0, 0), () => pennon(g, 3.5, 0.62, KH_PAINT[e > 0 ? 4 : 0], GOLD, { pole: rgb(0x6a4026), hgt: 0.2 }));
+  // obelisks flanking the stair, capped in gold, signs down their faces
+  for (const e of [-1, 1]) g.in(M(e * 2.42, 0, 2.86), () => {
+    g.surf(K_STONE, 0.9); g.in(M(0, 0.16, 0), () => g.cbox(0.5, 0.34, 0.5, 0.02, sandC(e + 30, 1.0)));
+    g.in(M(0, 0.33, 0), () => { obeliskOn(g, 2.75, 0.19, sandC(e + 32, 1.1), mul(GOLD, 1.0), { capGlow: 0.14 }); for (let f = 0; f < 4; f++) g.in(M(0, 1.22, 0, 0, f * 90, 0).multiply(M(0, 0, 0.123, -0.75, 0, 0)), () => g.in(M(0, 0, 0, 0, 0, 90), () => glyphBand(g, 1.9, 0.12, 1380 + f + e, KH_PAINT, null))); });
+  });
+  // sand drifted against the plinth
+  for (const [x, z, rx, rz, sd] of [[-2.9, 1.9, 0.5, 0.9, 1], [3.0, -1.0, 0.42, 1.1, 2], [-3.0, -2.2, 0.4, 0.8, 3], [1.6, 3.0, 0.5, 0.3, 4], [-1.7, 3.05, 0.45, 0.3, 5]]) { g.surf(K_PLAIN, 0.95); g.in(M(x, 0.02, z), () => g.sheet(nq(14), 4, (u, v) => { const a = u * TAU; return [Math.cos(a) * rx * v, v > 0.99 ? -0.03 : 0.18 * Math.pow(1 - v * v, 0.8), Math.sin(a) * rz * v]; }, sandy, true)); }
+}
+/** stoneBox centred at z = cz */
+function stoneBox2(g, hx, hz, y0, y1, st, seed, cz) { g.in(M(0, 0, cz), () => stoneBox(g, hx, hz, y0, y1, st, seed, { noFoot: y0 > 0.02 })); }
+/** repaint the parts of a sculpted geometry that were given a marker colour: fn(x, y, z) -> [rgb, roughness, metalness] */
+function repaint(geo, test, fn) {
+  const c = geo.attributes.color, p = geo.attributes.position, a = geo.attributes.aPbr;
+  for (let i = 0; i < c.count; i++) { const r = c.getX(i), gg = c.getY(i), b = c.getZ(i); const k = test(r, gg, b); if (k <= 0) continue; const [col, rough, metal] = fn(p.getX(i), p.getY(i), p.getZ(i)); c.setXYZ(i, col[0] * k, col[1] * k, col[2] * k); if (a) { a.setX(i, rough); a.setY(i, metal); } }
+  return geo;
+}
+function sphinxStatue(g) {
+  g.moss = 0;
+  const sandy = (x, y, z) => mul(rgb(0xc8a86a), 0.8 + 0.3 * fbm3(x * 2, y * 5, z * 2, 3));
+  pad(g, 2, 4, 0.04, sandy, 1401, { nu: 40, nv: 6 });
+  const st = sandStone(1402, { len: [0.36, 0.62] }), px = 0.84, pz = 1.86, ph = 0.86, up = 0.3;
+  stoneBox(g, px, pz, 0, ph, st, 1403);
+  g.surf(K_STONE, 0.9); g.flat([[-px, ph - 0.002, -pz], [-px, ph - 0.002, pz], [px, ph - 0.002, pz], [px, ph - 0.002, -pz]], mul(rgb(SANDSTONE), 0.9));
+  gorge(g, px, pz, ph - 0.2, sandC(3, 1.06), 0, 0, 0.85);
+  for (const e of [-1, 1]) g.in(M(e * (px + 0.014), 0.45, 0, 0, e * 90, 0), () => glyphBand(g, 2 * pz - 0.3, 0.13, 1420 + e, [GOLD, LAPIS], null));
+  for (const e of [-1, 1]) g.in(M(e * (px + 0.014), 0.2, 0, 0, e * 90, 0), () => glyphBand(g, 2 * pz - 0.3, 0.16, 1410 + e, KH_PAINT, KH_BACK));
+  g.in(M(0, 0.2, pz + 0.014), () => glyphBand(g, 2 * px - 0.24, 0.16, 1413, KH_PAINT, KH_BACK));
+  // the lion body, sculpted once
+  const sand = 0xcfa868, marker = 0xff00ff, marker2 = 0x00ffff;
+  g.surf(K_STONE, 0.85);
+  g.in(M(0, up, 0), () => g.add(geoOnce('sphinxBody', () => {
+    const P = [], Q = (p) => p.color(sand).tint(0.1, 5);
+    P.push(Q(S.capsule([0, 1.06, -1.2], [0, 1.1, 0.3], 0.4, 0.42)));
+    P.push(...S.mirrorX([Q(S.ellipsoid(0.27, 0.42, 0.5).at(0.34, 0.97, -1.08)).blend(0.08)]));
+    P.push(...S.mirrorX([Q(S.capsule([0.44, 0.67, -0.95], [0.48, 0.65, -0.4], 0.12, 0.11)).blend(0.05)]));
+    P.push(Q(S.ellipsoid(0.42, 0.52, 0.4).at(0, 1.2, 0.36)).blend(0.1));
+    P.push(...S.mirrorX([Q(S.ellipsoid(0.2, 0.36, 0.3).at(0.33, 1.02, 0.42)).blend(0.07)]));
+    P.push(...S.mirrorX([Q(S.capsule([0.32, 0.72, 0.4], [0.32, 0.68, 1.5], 0.15, 0.135)).blend(0.06)]));
+    P.push(...S.mirrorX([Q(S.box(0.3, 0.2, 0.34, 0.08).at(0.32, 0.66, 1.58)).blend(0.04)]));
+    for (const dx of [-0.07, 0.07]) P.push(...S.mirrorX([S.box(0.012, 0.16, 0.18, 0.003).at(0.32 + dx, 0.7, 1.7).color(0x8a6a3a).cut(0.01)]));
+    P.push(...S.mirrorX([S.box(0.012, 0.12, 0.14, 0.003).at(0.5, 0.66, -0.33).color(0x8a6a3a).cut(0.01)]));
+    P.push(...S.limb([[0.1, 0.82, -1.62], [0.5, 0.72, -1.56], [0.7, 0.7, -1.1], [0.66, 0.74, -0.62]], [0.07, 0.06, 0.055, 0.075]).map((p) => Q(p).blend(0.03)));
+    P.push(Q(S.capsule([0, 1.5, 0.48], [0, 1.95, 0.6], 0.25, 0.2)).blend(0.08));
+    for (let i = 0; i < 5; i++) P.push(...S.mirrorX([S.capsule([0.2, 1.3 - i * 0.02, -0.9 + i * 0.22], [0.42, 0.95, -0.86 + i * 0.22], 0.012, 0.012).color(0x9a7a44).paint(0.01, -0.004)]));
+    // the broad collar on its chest
+    P.push(S.ellipsoid(0.36, 0.3, 0.2).at(0, 1.55, 0.72).color(marker2).paint(0.006, 0.006));
+    return repaint(buildPartGeometry({ prims: P }, { res: 22 * qual(), ao: 0.8 }), (r, gg, b) => (r < 0.3 * gg && b > 0.5 * gg ? gg : 0), (x, y, z) => { const d = Math.hypot(x, y - 1.9) * 20; const k = Math.floor(d) % 3; return k === 0 ? [GOLD, 0.3, 0.9] : k === 1 ? [LAPIS, 0.5, 0.2] : [rgb(0xb8342a), 0.5, 0.2]; });
+  })));
+  // the head: a king's face in the striped headcloth
+  g.in(M(0, up, 0), () => g.add(geoOnce('sphinxHead', () => {
+    const P = [], Q = (p) => p.color(sand).tint(0.08, 9), N = (p) => p.color(marker);
+    P.push(N(S.ellipsoid(0.3, 0.26, 0.3).at(0, 2.44, 0.62)));
+    P.push(...S.mirrorX([N(S.box(0.2, 0.66, 0.36, 0.07).rot(0, 0, -15).at(0.34, 2.14, 0.6)).blend(0.05)]));
+    P.push(...S.mirrorX([N(S.box(0.17, 0.5, 0.1, 0.04).rot(8, 0, 0).at(0.2, 1.74, 0.84)).blend(0.03)]));
+    P.push(N(S.capsule([0, 2.3, 0.4], [0, 1.66, 0.26], 0.15, 0.1)).blend(0.05));
+    P.push(Q(S.ellipsoid(0.235, 0.29, 0.25).at(0, 2.25, 0.74)).blend(0.012));
+    P.push(Q(S.ellipsoid(0.17, 0.15, 0.16).at(0, 2.06, 0.82)).blend(0.05));
+    P.push(...S.mirrorX([Q(S.ellipsoid(0.09, 0.07, 0.07).at(0.12, 2.2, 0.9)).blend(0.05)]));
+    P.push(Q(S.capsule([0, 2.33, 0.97], [0, 2.19, 1.02], 0.035, 0.055)).blend(0.025));
+    P.push(Q(S.ellipsoid(0.085, 0.03, 0.045).at(0, 2.09, 0.975)).blend(0.015));
+    P.push(S.box(0.13, 0.008, 0.06, 0.002).at(0, 2.09, 1.0).color(0x7a5a34).cut(0.004));
+    P.push(...S.mirrorX([S.ellipsoid(0.058, 0.026, 0.03).at(0.1, 2.3, 0.955).color(0xf0ead8).paint(0.003, 0.002), S.sphere(0.022).at(0.1, 2.3, 0.975).color(0x15100c).paint(0.002, 0.002)]));
+    P.push(...S.mirrorX([S.capsule([0.04, 2.3, 0.97], [0.2, 2.31, 0.9], 0.012, 0.01).color(0x15203a).paint(0.004, 0.003)]));
+    P.push(...S.mirrorX([S.capsule([0.04, 2.37, 0.96], [0.19, 2.385, 0.9], 0.016, 0.012).color(0x1f4fa8).paint(0.004, 0.006)]));
+    P.push(...S.mirrorX([Q(S.ellipsoid(0.03, 0.085, 0.05).at(0.245, 2.26, 0.74)).blend(0.01)]));
+    P.push(N(S.box(0.09, 0.3, 0.09, 0.03).rot(10, 0, 0).at(0, 1.86, 0.9)).blend(0.01));
+    P.push(S.box(0.62, 0.06, 0.2, 0.02).at(0, 2.47, 0.84).color(0xe0aa2e).pbr(0.3, 0.9).paint(0.004, 0.008));
+    P.push(...S.limb([[0, 2.47, 0.94], [0, 2.56, 1.0], [0, 2.63, 0.97]], [0.03, 0.035, 0.022]).map((p) => p.color(0xe0aa2e).pbr(0.3, 0.9).blend(0.008)));
+    return repaint(buildPartGeometry({ prims: P }, { res: 42 * qual(), ao: 0.8 }), (r, gg, b) => (gg < 0.3 * r && b > 0.5 * r ? r : 0), (x, y, z) => (Math.floor(y * 25 + (Math.abs(x) > 0.24 && y < 2.3 ? Math.abs(x) * 9 : 0)) % 2 ? [GOLD, 0.3, 0.9] : [LAPIS, 0.45, 0.25]));
+  })));
+  // offerings between its paws, gold bowls of fire on the plinth, sand against the base
+  g.in(M(0, ph, 1.55), () => { g.surf(K_STONE, 0.9); g.in(M(0, 0.08, 0), () => g.cbox(0.26, 0.16, 0.3, 0.015, sandC(9, 1.1))); g.in(M(0, 0.165, 0.152), () => wingedSun(g, 0.14)); g.surf(K_PLAIN, 0.3, 0.9, 0.08); g.in(M(0, 0.16, 0), () => g.lathe([[0.04, 0], [0.09, 0.03], [0.1, 0.07], [0.08, 0.04], [0, 0.03]], nq(10), goldC(2))); });
+  for (const e of [-1, 1]) g.in(M(e * 0.68, ph, 1.68), () => { g.surf(K_PLAIN, 0.3, 0.9, 0.08); g.lathe([[0.07, 0], [0.04, 0.04], [0.04, 0.2], [0.1, 0.26], [0.13, 0.34], [0.12, 0.35], [0.08, 0.28], [0, 0.27]], nq(10), goldC(e)); g.in(M(0, 0.3, 0), () => fire(g, 0.26, FIRE_RED, e, 0.85)); });
+  for (const [x, z, rx, rz, sd] of [[-0.85, 1.2, 0.14, 0.6, 1], [0.86, -1.0, 0.13, 0.7, 2], [0.2, -1.88, 0.6, 0.11, 3]]) { g.surf(K_PLAIN, 0.95); g.in(M(x, 0.02, z), () => g.sheet(nq(12), 4, (u, v) => { const a = u * TAU; return [Math.cos(a) * rx * v, v > 0.99 ? -0.03 : 0.16 * Math.pow(1 - v * v, 0.8), Math.sin(a) * rz * v]; }, sandy, true)); }
+}
+
+// =====================================================================================================
+// Drowned: wrecked timber, barnacles and ghost light
+// =====================================================================================================
+const WRECK = [rgb(0x6e6858), rgb(0x7e745e), rgb(0x5a5c50), rgb(0x767052), rgb(0x64594c)], GHOST_LIT = [0.06, 0.8, 0.22];
+/** barnacles scattered on the local XY plane (they stand toward +Z): n of them within radius s */
+function barnacles(g, s, n, seed = 0) {
+  const rnd = rng(seed * 17 + 5);
+  g.surf(K_PLAIN, 0.9);
+  for (let i = 0; i < n; i++) { const a = rnd() * TAU, d = Math.sqrt(rnd()) * s, r = 0.02 + 0.03 * rnd(); g.in(M(Math.cos(a) * d, Math.sin(a) * d, 0, 90, 0, 0), () => g.lathe([[r, -0.01], [r * 0.62, r * 0.9], [r * 0.36, r * 0.9], [r * 0.3, r * 0.3]], 6, mul([0.5, 0.5, 0.44], 0.65 + 0.5 * rnd()))); }
+}
+/** a hank of sea-weed hanging from the local origin */
+function weed(g, l, seed = 0, n = 3) {
+  g.surf(K_CLOTH, 0.6);
+  for (let i = 0; i < n; i++) { const ll = l * (0.6 + 0.4 * hash1(i, seed)); g.in(M((i - (n - 1) / 2) * 0.05, 0, 0), () => g.sheet(2, 6, (u, v) => [(u - 0.5) * 0.06 * (1 - 0.5 * v) + 0.04 * Math.sin(v * 5 + i * 2 + seed), -v * ll, 0.02 + 0.02 * Math.sin(v * 7 + i)], (x, y, z, nx, ny, nz, u, v) => mul([0.1, 0.26, 0.13], 0.6 + 0.6 * v))); }
+}
+/** the ghost lantern: an iron cage with a green flame in it, hanging from the local origin */
+function ghostLantern(g, s = 1) { lamp(g, s, GHOST_LIT, { shape: 'cage', glow: 0.65, frame: [0.05, 0.06, 0.05] }); g.in(M(0, -0.3 * s, 0), () => fire(g, 0.2 * s, [[0.2, 0.95, 0.4], [0.06, 0.8, 0.22], [0.03, 0.45, 0.2]], 3, 0.7)); }
+function hullHouse(g) {
+  g.moss = 0.8;
+  pad(g, 4, 2, 0.05, (x, y, z) => mul(rgb(0x5a5648), 0.6 + 0.6 * fbm3(x * 3, y * 5, z * 3, 3)), 1501, { nu: 44 });
+  const xs = -1.72, xb = 1.88, HT = 2.0, BM = 0.84;
+  const beamAt = (x) => BM * (x > 0 ? Math.pow(Math.max(0, 1 - Math.pow(x / xb, 2.2)), 0.8) : 1 - 0.34 * Math.pow(-x / -xs, 3));
+  const keelY = (x) => HT * (x < 0.75 ? 1 - 0.05 * Math.pow(Math.max(0, -x) / 1.72, 2) : Math.sqrt(Math.max(0, 1 - Math.pow((x - 0.75) / (xb - 0.75), 2.4))));
+  const hull = (x, t, s) => { const a = t * Math.PI / 2; return [x, keelY(x) * Math.pow(Math.sin(a), 0.86), s * beamAt(x) * Math.pow(Math.cos(a), 0.5)]; };
+  const NS = 13;
+  const plankC = (s) => (x, y, z, nx, ny, nz, u, v) => {
+    const band = Math.floor(v * NS), fr = v * NS - band, pl = Math.floor(x * 1.1 + band * 0.37 + 9), h = hash1(band, pl, s + 3), bx = (x * 1.1 + band * 0.37 + 9) - pl;
+    let c = mul(WRECK[Math.floor(h * 5)], (0.75 + 0.4 * hash1(pl, band, 7)) * (0.8 + 0.3 * noise3(x * 2.5, y * 30, z * 3)));
+    if (fr < 0.1 || bx < 0.03) c = mul(c, 0.4);
+    c = mix(c, [0.16, 0.3, 0.17], 0.6 * smooth(0.45, 0.05, v) * smooth(0.35, 0.65, noise3(x * 2.1, y * 2.1, z * 2.1 + s)));
+    c = mix(c, [0.55, 0.55, 0.48], smooth(0.3, 0.0, v) * smooth(0.6, 0.72, noise3(x * 11, y * 11, z * 11)) * 0.9);
+    return mix(c, [0.03, 0.03, 0.035], 0.6 * smooth(0.66, 0.78, noise3(x * 1.3 + 4, y * 1.3, z * 1.3 + s)) * smooth(0.5, 0.8, v));
+  };
+  g.surf(K_WOOD, 0.9);
+  for (const s of [1, -1]) g.sheet(nq(72), NS * 2, (u, v) => { const x = lerp(xs, xb, u), p = hull(x, v, s), fr = v * NS - Math.floor(v * NS - 1e-6), k = 1 + 0.02 * (1 - fr) * (v < 0.999 ? 1 : 0); return [p[0], p[1] + (v < 0.01 ? -0.05 : 0), p[2] * k]; }, plankC(s), false, s > 0);
+  // the transom: boards, the old stern lights still glazed, the rudder standing up behind
+  g.surf(K_WOOD, 0.9);
+  { const n = 12, pts = []; for (let k = 0; k <= n; k++) { const p = hull(xs, k / n, 1); pts.push([p[2], p[1]]); } for (let k = n - 1; k >= 0; k--) { const p = hull(xs, k / n, -1); pts.push([p[2], p[1]]); }
+    g.in(M(xs, 0, 0, 0, -90, 0), () => { g.poly(pts.map((p) => [p[0], p[1], 0]), 0, 0, 1, (x, y) => mul(WRECK[(Math.floor(y * 6) % 5 + 5) % 5], 0.8 + 0.3 * noise3(x * 30, y * 3, 1))); for (const y of [0.5, 1.05, 1.6]) g.in(M(0, y, 0.02), () => g.beam(2 * beamAt(xs) * (y > 1.4 ? 0.62 : 0.98), 0.06, 0.04, 0.01, woodTint(WRECK[2], y * 5), 3));
+      for (const e of [-1, 1]) g.in(M(e * 0.3, 1.22, 0.012), () => { g.surf(K_PLAIN, 0.4, 0, 0.6); g.flat([[-0.14, -0.15, 0], [0.14, -0.15, 0], [0.14, 0.15, 0], [-0.14, 0.15, 0]], [0.6, 0.75, 0.3]); g.surf(K_WOOD, 0.9); for (const [dx, dy, L, rz] of [[0, 0.15, 0.34, 0], [0, -0.15, 0.34, 0], [-0.14, 0, 0.3, 90], [0.14, 0, 0.3, 90], [0, 0, 0.3, 90], [0, 0, 0.28, 0]]) g.in(M(dx, dy, 0.016, 0, 0, rz), () => g.beam(L, 0.03, 0.025, 0.006, woodTint(WRECK[4], dx * 9 + dy * 5), 1)); g.surf(K_WOOD, 0.9); });
+    });
+  }
+  g.surf(K_WOOD, 0.9);
+  g.in(M(xs - 0.07, 0, 0), () => { g.in(M(0, 1.25, 0, 0, 0, 90), () => g.beam(2.5, 0.1, 0.1, 0.014, woodTint(WRECK[2], 3), 6)); prismX(g, [[-0.34, 1.2], [-0.02, 1.2], [-0.02, 2.4], [-0.2, 2.44], [-0.4, 2.2]], 0.05, (x, y) => mul(WRECK[1], 0.75 + 0.35 * noise3(x * 4, y * 22, 2))); g.surf(K_PLAIN, 0.6, 0.8); for (const y of [1.4, 1.9, 2.3]) g.in(M(-0.1, y, 0), () => g.cbox(0.26, 0.05, 0.07, 0.008, rustCol(y * 3))); });
+  // the keel uppermost, shod with rusty iron at the stem
+  g.surf(K_WOOD, 0.9);
+  { const pts = [], rr = []; for (let k = 0; k <= 22; k++) { const x = lerp(xs - 0.04, xb + 0.02, k / 22); pts.push([x, keelY(Math.min(x, xb - 0.001)) + 0.05 - (k === 22 ? 0.15 : 0), 0]); rr.push(0.065); } limb(g, pts, rr, { nu: 4, nv: nq(40), facets: 4, col: (x, y, z) => mul(WRECK[2], 0.7 + 0.5 * noise3(x * 3, y * 20, z * 20)), capA: true, capB: true, up: [0, 1, 0] }); }
+  g.surf(K_PLAIN, 0.7, 0.7);
+  for (const x of [1.15, 1.45, 1.7]) g.in(M(x, keelY(x) + 0.05, 0, 0, 0, Math.atan2(keelY(x + 0.05) - keelY(x - 0.05), 0.1) / DEG), () => g.cbox(0.07, 0.17, 0.17, 0.01, rustCol(x * 5)));
+  // put a frame onto the hull at (x, t) on side s: local +Z looks outward
+  const onHull = (x, t, s, fn, out = 0) => { const p = hull(x, t, s), a = hull(x + 0.02, t, s), b = hull(x, t + 0.02, s); const u = [a[0] - p[0], a[1] - p[1], a[2] - p[2]], w = [b[0] - p[0], b[1] - p[1], b[2] - p[2]]; let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]; const l = Math.hypot(n[0], n[1], n[2]) || 1; n = n.map((q) => (q / l) * (n[2] * s < 0 ? -1 : 1)); g.in(M(p[0] + n[0] * out, p[1] + n[1] * out, p[2] + n[2] * out, -Math.asin(clamp(n[1], -1, 1)) / DEG, Math.atan2(n[0], n[2]) / DEG, 0), fn); };
+  // the door cut in the side, a hood of boards over it, steps of flat stones
+  g.in(M(0.18, 0, beamAt(0.18) + 0.02), () => {
+    g.surf(K_PLAIN, 1); g.in(M(0, 0.5, -0.03), () => g.cbox(0.6, 1.0, 0.1, 0.01, [0.015, 0.012, 0.01]));
+    g.in(M(0.02, 0.02, 0.02, 0, -8, 0), () => plankDoor(g, 0.5, 0.98, rgb(0x4a4438), 3));
+    g.surf(K_WOOD, 0.9);
+    for (const e of [-1, 1]) g.in(M(e * 0.32, 0.54, 0.02, 0, 0, e * 1.5), () => g.cbox(0.09, 1.12, 0.1, 0.012, woodTint(WRECK[2], e + 4)));
+    g.in(M(0, 1.1, 0.03, 0, 0, -2), () => g.beam(0.82, 0.1, 0.12, 0.014, woodTint(WRECK[4], 6), 3));
+    for (let i = 0; i < 6; i++) g.in(M(-0.36 + i * 0.145, 1.24 + (i % 2) * 0.012, 0.06, 32, 0, (hash1(i, 3) - 0.5) * 5), () => g.cbox(0.15, 0.03, 0.3, 0.006, woodTint(WRECK[i % 5], i + 7)));
+    for (const e of [-1, 1]) g.beamTo([e * 0.4, 0.9, 0.04], [e * 0.4, 1.14, 0.17], 0.04, 0.04, 0.008, woodTint(WRECK[1], e + 12), 1);
+    g.in(M(0, 0.0, 0.09), () => boulder(g, 0.28, 0.06, 0.06, 15, rgb(0x6f6e66), nq(18)));
+  });
+  // windows let into the planking, lit a sickly yellow-green
+  for (const [x, t, s, sd] of [[-0.95, 0.42, 1, 1], [1.02, 0.42, 1, 2], [-0.6, 0.45, -1, 3], [0.7, 0.45, -1, 4]]) onHull(x, t, s, () => {
+    g.surf(K_PLAIN, 0.4, 0, 0.6); g.in(M(0, 0, 0, 90, 0, 0), () => g.cyl(0.15, 0.15, 0.012, nq(14), [0.6, 0.75, 0.3], false, true));
+    g.surf(K_PLAIN, 0.6, 0.8); g.add(new THREE.TorusGeometry(0.16, 0.035, 6, nq(16)), rustCol(sd)); for (const rz of [0, 90]) g.in(M(0, 0, 0.02, 0, 0, rz), () => g.cbox(0.3, 0.022, 0.02, 0.005, IRON));
+  }, 0.03);
+  // barnacles and weed round the old waterline
+  for (let i = 0; i < 14; i++) { const s = i % 2 ? 1 : -1, x = lerp(xs + 0.2, xb - 0.35, hash1(i, 21)), t = 0.06 + 0.24 * hash1(i, 23); if (s > 0 && Math.abs(x - 0.18) < 0.5) continue; onHull(x, t, s, () => { barnacles(g, 0.16, 9, i); if (i % 3 === 0) g.in(M(0, 0.05, 0.02), () => weed(g, 0.35, i)); }, 0.005); }
+  // a crooked stovepipe through the planking, smoking
+  { const b = hull(-0.75, 0.86, 1), pp = [[b[0], b[1] - 0.1, b[2]], [b[0] + 0.02, b[1] + 0.4, b[2] + 0.04], [b[0] - 0.08, b[1] + 0.75, b[2] + 0.02], [b[0] - 0.04, b[1] + 1.15, b[2] + 0.06]];
+    g.surf(K_PLAIN, 0.75, 0.6); g.tube(pp, 0.07, nq(10), rustCol(9), false);
+    for (const p of pp.slice(1)) g.in(M(p[0], p[1], p[2], 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.076, 0.016, 5, nq(12)), mul(RUST, 0.5)));
+    const tp = pp[3]; g.in(M(tp[0], tp[1], tp[2], -5, 0, 6), () => { for (let i = 0; i < 3; i++) g.in(M(Math.cos(i * 2.1) * 0.055, 0.04, Math.sin(i * 2.1) * 0.055), () => g.cbox(0.012, 0.1, 0.012, 0.002, IRON)); g.in(M(0, 0.09, 0), () => g.lathe([[0.14, 0], [0.09, 0.04], [0, 0.085]], nq(10), rustCol(4))); });
+    g.in(M(tp[0], tp[1] + 0.2, tp[2]), () => smoke(g, 0.08, 1.0, 3, [0.2, 0.21, 0.2], [0.45, 0.47, 0.45], 5, 0.35)); }
+  // props under the bilge, nets drying, the ghost lantern by the door
+  for (const [x, s, sd] of [[-1.3, 1, 1], [1.2, 1, 2], [-1.0, -1, 3], [0.9, -1, 4], [0.0, -1, 5]]) { const p = hull(x, 0.4, s); pole(g, [x + 0.05 * sd - 0.1, -0.05, s * 0.97], [p[0], p[1], p[2] - s * 0.02], 0.04, 1510 + sd); }
+  { const a = hull(-1.5, 0.62, 1), b = hull(-0.5, 0.66, 1); net(g, a, b, [-0.45, 0.04, 0.98], [-1.5, 0.04, 0.98], 12, 9, 0.12);
+    g.surf(K_PLAIN, 0.7); for (let k = 0; k <= 5; k++) { const p = v3(a, b, k / 5); g.in(M(p[0], p[1] + 0.01, p[2] + 0.02), () => g.add(new THREE.SphereGeometry(0.04, 7, 5).scale(1, 0.7, 1), k % 2 ? [0.5, 0.36, 0.2] : [0.15, 0.4, 0.3])); } }
+  g.in(M(0.74, 0, 0.9, 0, 0, -3), () => { stake(g, 0.035, 1.6, 31, WRECK[2], WRECK[1]); g.surf(K_PLAIN, 0.55, 0.85); g.tube([[0, 1.5, 0], [0.1, 1.62, 0.02], [0.24, 1.58, 0.03]], 0.014, 5, IRON); g.in(M(0.24, 1.58, 0.03), () => ghostLantern(g, 1.15)); });
+  // an anchor against the bow, a cask, a lobster pot
+  g.in(M(1.55, 0.02, 0.62, -12, 40, 8), () => { g.surf(K_PLAIN, 0.7, 0.75); g.in(M(0, 0.42, 0), () => g.cbox(0.06, 0.84, 0.05, 0.01, rustCol(1))); g.in(M(0, 0.78, 0), () => g.cbox(0.44, 0.05, 0.05, 0.01, woodTint(WRECK[2], 3))); g.tube([[-0.28, 0.24, 0], [-0.2, 0.06, 0], [0, 0.0, 0], [0.2, 0.06, 0], [0.28, 0.24, 0]], 0.03, 6, rustCol(2)); for (const e of [-1, 1]) g.in(M(e * 0.28, 0.24, 0, 0, 0, e * -30), () => prism(g, [[-0.06, -0.05], [0.06, -0.05], [0, 0.1]], 0.02, rustCol(e + 5))); g.in(M(0, 0.89, 0), () => g.add(new THREE.TorusGeometry(0.06, 0.014, 5, 10), rustCol(7))); });
+  g.in(M(-1.78, 0.02, 0.74), () => barrel(g, 0.14, 0.34, rgb(0x4e4a40), 3));
+  g.in(M(1.2, 0.03, -0.84), () => { g.surf(K_WOOD, 0.9); for (let k = 0; k < 5; k++) g.in(M(-0.2 + k * 0.1, 0, 0, 0, 0, 0), () => g.tube([[0, 0, -0.14], [0, 0.2, -0.1], [0, 0.24, 0], [0, 0.2, 0.1], [0, 0, 0.14]], 0.012, 4, mul(WRECK[1], 1.1), false)); for (const [y, z] of [[0.02, -0.14], [0.02, 0.14], [0.21, -0.09], [0.21, 0.09], [0.25, 0]]) g.in(M(0, y, z), () => g.beam(0.46, 0.02, 0.02, 0.004, mul(WRECK[3], 1.1), 1)); });
+}
+/** a slab with outline [[x, y], ...] on the local XY plane, depth along Z, centred on z = 0 */
+function prismX(g, pts, depth, col) { prism(g, pts, depth, col); }
+/** a ship's figurehead: a sea-maiden leaning out over the local origin toward +Z, about 0.9 tall. Sculpted once. */
+function figurehead(g, s = 1) {
+  const geo = geoOnce('figurehead', () => {
+    const skin = 0xa8b49c, hair = 0x8a7a3a, dress = 0x2f6a6a, gold = 0xa88a3a, P = [];
+    P.push(...S.limb([[0, -0.52, -0.42], [0, -0.3, -0.16], [0, 0.0, 0.0], [0, 0.3, 0.14]], [0.07, 0.12, 0.13, 0.11]).map((p) => p.color(dress).tint(0.2, 14)));
+    P.push(S.ellipsoid(0.13, 0.11, 0.1).at(0, 0.32, 0.17).color(dress).blend(0.04));
+    P.push(...S.mirrorX([S.sphere(0.05).at(0.055, 0.34, 0.25).color(dress).blend(0.02)]));
+    P.push(S.capsule([0, 0.42, 0.2], [0, 0.5, 0.25], 0.045, 0.04).color(skin).blend(0.02));
+    P.push(S.ellipsoid(0.07, 0.085, 0.08).at(0, 0.58, 0.29).color(skin).tint(0.15, 20).blend(0.015));
+    P.push(S.capsule([0, 0.59, 0.36], [0, 0.555, 0.375], 0.012, 0.016).color(skin).blend(0.008));
+    P.push(...S.mirrorX([S.sphere(0.012).at(0.028, 0.6, 0.355).color(0x1a2018).cut(0.004)]));
+    P.push(S.ellipsoid(0.085, 0.09, 0.09).at(0, 0.61, 0.24).color(hair).blend(0.01));
+    P.push(...S.mirrorX(S.limb([[0.06, 0.62, 0.2], [0.11, 0.45, 0.08], [0.1, 0.25, -0.04], [0.13, 0.08, -0.14]], [0.05, 0.05, 0.04, 0.02]).map((p) => p.color(hair).blend(0.02).bump(0.004, 40, 'ridges'))));
+    P.push(...S.mirrorX(S.limb([[0.13, 0.36, 0.14], [0.17, 0.2, 0.0], [0.15, 0.02, -0.12]], [0.04, 0.035, 0.03]).map((p) => p.color(skin).blend(0.02))));
+    P.push(S.torus(0.115, 0.018).rot(25, 0, 0).at(0, 0.1, 0.045).color(gold).pbr(0.4, 0.8).paint(0.004, 0.005));
+    P.push(...S.limb([[0, -0.5, -0.4], [0, -0.62, -0.5], [0, -0.6, -0.62]], [0.07, 0.05, 0.02]).map((p) => p.color(gold).blend(0.02)));
+    return buildPartGeometry({ prims: P }, { res: 48 * qual(), ao: 0.8 });
+  });
+  const k = g.kind; g.surf(K_WOOD, 0.8);
+  g.in(M(0, 0, 0, 0, 0, 0, s), () => g.add(geo));
+  g.kind = k;
+}
+function lighthouse(g) {
+  g.moss = 1.3;
+  const rockC = rockCol(rgb(0x5e6260), 71, 0.5, 5);
+  pad(g, 2, 2, 0.22, rockC, 1551, { sq: 3.2 });
+  for (const [x, z, rx, ry, rz, sd] of [[-0.74, 0.7, 0.24, 0.2, 0.2, 1], [0.78, 0.74, 0.2, 0.16, 0.2, 2], [0.76, -0.76, 0.22, 0.22, 0.2, 3], [-0.72, -0.72, 0.2, 0.15, 0.22, 4]]) g.in(M(x, 0.02, z, 0, sd * 40, 0), () => boulder(g, rx, ry, rz, 1560 + sd, rgb(0x62665f), nq(24)));
+  const st = stoneStyle(0x8c8e84, { seed: 1570, chip: 0.3, cell: 0.2 / qual(), len: [0.28, 0.5], pal: [rgb(0x8c8e84), rgb(0x8c8e84), rgb(0x7a8078), rgb(0x9a9a8c), rgb(0x6e766e), rgb(0x84887a)] });
+  const D = [[0.7, 0.1, 1.7], [0.61, 1.7, 3.3], [0.53, 3.3, 4.7], [0.46, 4.7, 5.9]], lean = 3.6;
+  g.in(M(-0.3, 0, 0.0, 0, 0, -lean), () => {
+    D.forEach(([R, y0, y1], k) => {
+      g.surf(K_STONE, 0.93);
+      g.in(M(0, y0 - (k ? 0 : 0.3), 0, 0, k * 37, 0), () => g.bend(R - st.r, () => g.ashlar((R - st.r) * TAU, y1 - y0 + (k ? 0 : 0.3), { ...st, seed: 1571 + k, wrap: true })));
+      g.lathe([[R + 0.02, y1 - 0.1], [R + 0.06, y1 - 0.06], [R + 0.06, y1], [(D[k + 1] ? D[k + 1][0] : R) + 0.01, y1 + 0.06]], nq(22), (x, y, z) => mul(st.pal[2], 0.85 + 0.3 * noise3(x * 5, y * 5, z * 5)));
+    });
+    // sea-growth up the lowest drum, weed hanging from the string courses
+    for (let i = 0; i < 16; i++) { const a = hash1(i, 3) * 360, y = 0.3 + 1.6 * hash1(i, 5) * hash1(i, 7); g.in(M(0, y, 0, 0, a, 0).multiply(M(0, 0, D[0][0] + 0.004)), () => barnacles(g, 0.17, 8, i + 40)); }
+    for (let i = 0; i < 12; i++) { const k = i % 3, a = i * 97 + 20; g.in(M(0, D[k][2] - 0.07, 0, 0, a, 0).multiply(M(0, 0, D[k][0] + 0.07)), () => weed(g, 0.5 + 0.4 * hash1(i, 9), i, 3)); }
+    // the door, slit windows with a green light behind them
+    g.in(M(0, 0.2, 0, 0, 14, 0).multiply(M(0, 0, D[0][0] + 0.004)), () => { archFrame(g, 0.5, 1.0, 'round', (x, y, z) => mul(st.pal[3], 0.9 + 0.2 * noise3(x * 9, y * 9, z)), { t: 0.055, fill: [0.02, 0.02, 0.018] }); g.in(M(0, 0, 0.012), () => plankDoor(g, 0.4, 0.72, rgb(0x46423a), 5)); g.in(M(0, -0.1, 0.12), () => { g.surf(K_STONE, 0.93); g.cbox(0.6, 0.14, 0.26, 0.02, stoneTint(st.pal[2], 3, 5)); }); });
+    for (const [k, a, y] of [[0, 110, 1.15], [1, 20, 2.4], [1, 200, 2.7], [2, -60, 3.85], [2, 120, 4.1], [3, 30, 5.2]]) g.in(M(0, y, 0, 0, a, 0).multiply(M(0, 0, D[k][0] + 0.004)), () => { g.surf(K_PLAIN, 0.4, 0, 0.45); g.flat([[-0.045, -0.17, 0.004], [0.045, -0.17, 0.004], [0.045, 0.17, 0.004], [-0.045, 0.17, 0.004]], GHOST_LIT); g.surf(K_STONE, 0.9); for (const [dx, dy, w2, h2] of [[0, 0.2, 0.2, 0.06], [0, -0.2, 0.2, 0.06], [-0.075, 0, 0.05, 0.36], [0.075, 0, 0.05, 0.36]]) g.in(M(dx, dy, 0.015), () => g.cbox(w2, h2, 0.04, 0.008, stoneTint(st.pal[3], dx * 9 + dy, 6))); });
+    // the gallery: corbelled stone, an iron rail with a gap torn in it
+    const gy = D[3][2] + 0.06;
+    g.surf(K_STONE, 0.93);
+    g.lathe([[0.47, gy - 0.02], [0.6, gy + 0.08], [0.76, gy + 0.14], [0.78, gy + 0.2], [0.78, gy + 0.26], [0, gy + 0.26]], nq(22), (x, y, z) => mul(st.pal[0], 0.85 + 0.3 * noise3(x * 5, y * 5, z * 5)));
+    for (let k = 0; k < 10; k++) g.in(M(0, gy + 0.02, 0, 0, k * 36, 0).multiply(M(0, 0, 0.55)), () => g.cbox(0.1, 0.14, 0.26, 0.015, stoneTint(st.pal[4], k, 5)));
+    g.surf(K_PLAIN, 0.6, 0.8);
+    const railC = rustCol(5);
+    for (let k = 0; k < 14; k++) { if (k === 4 || k === 5) continue; g.in(M(0, gy + 0.26, 0, 0, k * (360 / 14), 0).multiply(M(0, 0, 0.73, (k === 3 || k === 6) ? 24 : 0, 0, 0)), () => g.cyl(0.016, 0.014, 0.42, 5, railC, false, true)); }
+    for (const y of [0.24, 0.42]) g.in(M(0, gy + 0.26 + y, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.73, 0.014, 4, nq(30), TAU * (12 / 14)).rotateZ(TAU * (6.3 / 14) - Math.PI / 2), railC));
+    // the lantern room: an iron cage, the ghost light burning in it, a cap of green copper
+    const ly = gy + 0.26;
+    g.surf(K_STONE, 0.9); g.in(M(0, ly, 0), () => g.cyl(0.46, 0.44, 0.2, nq(16), (x, y, z) => mul(st.pal[2], 0.85 + 0.3 * noise3(x * 5, y * 5, z * 5)), false, true));
+    g.surf(K_PLAIN, 0.55, 0.85);
+    for (let k = 0; k < 8; k++) g.in(M(0, ly + 0.2, 0, 0, k * 45, 0).multiply(M(0, 0, 0.4)), () => g.cbox(0.035, 0.9, 0.035, 0.006, [0.05, 0.06, 0.055]));
+    for (const y of [0.2, 0.62, 1.08]) g.in(M(0, ly + y, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.4, 0.022, 5, nq(20)), [0.05, 0.06, 0.055]));
+    g.surf(K_PLAIN, 0.3, 0, 0.7);
+    g.in(M(0, ly + 0.62, 0), () => g.add(new THREE.IcosahedronGeometry(0.2, 2).scale(1, 1.25, 1), (x, y, z) => mul(GHOST_LIT, 0.8 + 0.4 * noise3(x * 9, y * 9, z * 9))));
+    g.in(M(0, ly + 0.3, 0), () => fire(g, 0.7, [[0.2, 0.95, 0.4], [0.06, 0.8, 0.22], [0.03, 0.45, 0.2]], 4, 0.7));
+    g.surf(K_PLAIN, 0.35, 0.9);
+    for (const y of [0.42, 0.62, 0.82]) g.in(M(0, ly + y, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.27, 0.014, 4, nq(18)), mul(BRASS, 0.8)));
+    g.surf(K_ROOF, 0.6, 0.5);
+    g.sheet(nq(24), 6, (u, v) => { const a = u * TAU, r = 0.56 * Math.pow(1 - v, 0.8) * (1 + 0.04 * Math.abs(Math.sin(a * 4))); return [Math.cos(a) * r, ly + 1.1 + v * 0.62 - 0.08 * Math.sin(Math.PI * v), Math.sin(a) * r]; }, (x, y, z) => mul(mix(VERDIGRIS, COPPER, 0.35 * smooth(0.5, 0.75, noise3(x * 5, y * 5, z * 5))), 0.6 + 0.4 * noise3(x * 12, y * 12, z * 12)), true);
+    g.surf(K_PLAIN, 0.5, 0.85);
+    g.in(M(0, ly + 1.68, 0), () => { g.add(new THREE.SphereGeometry(0.07, 8, 6), mul(VERDIGRIS, 0.8)); g.cyl(0.012, 0.006, 0.6, 5, IRON, false, true); g.in(M(0, 0.4, 0, 0, 30, 14), () => prism(g, [[-0.22, -0.02], [0.1, -0.02], [0.24, 0.0], [0.1, 0.02], [-0.22, 0.02], [-0.3, 0.07], [-0.3, -0.07]], 0.012, rustCol(3))); });
+    // the wreck's figurehead bolted to the tower on a stump of bowsprit, chains to hold it
+    g.in(M(0, 3.05, 0, 0, 32, 0).multiply(M(0, 0, D[1][0] - 0.06, 24, 0, 0)), () => {
+      g.surf(K_WOOD, 0.9);
+      g.in(M(0, -0.05, 0.42, 0, 90, 0), () => g.in(M(0, 0, 0, 0, 0, 0), () => g.beam(1.1, 0.13, 0.13, 0.02, woodTint(WRECK[2], 7), 5)));
+      for (const e of [-1, 1]) g.in(M(e * 0.12, -0.2, 0.2, 0, e * 14, 0), () => prism(g, [[-0.3, -0.25], [0.34, -0.1], [0.4, 0.2], [-0.3, 0.3]].map(([a, b]) => [b, a]), 0.03, (x, y) => mul(WRECK[(Math.floor(y * 9) % 5 + 5) % 5], 0.8 + 0.3 * noise3(x * 5, y * 30, 3))));
+      g.in(M(0, -0.12, 0.72, 40, 0, 0), () => figurehead(g, 1.05));
+      g.surf(K_PLAIN, 0.6, 0.8); g.in(M(0, -0.05, 0.3, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.1, 0.02, 5, 10), rustCol(2)));
+    });
+    { const a0 = 32 * DEG, top = [Math.sin(a0 + 0.5) * 0.76, gy + 0.2, Math.cos(a0 + 0.5) * 0.76], mid = [Math.sin(a0) * 1.0, 3.55, Math.cos(a0) * 1.0]; chain(g, [top, v3(top, mid, 0.5).map((q, i) => (i === 1 ? q - 0.25 : q)), mid], 0.065, [0.09, 0.07, 0.06], 0.7); }
+    chain(g, [[-0.62, gy + 0.2, 0.4], [-0.72, 3.4, 0.5], [-0.66, 1.9, 0.55], [-0.8, 0.5, 0.62]], 0.075, [0.09, 0.07, 0.06], 0.7);
+    g.in(M(-0.8, 0.42, 0.62, 0, 30, 20), () => { g.surf(K_PLAIN, 0.7, 0.7); g.add(new THREE.TorusGeometry(0.12, 0.03, 5, 12), rustCol(8)); });
+  });
+  // wreckage at its foot: ribs of a boat, a spar, a ghost lantern on a crooked post
+  for (let k = 0; k < 4; k++) g.in(M(0.5 + k * 0.13, 0.12, 0.72 - k * 0.04, 0, 20, 0), () => { g.surf(K_WOOD, 0.9); g.tube([[0, 0, -0.2], [0.0, 0.2, -0.24], [0.02, 0.5 - 0.06 * k, -0.2]], 0.025, 5, mul(WRECK[k % 5], 0.9), true); });
+  pole(g, [0.3, 0.14, 0.9], [0.98, 0.2, 0.55], 0.035, 1580);
+  g.in(M(-0.86, 0.1, 0.84, 4, 0, 8), () => { stake(g, 0.035, 1.5, 33, WRECK[2], WRECK[1]); g.surf(K_PLAIN, 0.55, 0.85); g.tube([[0, 1.42, 0], [0.08, 1.54, 0.03], [0.2, 1.5, 0.05]], 0.014, 5, IRON); g.in(M(0.2, 1.5, 0.05), () => ghostLantern(g, 1.1)); });
+}
+
+// =====================================================================================================
 // exports
 // =====================================================================================================
 // id: [footprint along X, along Z, builder]. A piece that arrives with its footprint the other way round is the
@@ -1649,6 +2852,10 @@ function fungalGarden(g) {
 const BUILDERS = {
   ironbound_basaltMonolith: [2, 2, basaltMonolith], ironbound_skullAltar: [3, 3, skullAltar],
   screaming_warpSpire: [3, 3, warpSpire], screaming_fungalGarden: [3, 3, fungalGarden],
+  cloven_herdstone: [2, 2, herdstone], cloven_hideTent: [2, 2, hideTent], fimbul_longhouse: [5, 3, longhouse], fimbul_whaleShrine: [2, 2, whaleShrine],
+  ashur_forgeZiggurat: [6, 6, forgeZiggurat], ashur_blastFurnace: [3, 3, blastFurnace], greenhide_idol: [2, 2, idol], greenhide_boneTower: [2, 2, boneTower],
+  skar_reactor: [3, 3, reactor], skar_scaffoldWarren: [4, 3, scaffoldWarren], crimson_mausoleum: [3, 4, mausoleum], crimson_gallows: [2, 1, gallows],
+  khemet_pyramid: [7, 7, pyramid], khemet_sphinxStatue: [2, 4, sphinxStatue], drowned_hullHouse: [4, 2, hullHouse], drowned_lighthouse: [2, 2, lighthouse],
 };
 const built = new Map();
 function landmark(id, w, h) {
