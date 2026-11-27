@@ -184,6 +184,15 @@ troops from the army list.
   Principalities, the Kingdoms of the Sun, the Caliphates of the Great Desert, the Shogunate of the Rising
   Sun, the Mist-Cloaked Isles, the Kingdoms of the Thousand Gods.
 
+What each realm brings beyond its roster: eight further peoples (elf, dwarf, orc, lizardfolk, ratfolk,
+goat-headed beastfolk, tigerfolk, mummy); thirty costumes with their headgear; twenty weapons (pike, katana,
+khopesh, handgun, repeater and so on); fourteen beast kinds and twelve mounts (pegasus, bear, raptor, rhino,
+mammoth, elephant with howdah, clockwork horse); thirteen great beasts (hydra, tree-warden, the saurians,
+phoenix, sphinx, djinn, wreck colossus); seven war machines (steam tank, war wagon, balloon, flying carpet);
+twenty-six ship hulls; a building style of its own; and two landmark buildings (cathedral, pagoda, pyramid,
+longhouse, castle keep and the rest). Generated armies are priced per realm so each is a fair match for the
+first factions at equal points.
+
 All designs are original and drawn from history and folklore; none copies another game's factions,
 creatures or names. A realm's troops take their statistics from a unit of the first roster scaled by a
 factor, so the realms stay in balance with it. Where a body, costume, weapon, hull or building style has

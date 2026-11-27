@@ -643,7 +643,8 @@ export function realmAirships(make) {
 // ------------------------------------------------------------------------------------------
 // realms whose landmark models exist
 const LANDMARK_REALMS = new Set(['graal', 'aurelia', 'aethel', 'kaelneth', 'verdant', 'grom', 'xibalba', 'velikaya', 'tianlong',
-  'ironbound', 'screaming', 'cloven', 'fimbul', 'ashur', 'greenhide', 'skar', 'crimson', 'khemet', 'drowned']);
+  'ironbound', 'screaming', 'cloven', 'fimbul', 'ashur', 'greenhide', 'skar', 'crimson', 'khemet', 'drowned',
+  'gorge', 'westmark', 'principalities', 'sunkings', 'caliphate', 'shogunate', 'mistisles', 'thousandgods']);
 const L = (realm, name, w, h, hp, losHeight, x = {}) => ({ name, w, h, hp, losHeight, realm, ...(x.cover ? {} : { blocksMove: true, blocksLos: true }), ...x });
 export const LANDMARKS = {
   graal_cathedral: L('graal', 'Gothic cathedral', 4, 6, 2200, 8, { model: 'graal_cathedral', color: 0x8a8a86, heals: 2 }),
