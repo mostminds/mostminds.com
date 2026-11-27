@@ -1465,7 +1465,7 @@ function gableRoof(g, ex, ez, eY, rY, pal, seed, o = {}) {
   g.surf(K_PLAIN, 0.5, o.ridgeMetal ?? 0.6);
   ridge(g, [0, rY + 0.02, -ez - 0.03], [0, rY + 0.02, ez + 0.03], o.ridgeR || 0.055, o.ridgeCol || LEAD, seed + 5);
   g.surf(K_PLAIN, 1);
-  for (const e of [-1, 1]) facet(g, [[e * ex, eY - 0.012, -ez], [e * ex, eY - 0.012, ez], [0, rY - 0.015, ez], [0, rY - 0.015, -ez]], [0.035, 0.03, 0.026], [e, -1, 0]);
+  for (const e of [-1, 1]) facet(g, [[e * ex, eY - 0.012, -ez], [e * ex, eY - 0.012, ez], [0, rY - 0.015 - sag * 2.4, ez], [0, rY - 0.015 - sag * 2.4, -ez]], [0.035, 0.03, 0.026], [e, -1, 0]);
 }
 /**
  * A skirt of tiled roof round a rectangle: eaves at +-ex, +-ez (height eY) rising to +-ix, +-iz (height iY).
@@ -1546,9 +1546,9 @@ function smoke(g, s, h, seed = 0, c0 = [0.07, 0.07, 0.08], c1 = [0.36, 0.36, 0.3
   }
 }
 /** a pale flat wisp of ground mist lying on the local origin */
-function wisp(g, rx, rz, seed = 0, col = [0.74, 0.8, 0.82]) {
-  g.surf(K_PLAIN, 1, 0, 0.14);
-  g.add(new THREE.IcosahedronGeometry(1, 1).scale(rx, 0.03 + 0.02 * hash1(seed, 3), rz), (x, y, z) => mul(col, 0.85 + 0.25 * noise3(x * 4 + seed, y * 9, z * 4)));
+function wisp(g, rx, rz, seed = 0, col = [0.56, 0.64, 0.64]) {
+  g.surf(K_PLAIN, 1, 0, 0.05);
+  g.sheet(nq(14), 4, (u, v) => { const a = u * TAU, k = 0.55 + 0.45 * Math.abs(Math.cos(a)) + 0.25 * noise3(Math.cos(a) * 2 + seed, 1, Math.sin(a) * 2), t = v * Math.PI; return [Math.cos(a) * rx * k * Math.sin(t), 0.028 * Math.cos(t) * (0.6 + 0.4 * Math.cos(a * 2)), Math.sin(a) * rz * k * Math.sin(t)]; }, (x, y, z) => mul(col, 0.8 + 0.3 * noise3(x * 4 + seed, y * 9, z * 4)), true);
 }
 /** a packing crate s across standing on the local origin */
 function crate(g, s, seed = 0, wood = RAW_WOOD) {
@@ -2282,7 +2282,7 @@ function balcony(g, R, y, col) {
 function minaret(g) {
   const ss = blockStyle(0xd2a971, 710, { course: 0.16, len: [0.26, 0.46] }), r = ss.r, sc = stoneTint(C_SAND, 3, 5), by = 1.3;
   const shaft = (r0, r1, y0, y1, seed) => { g.surf(K_STONE, 0.9); g.sheet(nq(40), Math.max(4, Math.round((y1 - y0) / 0.08)), (u, v) => { const a = u * TAU, rr = lerp(r0, r1, v); return [Math.cos(a) * rr, lerp(y0, y1, v), Math.sin(a) * rr]; },
-    (x, y, z) => { const j = Math.floor(y / 0.08), a = Math.atan2(z, x) / TAU + (j % 2) * 0.5 / 14; return mul(C_SAND, (0.84 + 0.2 * hash1(Math.floor(a * 14 + 40), j, seed)) * (0.9 + 0.14 * noise3(x * 9, y * 9, z * 9))); }, true, true); };
+    (x, y, z, nx, ny, nz, u, v) => { const j = Math.round(v * Math.max(4, Math.round((y1 - y0) / 0.08))); return mul(C_SAND, (j % 2 ? 0.8 : 1.02) * (0.9 + 0.16 * noise3(x * 9 + seed, y * 9, z * 9))); }, true, true); };
   // the square foot: coursed sandstone, a horseshoe door, blind arches on the other faces, a belt of tile
   stoneBox(g, 0.72, 0.72, 0, by, ss, 711, { each: (s, W) => {
     const fw = 2 * (W - r);
@@ -2413,7 +2413,7 @@ function bazaar(g) {
 // =====================================================================================================
 // The Shogunate: white plaster, black timber, grey tile, a little gold
 // =====================================================================================================
-const J_TILE = sw(0x5c5e62, 0x505256, 0x686a6e, 0x56585c), J_PLASTER = rgb(0xeeeae0), J_WOOD = rgb(0x2a2420), J_RED = rgb(0xb5281a), J_STONE = 0x7d7b74;
+const J_TILE = sw(0x64625e, 0x565450, 0x706e6a, 0x5c5a56), J_PLASTER = rgb(0xeeeae0), J_WOOD = rgb(0x2a2420), J_RED = rgb(0xb5281a), J_STONE = 0x7d7b74;
 const jPlaster = (x, y, z) => mul(J_PLASTER, 0.9 + 0.12 * fbm3(x * 1.7, y * 1.7, z * 1.7, 2));
 const jWood = (x, y, z) => mul(J_WOOD, 0.75 + 0.5 * noise3(x * 3, y * 31, z * 31));
 /** one storey of the keep: white plaster over black boarding, posts, barred windows */
@@ -2545,7 +2545,7 @@ function torii(g) {
 // =====================================================================================================
 // The Mist Isles: grey stone older than memory, turf, thatch and peat smoke
 // =====================================================================================================
-const M_STONE = rgb(0x8a8c86), M_TURF = rgb(0x4a6a34), M_STRAW = rgb(0xa08a48), M_GLOW = [0.55, 0.9, 0.82];
+const M_STONE = rgb(0xa2a49c), M_TURF = rgb(0x4a6a34), M_STRAW = rgb(0xa08a48), M_GLOW = [0.55, 0.9, 0.82];
 const turfCol = (seed = 0) => (x, y, z) => mix(mul(M_TURF, 0.65 + 0.6 * fbm3(x * 2.6 + seed, y * 4, z * 2.6, 3)), rgb(0x6a6a3a), 0.5 * smooth(0.55, 0.8, noise3(x * 1.3 + seed, 2, z * 1.3)));
 /** a spiral cut into a stone face: on the local XY plane facing +Z, s across, faintly alight */
 function spiral(g, s, seed = 0, turns = 2.6) {
@@ -2586,16 +2586,21 @@ function megaliths(g) {
   g.surf(K_PLAIN, 0.4, 0, 0.8); g.in(M(-0.42, 0.83, 0.0), () => g.add(new THREE.IcosahedronGeometry(0.045, 1), M_GLOW));
   g.in(M(0.45, 0.67, -0.1, 0, 40, 0), () => skullP(g, 0.9));
   // a fallen stone, a scatter of smaller ones
-  g.in(M(0.75, 0.2, 1.72, 84, 20, 0), () => crag(g, 1.5, 0.24, 190, mul(M_STONE, 0.9), { moss: 0.9, sq: 0.55, flat: [1, 0.6], top: 0.7 }));
+  g.in(M(0.1, 0.2, 2.05, 0, 0, -84), () => crag(g, 1.5, 0.24, 190, mul(M_STONE, 0.9), { moss: 0.9, sq: 0.55, flat: [1, 0.6], top: 0.7 }));
   for (const [x, z, s, sd] of [[-1.0, 1.5, 0.2, 1], [1.5, 0.9, 0.16, 2], [-0.4, -0.3, 0.12, 3], [-1.5, -0.2, 0.18, 4], [0.2, 2.2, 0.14, 5], [1.2, -1.3, 0.15, 6]]) g.in(M(x, 0.08, z), () => boulder(g, s * 1.2, s, s, sd + 200, M_STONE, nq(18)));
   // low mist lying among the stones
   const rnd = rng(211);
-  for (let i = 0; i < 18; i++) { const a = rnd() * TAU, d = 0.5 + rnd() * 1.75; g.in(M(Math.cos(a) * d, 0.2 + rnd() * 0.22, Math.sin(a) * d, 0, rnd() * 180, 0), () => wisp(g, 0.34 + 0.4 * rnd(), 0.16 + 0.16 * rnd(), i)); }
+  g.surf(K_PLAIN, 1, 0, 0.04);
+  for (let i = 0; i < 9; i++) {
+    const R0 = 0.55 + (i % 3) * 0.72 + 0.2 * rnd(), a0 = rnd() * TAU, span = (1.1 + 0.9 * rnd()) / Math.max(0.7, R0 * 0.8), y = 0.2 + 0.22 * rnd(), wd = 0.2 + 0.14 * rnd(), pts = [], rad = [];
+    for (let k = 0; k <= 8; k++) { const t = k / 8, a = a0 + span * t, rr = R0 + 0.16 * Math.sin(t * 5 + i); pts.push([Math.cos(a) * rr, y + 0.05 * Math.sin(t * 7 + i * 2), Math.sin(a) * rr]); rad.push(wd * Math.pow(Math.sin(Math.PI * (0.04 + 0.92 * t)), 0.7)); }
+    limb(g, pts, rad, { nu: nq(10), nv: nq(18), flat: [0.14, 1], up: [0, 1, 0], col: (x, yy, z) => mul([0.5, 0.6, 0.58], 0.85 + 0.25 * noise3(x * 3 + i, yy * 9, z * 3)) });
+  }
   g.moss = 1.7;
 }
 function roundHut(g) {
   pad(g, 2, 2, 0.05, turfCol(5), 31, { kind: K_PLAIN });
-  const cx = -0.14, cz = -0.16, R = 0.68, wy = 0.8, st = dryStone(0x7d7b72, 221), W = TAU * R;
+  const cx = -0.08, cz = -0.1, R = 0.62, wy = 0.8, st = dryStone(0x93918a, 221), W = TAU * R;
   g.in(M(cx, 0, cz), () => {
     // the wall: field stones laid dry, a low doorway under a slab lintel
     g.surf(K_STONE, 0.96);
@@ -2606,20 +2611,19 @@ function roundHut(g) {
     lintel(g, [-0.3, 0.72, R + 0.0], [0.3, 0.72, R + 0.0], 0.1, 232, mul(M_STONE, 1.0), { flat: [0.75, 1.3], moss: 0.5 });
     g.in(M(0.05, 0.64, R + 0.07, 0, 0, -6), () => rag(g, 0.3, 0.58, mix(HIDE, rgb(0x5a3a26), 0.4), 5, 0.2));
     // the roof: a cone of thatch laid in tiers, weighted against the wind with ropes and stones
-    const re = R + 0.27, ye = wy - 0.1, ya = 1.78, tc = thatchCol(M_STRAW, 3, 0.72, 0.5);
+    const re = R + 0.24, ye = wy - 0.1, ya = 1.78, tc = thatchCol(M_STRAW, 3, 0.72, 0.22);
     g.surf(K_ROOF, 1);
     g.sheet(nq(72), nq(20), (u, v) => { const a = u * TAU, tier = (v * 5) % 1, rag = v < 0.02 ? 0.06 * hash1(Math.floor(u * 90), 3) : 0, rr = lerp(re, 0.05, v) + 0.035 * (1 - tier) * (v < 0.96 ? 1 : 0) + 0.012 * hash1(Math.floor(u * 140), Math.floor(v * 5)); return [Math.cos(a) * rr, lerp(ye, ya, Math.pow(v, 0.92)) - rag, Math.sin(a) * rr]; },
       (x, y, z, nx, ny, nz, u, v) => mul(tc(x, y, z, nx, ny, nz), (0.62 + 0.38 * ((v * 5) % 1)) * (0.7 + 0.5 * hash1(Math.floor(u * 140), 7))), true, true);
-    g.surf(K_PLAIN, 1); g.in(M(0, ye - 0.01, 0), () => g.cyl(re - 0.02, re - 0.02, 0.001, nq(24), [0.04, 0.035, 0.03], false, false));
-    lid(g, -re + 0.1, re - 0.1, -re + 0.1, re - 0.1, ye, [0.04, 0.035, 0.03], -1);
+    g.surf(K_PLAIN, 1); g.in(M(0, ye, 0), () => g.cyl(re - 0.03, re - 0.03, 0.001, nq(24), [0.04, 0.035, 0.03], true, false));
     for (let i = 0; i < 8; i++) {
       const a = (i + 0.5) * 0.785, co = Math.cos(a), si = Math.sin(a), P = (v) => [co * (lerp(re, 0.05, v) + 0.045), lerp(ye, ya, Math.pow(v, 0.92)) + 0.02, si * (lerp(re, 0.05, v) + 0.045)];
-      rope(g, [P(1), P(0.66), P(0.33), P(0.02), [co * (re + 0.05), ye - 0.22, si * (re + 0.05)]], 0.011, rgb(0x9a8658), 5);
-      g.in(M(co * (re + 0.05), ye - 0.3, si * (re + 0.05)), () => boulder(g, 0.07, 0.08, 0.06, i + 240, M_STONE, nq(12)));
+      rope(g, [P(1), P(0.66), P(0.33), P(0.02), [co * (re + 0.02), ye - 0.22, si * (re + 0.02)]], 0.011, rgb(0x9a8658), 5);
+      g.in(M(co * (re + 0.02), ye - 0.3, si * (re + 0.02)), () => boulder(g, 0.06, 0.08, 0.055, i + 240, M_STONE, nq(12)));
     }
     for (const v of [0.3, 0.62]) { const pts = []; for (let k = 0; k <= 24; k++) { const a = (k / 24) * TAU; pts.push([Math.cos(a) * (lerp(re, 0.05, v) + 0.05), lerp(ye, ya, Math.pow(v, 0.92)) + 0.025, Math.sin(a) * (lerp(re, 0.05, v) + 0.05)]); } rope(g, pts, 0.01, rgb(0x9a8658), 5); }
     g.surf(K_ROOF, 1); g.in(M(0, ya - 0.06, 0), () => g.lathe([[0.09, 0], [0.06, 0.06], [0.08, 0.1], [0.03, 0.2], [0, 0.24]], nq(10), tc));
-    g.in(M(0.02, ya + 0.1, 0), () => smoke(g, 0.06, 0.5, 2, [0.3, 0.3, 0.3], [0.62, 0.64, 0.66], 4, 0.3));
+    g.in(M(0.02, ya + 0.1, 0), () => smoke(g, 0.05, 0.5, 2, [0.22, 0.22, 0.23], [0.5, 0.52, 0.55], 5, 0.35));
   });
   // the wicker fence round the yard: stakes and woven withies
   const path = [[0.42, 0.9], [0.9, 0.86], [0.92, 0.3], [0.9, -0.3], [0.86, -0.9]], pts = [];
@@ -2705,17 +2709,18 @@ function carvedTemple(g) {
     } });
     band(g, SW + 0.005, SW + 0.005, py, 0.14, 0.09, gSand(5, 0.92)); band(g, SW + 0.005, SW + 0.005, wy - 0.3, 0.07, 0.05, gSand(6, 1.06)); band(g, SW + 0.01, SW + 0.01, wy - 0.02, 0.14, 0.12, gSand(7, 1.08));
     reliefBox(g, SW + 0.012, SW + 0.012, wy - 0.22, 0.2, 31, {});
+    for (let s = 1; s < 4; s++) g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(0, wy - 0.3, SW + 0.06)), () => { for (const e of [-1, 1]) g.in(M(e * SW * 0.5, 0, 0), () => garland(g, SW * 0.96, 0.2, G_MARI, G_YELL, { r: 0.034 })); });
     // the tower: fourteen diminishing tiers, each crowded with figures, curving in to the crown
     const NT = 14, y0 = wy + 0.12, TH = 4.25, w = (t) => SW * (1 - 0.76 * Math.pow(t, 1.55));
     for (let i = 0; i < NT; i++) {
       const t0 = i / NT, t1 = (i + 1) / NT, w0 = w(t0), th = (TH / NT) * (1.12 - 0.24 * t0), y = y0 + TH * (t0 * 1.12 - 0.12 * t0 * t0), c = gSand(i, 0.94 + 0.1 * (i % 2));
       g.surf(K_STONE, 0.9);
       g.in(M(0, y + th * 0.36, 0), () => bx(g, 2 * w0, th * 0.74, 2 * w0, mul(G_SAND, 0.6)));
-      g.in(M(0, y + th * 0.86, 0), () => g.cbox(2 * w0 + 0.07, th * 0.28, 2 * w0 + 0.07, 0.014, c));
+      g.in(M(0, y + th * 0.86, 0), () => g.cbox(2 * w0 + 0.07, th * 0.28, 2 * w0 + 0.07, 0.014, i % 3 === 2 ? gSand(i, 0.8) : c));
       for (let s = 0; s < 4; s++) g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(0, y, w0)), () => {
         g.surf(K_STONE, 0.9); g.in(M(0, th * 0.5, 0.03), () => g.cbox(w0 * 0.9, th, 0.08, 0.012, c));
-        reliefRow(g, w0 * 0.84, th * 0.7, i * 7 + s, { pitch: 0.6, d: 0.03 });
-        g.in(M(0, 0, 0.07), () => { g.surf(K_STONE, 0.9); });
+        g.in(M(0, 0, 0.071), () => reliefRow(g, w0 * 0.84, th * 0.7, i * 7 + s, { pitch: 0.6, d: 0.03 }));
+        if (i === 2 || i === 6) g.in(M(0, th * 0.9, 0.09), () => garland(g, w0 * 1.9, th * 0.5, G_MARI, G_YELL, { r: 0.03 }));
         for (const e of [-1, 1]) g.in(M(e * w0 * 0.73, 0, 0), () => reliefRow(g, w0 * 0.5, th * 0.7, i * 11 + s + e, { pitch: 0.6, d: 0.03 }));
       });
       for (const [sx, sz2] of [[1, 1], [-1, 1], [-1, -1], [1, -1]]) g.in(M(sx * (w0 + 0.01), y + th, sz2 * (w0 + 0.01)), () => { g.surf(K_STONE, 0.9); g.lathe([[0.05, -0.02], [0.065, 0.03], [0.03, 0.07], [0, 0.14]], 6, c); });
