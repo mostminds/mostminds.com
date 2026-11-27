@@ -792,7 +792,7 @@ export class LandView {
       } else if (e.type === 'fell') {
         if ((this.fellSaid || 0) + 20 < b.tick) { this.fellSaid = b.tick; msgs.push({ side: b.units[e.id].side, text: 'The walkway gives way: those on it fall to their deaths' }); }
       } else if (e.type === 'transitOut') {
-        msgs.push({ side: e.side, text: 'Holding two landings, they put their own boat on the water' });
+        if (b.tick > 20) msgs.push({ side: e.side, text: 'Holding two landings, they put their own boat on the water' });
       } else if (e.type === 'flagTaken') {
         const u = b.units[e.by]; this.unitPos(u, 1, v);
         st.ring(v.clone().setY(0.05), 1.4, SIDE_COLORS[u.side], 0.9);
