@@ -111,6 +111,17 @@ function rigOf() {
   return N;
 }
 
+/** scale a finished-in-world-space node list about the origin */
+function scaleNodes(nodes, u) {
+  for (const n of nodes) {
+    n.o = mul3(n.o, u); if (n.pos) n.pos = mul3(n.pos, u);
+    for (const p of flat(n.prims)) p.scale(u);
+    for (const h of flat(n.hard)) h.scale(u);
+    n.detail = (n.detail ?? 1) / u; if (n.minRes) n.minRes /= u;
+  }
+}
+
+
 // ---------- crisp pieces ----------
 function clawGeo(hook, aspect, flatX = 1) {
   return cached(`claw${hook}:${aspect}:${flatX}`, () => {
@@ -612,7 +623,7 @@ function bird(def, o = {}) {
       : { body: base, head: mix(base, 0xf6f1e6, 0.88), breast: tone(base, 0.01, 0, 0.05), beak: 0xe9b62a, cere: 0xf0c83a, foot: 0xe2ac28, claw: 0x16120e, eye: 0xf2c838, eyeRim: 0x6a3a08, rough: 0.62,
         wing: { bone: base, a: tone(base, 0, -0.03, -0.06), b: tone(base, -0.01, -0.08, -0.17), tip: tone(base, 0, -0.15, -0.24), covert: tone(base, 0.01, 0.02, 0.04), shape: 0, band: true }, tailA: mix(base, 0xf6f1e6, 0.85), tailB: mix(base, 0xf6f1e6, 0.6) };
   const K = raven ? { beak: 0.15, hook: 0.012, beakR: 1.0, neck: 0.0, tail: 0.36, span: 0.9 }
-    : phoenix ? { beak: 0.11, hook: 0.02, beakR: 0.8, neck: 0.16, tail: 0.3, span: 1.02 }
+    : phoenix ? { beak: 0.11, hook: 0.02, beakR: 0.8, neck: 0.16, tail: 0.3, span: 0.9 }
       : { beak: 0.1, hook: 0.042, beakR: 1.08, neck: 0.03, tail: 0.34, span: 1.0 };
   const fe = (q) => q.color(C.body).bump(0.007, 27, 'scales').tint(0.14, 14).pbr(C.rough);
   const N = rigOf();
@@ -662,7 +673,7 @@ function bird(def, o = {}) {
   if (phoenix) {
     // long streamers, each its own node so they trail and ripple
     for (let i = 0; i < 5; i++) {
-      const f = (i - 2) / 2, len = 1.0 - Math.abs(f) * 0.22, a = f * 0.3;
+      const f = (i - 2) / 2, len = 0.8 - Math.abs(f) * 0.18, a = f * 0.3;
       const dir = [Math.sin(a), -0.1, -Math.cos(a)], mid = add3(TP, mul3(dir, len * 0.5));
       for (let k = 0; k < 2; k++) {
         const b0 = k ? mid : TP, n = N(`plume${i}_${k}`, k ? `plume${i}_0` : 'tail', b0, { rig: 'plumes' });
@@ -702,7 +713,7 @@ function bird(def, o = {}) {
 
 /** eagle, raven, phoenix and the pterosaur: built in flight with the legs hanging; this folds and perches them */
 function birdAnim(rig, inner, c, base) {
-  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying;
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying;
   const L = rig.legs || [], Sh = rig.shins || [], T = rig.tail || [], PL = rig.plumes || [];
   const idle = Math.sin(t * 1.5 + ph), idle2 = Math.sin(t * 0.8 + ph * 1.7);
   const perch = rig.perch ?? 0.3, ptero = rig.variant === 'ptero';
@@ -830,20 +841,20 @@ function vultureLord(def, o = {}) {
     if (sx < 0 && staffOn) {
       const st = N('staff', `fore${nm}`, add3(Wr, [0, -0.035, 0.03]), { rig: 'staff', detail: 1.0 });
       const g = add3(Wr, [0, -0.035, 0.03]);
-      st.hard.push(H.cyl(0.016, 0.02, 1.3, 8).at(g[0], 0.66, g[2]).color(0x2a2030).pbr(0.6));
-      for (const y of [0.3, 0.9, 1.22]) st.hard.push(H.torus(0.022, 0.008, 10, 5).rot(90, 0, 0).at(g[0], y, g[2]).color(gold).pbr(0.35, 0.9).lod(2));
+      st.hard.push(H.cyl(0.016, 0.02, 1.2, 8).at(g[0], 0.61, g[2]).color(0x2a2030).pbr(0.6));
+      for (const y of [0.3, 0.9, 1.14]) st.hard.push(H.torus(0.022, 0.008, 10, 5).rot(90, 0, 0).at(g[0], y, g[2]).color(gold).pbr(0.35, 0.9).lod(2));
       // head of the staff: a crescent cradling a burning eye
-      st.hard.push(H.torus(0.085, 0.015, 16, 6, Math.PI * 1.25).rot(0, 0, -112).at(g[0], 1.42, g[2]).color(gold).pbr(0.35, 0.9));
-      st.hard.push(H.sphere(0.048, 14).at(g[0], 1.42, g[2]).color(glow).glow(1.8));
-      st.hard.push(H.sphere(0.018, 8).scale(0.5, 1.6, 1).at(g[0], 1.42, g[2] + 0.04).color(0x100818).lod(1));
-      for (let i = 0; i < 3; i++) st.hard.push(feather([g[0], 1.3, g[2]], [(i - 1) * 0.5, -1, -0.3], 0.2, 0.025, [rgb(base), rgb(glow)], [0, 0, 1], 1).lod(2));
+      st.hard.push(H.torus(0.085, 0.015, 16, 6, Math.PI * 1.25).rot(0, 0, -112).at(g[0], 1.31, g[2]).color(gold).pbr(0.35, 0.9));
+      st.hard.push(H.sphere(0.048, 14).at(g[0], 1.31, g[2]).color(glow).glow(1.8));
+      st.hard.push(H.sphere(0.018, 8).scale(0.5, 1.6, 1).at(g[0], 1.31, g[2] + 0.04).color(0x100818).lod(1));
+      for (let i = 0; i < 3; i++) st.hard.push(feather([g[0], 1.2, g[2]], [(i - 1) * 0.5, -1, -0.3], 0.2, 0.025, [rgb(base), rgb(glow)], [0, 0, 1], 1).lod(2));
     }
   }
   // great iridescent wings
-  const G = { Sh: [0.1, 0.98, -0.1], E: [0.4, 1.2, -0.2], W: [0.72, 1.12, -0.1], T: [1.2, 0.98, -0.2] };
+  const G = { Sh: [0.1, 0.98, -0.1], E: [0.33, 1.16, -0.18], W: [0.56, 1.1, -0.1], T: [0.88, 0.99, -0.18] };
   const WC = { bone: base, a: base, b: tone(base, 0.12, 0.05, -0.04), tip: glow, covert: tone(base, -0.1, 0.05, 0.06), shape: 0, band: true };
   addWings(N, 'torso', G, () => {
-    const w = featherWing(G, WC, { len: 0.5, n: [10, 10], r: 0.05 });
+    const w = featherWing(G, WC, { len: 0.4, n: [9, 9], r: 0.045 });
     // eye-spots near the tips of the long feathers
     w.pri.ends.forEach((e, i) => { if (i % 2 === 0) w.tip.hard.push(H.sphere(0.022, 8).scale(1, 0.25, 1.5).at(e[0] * 0.97, e[1] + 0.012, e[2] + 0.05).color(glow).glow(1.2).lod(1)); });
     w.sec.ends.forEach((e, i) => { if (i % 3 === 1) w.arm.hard.push(H.sphere(0.02, 8).scale(1, 0.25, 1.5).at(e[0], e[1] + 0.012, e[2] + 0.05).color(glow).glow(1.2).lod(1)); });
@@ -853,7 +864,7 @@ function vultureLord(def, o = {}) {
 }
 
 function vultureAnim(rig, inner, c, base) {
-  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying;
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying;
   const L = rig.legs || [], Sh = rig.shins || [], A = rig.arms || [], F = rig.forearms || [], NX = rig.necks || [];
   const idle = Math.sin(t * 1.3 + ph), idle2 = Math.sin(t * 0.7 + ph * 1.7);
   const k = c.moving && !fly ? 1 : 0, gait = t * 5.2 + ph;
@@ -888,7 +899,7 @@ function saurPalette(skin) {
     horn: [0x4a4034, 0xcbbd98, 0xefe6cc], claw: 0x1e1a16, tooth: 0xf1e9cc, mouth: 0x5a1420, tongue: 0xd0605a,
     eye: { iris: 0xffb414, rim: 0x8a2a08, white: 0x1c0c0a, glow: 0.3 } };
 }
-const crewSize = (o, dflt) => clamp(0.95 / num(o.scale, dflt), 0.3, 0.75);
+const crewSize = (o, dflt) => clamp(0.95 / num(o.scale, dflt), 0.3, 0.75) / 0.9;
 
 function saurian(def, o = {}) {
   switch (o.kind) {
@@ -979,11 +990,12 @@ function tyrant(def, o) {
     n.prims.push(S.capsule(add3(a, mul3(f.dor, -ra * 0.6)), add3(b, mul3(f.dor, -rb * 0.6)), ra * 0.6, rb * 0.6).color(C.belly).paint(0.03));
     for (let k = 0; k < 2; k++) n.prims.push(orient(S.torus(lerp(ra, rb, (k + 0.3) / 2) * 0.95, 0.014), add3(lerp3(a, b, (k + 0.3) / 2), mul3(f.dor, ra * 0.3)), f.t).color(C.deep).paint(0.012));
   } });
-  return { kind: 'titan.tyrant', attack: 'bite', nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.78);
+  return { kind: 'titan.tyrant', attack: 'bite', u: 0.78, nodes: finish(N.nodes) };
 }
 
 function tyrantAnim(rig, inner, c, base) {
-  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk;
   const L = rig.legs || [], Sh = rig.shins || [], A = rig.arms || [];
   const k = c.moving ? 1 : 0, gait = t * 5.6 + ph, idle = Math.sin(t * 1.3 + ph), idle2 = Math.sin(t * 0.7 + ph * 1.7);
   for (let i = 0; i < 2; i++) {
@@ -1079,7 +1091,7 @@ function mirrorHowdah(N, parent, at, o, C) {
 // ---------------- the shared four-legged animator ----------------
 // rig values: rate (gait speed), stride, atkStyle 'gore' | 'tail' | 'cast' | 'bite'; lists crew*, turret, core, bolt
 function quadAnim(rig, inner, c, base) {
-  const { R, P, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const { R, P, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk;
   const k = c.moving ? 1 : 0, idle = Math.sin(t * 1.2 + ph), idle2 = Math.sin(t * 0.66 + ph * 1.7);
   const gait = walk4(rig, c, base, rig.rate ?? 5.5, rig.stride ?? 0.34, 0.5, -0.4);
   const style = rig.atkStyle || 'bite';
@@ -1105,7 +1117,7 @@ function quadAnim(rig, inner, c, base) {
     if (rig.core) { R(rig.turret, 0.25 * cast + idle * 0.02, idle2 * 0.2 * (1 - cast)); rig.core.scale.setScalar(1 + cast * 1.6 + Math.sin(t * 5 + ph) * 0.08); }
     else { R(rig.turret, -0.06 + idle * 0.01 - 0.05 * cast, idle2 * 0.25); }
   }
-  (rig.bolt || []).forEach((b) => { P(b, 0, 0, a >= 0 ? keys(a, [[0, 0], [0.3, -0.12], [0.36, 0.5], [0.4, 2.5], [0.45, 0], [1, 0]]) : 0); b.visible = !(a > 0.38 && a < 0.8); });
+  (rig.bolt || []).forEach((b) => { P(b, 0, 0, (rig.u || 1) * (a >= 0 ? keys(a, [[0, 0], [0.3, -0.12], [0.36, 0.5], [0.4, 2.5], [0.45, 0], [1, 0]]) : 0)); b.visible = !(a > 0.38 && a < 0.8); });
   (rig.crewArms || []).forEach((x, i) => R(x, Math.sin(t * 2 + i * 1.7 + ph) * 0.08 - 0.4 * cast * (i % 2 ? 1 : 0.4)));
   (rig.crewHeads || []).forEach((x, i) => R(x, 0, Math.sin(t * 0.9 + i * 2.3 + ph) * 0.35));
   const dead = dieSide(inner, c, base, rig.lie ?? 0.22);
@@ -1174,7 +1186,8 @@ function hornback(def, o) {
     torso.prims.push(S.torus(0.3, 0.03).rot(90, 0, 0).at(0, 0.54, 0.16).color(0x4a3220).pbr(0.7).paint(0.008, 0.008), S.torus(0.3, 0.03).rot(90, 0, 0).at(0, 0.54, -0.3).color(0x4a3220).pbr(0.7).paint(0.008, 0.008));
     bowHowdah(N, 'torso', [0, 0.87, -0.06], o, C);
   }
-  return { kind: 'titan.quad', attack: 'bite', atkStyle: 'gore', rate: 5.2, stride: 0.3, lie: 0.3, nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.9);
+  return { kind: 'titan.quad', attack: 'bite', atkStyle: 'gore', rate: 5.2, stride: 0.3, lie: 0.3, u: 0.9, nodes: finish(N.nodes) };
 }
 
 // ---------------- shieldback ----------------
@@ -1240,7 +1253,8 @@ function shieldback(def, o) {
   club.prims.push(S.ellipsoid(0.07, 0.06, 0.07).at(0, 0.29, -1.45).color(tone(boneC, 0, 0, -0.08)).pbr(0.45).bump(0.006, 20, 'rock').blend(0.02));
   const mirror = o.howdah === 'mirror';
   if (mirror) mirrorHowdah(N, 'torso', [0, 0.6, -0.04], o, C);
-  return { kind: 'titan.quad', attack: mirror ? 'cast' : 'slam', atkStyle: mirror ? 'cast' : 'tail', rate: 5, stride: 0.26, lie: 0.3, nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.9);
+  return { kind: 'titan.quad', attack: mirror ? 'cast' : 'slam', atkStyle: mirror ? 'cast' : 'tail', rate: 5, stride: 0.26, lie: 0.3, u: 0.9, nodes: finish(N.nodes) };
 }
 
 // ---------------- pterosaur ----------------
@@ -1436,7 +1450,7 @@ function hydra(def, o = {}) {
 }
 
 function hydraAnim(rig, inner, c, base) {
-  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying && !!(rig.wings && rig.wings.length);
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying && !!(rig.wings && rig.wings.length);
   const L = rig.legs || [], Sh = rig.shins || [], HD = rig.hd || [], JW = rig.jw || [], cnt = Math.max(1, HD.length);
   const k = c.moving && !fly ? 1 : 0, idle = Math.sin(t * 1.2 + ph);
   const gait = walk4(rig, { ...c, flying: fly }, base, 6, 0.36, 0.5, -0.4);
@@ -1474,16 +1488,6 @@ function hydraAnim(rig, inner, c, base) {
 // stock biped rig (legs, shins, torso, head, arms, forearms); `pace` slows the gait of the big ones
 
 const leafCard = (p, dir, len, w, c0, c1, up = [0, 1, 0]) => feather(p, dir, len, w, [rgb(c0), rgb(c1)], up, 1);
-/** scale a finished-in-world-space node list about the origin */
-function scaleNodes(nodes, u) {
-  for (const n of nodes) {
-    n.o = mul3(n.o, u); if (n.pos) n.pos = mul3(n.pos, u);
-    for (const p of flat(n.prims)) p.scale(u);
-    for (const h of flat(n.hard)) h.scale(u);
-    n.detail = (n.detail ?? 1) / u; if (n.minRes) n.minRes /= u;
-  }
-}
-
 function treeman(def, o = {}) {
   if (o.kind === 'dryad') return dryad(def, o);
   if (o.kind === 'bog') return bogBeast(def, o);
@@ -1566,7 +1570,8 @@ function treeman(def, o = {}) {
     }
     lg.lo.prims.push(S.ellipsoid(0.1, 0.05, 0.1).at(sx * 0.2, 0.21, -0.03).color(moss).paint(0.02, 0.004));
   }
-  return { kind: 'titan.tree', attack: 'slam', pace: 0.5, nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.72);
+  return { kind: 'titan.tree', attack: 'slam', pace: 0.5, u: 0.72, nodes: finish(N.nodes) };
 }
 
 function treeAnim(rig, inner, c, base) {
@@ -1575,7 +1580,7 @@ function treeAnim(rig, inner, c, base) {
   // boughs and weed stir in the wind
   (rig.sway || []).forEach((x, i) => base.R(x, Math.sin(c.t * 1.3 + i * 1.7 + (c.phase || 0)) * 0.08, 0, Math.sin(c.t * 0.9 + i * 2.3) * 0.06));
   if (rig.head && pace < 1 && !(c.dead > 0)) rig.head.rotation.z += Math.sin(c.t * 0.9 + (c.phase || 0)) * 0.03;
-  if (c.dead > 0 && pace < 1) inner.position.y += Math.min(1, c.dead * 2) * 0.12 * (inner.scale.y || 1);
+  if (c.dead > 0 && pace < 1) inner.position.y += Math.min(1, c.dead * 2) * 0.12 * (inner.scale.y || 1) * (rig.u || 1);
 }
 
 // ---------------- dryad ----------------
@@ -1800,7 +1805,7 @@ function manticore(def, o = {}) {
 }
 
 function manticoreAnim(rig, inner, c, base) {
-  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying;
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk, fly = !!c.flying;
   const L = rig.legs || [], Sh = rig.shins || [];
   const k = c.moving && !fly ? 1 : 0, idle = Math.sin(t * 1.4 + ph), idle2 = Math.sin(t * 0.8 + ph * 1.7);
   const gait = walk4(rig, c, base, 8, 0.45, 0.7, -0.5);
@@ -1878,7 +1883,8 @@ function scorpion(def, o = {}) {
     lg.prims.push(sh(S.sphere(0.045).at(...K).blend(0.008)), gold(orient(S.torus(0.036, 0.009), lerp3(J, K, 0.6), sub3(K, J)).paint(0.003, 0.003)));
   }
   stingTail(N, 'tail', 'torso', [[0, 0.29, -0.5], [0, 0.4, -0.76], [0, 0.64, -0.96], [0, 0.94, -0.98], [0, 1.18, -0.82], [0, 1.28, -0.58]], [0.1, 0.09, 0.084, 0.078, 0.072, 0.066], C, 0.9);
-  return { kind: 'titan.scorpion', attack: 'claw', nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.66);
+  return { kind: 'titan.scorpion', attack: 'claw', u: 0.66, nodes: finish(N.nodes) };
 }
 
 const scorpionAnim = (rig, inner, c, base) => arthroAnim(rig, inner, c, base, false);
@@ -1951,11 +1957,12 @@ function sphinx(def, o = {}) {
   legs.forEach((lg, i) => { lg.lo.prims.push(gold(orient(S.torus(i < 2 ? 0.068 : 0.06, 0.016), lerp3(lg.K, lg.A, 0.8), sub3(lg.A, lg.K)).paint(0.003, 0.005))); });
   const tn = addChain(N, 'tail', 'torso', [[0, 0.64, -0.56], [0, 0.6, -0.78], [0, 0.72, -0.95], [0, 0.93, -0.94], [0, 1.04, -0.8]], [0.04, 0.034, 0.03, 0.028, 0.026], st, { rig: 'tail', detail: 0.9, minRes: 40 });
   tn[tn.length - 1].prims.push(gold(S.ellipsoid(0.045, 0.07, 0.045).rot(50, 0, 0).at(0, 1.07, -0.75).blend(0.01)));
-  return { kind: 'titan.sphinx', attack: 'slam', nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.86);
+  return { kind: 'titan.sphinx', attack: 'slam', u: 0.86, nodes: finish(N.nodes) };
 }
 
 function sphinxAnim(rig, inner, c, base) {
-  const { R, keys } = base, s = inner.scale.y || 1, ph = c.phase || 0, a = c.atk;
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), ph = c.phase || 0, a = c.atk;
   // stone moves in steps: time is quantised, each pose held and then ground into the next
   const q = (x, n) => { const f = x * n, i = Math.floor(f), r = f - i; return (i + Math.min(1, r * 2.5)) / n; };
   const t = q(c.t, 4);
@@ -2042,12 +2049,13 @@ function crab(def, o = {}) {
     lg.prims.push(S.capsule(add3(J, [0, -0.03, 0]), add3(K, [0, -0.03, 0]), 0.055, 0.045).color(C.pale).paint(0.02));
     for (let j = 0; j < 3; j++) lg.hard.push(spike(add3(lerp3(K, M, 0.2 + j * 0.3), [0, 0.04, 0]), [sx * 0.6, 1, 0], 0.035, 0.012, C.tip, [0, 0, 1], 0.2).lod(0));
   }
-  return { kind: 'titan.crab', attack: 'slam', nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.66);
+  return { kind: 'titan.crab', attack: 'slam', u: 0.66, nodes: finish(N.nodes) };
 }
 
 /** scorpion and crab: many single-node legs, clawed arms; crabs raise and hammer their claws and die on their backs */
 function arthroAnim(rig, inner, c, base, isCrab) {
-  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk;
   const k = c.moving ? 1 : 0, gait = t * (isCrab ? 10 : 12) + ph, idle = Math.sin(t * 1.3 + ph);
   const dead = c.dead > 0, df = dead ? Math.min(1, c.dead * 2) : 0;
   (rig.legs || []).forEach((l, i) => {
@@ -2153,11 +2161,12 @@ function leviathan(def, o) {
   const fl = tn[tn.length - 1];
   fl.prims.push(sk(S.ellipsoid(0.26, 0.03, 0.12).rot(0, 28, 6).at(0.2, 0.1, -1.48).blend(0.03)).color(C.dark), sk(S.ellipsoid(0.17, 0.03, 0.1).rot(0, -34, -6).at(-0.14, 0.09, -1.46).blend(0.03)).color(C.dark));
   for (let i = 0; i < 4; i++) fl.hard.push(ribbon([-0.24 + i * 0.03, 0.09, -1.52 + i * 0.01], 0.12, 0.04, C.dark, [0, 1, 0], rnd, 1));
-  return { kind: 'titan.leviathan', attack: 'bite', nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.5);
+  return { kind: 'titan.leviathan', attack: 'bite', u: 0.5, nodes: finish(N.nodes) };
 }
 
 function leviathanAnim(rig, inner, c, base) {
-  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const { R, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk;
   const k = c.moving ? 1 : 0, g = t * 3.2 + ph, idle = Math.sin(t * 0.9 + ph), idle2 = Math.sin(t * 0.55 + ph * 1.7);
   const L = rig.legs || [];
   // the haul: both fore-flippers reach, plant and drag; the body heaves after them
@@ -2279,7 +2288,7 @@ function djinn(def, o = {}) {
 }
 
 function djinnAnim(rig, inner, c, base) {
-  const { R, P, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const { R, P, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk;
   const A = rig.arms || [], F = rig.forearms || [], T = rig.tail || [], k = c.moving ? 1 : 0;
   const idle = Math.sin(t * 1.5 + ph), idle2 = Math.sin(t * 0.8 + ph * 1.7);
   inner.rotation.x = 0; inner.rotation.z = 0; inner.position.set(0, 0, 0);
@@ -2377,7 +2386,7 @@ function serpent(def, o = {}) {
 }
 
 function serpentAnim(rig, inner, c, base) {
-  const { R, P, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const { R, P, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk;
   const NK = rig.nk || [], k = c.moving ? 1 : 0, idle = Math.sin(t * 1.2 + ph);
   inner.rotation.x = 0; inner.rotation.z = 0; inner.position.set(0, 0, 0);
   const dead = c.dead > 0, df = dead ? Math.min(1, c.dead * 2) : 0, e = df * df * (3 - 2 * df);
@@ -2492,7 +2501,7 @@ function centaur(def, o = {}) {
     fo.prims.push(sk(S.ellipsoid(0.06, 0.07, 0.055).at(Wr[0], Wr[1] - 0.06, Wr[2] + 0.01).blend(0.012)));
     for (let i = 0; i < 3; i++) fo.hard.push(spike([Wr[0] + (i - 1) * 0.03, Wr[1] - 0.11, Wr[2] + 0.03], [0, -1, 0.4], 0.04, 0.01, C.claw, [0, 0, 1], 0.3).lod(1));
     if (sx < 0 && wpn) {
-      const g = [Wr[0], Wr[1] - 0.07, Wr[2] + 0.03], k = 1.45;
+      const g = [Wr[0], Wr[1] - 0.07, Wr[2] + 0.03], k = 1.25;
       const wn = N('weapon', `fore${nm}`, g, { rig: 'weapon', detail: 0.9 });
       const place = (q) => q.scale(k, k, k).rot(42, 0, 0).at(g[0], g[1], g[2]);
       wn.prims = flat(wpn.prims).map((q) => q.scale(k).rot(42, 0, 0).at(g[0], g[1], g[2]));
@@ -2504,7 +2513,7 @@ function centaur(def, o = {}) {
 }
 
 function centaurAnim(rig, inner, c, base) {
-  const { R } = base, s = inner.scale.y || 1;
+  const { R } = base, s = (inner.scale.y || 1) * (rig.u || 1);
   base.quad(rig, inner, { ...c, t: c.t * 0.8 });
   const k = c.moving ? 1 : 0, gait = c.t * 7.2 + (c.phase || 0);
   R(rig.body, 0, Math.sin(gait) * 0.03 * k, 0);
@@ -2631,7 +2640,8 @@ function wreckColossus(def, o = {}) {
     for (const z of [-0.03, 0.05, 0.13]) ll.prims.push(S.torus(0.117, 0.012).rot(90, 0, 0).at(Fp[0], 0.115, Fp[2] + z).color(iron).pbr(0.5, 0.8).paint(0.003, 0.004));
     ll.hard.push(barnacles([Fp[0] + sx * 0.08, 0.2, Fp[2] + 0.05], [sx, 0.7, 0], 0.03, rnd, 4));
   }
-  return { kind: 'titan.wreck', attack: 'slam', nodes: finish(N.nodes) };
+  scaleNodes(N.nodes, 0.76);
+  return { kind: 'titan.wreck', attack: 'slam', u: 0.76, nodes: finish(N.nodes) };
 }
 
 function wreckAnim(rig, inner, c, base) {
@@ -2649,7 +2659,7 @@ function wreckAnim(rig, inner, c, base) {
   if (rig.core) rig.core.scale.setScalar(1 + Math.sin(t * 2.4 + ph) * 0.1 + (a >= 0 ? bellK(a) * 0.5 : 0));
   (rig.anchor || []).forEach((x) => R(x, -(lx + lfx) * 0.85 + Math.sin(t * 1.9 + ph) * 0.1, 0, Math.sin(t * 1.3 + ph) * 0.06));
   (rig.sway || []).forEach((x) => R(x, Math.sin(t * 1.9 + ph) * 0.1, 0, Math.sin(t * 1.4 + ph) * 0.08));
-  if (c.dead > 0) inner.position.y += Math.min(1, c.dead * 2) * 0.15 * (inner.scale.y || 1);
+  if (c.dead > 0) inner.position.y += Math.min(1, c.dead * 2) * 0.15 * (inner.scale.y || 1) * (rig.u || 1);
 }
 
 // =====================================================================================
@@ -2765,7 +2775,7 @@ function chariot(def, o = {}) {
 }
 
 function chariotAnim(rig, inner, c, base) {
-  const { R, P, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const { R, P, keys } = base, s = (inner.scale.y || 1) * (rig.u || 1), t = c.t, ph = c.phase || 0, a = c.atk;
   const k = c.moving ? 1 : 0, L = rig.legs || [], Sh = rig.shins || [];
   const dead = c.dead > 0, df = dead ? Math.min(1, c.dead * 2) : 0;
   for (let h = 0; h < 2; h++) {
