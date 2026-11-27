@@ -5,7 +5,7 @@
 import { generateTerrain, GRASS, SAND } from '../engine/terrain.js';
 import { combatLevel } from '../engine/combat.js';
 import { STRUCTURES } from './structures.js';
-import { UNITS } from './units.js';
+import { UNITS, leaderOf } from './units.js';
 import { AIRSHIPS } from './airships.js';
 import { SHIPS, CREATURES, FORTS } from './naval.js';
 import { realmFactions, LANDMARKS } from './realms.js';
@@ -79,15 +79,15 @@ Object.assign(FACTIONS, REALM_FACTIONS);
 
 // size: map tiles. points: garrison strength. edge: how much stronger the attackers come.
 export const SITES = {
-  village: { name: 'Village raid', mode: 'field', shape: ['plains', 'plains', 'lake'], size: 96, points: 11000, edge: 1.15 },
-  fort: { name: 'Fort assault', mode: 'field', shape: ['plains', 'plains', 'river'], size: 96, points: 15000, edge: 1.5 },
-  castle: { name: 'Castle siege', mode: 'field', shape: ['plains'], size: 112, points: 21000, edge: 1.9 },
-  city: { name: 'City siege', mode: 'field', shape: ['plains', 'river'], size: 144, points: 36000, edge: 1.6 },
-  coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast'], size: 112, points: 14000, edge: 1.2 },
+  village: { name: 'Village raid', mode: 'field', shape: ['plains', 'plains', 'lake', 'marsh', 'twinRivers', 'bay'], size: 96, points: 11000, edge: 1.15 },
+  fort: { name: 'Fort assault', mode: 'field', shape: ['plains', 'plains', 'river', 'isthmus', 'twinRivers', 'marsh'], size: 96, points: 15000, edge: 1.5 },
+  castle: { name: 'Castle siege', mode: 'field', shape: ['plains', 'plains', 'isthmus', 'bay'], size: 112, points: 21000, edge: 1.9 },
+  city: { name: 'City siege', mode: 'field', shape: ['plains', 'river', 'bay'], size: 144, points: 36000, edge: 1.6 },
+  coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast', 'coast', 'fjord'], size: 112, points: 14000, edge: 1.2 },
   harbor: { name: 'Harbour city assault', mode: 'amphibious', shape: ['harbor'], size: 128, points: 24000, edge: 1.4 },
   sea: { name: 'Sea battle', mode: 'naval', shape: ['sea'], size: 210, points: 0, edge: 1 },
   ctf: { name: 'Capture the flag', mode: 'field', shape: ['plains'], size: 112, points: 12000, edge: 1 },
-  island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island'], size: 112, points: 16000, edge: 1.3 },
+  island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island', 'island', 'peninsula'], size: 112, points: 16000, edge: 1.3 },
 };
 
 // ---------- helpers ----------
@@ -778,6 +778,41 @@ export function generateScenario(opts = {}) {
   for (const t of D.trees) p.scatter(t, all, Math.round(wilds / Math.max(1, D.trees.length)), 1, {}, 4);
   p.scatter('rock', all, Math.round(wilds / (D.trees.length ? 5 : 1.5)), 2, {}, 4);
 
+  // Rally points, at fixed places. The attackers' are camps: breastworks, siege pieces and stores for the
+  // assault (a landing force has only the beaches it comes in on). The defenders' are their headquarters in
+  // the middle of the place and a few lightly held posts, where their engineers raise what the fight needs.
+  const points = [];
+  const clampXY = (x, y) => [Math.max(4, Math.min(S - 5, Math.round(x))), Math.max(4, Math.min(S - 5, Math.round(y)))];
+  if (sea) {
+    for (const fy of S >= 128 ? [0.3, 0.5, 0.7] : [0.36, 0.64]) {
+      const y = Math.round(S * fy), sx = shoreRow && shoreRow[y] > 0 ? shoreRow[y] : Math.round(S * 0.3);
+      points.push({ x: sx + 2, y, side: 0, role: fy === 0.5 || points.length === 0 ? 'hq' : 'camp', stock: 3 });
+    }
+  } else {
+    const siege = A.guns.length ? A.guns : ['ballista', 'mortar'];
+    for (const [k, fy] of (big ? [0.5, 0.26, 0.74] : [0.34, 0.66]).entries()) {
+      const [cx0, cy0] = clampXY(S * (k === 0 && big ? 0.09 : 0.14), S * fy);
+      points.push({ x: cx0, y: cy0, side: 0, role: k === 0 ? 'hq' : 'camp' });
+      p.road(cx0 - 1, cy0 - 1, 3, 3);
+      const mine = { side: 0, style: attId, look: A.look || attId };
+      for (const [dx, dy, type, extra] of [[3, -3, siege[k % siege.length], {}], [3, 2, siege[(k + 1) % siege.length], {}], [-3, -1, 'crates', {}], [-3, 1, 'crates', {}], [-4, -4, 'tent', {}],
+        [6, -4, 'barricade', { rot: 1 }], [6, 0, 'barricade', { rot: 1 }], [6, 4, 'barricade', { rot: 1 }], [1, -6, 'sandbags', {}], [1, 6, 'sandbags', {}]]) p.put(type, cx0 + dx, cy0 + dy, { ...mine, ...extra });
+    }
+  }
+  if (town) {
+    const tx = town.x + (town.w >> 1), ty = town.y + (town.h >> 1);
+    points.push({ x: tx, y: ty, side: 1, role: 'hq', stock: 6 });
+    const posts = sea
+      ? [[town.x + 2, town.y + town.h * 0.2], [town.x + 2, town.y + town.h * 0.8]]
+      : [[town.x - 8, ty - S * 0.17], [town.x - 8, ty + S * 0.17], ...(big ? [[town.x + town.w * 0.78, ty]] : [])];
+    for (const [fx, fy] of posts) {
+      const [px, py] = clampXY(fx, fy);
+      points.push({ x: px, y: py, side: 1, role: 'post' });
+      // a few sandbags toward the enemy: the rest is for the engineers
+      p.put('sandbags', px - 3, py - 1, { side: 1 }); p.put('sandbags', px - 3, py + 2, { side: 1 }); p.put('crates', px + 2, py, { side: 1 });
+    }
+  }
+
   // armies
   const scale = (S / site.size) ** 1.3;
   // `cost` corrects a faction whose troops fight above or below their price (found by tools-side trials)
@@ -785,8 +820,8 @@ export function generateScenario(opts = {}) {
   const host = muster({ ...A.army, ...A.assault }, (site.points * scale * site.edge) / (A.cost || 1), r);
   const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
   const sides = [
-    { name: `${A.adj} ${sea ? 'landing' : 'host'}`, posture: 'attack', groups: host, placed: [] },
-    { name: `${place} ${siteId === 'village' ? 'folk' : 'garrison'}`, posture: 'defend', groups: garrison, placed: [] },
+    { name: `${A.adj} ${sea ? 'landing' : 'host'}`, posture: 'attack', groups: host, placed: [], leader: leaderOf(attId), faction: attId },
+    { name: `${place} ${siteId === 'village' ? 'folk' : 'garrison'}`, posture: 'defend', groups: garrison, placed: [], leader: leaderOf(defId), faction: defId },
   ];
   // airships: the attackers bring one to a big fight; a place with a mooring tower keeps its own
   const zep = (id) => (AIRSHIPS[`${id}Zeppelin`] ? [{ unit: `${id}Zeppelin`, count: 1 }] : []);
@@ -802,6 +837,6 @@ export function generateScenario(opts = {}) {
   return {
     name: `${place}: ${A.adj} ${sea ? 'landing' : 'assault'} on a ${D.adj.toLowerCase()} ${D.places[siteId]}`,
     mode: site.mode, seed, site: siteId, defender: defId, attacker: attId,
-    scn: { size: S, shape, biome, terrainSeed, relief: { hills: 1, cliffs: sea ? 0.5 : 1 }, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, style: defId, look },
+    scn: { size: S, shape, biome, terrainSeed, relief: { hills: 1, cliffs: sea ? 0.5 : 1 }, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, points, style: defId, look, maxTicks: 4000 },
   };
 }

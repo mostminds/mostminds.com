@@ -14,6 +14,14 @@ export const MAP_SHAPES = {
   river: 'River with fords',
   lake: 'Lake',
   strait: 'Strait',
+  twinRivers: 'Two rivers',
+  marsh: 'Marsh and meres',
+  isthmus: 'Isthmus',
+  bay: 'Crescent bay',
+  peninsula: 'Peninsula',
+  fjord: 'Fjord coast',
+  atoll: 'Atoll',
+  twinIsles: 'Twin isles',
 };
 
 export const BIOMES = {
@@ -100,6 +108,62 @@ export function generateTerrain(shape, size, seed = 7) {
         if (nx < 0.12) h = Math.min(h, -0.2); // open sea to the west for landing craft
         break;
       }
+      case 'twinRivers': {
+        // two rivers cross the field, each with its fords
+        h = 1;
+        for (const [c, ph, fords] of [[0.36, 0.7, [0.26, 0.7]], [0.64, 2.9, [0.34, 0.8]]]) {
+          const rx = c + Math.sin(ny * 6 + ph) * 0.05 + n * 0.04, d = Math.abs(nx - rx) * S;
+          let hh = d < 1.4 ? -0.3 : d < 2.6 ? -0.04 : d < 3.4 ? 0.04 : 1;
+          for (const fy of fords) if (Math.abs(ny - fy) * S < Math.max(2, S * 0.03) && d < 2.6) hh = 9;
+          if (hh === 9 || h === 9) h = 9; else h = Math.min(h, hh);
+        }
+        break;
+      }
+      case 'marsh': {
+        // firm ground broken by meres and reedy pools; the edges where armies form up stay dry
+        const m = fbm(x * f * 2.6 + 9, y * f * 2.6 + 4, seed + 31), edge = Math.min(nx, 1 - nx);
+        h = edge < 0.16 ? 1 : (0.6 - m) * 1.4 + (edge < 0.24 ? 0.3 : 0);
+        if (Math.abs(ny - 0.5) < 0.035 + (m - 0.5) * 0.03) h = Math.max(h, 0.12); // a causeway through the middle
+        break;
+      }
+      case 'isthmus': {
+        // sea to north and south; the land narrows to a neck between the armies
+        const half = 0.2 + 0.26 * Math.pow(Math.abs(nx - 0.5) * 2, 1.4) + n * 0.06;
+        h = (half - Math.abs(ny - 0.5)) * 2.2;
+        break;
+      }
+      case 'bay': {
+        // a great bay bites into the southern shore: the field curves round it
+        const d = Math.hypot((nx - 0.5) / 0.3, (ny - 1.02) / 0.5) - n * 0.3;
+        h = (d - 1) * 0.6;
+        break;
+      }
+      case 'peninsula': {
+        // a tongue of land running west into the sea from the eastern edge
+        const half = 0.12 + 0.3 * Math.pow(Math.max(0, (nx - 0.34) / 0.66), 0.7) + n * 0.1;
+        h = (half - Math.abs(ny - 0.5)) * 1.6 - Math.max(0, 0.34 - nx) * 4; // rounded off at its western tip
+        if (x >= S - 1 && Math.abs(ny - 0.5) < 0.4) h = Math.max(h, 0.2);
+        break;
+      }
+      case 'fjord': {
+        // a coast cut by long inlets
+        const inlet = Math.max(0, Math.sin(ny * 9.5 + seed) - 0.55) * 0.5;
+        h = (nx - 0.4 - n * 0.2 - inlet * (1 - Math.min(1, Math.max(0, (nx - 0.4) / 0.38)))) * 1.6;
+        break;
+      }
+      case 'atoll': {
+        // a ring of land round a lagoon, open to the sea on the west
+        const dx = (nx - 0.66) / 0.3, dy = (ny - 0.5) / 0.42, d = Math.hypot(dx, dy) + n * 0.25;
+        h = (0.2 - Math.abs(d - 0.78)) * 1.8;
+        if (dx < -0.6 && Math.abs(dy) < 0.16) h = Math.min(h, -0.12); // the pass into the lagoon
+        break;
+      }
+      case 'twinIsles': {
+        // two islands, north and south, joined at low water
+        h = -0.4;
+        for (const [cx, cy, rx, ry] of [[0.66, 0.26, 0.26, 0.2], [0.68, 0.74, 0.28, 0.2]]) h = Math.max(h, (1 - Math.hypot((nx - cx) / rx, (ny - cy) / ry)) * 0.6 + n * 0.2);
+        break;
+      }
       default: h = 1;
     }
     t[y * S + x] = h === 9 ? FORD : classify(h);
@@ -116,6 +180,7 @@ export function generateTerrain(shape, size, seed = 7) {
     }
   };
   if (shape === 'strait') for (const fx of [0.42, 0.78]) bar(fx * S, 0.2 * S, fx * S, 0.8 * S, 1);
+  if (shape === 'twinIsles') for (const fx of [0.6, 0.74]) bar(fx * S, 0.3 * S, fx * S, 0.7 * S, 1);
   if (shape === 'archipelago') {
     const isles = [[0.55, 0.22], [0.62, 0.62], [0.84, 0.35], [0.86, 0.8], [0.4, 0.82]];
     for (const [a, c] of [[0, 2], [0, 1], [1, 3], [2, 3], [1, 4]]) bar(isles[a][0] * S, isles[a][1] * S, isles[c][0] * S, isles[c][1] * S, 1);

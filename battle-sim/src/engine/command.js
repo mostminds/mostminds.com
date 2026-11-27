@@ -17,6 +17,7 @@ export const SPECS = { line: 'line', medic: 'medic', engineer: 'engineer', vangu
 const BOOST = [null, { hp: 1.1, max: 1.1, roll: 1.05 }, { hp: 1.2, max: 1.15, roll: 1.1 }, { hp: 1.5, max: 1.25, roll: 1.2 }];
 const BUILDS = {
   sandbags: { cost: 1, work: 5 }, barricade: { cost: 1, work: 5 }, ballista: { cost: 3, work: 12 }, cannon: { cost: 3, work: 12 }, tower: { cost: 4, work: 16 }, tent: { cost: 2, work: 8 },
+  mortar: { cost: 3, work: 14 }, harpoon: { cost: 3, work: 12 }, battery: { cost: 4, work: 18 },
 };
 export const AMMO = 40;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -66,6 +67,8 @@ export function initCommand(b, scn) {
       promote(b, u, 3); u.spec = 'commander';
       b.cmd.commanders[side].push(u.id);
     }
+    // the general himself is a commander, and carries the army's standard
+    for (const u of mine) if (u.def.leader && !b.cmd.commanders[side].includes(u.id)) { promote(b, u, 3); u.spec = 'commander'; b.cmd.commanders[side].unshift(u.id); }
     // sergeants lead squads; a fifth of the rest are veterans
     for (const sq of b.squads) {
       if (sq.side !== side || sq.members.length < 4) continue;
@@ -90,7 +93,8 @@ export function initCommand(b, scn) {
 
     // ground to hold: defenders rally on their own position and on their works, where their stores are
     let garrison = null;
-    if (b.sides[side].posture === 'defend' && mine.length) {
+    // (with fixed rally points the ground to hold is laid down by the map: see fronts.js)
+    if (b.sides[side].posture === 'defend' && mine.length && (scn.ctf || scn.fronts === false)) {
       const g = mine.filter((u) => u.aboard < 0 && !u.def.fly);
       if (g.length) garrison = addPoint(b, side, 'rally', Math.round(g.reduce((a, u) => a + u.x, 0) / g.length), Math.round(g.reduce((a, u) => a + u.y, 0) / g.length));
       const works = b.structures.filter((s) => s.side === side && !STRUCTURES[s.type].weapon);
@@ -115,7 +119,7 @@ export function initCommand(b, scn) {
   });
 }
 
-function addPoint(b, side, kind, x, y) {
+export function addPoint(b, side, kind, x, y) {
   const spot = freeTileNear(b, clamp(x, 1, b.W - 2), clamp(y, 1, b.H - 2), 1, side);
   if (!spot) return null;
   const p = { id: b.cmd.points.length, side, kind, x: spot[0], y: spot[1], stock: 0, built: 0, since: b.tick };
@@ -143,7 +147,7 @@ function liveCommanders(b, side) { return b.cmd.commanders[side].map((id) => b.u
 export function fallbackFor(b, sq) {
   let best = null, bd = Infinity;
   const own = b.cmd.points[sq.point];
-  if (own && Math.hypot(own.x - sq.cx, own.y - sq.cy) > 5) return { x: own.x, y: own.y, kind: own.kind === 'beachhead' ? 'the beachhead' : own.kind === 'fort' ? 'the fortifications' : 'its rally point' };
+  if (own && own.side === sq.side && Math.hypot(own.x - sq.cx, own.y - sq.cy) > 5) return { x: own.x, y: own.y, kind: own.kind === 'beachhead' ? 'the beachhead' : own.kind === 'fort' ? 'the fortifications' : 'its rally point' };
   for (const p of b.cmd.points) {
     if (p.side !== sq.side) continue;
     const d = Math.hypot(p.x - sq.cx, p.y - sq.cy);
@@ -183,7 +187,7 @@ export function commandTick(b) {
     if (addCrate(b, c.side, x + 1, y, c.supplies)) {
       c.supplies = 0;
       const p = nearestPoint(b, c.side, x, y);
-      if (!p || Math.hypot(p.x - x, p.y - y) > 12) addPoint(b, c.side, 'beachhead', x + 2, y);
+      if (!b.fronts && (!p || Math.hypot(p.x - x, p.y - y) > 12)) addPoint(b, c.side, 'beachhead', x + 2, y);
     }
   }
   if (b.tick % 10 !== 0) return;
@@ -230,10 +234,11 @@ export function commandTick(b) {
     const cur = C.points[sq.point];
     // keep the present point while it is still close and not in front of the squad
     const ahead = (p) => (p.x - cx) * (ex - cx) + (p.y - cy) * (ey - cy) > 9;
-    if (cur && Math.hypot(cur.x - cx, cur.y - cy) < 16 && !ahead(cur)) continue;
-    let best = null, bd = 14;
-    for (const p of C.points) { if (p.side !== sq.side || ahead(p)) continue; const d = Math.hypot(p.x - cx, p.y - cy); if (d < bd) { bd = d; best = p; } }
-    if (!best && pointsOf(b, sq.side).length < 10 && ed > 5) {
+    if (cur && cur.side === sq.side && (b.fronts ? (b.tick + sq.id) % 40 !== 0 : Math.hypot(cur.x - cx, cur.y - cy) < 16 && !ahead(cur))) continue;
+    // with fixed points a squad rallies on the nearest its side holds, however far
+    let best = null, bd = b.fronts ? Infinity : 14;
+    for (const p of C.points) { if (p.side !== sq.side || (!b.fronts && ahead(p))) continue; const d = Math.hypot(p.x - cx, p.y - cy); if (d < bd) { bd = d; best = p; } }
+    if (!best && !b.fronts && pointsOf(b, sq.side).length < 10 && ed > 5) {
       const cmd = liveCommanders(b, sq.side).find((c) => Math.hypot(c.x - cx, c.y - cy) < 8);
       const d = ed || 1, bx = cmd ? cmd.x : cx, by = cmd ? cmd.y : cy;
       best = addPoint(b, sq.side, b.sides[sq.side].posture === 'defend' || sq.state === 'hold' ? 'hold' : 'rally', Math.round(bx - ((ex - cx) / d) * 4), Math.round(by - ((ey - cy) / d) * 4));
@@ -302,7 +307,7 @@ function engineerDuty(b, u) {
   if (!(u.noHaul > b.tick)) b.structures.forEach((st, idx) => { if (st.destroyed || !(st.supplies > 0) || st.side !== u.side) return; const d = Math.hypot(st.x - u.x, st.y - u.y); if (d < sd) { sd = d; src = { car: st, idx }; } });
   u.fetch = !!src;
   if (src) {
-    if (!pts.length) { const cmd = liveCommanders(b, u.side)[0]; if (cmd) addPoint(b, u.side, 'rally', cmd.x, cmd.y); pts = pointsOf(b, u.side); }
+    if (!pts.length && !b.fronts) { const cmd = liveCommanders(b, u.side)[0]; if (cmd) addPoint(b, u.side, 'rally', cmd.x, cmd.y); pts = pointsOf(b, u.side); }
     if (pts.length) {
       const sx = src.crate ? src.crate.x : src.car.x, sy = src.crate ? src.crate.y : src.car.y, sw = src.crate ? 1 : src.car.w, sh = src.crate ? 1 : src.car.h;
       // a crate already lying at a point is simply taken into its stock
@@ -353,12 +358,24 @@ function planBuild(b, side, p) {
   // once the place has stood a while, a watchtower for a long hold, otherwise a breastwork facing the enemy
   let type;
   if (air && p.stock >= 3 && !gunsNear('ballista') && !sitesOf('ballista')) type = 'ballista';
-  else if ((p.kind === 'beachhead' || p.kind === 'fort') && p.stock >= 3 && gunsNear() < 2 && sitesOf('cannon') < 1) type = 'cannon';
+  else if (p.fixed && sea(b, side) && p.stock >= 4 && !gunsNear('battery') && !sitesOf('battery')) type = 'battery';       // guns that reach the boats
+  else if (p.fixed && sea(b, side) && p.stock >= 3 && !gunsNear('harpoon') && !sitesOf('harpoon') && p.built >= 2) type = 'harpoon';
+  else if ((p.kind === 'beachhead' || p.kind === 'fort' || p.fixed) && p.stock >= 3 && gunsNear() < 2 && sitesOf('cannon') < 1) type = 'cannon';
+  else if (p.fixed && p.stock >= 3 && p.built >= 3 && !gunsNear('mortar') && !sitesOf('mortar') && ed > 8) type = 'mortar';
   else if (p.stock >= 4 && p.built >= 4 && !sitesOf('tower')) type = 'tower';
   else if (p.stock >= 2 && p.built >= 2 && !sitesOf('tent') && b.tick - p.since > 60) type = 'tent';
   else if (p.built < 9) type = p.built % 2 ? 'barricade' : 'sandbags';
   else return null;
+  return startBuild(b, side, p, type, false, ang);
+}
+// is there anything of the enemy's still on the water for shore guns to shoot at?
+const sea = (b, side) => b.crafts.some((c) => c.side !== side && !c.sunk && !c.landed) || b.ships.some((sh) => sh.alive && sh.side !== side);
+
+/** mark out a work of this type at a point and charge its stores (`free` raises it whatever the stock) */
+export function startBuild(b, side, p, type, free0 = false, ang = 0) {
+  const C = b.cmd;
   const def = STRUCTURES[type], B = BUILDS[type];
+  if (!def || !B) return null;
   // breastworks go in an arc toward the enemy; everything else just behind it
   const slot = p.built, front = type === 'sandbags' || type === 'barricade';
   const horiz = Math.abs(Math.cos(ang)) < 0.7; // enemy mostly north or south: lay the work east-west
@@ -381,14 +398,14 @@ function planBuild(b, side, p) {
     const [x, y] = spot;
     const s = { id: C.builds.length, side, point: p.id, type, x, y, w, h, rot, work: B.work, progress: 0, done: false };
     C.builds.push(s);
-    p.stock -= B.cost;
+    if (!free0) p.stock -= B.cost;
     b.events.push({ type: 'buildStart', site: s.id, side, kind: type, x, y, w, h });
     return s;
   }
   return null;
 }
 
-function finishBuild(b, s, u) {
+export function finishBuild(b, s, u) {
   const def = STRUCTURES[s.type];
   // wait for anyone standing in the way of something solid
   if (def.blocksMove) for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) if (b.occ[y * b.W + x]) { s.progress = s.work - 1; return; }

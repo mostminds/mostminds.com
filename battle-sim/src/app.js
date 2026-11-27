@@ -150,6 +150,11 @@ function updateHud() {
   if (b && b.winner !== null) st = b.winner === -1 ? 'Stalemate' : `${names[b.winner]} wins!`;
   else if (sim.loading) st = 'Sculpting models';
   else if (sim.started) st = sim.playing ? 'Battle in progress' : 'Paused';
+  // fixed rally points: how many each side holds, and whether its general still stands
+  if (b && b.fronts && sim.started) {
+    const pts = b.fronts.points.map((id) => b.cmd.points[id]), gen = (i) => { const u = b.units[b.fronts.leader[i]]; return u ? (u.alive ? '' : ' †') : ''; };
+    st = `${st === 'Battle in progress' ? 'Rally points' : st + ' · points'} ${pts.filter((q) => q.side === 0).length}${gen(0)} – ${pts.filter((q) => q.side === 1).length}${gen(1)}`;
+  }
   // capture the flag: the score is the story
   if (b && b.ctf && sim.started) st = `${st === 'Battle in progress' ? 'Flags' : st + ' · flags'} ${b.ctf.score[0]} – ${b.ctf.score[1]} (first to ${b.ctf.toWin})`;
   $('hudState').textContent = st;
@@ -233,7 +238,7 @@ function lockEditing(on) {
 function modeHint() {
   if (scn().ctf) return 'Capture the flag. Each fort keeps a flag at its heart: take the enemy flag and carry it to your own stand to score. Kill the carrier and the flag falls. The fallen return at their fort. First to three, or the higher score when time runs out.';
   return {
-    field: 'Two armies deploy on opposite edges. Defending sides hold position until the enemy closes in.',
+    field: 'Two armies deploy on opposite edges. Each holds rally points (the tall banners): take a point by standing on it unopposed. To win, hold them all and kill the enemy general, or destroy his army. Medics carry the wounded to aid tents.',
     amphibious: 'Side A rides landing craft from the sea onto the island. Defenders shoot at boats before they beach; a sunk boat drowns everyone aboard.',
     naval: 'Ships fire broadsides at targets abeam, board weaker crews to capture them, and fight sea creatures. Levels are the sailing level needed for each hull.',
   }[state.mode];

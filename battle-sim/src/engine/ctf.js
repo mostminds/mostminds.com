@@ -8,7 +8,7 @@
 // scn.ctf = { bases: [{ x, y }, { x, y }], muster: [...], toWin, wave, lieFor }
 //   wave      ticks between reinforcement waves        muster     where raiders form up, before each main gate
 //   lieFor    ticks a dropped flag lies before it returns home
-import { field, walk, attack, unitDist, nearestEnemyDist, addSquad, freeTileNear, occupy } from './battle.js';
+import { field, walk, attack, unitDist, nearestEnemyDist, addSquad, freeTileNear, reviveUnit } from './battle.js';
 
 const TOUCH = 1;      // tiles from a flag at which it can be taken, returned or scored
 const GUARD_R = 6;    // how far the home guard strays from its flag
@@ -43,17 +43,7 @@ export function initCtf(b, scn) {
   }
 }
 
-/** a fallen soldier stands up again at his fort, whole and rearmed; he keeps his rank */
-function revive(b, u, x, y) {
-  const old = b.squads[u.squad];
-  if (old) old.members = old.members.filter((id) => id !== u.id); // he joins a new squad with his wave
-  u.alive = true; u.hp = u.def.hp; u.x = x; u.y = y; u.px = x; u.py = y;
-  u.cd = b.rng.int(0, u.def.speed); u.poison = null; u.aboard = -1; u.pending = 0; u.flag = false; u.under = false;
-  u.wayStep = 0; u.airTime = 0; u.seekLand = false; u.heals = 0; u.outSaid = false; u.fresh = b.tick; u.lives = (u.lives || 0) + 1;
-  if (u.ammo !== undefined) u.ammo = 40;
-  if (u.duty && u.spec !== 'vanguard') u.duty = null;
-  occupy(b, u, 1);
-}
+const revive = (b, u, x, y) => reviveUnit(b, u, x, y, 1);
 
 const canCarry = (u) => u.alive && !u.def.fly && u.x >= 0 && u.aboard < 0 && (u.def.size || 1) <= 2;
 const distTo = (u, x, y) => Math.max(Math.abs(u.x - x), Math.abs(u.y - y)) - ((u.def.size || 1) - 1);

@@ -10,6 +10,8 @@ import { STRUCTURES } from '../data/structures.js';
 import { structureFootprint } from '../engine/battle.js';
 import { GRASS, DEEP, SHALLOW, SAND, BIOMES } from '../engine/terrain.js';
 import { buildGround, buildCover } from './groundcover.js';
+import { SCENERY, animateScenery } from './registry.js';
+import { REALMS } from '../data/realms.js';
 import { getDetail } from './rigkit.js';
 import { TICK_MS } from '../engine/combat.js';
 
@@ -160,6 +162,16 @@ export class LandView {
     m.userData.bar = bar; m.userData.disc = disc; m.userData.top = top;
     m.userData.phase = (u.id * 1.7) % 6.28;
     m.userData.rotY = Math.PI / 2 - u.face;
+    if (u.def.leader) {
+      // the general: a crown of gold over his head and a gold ring at his feet, though he stands no taller than his men
+      const gold = new THREE.MeshBasicMaterial({ color: 0xffd24a });
+      const crown = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 6, 14).rotateX(Math.PI / 2), gold);
+      crown.position.y = top + 0.32; m.add(crown);
+      for (let k = 0; k < 5; k++) { const sp = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.12, 4), gold); sp.position.set(Math.cos(k * 1.2566) * 0.2, top + 0.4, Math.sin(k * 1.2566) * 0.2); m.add(sp); }
+      const halo = new THREE.Mesh(new THREE.RingGeometry(0.62 * u.def.size, 0.74 * u.def.size, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.8 }));
+      halo.position.y = 0.03; m.add(halo);
+      m.userData.crown = crown;
+    }
     if (u.spec === 'commander') {
       // commanders carry the standard their squads rally on
       const st = new THREE.Group();
@@ -256,6 +268,7 @@ export class LandView {
     if (this.cover) this.root.remove(this.cover);
     this.cover = buildCover(b, b.biome, this.heightAt, { low: 0.3, medium: 0.65, high: 1, ultra: 1.4 }[getDetail()] ?? 0.65);
     this.root.add(this.cover);
+    this.buildScenery(b);
     this.makeFlags(b);
     for (const p of b.cmd.points) this.markPoint(p);
     for (const c of b.cmd.crates) this.markCrate(c);
@@ -355,8 +368,80 @@ export class LandView {
     this.deathAt.delete(id); this.noBody.delete(id);
     this.models[id] = this.addUnitModel(this.b.units[id]);
   }
+  /** a fixed rally point: a tall banner in its holder's colour over a ring marking the ground that must be held */
+  markFixed(p) {
+    const g = new THREE.Group(), y = Math.max(0, this.groundY(p.x, p.y)), col = SIDE_COLORS[p.side], H = p.role === 'hq' ? 5 : 4;
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, H, 6).translate(0, H / 2, 0), mat(0x4a3a26)));
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6).translate(0, H + 0.08, 0), mat(0xd8b04a, { metalness: 0.9, roughness: 0.3 })));
+    const geo = new THREE.PlaneGeometry(p.role === 'hq' ? 2.2 : 1.7, p.role === 'hq' ? 1.3 : 1.0, 6, 2);
+    const pennant = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: col, side: THREE.DoubleSide, roughness: 0.85, emissive: col, emissiveIntensity: 0.15 }));
+    pennant.position.set((p.role === 'hq' ? 1.1 : 0.85) + 0.06, H - (p.role === 'hq' ? 0.75 : 0.6), 0); pennant.castShadow = true;
+    g.add(pennant);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(3.7, 4.0, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5 }));
+    ring.position.y = 0.06; g.add(ring);
+    // a headquarters wears a second, gold ring
+    if (p.role === 'hq') { const r2 = new THREE.Mesh(new THREE.RingGeometry(4.15, 4.3, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.6 })); r2.position.y = 0.06; g.add(r2); }
+    const stores = buildStructure(STRUCTURES.crates, 1, 1, null);
+    stores.position.set(0.9, 0, 0.7); stores.visible = p.stock > 0; g.add(stores);
+    g.position.set(p.x + 0.5, y, p.y + 0.5);
+    this.dynamic.add(g);
+    this.pointMarks.set(p.id, { g, stores, pennant, ring, base: geo.attributes.position.array.slice(), fixed: true });
+  }
+  /** what a faction's stretchers are made of: its own cloth on poles of its own kind */
+  stretcherFor(side) {
+    const fac = this.b.sides[side]?.faction, realm = REALMS.find((r) => r.id === fac);
+    const cloth = realm ? realm.P.cloth : { kingdom: 0xe8e0d0, goblin: 0x7a6a4a, undead: 0x5a5a66, infernal: 0x6a1a14, beasts: 0x8a6a4a, elemental: 0x9ab0c8, dragons: 0x8a3a2a }[fac] ?? 0xe8e0d0;
+    const poles = ['undead', 'crimson', 'khemet', 'drowned'].includes(fac) ? 0xe8e0c8 : ['grom', 'ashur', 'ironbound', 'infernal'].includes(fac) ? 0x4a4a50 : ['tianlong', 'shogunate', 'xibalba', 'thousandgods', 'verdant'].includes(fac) ? 0xa8a04a : 0x5a4026;
+    const g = new THREE.Group();
+    for (const z of [-0.2, 0.2]) g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.7, 5).rotateZ(Math.PI / 2).translate(0, 0, z), mat(poles)));
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.03, 0.4), new THREE.MeshStandardMaterial({ color: cloth, roughness: 0.9 })));
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.7, 3, 8).rotateZ(Math.PI / 2).translate(0, 0.12, 0), mat(SIDE_COLORS[side]));
+    g.add(body, new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6).translate(0.5, 0.14, 0), mat(0xd9a77c)));
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.42).translate(-0.2, 0.2, 0), new THREE.MeshStandardMaterial({ color: side === 0 ? 0xf4f4f0 : 0xf4f4f0, roughness: 0.9 }))); // a blanket
+    g.position.set(0, 0.55, -0.75); g.rotation.y = Math.PI / 2;
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return g;
+  }
+  /** plants, beasts and oddments of the land, by its climate: decoration only, thinner at lower graphics settings */
+  buildScenery(b) {
+    if (this.sceneryGroup) this.root.remove(this.sceneryGroup);
+    const g = (this.sceneryGroup = new THREE.Group()); this.scenery = [];
+    this.root.add(g);
+    const plan = LAND_SCENERY[b.biome];
+    if (!plan) return;
+    const W = b.W, H = b.H, T = b.terrain, budget = { low: 50, medium: 110, high: 190, ultra: 280 }[getDetail()] ?? 110;
+    const tiles = { open: [], sand: [], shallow: [], cliff: [], air: [] };
+    const h2 = (x, y, k) => { let h = (x * 374761393 + y * 668265263 + k * 1274126177 + (b.seed | 0)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+    const nearBuilt = (x, y) => { for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const i = (y + dy) * W + x + dx; if (b.sid[i] || b.level[i] || b.door[i] >= 0) return true; } return false; };
+    const nearLand = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = T[(y + dy) * W + x + dx]; if (t === GRASS || t === SAND) return true; } return false; };
+    for (let y = 3; y < H - 3; y += 1) for (let x = 3; x < W - 3; x += 1) {
+      if (h2(x, y, 1) > 0.34) continue; // a third of the tiles are candidates
+      const i = y * W + x, t = T[i];
+      if (b.cliff && b.cliff[i]) { tiles.cliff.push(i); continue; }
+      if (t === SHALLOW) { if (nearLand(x, y)) tiles.shallow.push(i); continue; }
+      if (t === DEEP || nearBuilt(x, y) || b.blockMove[i]) continue;
+      if (t === SAND) tiles.sand.push(i); else if (t === GRASS) { tiles.open.push(i); if (h2(x, y, 2) < 0.3) tiles.air.push(i); }
+    }
+    const land = tiles.open.length + tiles.sand.length + 1;
+    let made = 0;
+    plan.forEach(([key, per, where, [s0, s1]], li) => {
+      const make = SCENERY[key], list = tiles[where];
+      if (!make || !list || !list.length) return;
+      const n = Math.min(list.length, Math.max(per >= 1 ? 1 : 0, Math.round(per * (land * 3) / 1000 * (budget / 110))));
+      for (let k = 0; k < n && made < budget; k++) {
+        const i = list[Math.floor(h2(li, k, 7) * list.length)], x = i % W, y = (i / W) | 0, r = h2(x, y, li + 9);
+        let o; try { o = make(Math.floor(r * 1000) + li); } catch { o = null; }
+        if (!o) continue;
+        const px = x + 0.5, pz = y + 0.5, wet = where === 'shallow';
+        o.position.set(px, wet ? -0.11 : this.heightAt ? this.heightAt(px, pz) : 0, pz);
+        o.rotation.y = r * Math.PI * 2; o.scale.multiplyScalar(s0 + (s1 - s0) * h2(x, y, li + 21));
+        g.add(o); this.scenery.push(o); made++;
+      }
+    });
+  }
   markPoint(p) {
     if (this.pointMarks.has(p.id)) return;
+    if (p.fixed) { this.markFixed(p); return; }
     const g = new THREE.Group(), y = Math.max(0, this.groundY(p.x, p.y));
     g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.6, 6).translate(0, 1.3, 0), mat(0x4a3a26)));
     const pennant = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 2.55, 0), new THREE.Vector3(0, 1.95, 0), new THREE.Vector3(1.0, 2.25, 0)]), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[p.side], side: THREE.DoubleSide }));
@@ -629,6 +714,20 @@ export class LandView {
         for (let k = 0; k < 3; k++) st.ring(v.clone(), 1.2 + k * 0.9, SIDE_COLORS[e.side], 0.8 + k * 0.3);
         for (let k = 0; k < 10; k++) st.puff(v.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.5 + Math.random() * 2.5, (Math.random() - 0.5) * 2)), [SIDE_COLORS[e.side], 0xffd24a, 0xffffff][k % 3], 0.35);
         msgs.push({ side: e.side, text: `Flag captured! ${e.score[0]} – ${e.score[1]}` });
+      } else if (e.type === 'pointTaken') {
+        const pm = this.pointMarks.get(e.point), col = SIDE_COLORS[e.side];
+        if (pm) { pm.pennant.material.color.set(col); if (pm.pennant.material.emissive) pm.pennant.material.emissive.set(col); if (pm.ring) pm.ring.material.color.set(col); }
+        for (let k = 0; k < 3; k++) st.ring(v.set(e.x + 0.5, 0.06, e.y + 0.5), 2 + k * 1.2, col, 0.8 + k * 0.3);
+        msgs.push({ side: e.side, text: e.hq ? 'The enemy headquarters is taken' : 'A rally point changes hands' });
+      } else if (e.type === 'stretcherUp') {
+        // the wounded man is lifted: his medic carries the stretcher now
+        const body = this.models[e.id], med = this.models[e.medic];
+        if (body) { body.visible = false; this.noBody.add(e.id); }
+        if (med && !med.userData.stretcher) { const sg = this.stretcherFor(b.units[e.medic].side); med.add(sg); med.userData.stretcher = sg; med.userData.stretcherOf = e.id; }
+      } else if (e.type === 'stretcherDown') {
+        for (const m of this.models) if (m && m.userData.stretcherOf === e.id) { m.remove(m.userData.stretcher); m.userData.stretcher = null; m.userData.stretcherOf = undefined; }
+        if (e.dropped) { const body = this.models[e.id]; if (body) { this.noBody.delete(e.id); body.visible = true; body.position.set(e.x + 0.5, Math.max(0, this.groundY(e.x, e.y)), e.y + 0.5); } }
+        else { st.ring(v.set(b.units[e.id].x + 0.5, 0.06, b.units[e.id].y + 0.5), 1.2, 0xffffff, 0.7); if (b.tick !== this.aidSaid) { this.aidSaid = b.tick; msgs.push({ side: b.units[e.id].side, text: 'A wounded soldier is carried to the aid tent' }); } }
       } else if (e.type === 'point') {
         this.markPoint(b.cmd.points[e.point]);
         msgs.push({ side: e.side, text: e.kind === 'beachhead' ? 'A beachhead is marked: stores come ashore' : e.kind === 'fort' ? 'The garrison holds its works' : e.kind === 'hold' ? 'A squad marks the ground it will hold' : 'A squad sets its rally point behind the line' });
@@ -817,6 +916,18 @@ export class LandView {
     }
     if (this.grid) this.grid.visible = b.tick === 0;
     this.updateFlags(alpha, t, dt);
+    // the land's own life stirs: a few pieces a frame
+    if (this.scenery && this.scenery.length) {
+      const n = this.scenery.length, step = Math.max(1, Math.ceil(n / 60));
+      this.sceneTurn = ((this.sceneTurn || 0) + 1) % step;
+      for (let k = this.sceneTurn; k < n; k += step) animateScenery(this.scenery[k], t);
+    }
+    // rally banners fly
+    for (const pm of this.pointMarks.values()) if (pm.fixed) {
+      const pp = pm.pennant.geometry.attributes.position, w = pm.base;
+      for (let k = 0; k < pp.count; k++) { const x = w[k * 3] + 1.1; pp.setZ(k, Math.sin(t * 4 + x * 3) * 0.08 * x); }
+      pp.needsUpdate = true;
+    }
     const v = new THREE.Vector3();
     const tickNow = b.tick + alpha;
     const cam = this.stage.camera.position;
@@ -1063,5 +1174,21 @@ export class LandView {
   }
 }
 
+// What the open country holds besides its trees, by climate: [piece, how many per thousand tiles of land, where, scale range]
+//   where: open ground, sand, the shallows beside land, cliff tiles, or in the air over open ground
+const LAND_SCENERY = {
+  temperate: [['wildflowers', 5, 'open', [0.9, 1.4]], ['deer', 0.6, 'open', [1, 1.2]], ['sheepFlock', 0.4, 'open', [1, 1.1]], ['haystacks', 0.4, 'open', [1, 1.1]], ['stoneWall', 0.8, 'open', [1, 1]], ['gullFlock', 0.4, 'air', [1, 1.3]],
+    ['rowboat', 0.6, 'sand', [1, 1.1]], ['fishingHut', 0.3, 'sand', [1, 1]], ['oak', 2, 'cliff', [0.8, 1.2]], ['pineStand', 2, 'cliff', [0.8, 1.2]], ['reedBed', 2.5, 'shallow', [0.9, 1.2]], ['lilyPatch', 1.5, 'shallow', [1, 1.4]], ['heronGroup', 0.4, 'shallow', [1, 1.2]]],
+  snow: [['penguinGroup', 1.4, 'sand', [1.3, 1.7]], ['floe', 7, 'shallow', [0.7, 1.3]], ['pineStand', 2.5, 'cliff', [0.8, 1.2]], ['deer', 0.5, 'open', [1, 1.2]], ['deadTree', 0.8, 'open', [0.8, 1.1]], ['gullFlock', 0.3, 'air', [1, 1.3]]],
+  desert: [['saguaro', 3, 'open', [0.8, 1.3]], ['dune', 1.2, 'open', [0.8, 1.2]], ['ruinColumns', 0.25, 'open', [0.9, 1.1]], ['rockArch', 0.5, 'cliff', [0.9, 1.3]], ['camelGroup', 0.3, 'open', [1, 1.1]], ['vultureFlock', 0.5, 'air', [1, 1.3]],
+    ['scorpion', 1.2, 'open', [1, 1.6]], ['lizard', 1.2, 'open', [1, 1.5]], ['wreck', 0.3, 'sand', [0.9, 1.1]], ['datePalm', 2, 'sand', [0.8, 1.2]], ['oasisPool', 0.12, 'open', [1, 1.3]], ['reedBed', 1.5, 'shallow', [0.9, 1.2]]],
+  swamp: [['reedBed', 5, 'sand', [0.9, 1.3]], ['reedBed', 4, 'shallow', [0.9, 1.3]], ['cypress', 3.5, 'shallow', [0.8, 1.2]], ['deadTree', 1.5, 'open', [0.8, 1.2]], ['heronGroup', 0.8, 'shallow', [1, 1.3]], ['alligator', 0.9, 'shallow', [1, 1.3]],
+    ['lilyPatch', 3, 'shallow', [1, 1.5]], ['fireflies', 0.3, 'open', [1, 1.4]], ['bogMound', 1, 'open', [0.9, 1.3]], ['giantToad', 1, 'open', [1, 1.5]], ['punt', 0.3, 'shallow', [1, 1.1]]],
+  volcanic: [['charredTree', 2.5, 'open', [0.8, 1.2]], ['obsidianSpire', 1.2, 'open', [0.8, 1.3]], ['basaltColumns', 2, 'cliff', [0.9, 1.4]], ['basaltColumns', 0.6, 'open', [0.8, 1.1]], ['smokeVent', 0.8, 'open', [1, 1.4]], ['ashDune', 1, 'open', [0.9, 1.3]],
+    ['fireLizard', 1.2, 'open', [1, 1.6]], ['emberBats', 0.5, 'air', [1, 1.3]]],
+  jungle: [['coconutPalm', 3.5, 'sand', [0.8, 1.2]], ['bananaTree', 1.5, 'open', [0.9, 1.2]], ['bambooThicket', 1.5, 'cliff', [0.9, 1.2]], ['fernClump', 5, 'open', [0.9, 1.5]], ['elephantEar', 3, 'open', [0.9, 1.4]], ['bromeliad', 3, 'open', [1, 1.5]],
+    ['mossLog', 1, 'open', [0.9, 1.2]], ['mangrove', 3.5, 'shallow', [0.8, 1.2]], ['crocodile', 0.9, 'shallow', [1, 1.3]], ['macaw', 1, 'open', [1.4, 2]], ['monkey', 0.8, 'open', [1.3, 1.8]], ['treeFrog', 0.8, 'open', [1.4, 2]],
+    ['dartFrog', 0.8, 'open', [1.5, 2.2]], ['treeSnake', 0.5, 'open', [1, 1.3]], ['giantSpider', 0.4, 'open', [1, 1.4]], ['boar', 0.5, 'open', [1, 1.3]], ['lilyPatch', 1.5, 'shallow', [1, 1.4]]],
+};
 function hashRelief(h, c) { let v = 0; for (let i = 0; i < h.length; i += 5) v = (v * 31 + Math.round(h[i] * 50) + (c[i] ? 7 : 0)) | 0; return v; }
 function hashTerrain(t) { let h = 0; for (let i = 0; i < t.length; i += 7) h = (h * 31 + t[i]) | 0; return h; }

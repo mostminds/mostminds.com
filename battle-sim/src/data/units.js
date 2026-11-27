@@ -287,6 +287,34 @@ function tradesFor(u) {
 // the twenty-seven realms (see realms.js) muster troops built on the roster above
 Object.assign(UNITS, realmUnits(UNITS));
 
+// ---- Generals. Every faction has one: a king, warlord or high priest who stands no taller than the troops of
+// his kind but is worth a company of them. He keeps to his headquarters; to win, the enemy must kill him and
+// hold every rally point. [title, the unit he is drawn from]
+export const LEADERS = {
+  kingdom: ['King', 'paladin'], goblin: ['Goblin King', 'warboss'], undead: ['Lich King', 'necromancer'], infernal: ['Arch-Fiend', 'hellknight'], beasts: ['Beast Lord', 'minotaur'],
+  elemental: ['Stone Speaker', 'frostGolem'], dragons: ['Dragon Lord', 'dragonKnight'],
+  graal: ['Grail King', 'graal_questKnight'], aurelia: ['Emperor', 'aurelia_greatsword'], aethel: ['Phoenix King', 'aethel_swordmaster'], kaelneth: ['Witch King', 'kaelneth_executioner'],
+  verdant: ['King in the Wood', 'verdant_eternal'], grom: ['High King', 'grom_ironbreaker'], xibalba: ['Sun Speaker', 'xibalba_temple'], velikaya: ['Tsar', 'velikaya_axemen'],
+  tianlong: ['Dragon Emperor', 'tianlong_celestialGuard'], ironbound: ['Everchosen Warlord', 'ironbound_chosen'], screaming: ['Herald of the Screaming', 'screaming_brass'],
+  cloven: ['Great Beastlord', 'cloven_bestigor'], fimbul: ['Sea King', 'fimbul_huscarl'], ashur: ['High Priest of the Forge', 'ashur_immortal'], greenhide: ['Great Warboss', 'greenhide_bigUn'],
+  skar: ['Lord of the Warrens', 'skar_stormrat'], crimson: ['Elder Count', 'crimson_vampire'], khemet: ['King of Kings', 'khemet_king'], drowned: ['Dread Admiral', 'drowned_captain'],
+  gorge: ['Overtyrant', 'gorge_ironGut'], westmark: ['Stadtholder', 'westmark_marine'], principalities: ['Merchant Prince', 'principalities_legion'], sunkings: ['King of the Sun', 'sunkings_diestro'],
+  caliphate: ['Sultan', 'caliphate_guardA'], shogunate: ['Shogun', 'shogunate_samurai'], mistisles: ['High Chieftain', 'mistisles_chariotM'], thousandgods: ['Maharaja', 'thousandgods_rajput'],
+};
+/** the unit id of a faction's general */
+export const leaderOf = (faction) => (LEADERS[faction] ? `${faction}_leader` : null);
+for (const [fid, [title, baseId]] of Object.entries(LEADERS)) {
+  const base = UNITS[baseId];
+  if (!base) throw new Error(`units: the ${fid} general is drawn from an unknown unit "${baseId}"`);
+  const k = 1.5, bonus = Object.fromEntries(Object.entries(base.bonus || {}).map(([key, v]) => [key, Math.round(v > 0 ? v * k + 30 : v)]));
+  const abil = (base.abilities || []).filter((a) => !['regen', 'cleave', 'protect', 'heal', 'repair'].includes(a.type));
+  UNITS[`${fid}_leader`] = { ...base, name: title, category: base.category, leader: true, role: 'frontline',
+    hp: Math.max(360, Math.round(base.hp * 6)), att: Math.round(base.att * k) + 10, str: Math.round(base.str * k) + 10, def: Math.round(base.def * k) + 10,
+    rng: base.rng > 1 ? Math.round(base.rng * k) : 1, mag: base.mag > 1 ? Math.round(base.mag * k) : 1, bonus,
+    abilities: [...abil, { type: 'regen', amount: 4, every: 5 }, { type: 'cleave', radius: 1, mult: 0.6 }, { type: 'protect', style: 'ranged', reduction: 0.35 }],
+    model: { ...(base.model || {}), general: true } };
+}
+
 for (const [id, u] of Object.entries(UNITS)) { u.id = id; u.abilities ||= []; u.trades = tradesFor(u); }
 
 // Not a game unit: the sculpting example shown by `viewer.html?kind=unit&id=_example` (see docs/MODELING.md)

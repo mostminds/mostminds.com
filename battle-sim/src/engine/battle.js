@@ -11,6 +11,7 @@ import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGun
 import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsAirship } from './airship.js';
 import { initCommand, commandTick, specDuty, fallbackFor, onUnitDeath } from './command.js';
 import { initCtf, ctfTick, ctfDuty, ctfDeath, ctfWinner, ctfSpawnTiles } from './ctf.js';
+import { initFronts, frontsTick, frontDuty, frontsWinner, maybeDown } from './fronts.js';
 
 const INF = 32767;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -54,7 +55,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     level: new Uint8Array(N), ladder: new Uint8Array(N), door: new Int8Array(N).fill(-1),
     losH: new Uint8Array(N), sid: new Int16Array(N), span: new Uint8Array(N),
     units: [], squads: [], crafts: [], pending: [], events: [], fields: new Map(),
-    sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, posture: s.posture || 'attack', initial: 0 })),
+    sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, posture: s.posture || 'attack', initial: 0, faction: s.faction || null })),
     maxTicks: scn.maxTicks || 3000, winner: null, structures: [],
     buckets: new Map(),
   };
@@ -141,10 +142,23 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     void fresh;
   });
 
+  // each side's general (or king, or warboss): one soldier, placed at its headquarters
+  scn.sides.forEach((side, si) => {
+    const def = side.leader && getDef(side.leader);
+    if (!def) return;
+    const hq = (scn.points || []).find((p) => p.side === si && p.role === 'hq') || (scn.points || []).find((p) => p.side === si);
+    const mine = b.units.filter((u) => u.side === si && u.x >= 0 && !u.def.fly);
+    const at = hq ? [hq.x, hq.y] : mine.length ? [Math.round(mine.reduce((a, u) => a + u.x, 0) / mine.length), Math.round(mine.reduce((a, u) => a + u.y, 0) / mine.length)] : null;
+    const near = (q) => q && freeTileNear(b, Math.max(1, Math.min(W - 2, q[0])), Math.max(1, Math.min(H - 2, q[1])), def.size || 1, si);
+    const mean = mine.length ? [Math.round(mine.reduce((a, u) => a + u.x, 0) / mine.length), Math.round(mine.reduce((a, u) => a + u.y, 0) / mine.length)] : null;
+    const spot = near(at) || near(mean) || (mine[0] && near([mine[0].x, mine[0].y]));
+    if (spot) addUnit(def, si, spot[0], spot[1]);
+  });
   buildSquads(b);
   initSupport(b, scn, shipDefs);
   initAirships(b, scn);
   initCommand(b, scn);
+  if (scn.mode !== 'naval') initFronts(b, scn);
   initCtf(b, scn);
   return b;
 }
@@ -160,6 +174,17 @@ export function spawnUnit(b, def, side, x, y) {
   b.sides[side].initial++;
   if (x >= 0) occupy(b, u, 1);
   return u;
+}
+/** a fallen soldier stands up again, whole (or at `frac` of his strength) and rearmed; he keeps his rank */
+export function reviveUnit(b, u, x, y, frac = 1) {
+  const old = b.squads[u.squad];
+  if (old) old.members = old.members.filter((id) => id !== u.id); // he joins a new squad
+  u.alive = true; u.hp = Math.max(1, Math.round(u.def.hp * frac)); u.x = x; u.y = y; u.px = x; u.py = y;
+  u.cd = b.rng.int(0, u.def.speed); u.poison = null; u.aboard = -1; u.pending = 0; u.flag = false; u.under = false; u.down = null; u.bearing = null;
+  u.wayStep = 0; u.airTime = 0; u.seekLand = false; u.heals = 0; u.outSaid = false; u.fresh = b.tick; u.lives = (u.lives || 0) + 1;
+  if (u.ammo !== undefined) u.ammo = 40;
+  if (u.duty && u.spec !== 'vanguard') u.duty = null;
+  occupy(b, u, 1);
 }
 /** form units that arrived mid-battle into a squad of their own */
 export function addSquad(b, members, state = 'advance') {
@@ -535,6 +560,7 @@ export function stepBattle(b) {
   supportTick(b);
   airTick(b);
   commandTick(b);
+  frontsTick(b);
   ctfTick(b);
   for (const sq of b.squads) if ((b.tick + sq.id) % 3 === 0) updateSquad(b, sq);
 
@@ -565,6 +591,7 @@ function sideHp(b, side) {
 function checkWinner(b) {
   const a0 = sideAlive(b, 0), a1 = sideAlive(b, 1);
   if (b.ctf) b.winner = ctfWinner(b, a0, a1);
+  else if (b.fronts) b.winner = frontsWinner(b, a0, a1);
   else if (a0 === 0 && a1 === 0) b.winner = -1;
   else if (a0 === 0) b.winner = 1;
   else if (a1 === 0) b.winner = 0;
@@ -909,6 +936,7 @@ function unitTick(b, u) {
   const mend = ability(u, 'repair') || (u.spec === 'engineer' ? { amount: 22 } : null);
   if (mend && repairDuty(b, u, mend)) return;
   if (b.ctf && ctfDuty(b, u)) return; // capture the flag: carriers, raiders and the home guard
+  if (b.fronts && frontDuty(b, u)) return; // fixed rally points: the teams that hold and take them, the general, the stretcher-bearers
 
   const sq = b.squads[u.squad];
   const range = unitRange(b, u);
@@ -1199,7 +1227,8 @@ export function damage(b, t, dmg, from, style, hit = true, src = null) {
     occupy(b, t, 0);
     if (from) from.kills++;
     const o = from || src;
-    b.events.push({ type: 'death', id: t.id, by: from ? from.id : -1, style, ax: o ? o.x : undefined, ay: o ? o.y : undefined, blast: !!(src && src.blast) });
+    const wounded = maybeDown(b, t, style); // he may be carried off and mended
+    b.events.push({ type: 'death', id: t.id, by: from ? from.id : -1, style, ax: o ? o.x : undefined, ay: o ? o.y : undefined, blast: !!(src && src.blast), wounded });
     onUnitDeath(b, t, from);
     ctfDeath(b, t);
   }

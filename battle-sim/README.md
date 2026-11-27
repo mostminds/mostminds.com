@@ -260,6 +260,42 @@ hunters in the water, and its own life and buildings ashore.
   shards and glowing lava cracks in volcanic land; broad-leaved plants and ferns in the jungle; and boulders
   along every cliff line. Density follows the graphics setting. (`src/render/groundcover.js`.)
 
+## Rally points, generals and the wounded
+
+Land battles and island assaults are fought over **rally points at fixed places** (the tall banners, each with
+a ring marking the ground that must be held). Rules are in `src/engine/fronts.js`.
+
+- **Whose they are.** An attacking army's points are fortified camps: breastworks, siege pieces and stores for
+  the assault (a landing force has only the beaches it comes in on). A defender's are its headquarters in the
+  middle of the place and a few lightly held posts, where its engineers raise what the fight calls for: shore
+  batteries and harpoon guns while there is anything on the water, cannon and mortars against infantry,
+  ballistae against fliers, then breastworks, an aid tent and a watchtower. Generated maps lay the points out;
+  a map that names none gets two a side.
+- **Taking one.** A point turns when only the other side's soldiers have stood on it for a while. It keeps
+  half its stores.
+- **Teams.** Part of each army is told off to hold its own points (half of a defender, about a fifth of an
+  attacker, shooters first) and the rest to take the enemy's, a named point each. When a battle goes quiet,
+  more are sent forward. A broken squad falls back to the nearest point its side still holds.
+- **Generals.** Each faction has one (King, Tsar, Shogun, Great Warboss, Lich King and so on): a single soldier
+  no bigger than his troops and worth a company of them, marked by a gold crown and ring. He keeps to his
+  headquarters and moves to another point if it falls.
+- **Winning.** Hold every rally point with the enemy general dead, or leave the enemy with nobody standing. At
+  the time limit the side holding more points wins.
+- **The wounded.** A foot soldier struck down may be left alive on the field. A medic goes to him, takes him up
+  on a stretcher in his faction's colours and carries him to an aid tent, raising one at the nearest rally
+  point if there is none; after a while there he returns to the fight at half strength. Left too long, he
+  dies. Healers still heal in the field as before.
+
+### More country
+
+- **Map shapes.** Besides plains, river, lake, coast, harbour, island, strait and archipelago: two rivers, marsh
+  and meres, an isthmus, a crescent bay, a peninsula, a fjord coast, an atoll and twin isles. Generated sites
+  draw from those that suit them.
+- **Life on the land.** Land maps carry the same scenery as the seas, by climate: deer, sheep, haystacks and
+  gulls; camels, cactus, ruins and vultures; cypress, herons, alligators and fireflies; charred trees, vents
+  and fire lizards; palms, mangroves, crocodiles, macaws and monkeys; penguins and ice floes in the north. It
+  is decoration: troops walk through it.
+
 ## Capture the flag
 
 The **Capture the flag** button builds two forts facing each other across open ground, each in its own
