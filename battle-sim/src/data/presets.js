@@ -15,9 +15,9 @@ const g = (unit, count) => ({ unit, count });
 export const PRESETS = [
   // ---------------- Field battles ----------------
   {
-    id: 'breakout', name: 'Arena breakout: 32 Knights vs 12 Cyclopes', mode: 'field',
+    id: 'breakout', name: 'Arena breakout: 12 Knights vs 12 Cyclopes', mode: 'field',
     scn: { size: 40, shape: 'plains', biome: 'temperate', structures: ring(20, 20, 17, 'pillar'),
-      sides: [{ name: 'Garrison', posture: 'defend', groups: [g('knight', 32)], placed: [] },
+      sides: [{ name: 'Garrison', posture: 'defend', groups: [g('knight', 12)], placed: [] },
               { name: 'Cyclopes', posture: 'attack', groups: [g('cyclops', 12)], placed: [] }] },
   },
   {
@@ -249,6 +249,15 @@ function enlarge(p) {
   for (const sd of scn.sides) for (const q of sd.placed || []) { q.x = Math.round(q.x * k); q.y = Math.round(q.y * k); }
 }
 for (const p of PRESETS) enlarge(p);
+
+// Army sizes retuned by search (tools: many seeded battles per preset) after ranks, trades, supply and
+// the larger maps changed the odds. The factor scales every group on side B; breakout is set by hand.
+const BALANCE = { coralteeth: 2.05, dragons: 1.26, emberreach: 0.63, frostfang: 0.89, highcrag: 0.71, horde: 1.19, ironbay: 0.63,
+  landing: 1.12, saltmarsh: 1.33, saltspire: 1.26, siege: 1.12, sunscar: 0.8, twinpeaks: 1.5, wildwood: 1.19 };
+for (const p of PRESETS) {
+  const f = BALANCE[p.id];
+  if (f) for (const gr of p.scn.sides[1].groups) gr.count = Math.max(1, Math.round(gr.count * f));
+}
 // A supply line for each army: track running in from its own map edge with two loaded wagons on it.
 // Field armies both get one; in landings only the defenders do (the attackers' stores come by sea).
 for (const p of PRESETS) {
