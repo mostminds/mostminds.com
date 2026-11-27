@@ -1358,13 +1358,13 @@ function net(g, a, b, c, d, nu, nv, sag = 0.1, col = rgb(0x6a6248)) {
 /** a low dome of a skull for paving: crown up, face toward +Z; sculpted once, a couple of hundred triangles */
 function paveSkull(g, s = 1) {
   const geo = geoOnce('paveSkull', () => {
-    const c = 0xcfc6a8, d = 0x15110e, P = [];
+    const c = 0xb3a888, d = 0x0c0907, P = [];
     P.push(S.ellipsoid(0.085, 0.075, 0.1).at(0, 0.02, -0.01).color(c).tint(0.16, 26));
-    P.push(S.box(0.1, 0.07, 0.06, 0.028).at(0, -0.005, 0.07).color(0xbdb292).blend(0.03));
-    P.push(...S.mirrorX([S.ellipsoid(0.03, 0.028, 0.03).at(0.038, 0.03, 0.092).color(d).cut(0.008)]));
+    P.push(S.box(0.1, 0.07, 0.06, 0.028).at(0, -0.005, 0.07).color(0x9c9072).blend(0.03));
+    P.push(...S.mirrorX([S.ellipsoid(0.036, 0.034, 0.04).at(0.04, 0.032, 0.09).color(d).cut(0.006)]));
     P.push(S.cone(0.016, 0.004, 0.04, 0.004).rot(20, 0, 0).at(0, -0.005, 0.105).color(d).cut(0.005));
     P.push(S.box(0.4, 0.1, 0.4, 0).at(0, -0.075, 0).color(d).cut(0.002));
-    return buildPartGeometry({ prims: P }, { res: 44 * qual(), ao: 0.8 });
+    return buildPartGeometry({ prims: P }, { res: 30 * qual(), ao: 0.85 });
   });
   const k = g.kind; g.surf(K_PLAIN, 0.75);
   g.in(M(0, 0, 0, 0, 0, 0, s), () => g.add(geo));
@@ -1400,11 +1400,21 @@ function plankDoor(g, w, h, wood, seed = 0) {
   for (const y of [0.22, 0.78]) g.in(M(0, h * y, 0.03), () => g.cbox(w * 0.96, 0.045, 0.012, 0.004, IRON));
   g.in(M(w * 0.3, h * 0.5, 0.04), () => g.add(new THREE.TorusGeometry(0.035, 0.008, 4, 10), IRON));
 }
+/** the kit's fire bowl with the heat of its flame set by hand (bright fire washes to cream under the tone mapping) */
+function fireBowl(g, s, cols, metal = IRON, seed = 0, glow = 0.9) {
+  g.surf(K_PLAIN, 0.5, 0.85);
+  for (let i = 0; i < 3; i++) { const a = i * 2.094 + 0.4; g.tube([[Math.cos(a) * 0.3 * s, 0, Math.sin(a) * 0.3 * s], [Math.cos(a) * 0.1 * s, 0.45 * s, Math.sin(a) * 0.1 * s], [Math.cos(a) * 0.22 * s, 0.82 * s, Math.sin(a) * 0.22 * s]], 0.03 * s, 5, metal); }
+  g.lathe([[0.04, 0.62], [0.2, 0.68], [0.3, 0.82], [0.33, 1], [0.36, 1.02], [0.36, 1.06], [0.3, 1.06], [0.27, 0.9], [0, 0.84]].map(([r, y]) => [r * s, y * s]), nq(14), metal);
+  g.surf(K_PLAIN, 1, 0, glow * 0.8);
+  g.in(M(0, 0.93 * s, 0), () => g.add(new THREE.SphereGeometry(0.27 * s, nq(10), 5, 0, TAU, 0, 1.4).scale(1, 0.45, 1), (x, y, z) => mix(mul(cols[2], 0.35), cols[0], smooth(0.4, 0.7, noise3(x * 30 + seed, y * 30, z * 30)))));
+  g.in(M(0, 0.98 * s, 0), () => fire(g, 0.75 * s, cols, seed, glow));
+}
 
 // =====================================================================================================
 // Ironbound: basalt, black iron and skulls
 // =====================================================================================================
-const BASALT = rgb(0x2c2d33), RUNE_RED = [0.95, 0.1, 0.03];
+const FIRE_DEEP = [[1.0, 0.2, 0.02], [0.85, 0.06, 0.015], [0.5, 0.015, 0.01]];
+const BASALT = rgb(0x2c2d33), RUNE_RED = [0.8, 0.04, 0.02];
 const basaltCol = (seed) => (x, y, z, i, edge) => mul(BASALT, (0.62 + 0.3 * hash1(Math.floor(y * 2.3 + seed * 0.7), i, seed) + 0.4 * noise3(x * 6 + seed, y * 2.4, z * 6)) * (edge ? 1.45 : 1));
 /** an iron band round something of radius R at the local origin, riveted; spikes = how many thorns stand out of it */
 function ironBand(g, R, hgt = 0.16, spikes = 0, spikeL = 0.3, seed = 0) {
@@ -1426,16 +1436,16 @@ function basaltMonolith(g) {
     g.in(M(c.x, -0.12, c.z, c.ring === 2 ? Math.sin(a) * 2.5 : 0, 0, c.ring === 2 ? -Math.cos(a) * 2.5 : 0), () => facetCol(g, 6, 0.172, hh + 0.12, { a0: Math.PI / 6, tip, tipX: (h1 - 0.5) * 0.12, tipZ: (h2 - 0.5) * 0.12, slant: 0.4 * h2, slantA: h1 * TAU, col: basaltCol(c.i + 1), vs: Math.max(2, Math.round(hh / 0.45)) }));
   }
   // bound in iron: a spiked girdle round the whole clump, two round the inner columns, a collar on the tallest
-  g.in(M(0, 0.95, 0), () => ironBand(g, 0.8, 0.2, 9, 0.42, 1));
+  g.in(M(0, 0.95, 0), () => ironBand(g, 0.8, 0.2, 9, 0.3, 1));
   g.in(M(0, 3.05, 0), () => ironBand(g, 0.5, 0.18, 6, 0.5, 2));
   g.in(M(0, 4.25, 0), () => ironBand(g, 0.5, 0.16, 6, 0.4, 3));
   g.in(M(0, 5.55, 0), () => ironBand(g, 0.205, 0.14, 5, 0.34, 4));
   // crown spikes of iron between the points
   for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU + 0.52; g.in(M(Math.cos(a) * 0.3, 4.5 + 0.5 * hash1(k, 31), Math.sin(a) * 0.3, Math.sin(a) * 14, 0, -Math.cos(a) * 14), () => thorn(g, 0.9 + 0.3 * hash1(k, 33), 0.045, [0.05, 0.05, 0.055])); }
   // runes down the inner columns, alight
-  for (let k = 0; k < 6; k++) for (let j = 0; j < 3; j++) g.in(M(0, 3.42 + j * 0.27 + (k % 2) * 0.1, 0, 0, 90 - k * 60, 0).multiply(M(0, 0, 0.452)), () => sigil(g, 300 + k * 5 + j, 0.27, RUNE_RED, 1.25, 0.085));
-  for (let k = 0; k < 3; k++) for (let j = 0; j < 2; j++) g.in(M(0, 4.86 + j * 0.26, 0, 0, 30 + k * 120, 0).multiply(M(0, 0, 0.152)), () => sigil(g, 340 + k * 3 + j, 0.25, RUNE_RED, 1.3, 0.085));
-  for (let k = 0; k < 6; k++) g.in(M(0, 0.42, 0, 0, 30 + k * 60, 0).multiply(M(0, 0, 0.672)), () => sigil(g, 360 + k, 0.3, RUNE_RED, 1.0, 0.085));
+  for (let k = 0; k < 6; k++) for (let j = 0; j < 3; j++) g.in(M(0, 3.42 + j * 0.27 + (k % 2) * 0.1, 0, 0, 90 - k * 60, 0).multiply(M(0, 0, 0.452)), () => sigil(g, 300 + k * 5 + j, 0.27, RUNE_RED, 0.7, 0.07));
+  for (let k = 0; k < 3; k++) for (let j = 0; j < 2; j++) g.in(M(0, 4.86 + j * 0.26, 0, 0, 30 + k * 120, 0).multiply(M(0, 0, 0.152)), () => sigil(g, 340 + k * 3 + j, 0.25, RUNE_RED, 0.75, 0.07));
+  for (let k = 0; k < 6; k++) g.in(M(0, 0.42, 0, 0, 30 + k * 60, 0).multiply(M(0, 0, 0.672)), () => sigil(g, 360 + k, 0.3, RUNE_RED, 0.6, 0.07));
   // skulls on chains from the bands
   for (let k = 0; k < 5; k++) {
     const a = (k / 5) * TAU + 0.3, R = 0.56, l = 0.75 + 0.45 * hash1(k, 41), x = Math.cos(a) * R, z = Math.sin(a) * R;
@@ -1455,7 +1465,7 @@ function basaltMonolith(g) {
 }
 function skullAltar(g) {
   g.moss = 0.1;
-  const st = stoneStyle(0x38322f, { seed: 320, chip: 0.3, course: 0.14, cell: 0.16 / qual(), len: [0.3, 0.55] }), dark = [0.07, 0.06, 0.055];
+  const st = stoneStyle(0x38322f, { seed: 320, chip: 0.3, course: 0.14, cell: 0.16 / qual(), len: [0.3, 0.55] }), dark = [0.035, 0.03, 0.028];
   pad(g, 3, 3, 0.04, rgb(0x2a2423), 321);
   stoneBox(g, 1.38, 1.38, 0, 0.28, st, 322);
   stoneBox(g, 1.04, 1.04, 0.28, 0.56, st, 330, { noFoot: true });
@@ -1474,9 +1484,9 @@ function skullAltar(g) {
   for (const e of [-1, 1]) g.in(M(e * 0.36, 0.56 + 0.2, 0), () => g.cbox(0.26, 0.4, 0.48, 0.02, stoneTint(mul(st.pal[0], 0.7), e + 3, 5)));
   g.surf(K_PLAIN, 0.22, 0.15);
   g.in(M(0, 1.05, 0), () => g.beam(1.34, 0.18, 0.66, 0.035, (x, y, z) => mul([0.03, 0.03, 0.036], 0.6 + 0.9 * noise3(x * 5, y * 5, z * 5)), 8));
-  for (let k = 0; k < 4; k++) g.in(M(-0.42 + k * 0.28, 1.05, 0.332), () => sigil(g, 380 + k, 0.2, RUNE_RED, 1.3, 0.09));
+  for (let k = 0; k < 4; k++) g.in(M(-0.42 + k * 0.28, 1.05, 0.332), () => sigil(g, 380 + k, 0.2, RUNE_RED, 0.8, 0.08));
   g.surf(K_PLAIN, 0.12, 0.1);
-  g.in(M(0.08, 1.143, 0.02), () => g.sheet(nq(18), 3, (u, v) => { const a = u * TAU, r = v * (0.26 + 0.13 * noise3(Math.cos(a) * 1.4, 5, Math.sin(a) * 1.4)); return [Math.cos(a) * r * 1.7, 0, Math.sin(a) * r]; }, (x, y, z) => mul([0.36, 0.02, 0.015], 0.7 + 0.5 * noise3(x * 12, 1, z * 12)), true));
+  g.in(M(0.08, 1.143, 0.02), () => g.sheet(nq(18), 3, (u, v) => { const a = u * TAU, r = v * (0.17 + 0.1 * noise3(Math.cos(a) * 1.4, 5, Math.sin(a) * 1.4)); return [Math.cos(a) * r * 1.7, 0, Math.sin(a) * r]; }, (x, y, z) => mul([0.2, 0.012, 0.01], 0.6 + 0.6 * noise3(x * 12, 1, z * 12)), true));
   for (const [x, l] of [[-0.2, 0.3], [0.1, 0.42], [0.34, 0.22], [0.46, 0.34]]) g.tube([[x, 1.142, 0.3], [x, 1.14, 0.338], [x + 0.005, 1.14 - l * 0.6, 0.342], [x, 1.14 - l, 0.33]], [0.014, 0.014, 0.012, 0.004], 5, [0.33, 0.02, 0.015], false);
   // shackles at the corners
   for (const e of [-1, 1]) for (const f of [-1, 1]) { chain(g, [[e * 0.6, 1.1, f * 0.26], [e * 0.74, 0.86, f * 0.3], [e * 0.72, 0.62, f * 0.34]], 0.04); g.surf(K_PLAIN, 0.5, 0.85); g.in(M(e * 0.6, 1.14, f * 0.26, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.035, 0.012, 5, 10), IRON)); }
@@ -1487,7 +1497,7 @@ function skullAltar(g) {
     g.in(M(0, 0.8, 0), () => g.cbox(0.44, 0.08, 0.44, 0.02, stoneTint(mul(st.pal[0], 0.6), e + f * 3, 5)));
     for (let k = 0; k < 4; k++) g.in(M(0, 0.48, 0, 0, k * 90, 0).multiply(M(0, 0, 0.181)), () => { g.in(M(0, 0, 0, 0, 0, 180), () => skull(g, 0.9, true)); });
     g.in(M(0, 0.84, 0), () => {
-      brazier(g, 0.72, FIRE_RED, [0.045, 0.043, 0.048], e * 2 + f);
+      fireBowl(g, 0.72, FIRE_DEEP, [0.045, 0.043, 0.048], e * 2 + f, 0.85);
       for (let k = 0; k < 6; k++) g.in(M(0, 0.72, 0, 0, k * 60 + 30, 0).multiply(M(0, 0, 0.25, 50, 0, 0)), () => thorn(g, 0.26, 0.03, [0.06, 0.058, 0.064]));
     });
   });
