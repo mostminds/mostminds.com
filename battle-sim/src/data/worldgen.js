@@ -84,6 +84,7 @@ export const SITES = {
   city: { name: 'City siege', mode: 'field', shape: ['plains', 'river'], size: 144, points: 36000, edge: 1.6 },
   coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast'], size: 112, points: 14000, edge: 1.2 },
   harbor: { name: 'Harbour city assault', mode: 'amphibious', shape: ['harbor'], size: 128, points: 24000, edge: 1.4 },
+  ctf: { name: 'Capture the flag', mode: 'field', shape: ['plains'], size: 112, points: 12000, edge: 1 },
   island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island'], size: 112, points: 16000, edge: 1.3 },
 };
 
@@ -406,6 +407,68 @@ function civic(p, R, o) {
 // ---------- armies ----------
 // Stronger units cost more than their level alone suggests, so price rises faster than level.
 const priceOf = (id) => Math.pow(combatLevel(UNITS[id]), 1.45) * (UNITS[id].fly ? 1.15 : 1);
+// ---------- capture the flag ----------
+// Two forts face each other across open ground, each built and garrisoned by its own faction,
+// each with a flag at its heart. Side A holds the west fort, side B the east.
+function generateCtf({ r, seed, site, defId, attId, D, A, size }) {
+  const S = [96, 112, 128, 144].includes(size) ? size : site.size;
+  const terrainSeed = 1 + r.int(0, 9998), biome = r.pick(A.biomes.filter((x) => D.biomes.includes(x)).concat(A.biomes[0]));
+  const terrain = generateTerrain('plains', S, terrainSeed);
+  const p = new Plan(S, terrain, r);
+  const cy = S >> 1, FW = 28, FH = 32;
+  const forts = [{ id: attId, F: A, x: 6, side: 0, gates: ['east', 'north', 'south'] }, { id: defId, F: D, x: S - 6 - FW, side: 1, gates: ['west', 'north', 'south'] }];
+  const bases = [], musterAt = [], rallyAt = [], waysIn = [];
+  for (const ft of forts) {
+    const R = { x: ft.x, y: cy - (FH >> 1), w: FW, h: FH }, from = p.out.length;
+    const bx = R.x + (R.w >> 1), by = R.y + (R.h >> 1);
+    bases.push({ x: bx, y: by });
+    musterAt.push({ x: ft.side === 0 ? R.x + R.w + 7 : R.x - 8, y: by });
+    rallyAt.push({ x: ft.side === 0 ? R.x + R.w - 7 : R.x + 6, y: by });
+    // three ways in: the main gate facing the enemy, and a postern north and south
+    waysIn.push([musterAt[musterAt.length - 1], { x: bx, y: R.y - 5 }, { x: bx, y: R.y + R.h + 4 }]);
+    // the way from each gate to the flag stays open, and so does the yard around the flag
+    p.road(R.x, by - 1, R.w, 3); p.road(bx - 1, R.y, 3, R.h); p.road(bx - 4, by - 4, 9, 9);
+    const kind = ft.F.strongWall === 'ring' ? 'palisade' : ft.F.strongWall; // a flag fort needs a wall to assault
+    enclose(p, kind, R, ft.side, ft.gates, ft.F);
+    const In = inner(R, 4), F = ft.F;
+    // quarters, stores and somewhere to patch up the wounded
+    const own = (CIVIC[ft.id] || []).filter((c) => FACTION_OWN.has(c) && STRUCTURES[c].w <= 4);
+    for (const type of own.slice(0, 2)) p.scatter(type, In, 1, 1, { side: ft.side });
+    p.scatter(STRUCTURES[F.homes].w <= 3 ? F.homes : 'house', In, 4, 1, { side: ft.side });
+    p.scatter(F.camp, In, 4, 1, { side: ft.side });
+    p.scatter('crates', In, 3, 1, { side: ft.side });
+    if ((CIVIC[ft.id] || []).includes('inn')) p.scatter('inn', In, 1, 1, { side: ft.side });
+    if (F.guns.length) for (const gy of [R.y + 5, R.y + R.h - 7]) p.put(r.pick(F.guns), ft.side === 0 ? R.x + R.w - 5 : R.x + 3, gy, { side: ft.side });
+    // outworks in front of the main gate
+    const fx = ft.side === 0 ? R.x + R.w + 3 : R.x - 5;
+    for (const oy of [by - 6, by + 5]) p.put('barricade', fx, oy, { rot: 1 });
+    // the posterns stand open (their gates are left off); the main gate and palisades are light enough to break: a raid, not a siege
+    for (let i = p.out.length - 1; i >= from; i--) if (p.out[i].type === 'castleGate' && !p.out[i].rot) p.out.splice(i, 1);
+    for (let i = from; i < p.out.length; i++) p.out[i] = { ...p.out[i], style: ft.id, look: ft.F.look || ft.id, ...(p.out[i].type === 'castleGate' ? { hp: 260 } : p.out[i].type === 'palisade' ? { hp: 160 } : {}) };
+  }
+  // the ground between: a road, scattered cover, a ruin to fight over in the middle
+  p.road(forts[0].x + FW, cy - 1, forts[1].x - forts[0].x - FW, 3);
+  const mid = { x: forts[0].x + FW + 4, y: 4, w: forts[1].x - forts[0].x - FW - 8, h: S - 8 };
+  const cx = S >> 1;
+  fence(p, cx - 6, cy - 16, 12, 8, null, ['south'], 'wall', 0.35, 'pillar');
+  fence(p, cx - 6, cy + 8, 12, 8, null, ['north'], 'wall', 0.35, 'pillar');
+  p.scatter('rock', mid, Math.round(S / 7), 2);
+  p.scatter('barricade', mid, 6, 2, () => ({ rot: r.int(0, 1) }));
+  const trees = [...new Set([...A.trees, ...D.trees])];
+  if (trees.length) for (let i = 0; i < S * 1.1; i++) p.put(r.pick(trees), r.int(2, S - 3), r.int(2, S - 3), {}, 1);
+  const pts = site.points * (S / site.size) ** 1.2;
+  const army = (id, F) => muster(F.army, pts / (F.cost || 1), r);
+  const sides = [
+    { name: `${A.adj} raiders`, posture: 'attack', groups: army(attId, A), placed: [] },
+    { name: `${D.adj} raiders`, posture: 'attack', groups: army(defId, D), placed: [] },
+  ];
+  return {
+    name: `${r.pick(NAME_A)}${r.pick(NAME_B)}: ${A.adj} and ${D.adj} forts fight for each other's flag`,
+    mode: 'field', seed, site: 'ctf', defender: defId, attacker: attId,
+    scn: { size: S, shape: 'plains', biome, terrainSeed, structures: p.out, sides, maxTicks: 3000, ctf: { bases, muster: musterAt, rally: rallyAt, ways: waysIn, toWin: 3, wave: 40, lieFor: 120 } },
+  };
+}
+
 /** An army of `points` for a faction, for balance trials: { unit, count } groups. */
 export function musterFor(factionId, points, seed = 1, cost = null) {
   const F = FACTIONS[factionId];
@@ -444,6 +507,7 @@ export function generateScenario(opts = {}) {
   let attId = FACTIONS[opts.attacker] ? opts.attacker : r.pick(ids.filter((k) => k !== defId));
   if (!opts.attacker && attId === defId) attId = ids[(ids.indexOf(defId) + 1) % ids.length];
   const D = FACTIONS[defId], A = FACTIONS[attId];
+  if (siteId === 'ctf') return generateCtf({ r, seed, site, defId, attId, D, A, size: +opts.size });
   const S = [64, 80, 96, 112, 128, 144, 160].includes(+opts.size) ? +opts.size : site.size;
   const shape = r.pick(site.shape), biome = r.pick(D.biomes), terrainSeed = 1 + r.int(0, 9998);
   const terrain = generateTerrain(shape, S, terrainSeed);

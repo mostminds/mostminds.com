@@ -283,6 +283,7 @@ export class LandView {
       return { cb, pa, pz, line, car };
     });
     this.pointMarks = new Map(); this.crateMarks = new Map(); this.siteMarks = new Map();
+    this.makeFlags(b);
     for (const p of b.cmd.points) this.markPoint(p);
     for (const c of b.cmd.crates) this.markCrate(c);
     this.corpseGeo = new Map();
@@ -314,6 +315,70 @@ export class LandView {
   }
 
   // a rally point, beachhead or fort: a pennant on a pole, with the stores stacked beside it
+  /** capture the flag: a stand at each fort's heart and the flag that lives on it */
+  makeFlags(b) {
+    this.flags = [];
+    if (!b.ctf) return;
+    const stone = mat(0x8a8a86), wood = mat(0x4a3a26), gold = mat(0xd8b04a, { metalness: 0.9, roughness: 0.3 });
+    for (const f of b.ctf.flags) {
+      const col = SIDE_COLORS[f.side], gy = this.groundY(f.hx, f.hy);
+      // the stand: a stepped plinth with a ring in the side's colour
+      const stand = new THREE.Group();
+      stand.add(new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.16, 8).translate(0, 0.08, 0), stone));
+      stand.add(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.46, 0.14, 8).translate(0, 0.23, 0), stone));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.02, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7 }));
+      ring.position.y = 0.04; stand.add(ring);
+      stand.position.set(f.hx + 0.5, gy, f.hy + 0.5);
+      stand.traverse((o) => { if (o.isMesh && o !== ring) { o.castShadow = true; o.receiveShadow = true; } });
+      this.dynamic.add(stand);
+      // the flag: a tall pole, a long swallow-tailed banner, a gilt finial
+      const flag = new THREE.Group(), H = 2.6;
+      flag.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, H, 6).translate(0, H / 2, 0), wood));
+      flag.add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6).translate(0, H + 0.05, 0), gold));
+      const geo = new THREE.PlaneGeometry(1.15, 0.7, 8, 2);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) if (pos.getX(i) > 0.5) pos.setY(i, pos.getY(i) * (1.25 - Math.abs(pos.getY(i)) * 1.6)); // swallow tail
+      const cloth = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: col, side: THREE.DoubleSide, roughness: 0.85, emissive: col, emissiveIntensity: 0.18 }));
+      cloth.position.set(0.6, H - 0.42, 0); cloth.castShadow = true;
+      flag.add(cloth);
+      flag.userData = { cloth, base: geo.attributes.position.array.slice(), ring };
+      this.dynamic.add(flag);
+      this.flags.push({ flag, stand, pos: new THREE.Vector3(f.hx + 0.5, gy + 0.3, f.hy + 0.5), lean: 0 });
+    }
+  }
+  updateFlags(alpha, t, dt) {
+    const b = this.b;
+    if (!b.ctf || !this.flags.length) return;
+    const v = new THREE.Vector3();
+    b.ctf.flags.forEach((f, i) => {
+      const o = this.flags[i];
+      let lean = 0;
+      if (f.state === 'carried' && b.units[f.carrier]) {
+        const u = b.units[f.carrier], m = this.models[u.id];
+        this.unitPos(u, alpha, v);
+        v.y += 0.15; v.x -= 0.18;
+        if (m) m.userData.carrying = t;
+        lean = 0.22;
+      } else if (f.state === 'dropped') { v.set(f.x + 0.5, this.groundY(f.x, f.y) + 0.02, f.y + 0.5); lean = 1.05; }
+      else v.set(f.hx + 0.5, this.groundY(f.hx, f.hy) + 0.3, f.hy + 0.5);
+      o.pos.lerp(v, Math.min(1, dt * 10));
+      o.lean += (lean - o.lean) * Math.min(1, dt * 6);
+      o.flag.position.copy(o.pos);
+      o.flag.rotation.z = -o.lean;
+      // the cloth flies
+      const { cloth, base } = o.flag.userData, p = cloth.geometry.attributes.position;
+      for (let k = 0; k < p.count; k++) { const x = base[k * 3] + 0.575; p.setZ(k, Math.sin(t * 5 + x * 5 + i) * 0.07 * x); }
+      p.needsUpdate = true;
+      o.stand.children[2].material.opacity = f.state === 'home' ? 0.7 : 0.3 + 0.3 * Math.abs(Math.sin(t * 4)); // the empty stand pulses
+    });
+  }
+  /** a fallen soldier comes back at his fort: his body is cleared away and he stands whole again */
+  reviveUnit(id) {
+    const old = this.models[id];
+    if (old) this.dynamic.remove(old);
+    this.deathAt.delete(id); this.noBody.delete(id);
+    this.models[id] = this.addUnitModel(this.b.units[id]);
+  }
   markPoint(p) {
     if (this.pointMarks.has(p.id)) return;
     const g = new THREE.Group(), y = Math.max(0, this.groundY(p.x, p.y));
@@ -568,6 +633,26 @@ export class LandView {
           msgs.push({ side: u.side, text: `${u.def.name} breathes fire` });
         }
         if (e.name === 'charge') st.ring(v, 0.6, 0xffffff, 0.4);
+      } else if (e.type === 'reinforce') {
+        for (const id of e.ids) this.reviveUnit(id);
+        if (e.ids.length >= 6) msgs.push({ side: e.side, text: `${e.ids.length} return to the fight` });
+      } else if (e.type === 'flagTaken') {
+        const u = b.units[e.by]; this.unitPos(u, 1, v);
+        st.ring(v.clone().setY(0.05), 1.4, SIDE_COLORS[u.side], 0.9);
+        msgs.push({ side: u.side, text: `${u.def.name} takes the enemy flag` });
+      } else if (e.type === 'flagDropped') {
+        st.ring(v.set(e.x + 0.5, 0.05, e.y + 0.5), 1.2, 0xffffff, 0.7);
+        msgs.push({ side: e.flag, text: e.why === 'lifted' ? 'The flag is left behind' : 'The flag carrier is down' });
+      } else if (e.type === 'flagReturned') {
+        const f = b.ctf.flags[e.flag];
+        st.ring(v.set(f.hx + 0.5, 0.05, f.hy + 0.5), 1.6, SIDE_COLORS[e.flag], 0.9);
+        msgs.push({ side: e.flag, text: e.by >= 0 ? 'The flag is carried home' : 'The flag returns to its stand' });
+      } else if (e.type === 'flagCaptured') {
+        const f = b.ctf.flags[e.side];
+        v.set(f.hx + 0.5, 0.05, f.hy + 0.5);
+        for (let k = 0; k < 3; k++) st.ring(v.clone(), 1.2 + k * 0.9, SIDE_COLORS[e.side], 0.8 + k * 0.3);
+        for (let k = 0; k < 10; k++) st.puff(v.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.5 + Math.random() * 2.5, (Math.random() - 0.5) * 2)), [SIDE_COLORS[e.side], 0xffd24a, 0xffffff][k % 3], 0.35);
+        msgs.push({ side: e.side, text: `Flag captured! ${e.score[0]} – ${e.score[1]}` });
       } else if (e.type === 'point') {
         this.markPoint(b.cmd.points[e.point]);
         msgs.push({ side: e.side, text: e.kind === 'beachhead' ? 'A beachhead is marked: stores come ashore' : e.kind === 'fort' ? 'The garrison holds its works' : e.kind === 'hold' ? 'A squad marks the ground it will hold' : 'A squad sets its rally point behind the line' });
@@ -755,6 +840,7 @@ export class LandView {
       if ((this.waterTick = (this.waterTick || 0) + 1) % 3 === 0) this.water.geometry.computeVertexNormals();
     }
     if (this.grid) this.grid.visible = b.tick === 0;
+    this.updateFlags(alpha, t, dt);
     const v = new THREE.Vector3();
     const tickNow = b.tick + alpha;
     const cam = this.stage.camera.position;

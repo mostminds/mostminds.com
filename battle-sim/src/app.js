@@ -150,6 +150,8 @@ function updateHud() {
   if (b && b.winner !== null) st = b.winner === -1 ? 'Stalemate' : `${names[b.winner]} wins!`;
   else if (sim.loading) st = 'Sculpting models';
   else if (sim.started) st = sim.playing ? 'Battle in progress' : 'Paused';
+  // capture the flag: the score is the story
+  if (b && b.ctf && sim.started) st = `${st === 'Battle in progress' ? 'Flags' : st + ' · flags'} ${b.ctf.score[0]} – ${b.ctf.score[1]} (first to ${b.ctf.toWin})`;
   $('hudState').textContent = st;
   $('play').textContent = sim.playing ? 'Pause' : sim.started && b?.winner === null ? 'Resume' : 'Start battle';
 }
@@ -229,6 +231,7 @@ function lockEditing(on) {
   $('modeHint').textContent = on ? 'Battle running. Press Reset to edit the armies and map.' : modeHint();
 }
 function modeHint() {
+  if (scn().ctf) return 'Capture the flag. Each fort keeps a flag at its heart: take the enemy flag and carry it to your own stand to score. Kill the carrier and the flag falls. The fallen return at their fort. First to three, or the higher score when time runs out.';
   return {
     field: 'Two armies deploy on opposite edges. Defending sides hold position until the enemy closes in.',
     amphibious: 'Side A rides landing craft from the sea onto the island. Defenders shoot at boats before they beach; a sunk boat drowns everyone aboard.',
@@ -241,7 +244,8 @@ document.querySelectorAll('.modes button').forEach((btn) => {
 });
 function setMode(mode) {
   state.mode = mode;
-  document.querySelectorAll('.modes button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+  const flags = !!state.scn[mode]?.ctf; // a flag match is a field battle with its own button lit
+  document.querySelectorAll('.modes button').forEach((b) => b.classList.toggle('on', b.id === 'ctfBtn' ? flags : b.dataset.mode === mode && !flags));
   sim.playing = false; sim.started = false;
   lockEditing(false);
   ticker.replaceChildren();
@@ -295,6 +299,13 @@ $('generate').onclick = () => {
   setMode(g.mode);
   $('genName').textContent = g.name;
   pushTicker([{ side: 1, text: g.name }]);
+};
+// capture the flag: two forts in the chosen factions' styles (or any two), each with a flag to steal
+$('ctfBtn').onclick = () => {
+  if (sim.started) $('reset').click();
+  const was = $('genSite').value;
+  $('genSite').value = 'ctf'; $('generate').click(); $('genSite').value = was;
+  closePanelOnPhone();
 };
 // the button in the run bar: one press, a new map
 $('genMap').onclick = () => { if (sim.started) $('reset').click(); $('generate').click(); closePanelOnPhone(); };

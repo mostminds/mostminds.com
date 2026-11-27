@@ -7,6 +7,7 @@ import { STRUCTURES } from '../data/structures.js';
 import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGunRing } from './support.js';
 import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsAirship } from './airship.js';
 import { initCommand, commandTick, specDuty, fallbackFor, onUnitDeath } from './command.js';
+import { initCtf, ctfTick, ctfDuty, ctfDeath, ctfWinner, ctfSpawnTiles } from './ctf.js';
 
 const INF = 32767;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -66,7 +67,8 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     let wet = false;
     for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) if (x < 0 || y < 0 || x >= W || y >= H || b.terrain[y * W + x] === DEEP) wet = true;
     if (wet && !def.overWater) continue; // nothing is built on open water or off the map
-    b.structures.push({ ...s, w, h, hp: def.hp || 0, maxHp: def.hp || 0, destroyed: false });
+    const hp = s.hp ?? def.hp ?? 0; // a scenario may set its own strength (flag forts have lighter gates)
+    b.structures.push({ ...s, w, h, hp, maxHp: hp, destroyed: false });
   }
   rebuildGrid(b);
   b.hasRamparts = b.level.some((l) => l > 0);
@@ -103,9 +105,17 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
         }
       }
     } else {
-      const tiles = spawnTiles(b, scn.mode, si);
-      let ti = 0;
+      const open = (x, y) => { const i = y * W + x; return !isWater(b.terrain[i]) && !b.blockMove[i] && b.door[i] < 0; };
+      let tiles = scn.ctf ? ctfSpawnTiles(b, scn, si, open, true) : spawnTiles(b, scn.mode, si);
+      // capture the flag: the shooters and healers start in the yard, everyone else before the gate
+      const yard = scn.ctf ? ctfSpawnTiles(b, scn, si, open, false) : null;
+      let ti = 0, yi = 0;
       for (const def of pool) {
+        if (yard && (def.role === 'support' || def.role === 'artillery')) {
+          let t = yi;
+          while (t < yard.length && !fits(def, yard[t] % W, (yard[t] / W) | 0, si)) t++;
+          if (t < yard.length) { addUnit(def, si, yard[t] % W, (yard[t] / W) | 0); if (t === yi) yi++; continue; }
+        }
         let t = ti;
         while (t < tiles.length && !fits(def, tiles[t] % W, (tiles[t] / W) | 0, si)) t++;
         if (t >= tiles.length) continue;
@@ -121,6 +131,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   initSupport(b, scn, shipDefs);
   initAirships(b, scn);
   initCommand(b, scn);
+  initCtf(b, scn);
   return b;
 }
 
@@ -509,6 +520,7 @@ export function stepBattle(b) {
   supportTick(b);
   airTick(b);
   commandTick(b);
+  ctfTick(b);
   for (const sq of b.squads) if ((b.tick + sq.id) % 3 === 0) updateSquad(b, sq);
 
   // Fair-ish ordering: shuffle each tick
@@ -537,7 +549,8 @@ function sideHp(b, side) {
 }
 function checkWinner(b) {
   const a0 = sideAlive(b, 0), a1 = sideAlive(b, 1);
-  if (a0 === 0 && a1 === 0) b.winner = -1;
+  if (b.ctf) b.winner = ctfWinner(b, a0, a1);
+  else if (a0 === 0 && a1 === 0) b.winner = -1;
   else if (a0 === 0) b.winner = 1;
   else if (a1 === 0) b.winner = 0;
   else if (b.tick >= b.maxTicks) b.winner = -1;
@@ -876,9 +889,11 @@ function unitTick(b, u) {
     }
   }
 
+  if (b.ctf && u.flag && ctfDuty(b, u)) return; // the flag carrier has one job
   if ((u.spec !== 'line' || u.ammo !== undefined) && specDuty(b, u)) return;
   const mend = ability(u, 'repair') || (u.spec === 'engineer' ? { amount: 22 } : null);
   if (mend && repairDuty(b, u, mend)) return;
+  if (b.ctf && ctfDuty(b, u)) return; // capture the flag: carriers, raiders and the home guard
 
   const sq = b.squads[u.squad];
   const range = unitRange(b, u);
@@ -1041,7 +1056,7 @@ function kite(b, u, threat) {
   occupy(b, u, 0); u.x = best[0]; u.y = best[1]; occupy(b, u, 1);
 }
 
-function attack(b, u, t) {
+export function attack(b, u, t) {
   const dist = unitDist(u, t);
   const style = u.def.style;
   let dRoll = defenceRoll(t.def, style);
@@ -1170,6 +1185,7 @@ export function damage(b, t, dmg, from, style, hit = true, src = null) {
     const o = from || src;
     b.events.push({ type: 'death', id: t.id, by: from ? from.id : -1, style, ax: o ? o.x : undefined, ay: o ? o.y : undefined, blast: !!(src && src.blast) });
     onUnitDeath(b, t, from);
+    ctfDeath(b, t);
   }
 }
 
