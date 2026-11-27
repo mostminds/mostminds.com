@@ -49,7 +49,7 @@ function revive(b, u, x, y) {
   if (old) old.members = old.members.filter((id) => id !== u.id); // he joins a new squad with his wave
   u.alive = true; u.hp = u.def.hp; u.x = x; u.y = y; u.px = x; u.py = y;
   u.cd = b.rng.int(0, u.def.speed); u.poison = null; u.aboard = -1; u.pending = 0; u.flag = false; u.under = false;
-  u.airTime = 0; u.seekLand = false; u.heals = 0; u.outSaid = false; u.fresh = b.tick; u.lives = (u.lives || 0) + 1;
+  u.wayStep = 0; u.airTime = 0; u.seekLand = false; u.heals = 0; u.outSaid = false; u.fresh = b.tick; u.lives = (u.lives || 0) + 1;
   if (u.ammo !== undefined) u.ammo = 40;
   if (u.duty && u.spec !== 'vanguard') u.duty = null;
   occupy(b, u, 1);
@@ -208,11 +208,12 @@ export function ctfDuty(b, u) {
     if (f) { walk(b, u, f, 1, 2); return true; }
     return false;
   }
-  // each raiding squad has its own way in: it makes for the ground outside that entrance first
-  const way = foe.state === 'home' && c.ways && sq && sq.way ? c.ways[foe.side][sq.way] : null;
-  if (way && u.wayDone !== b.ctf.flags[u.side].since + 1 + (u.lives || 0) * 7919) {
-    if (distTo(u, way.x, way.y) <= 4) u.wayDone = b.ctf.flags[u.side].since + 1 + (u.lives || 0) * 7919;
-    else { const fw = toward(b, `ctfw${foe.side}:${sq.way}`, way.x, way.y, 400); if (fw) { walk(b, u, fw, 1, 2); return true; } }
+  // each raiding squad has its own way in: it passes the points of that route in turn before going for the flag
+  const route = foe.state === 'home' && c.ways && sq && sq.way ? c.ways[foe.side][sq.way] : null;
+  if (route && (u.wayStep || 0) < route.length) {
+    const k = u.wayStep || 0, pt = route[k];
+    if (distTo(u, pt.x, pt.y) <= 5) u.wayStep = k + 1;
+    else { const fw = toward(b, `ctfw${foe.side}:${sq.way}:${k}`, pt.x, pt.y, 400); if (fw) { walk(b, u, fw, 1, 2); return true; } }
   }
   const f = toward(b, `ctff${foe.side}:${foe.x},${foe.y}`, foe.x, foe.y, 40);
   if (f) { walk(b, u, f, 1, 1); return true; }

@@ -1174,6 +1174,7 @@ function resolvePending(b) {
 
 export function damage(b, t, dmg, from, style, hit = true, src = null) {
   if (!t.alive) return;
+  if (t.flag && dmg > 1) dmg = Math.ceil(dmg * 0.5); // the flag bearer runs on nerve: blows cost him half
   dmg = Math.min(dmg, t.hp);
   t.hp -= dmg;
   if (from) from.dealt += dmg;

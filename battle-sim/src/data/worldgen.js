@@ -425,7 +425,8 @@ function generateCtf({ r, seed, site, defId, attId, D, A, size }) {
     musterAt.push({ x: ft.side === 0 ? R.x + R.w + 7 : R.x - 8, y: by });
     rallyAt.push({ x: ft.side === 0 ? R.x + R.w - 7 : R.x + 6, y: by });
     // three ways in: the main gate facing the enemy, and a postern north and south
-    waysIn.push([musterAt[musterAt.length - 1], { x: bx, y: R.y - 5 }, { x: bx, y: R.y + R.h + 4 }]);
+    // (each is a list of points to pass: the flanking parties keep to the edges of the field, clear of the fight in the middle)
+    waysIn.push([[musterAt[musterAt.length - 1]], [{ x: S >> 1, y: 9 }, { x: bx, y: R.y - 5 }], [{ x: S >> 1, y: S - 10 }, { x: bx, y: R.y + R.h + 4 }]]);
     // the way from each gate to the flag stays open, and so does the yard around the flag
     p.road(R.x, by - 1, R.w, 3); p.road(bx - 1, R.y, 3, R.h); p.road(bx - 4, by - 4, 9, 9);
     const kind = ft.F.strongWall === 'ring' ? 'palisade' : ft.F.strongWall; // a flag fort needs a wall to assault

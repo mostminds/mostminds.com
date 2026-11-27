@@ -167,6 +167,24 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
 - **Under the walkways.** Troops arriving at ground level pass beneath walkways and viaducts; those coming off
   a wall or terrace cross on top.
 
+## Capture the flag
+
+The **Capture the flag** button builds two forts facing each other across open ground, each in its own
+faction's style (chosen under *Generate a scenario*, or any two), each with a flag on a stand at its heart.
+
+- A soldier on foot who reaches the enemy flag takes it and runs for home. He scores when he brings it to
+  his own stand while his own flag is there. First to three wins; at the time limit the higher score wins,
+  then whichever side laid hands on the other's flag more often.
+- Kill the carrier and the flag falls. The next raider at hand picks it up; its owners send it home by
+  holding the spot clear for a few moments, and a flag left lying returns by itself. The carrier takes half
+  damage and does not stop to fight.
+- About a third of each army (shooters and healers first) holds the fort and runs down anyone who takes the
+  flag. The rest raid: each squad has its own way in, by the main gate or round the edges of the field to the
+  open posterns north and south. The main gate must be broken.
+- The fallen return in waves at their own fort, whole and rearmed, keeping their rank.
+
+The rules are in `src/engine/ctf.js`; the map comes from `generateScenario({ site: 'ctf' })`.
+
 ## The realms
 
 Twenty-seven further factions, in four groups, each with its own troops, beasts, ships, airship (where it
