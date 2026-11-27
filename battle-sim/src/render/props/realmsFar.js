@@ -1459,7 +1459,7 @@ function win(g, w, h, o = {}) {
 }
 /** a tiled gable roof: ridge along Z at height rY, eaves at x = +-ex (height eY), running from z = -ez to ez. o.sag hollows the slopes */
 function gableRoof(g, ex, ez, eY, rY, pal, seed, o = {}) {
-  const tw = o.tw || 0.17, th = o.th || 0.15, sl = Math.hypot(ex, rY - eY), rows = Math.max(3, Math.round(sl / th)), sag = o.sag || 0;
+  const tw = (o.tw || 0.17) / qual(), th = (o.th || 0.15) / qual(), sl = Math.hypot(ex, rY - eY), rows = Math.max(3, Math.round(sl / th)), sag = o.sag || 0;
   g.surf(K_ROOF, o.rough ?? 0.8, o.metal || 0);
   for (const e of [-1, 1]) tiles(g, rows, () => (2 * ez) / tw, (u, v) => { const k = Math.min(v, 0.99); return [e * lerp(ex, 0, k), lerp(eY, rY, k) - sag * Math.sin(k * Math.PI), e * (1 - 2 * u) * ez]; }, { pal, lift: o.lift || 0.02, seed: seed + e + 2, round: o.round });
   g.surf(K_PLAIN, 0.5, o.ridgeMetal ?? 0.6);
@@ -1472,7 +1472,7 @@ function gableRoof(g, ex, ez, eY, rY, pal, seed, o = {}) {
  * o: lift (how far the corners turn up), sag (hollow of the slope), pal, round, hips (colour of the hip ridges, null = none)
  */
 function skirtRoof(g, ex, ez, eY, ix, iz, iY, pal, seed, o = {}) {
-  const lift = o.lift || 0, sag = o.sag || 0, tw = o.tw || 0.18, th = o.th || 0.16;
+  const lift = o.lift || 0, sag = o.sag || 0, tw = (o.tw || 0.18) / qual(), th = (o.th || 0.16) / qual();
   const P = (s, u, v) => {
     const A = s % 2 ? ez : ex, B = s % 2 ? ex : ez, a = s % 2 ? iz : ix, b = s % 2 ? ix : iz, k = Math.min(v, 0.995);
     const al = lerp(lerp(-A, A, u), lerp(-a, a, u), k), out = lerp(B, b, k), y = lerp(eY, iY, k) - sag * Math.sin(k * Math.PI) + lift * Math.pow(Math.abs(2 * u - 1), 3) * (1 - k) * (1 - k);
@@ -1654,7 +1654,7 @@ function trophyPole(g, h, seed) {
 }
 function mammothYurt(g) {
   pad(g, 4, 4, 0.06, (x, y, z) => mul(mix(rgb(0x6a5a40), rgb(0x4a4030), smooth(0.4, 0.7, noise3(x * 1.7, 2, z * 1.7))), 0.7 + 0.5 * fbm3(x * 3, y * 5, z * 3, 3)), 11);
-  const cx = -0.48, cz = -0.38, R = 1.3, wy = 1.12, NT = 10, cr = 0.3, cy = 2.5, door = Math.PI / 2;
+  const cx = -0.4, cz = -0.36, R = 1.2, wy = 1.12, NT = 10, cr = 0.3, cy = 2.5, door = Math.PI / 2;
   const sagK = (a) => Math.abs(Math.sin(((a - door) * NT) / 2));   // 1 on a tusk, 0 midway between two
   const roofR = (v) => lerp(R + 0.16, cr, Math.pow(v, 1.2)), roofY = (v) => lerp(wy - 0.05, cy, Math.sin((v * Math.PI) / 2));
   g.in(M(cx, 0, cz), () => {
@@ -1696,7 +1696,7 @@ function mammothYurt(g) {
     });
   });
   // the corral: a fence of great bones and ribs lashed with sinew, a trough and fodder inside
-  const fence = [[1.02, -1.78], [1.84, -1.78], [1.84, -0.9], [1.84, 0.0], [1.84, 0.86], [1.42, 0.86]];
+  const fence = [[1.14, -1.78], [1.84, -1.78], [1.84, -0.9], [1.84, 0.0], [1.84, 0.86], [1.42, 0.86]];
   for (let i = 0; i < fence.length; i++) {
     const [x, z] = fence[i], hh = 0.78 + 0.16 * hash1(i, 5);
     bone(g, [x, -0.06, z], [x + 0.03 * Math.sin(i), hh, z + 0.02], 0.045, i + 20);
@@ -2039,6 +2039,9 @@ function villa(g) {
     g.surf(K_PLASTER, 0.92); for (const q of [-1, 1]) facet(g, [[-0.4, 1.28, q * 0.775], [0.4, 1.28, q * 0.775], [0, 1.66, q * 0.775]], P_STUCCO, [0, 0, q]);
     g.surf(K_STONE, 0.85); g.in(M(0, 1.46, 0.79), () => g.add(new THREE.TorusGeometry(0.07, 0.02, 5, nq(12)), mc));
   });
+  for (const e of [-1, 1]) g.in(M(e * 1.05, y0, 0.5, 0, e * -90, 0), () => creeper(g, 0.7, 1.15, e + 4, { leaves: 16, size: 0.06, bloom: rgb(0xd8367a), bloomP: 0.5, n: 4 }));
+  g.in(M(1.3, 0, -1.5), () => { g.surf(K_PLASTER, 0.92); g.in(M(0, wy + 0.75, 0), () => g.cbox(0.24, 0.6, 0.2, 0.012, wall)); g.surf(K_ROOF, 0.8); g.in(M(0, wy + 1.06, 0), () => g.cbox(0.32, 0.05, 0.28, 0.01, TERRA[1])); });
+  g.in(M(0, 0, 1.96), () => steps(g, 0.5, 1, 0.06, 0.1, MARBLE, 3));
   // the court: chequered paving, the fountain, potted lemon trees by the loggia
   g.surf(K_STONE, 0.7);
   for (let i = 0; i < 7; i++) for (let j = 0; j < 6; j++) { const x = -1.05 + i * 0.3, z = -0.55 + j * 0.3; lid(g, x + 0.005, x + 0.295, z + 0.005, z + 0.295, y0 + 0.004, mul((i + j) % 2 ? rgb(0xd9d2c2) : rgb(0xb0705a), 0.9 + 0.15 * hash1(i, j))); }
@@ -2134,8 +2137,8 @@ function baroqueChurch(g) {
     plainBox(g, 1.8, 0.55, 0, wy - 0.25, lime, { each: (s, W) => { plinth(W); if (s % 2) { g.in(M(0, 1.4, 0), () => win(g, 0.34, 0.9, wo)); g.surf(K_PLASTER, 0.92); facet(g, [[-W, wy - 0.25, 0], [W, wy - 0.25, 0], [0, wy + 0.32, 0]], S_WHITE); g.surf(K_PLAIN, 0.35, 0.85); g.in(M(0, wy - 0.02, 0.014), () => sunDisc(g, 0.5, S_GOLD, { rays: 12 })); } } });
     g.in(M(0, 0, 0, 0, 90, 0), () => gableRoof(g, 0.63, 1.86, wy - 0.25, wy + 0.36, RED_TILE, 620, { round: true, ridgeCol: RED_TILE[3], ridgeMetal: 0 }));
     // the dome over the crossing: a windowed drum, red tile between white ribs, a gilded lantern
-    g.surf(K_PLASTER, 0.92); g.in(M(0, wy + 0.5, 0), () => g.cbox(2.0, 1.1, 2.0, 0.02, lime));
-    band(g, 1.0, 1.0, wy + 0.98, 0.1, 0.07, lime, K_PLASTER);
+    g.surf(K_PLASTER, 0.92); g.in(M(0, 0, 0, 0, 22.5, 0), () => g.lathe([[1.16, wy - 0.3], [1.16, wy + 0.96], [1.23, wy + 1.0], [1.23, wy + 1.06], [1.02, wy + 1.06]], 8, lime));
+    for (let i = 0; i < 4; i++) g.in(M(0, wy + 0.5, 0, 0, 45 + i * 90, 0).multiply(M(0, 0, 1.075)), () => { g.surf(K_PLAIN, 0.35, 0.85); sunDisc(g, 0.5, S_GOLD, { rays: 8 }); });
     g.in(M(0, wy + 1.05, 0), () => domeOn(g, 0.95, { shape: 'hemi', drum: 0.62, drumCol: lime, drumKind: K_PLASTER, drumWin: [0.95, 0.72, 0.32], drumN: 8, drumGlow: 0.5, col: domeTiles(RED_TILE, 10), ribs: 8, ribCol: S_WHITE, seg: 32, finial: 'lantern', finS: 1.15, lan: S_WHITE, lanKind: K_PLASTER, capCol: RED_TILE[0], fin: S_GOLD }));
   });
   // the apse behind the altar
@@ -2591,10 +2594,10 @@ function megaliths(g) {
   // low mist lying among the stones
   const rnd = rng(211);
   g.surf(K_PLAIN, 1, 0, 0.04);
-  for (let i = 0; i < 9; i++) {
-    const R0 = 0.55 + (i % 3) * 0.72 + 0.2 * rnd(), a0 = rnd() * TAU, span = (1.1 + 0.9 * rnd()) / Math.max(0.7, R0 * 0.8), y = 0.2 + 0.22 * rnd(), wd = 0.2 + 0.14 * rnd(), pts = [], rad = [];
+  for (let i = 0; i < 14; i++) {
+    const R0 = 0.55 + (i % 3) * 0.72 + 0.2 * rnd(), a0 = rnd() * TAU, span = (1.1 + 0.9 * rnd()) / Math.max(0.7, R0 * 0.8), y = 0.2 + 0.24 * rnd(), wd = 0.1 + 0.08 * rnd(), pts = [], rad = [];
     for (let k = 0; k <= 8; k++) { const t = k / 8, a = a0 + span * t, rr = R0 + 0.16 * Math.sin(t * 5 + i); pts.push([Math.cos(a) * rr, y + 0.05 * Math.sin(t * 7 + i * 2), Math.sin(a) * rr]); rad.push(wd * Math.pow(Math.sin(Math.PI * (0.04 + 0.92 * t)), 0.7)); }
-    limb(g, pts, rad, { nu: nq(10), nv: nq(18), flat: [0.14, 1], up: [0, 1, 0], col: (x, yy, z) => mul([0.5, 0.6, 0.58], 0.85 + 0.25 * noise3(x * 3 + i, yy * 9, z * 3)) });
+    limb(g, pts, rad, { nu: nq(10), nv: nq(18), flat: [0.16, 1], up: [0, 1, 0], col: (x, yy, z) => mul([0.3, 0.38, 0.37], 0.85 + 0.3 * noise3(x * 3 + i, yy * 9, z * 3)) });
   }
   g.moss = 1.7;
 }
@@ -2646,7 +2649,7 @@ const G_SAND = rgb(0xc98c56), G_PALE = rgb(0xe0b684), G_DEEP = [0.2, 0.09, 0.05]
 const gSand = (seed = 0, k = 1) => (x, y, z) => mul(G_SAND, k * (0.84 + 0.2 * noise3(x * 5 + seed, y * 9, z * 5)) * (0.92 + 0.1 * tri1(y * 9)));
 /** a row of little carved figures in niches along X, centred on the local origin, on the XY plane facing +Z: L long, h high */
 function reliefRow(g, L, h, seed = 0, o = {}) {
-  const n = Math.max(1, Math.round(L / (h * (o.pitch || 0.62)))), cw = L / n, d = o.d || 0.035;
+  const n = Math.max(1, Math.round((L * Math.min(1, qual() * 1.1)) / (h * (o.pitch || 0.62)))), cw = L / n, d = o.d || 0.035;
   g.surf(K_PLAIN, 1); g.flat([[-L / 2, 0, 0.003], [L / 2, 0, 0.003], [L / 2, h, 0.003], [-L / 2, h, 0.003]], G_DEEP);
   g.surf(K_STONE, 0.85);
   for (let i = 0; i < n; i++) {
@@ -2798,6 +2801,7 @@ function stepwell(g) {
     });
     outer = inner;
   });
+  for (let s = 0; s < 4; s++) g.in(M(0, 0, 0, 0, s * 90, 0), () => { for (const [x, k] of [[-0.9, 0], [0.9, 0], [-0.55, 1], [0.55, 1], [0, 2]]) g.in(M(x, L[k][1], L[k][0] + 0.07), () => { g.surf(K_PLAIN, 0.6); g.lathe([[0.012, 0], [0.03, 0.012], [0.026, 0.022]], 6, TERRA[1]); g.surf(K_PLAIN, 1, 0, 1.2); g.in(M(0, 0.02, 0), () => g.lathe([[0.012, 0], [0.014, 0.015], [0, 0.05]], 5, [1.0, 0.5, 0.1])); }); });
   // the water, lotus pads and flowers on it
   const wr = L[L.length - 1][0];
   water(g, -wr, wr, -wr, wr, 0.085, 5, [0.1, 0.38, 0.36], 0.14);

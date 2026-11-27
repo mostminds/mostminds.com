@@ -594,6 +594,12 @@ export function realmUnits(BASE) {
   return out;
 }
 
+// Price correction per realm, from trials at equal points against the Kingdom on open ground
+// (eight battles a step): below 1 the realm's troops fought under their price, so it musters more.
+const COST = { aethel: 0.8, ashur: 0.92, aurelia: 0.8, caliphate: 0.89, cloven: 0.6, crimson: 0.8, drowned: 0.8, fimbul: 0.63, gorge: 0.71, graal: 0.71,
+  greenhide: 0.63, grom: 0.75, ironbound: 0.82, kaelneth: 0.8, khemet: 0.94, mistisles: 0.56, principalities: 0.63, screaming: 0.71, shogunate: 0.69,
+  skar: 0.75, sunkings: 0.63, thousandgods: 1, tianlong: 1, velikaya: 0.87, verdant: 0.75, westmark: 0.84, xibalba: 0.52 };
+
 /** Worldgen factions: how each realm builds and what it musters. */
 export function realmFactions() {
   const out = {};
@@ -601,7 +607,7 @@ export function realmFactions() {
     const t = { ...TOWN[f.town], ...(f.over || {}) }, army = {}, assault = {};
     for (const [id, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w) (mods.as ? assault : army)[uid(f, id)] = mods.w;
     const { civic, ...build } = t;
-    out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, ...build, civic: [...civic, ...landmarksOf(f.id)], look: f.look, army, assault,
+    out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, cost: COST[f.id] || 1, ...build, civic: [...civic, ...landmarksOf(f.id)], look: f.look, army, assault,
       ships: f.ships.map((s) => uid(f, s[0])), airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
   }
   return out;
