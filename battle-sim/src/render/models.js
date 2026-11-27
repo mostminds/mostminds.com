@@ -532,7 +532,7 @@ export function buildStructure(def, w, h, place = null) {
       // a faction other than the kingdom gives the building its own look
       const st = place && place.style;
       if (st && st !== 'kingdom' && REG.FACTION.restyle && !(REG.FACTION.structures || {})[def.model]) {
-        const rs = guarded(`restyle:${st}:${def.model}`, () => REG.FACTION.restyle(sm, st, `${def.model}:${w}x${h}:${def.color}`));
+        const rs = guarded(`restyle:${st}:${def.model}`, () => REG.FACTION.restyle(sm, st, `${def.model}:${w}x${h}:${def.color}:${getDetail()}`));
         if (rs) { rs.userData = { ...sm.userData, ...rs.userData }; return rs; }
       }
       return sm;
