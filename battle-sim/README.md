@@ -203,6 +203,26 @@ Ten prehistoric hunters, also in the ship list of a naval battle:
 - **Styxosaurus**, the stinger-neck: fast, rears up to snatch topmen from the rigging. (There are no fliers in
   sea battles yet, so its anti-flier role is not in the game.)
 
+### Generated sea battles, the frozen sea and diving boats
+
+- **Generate on the sea.** In Naval mode, *Generate* (or *Generate map*, or the place "Sea battle") builds a sea
+  battle: islands large and small, the defender's islands fortified with shore batteries, mortars, harpoon
+  towers or a sea fort (the attacker sometimes holds one too), two fleets drawn from the chosen factions' own
+  hulls, a diving boat or two each, and sea monsters bound to each fleet. The attacker gets a larger fleet to
+  pay for the forts it must face.
+- **The frozen sea.** Northern factions usually fight in it, others sometimes: fields of pack ice and drifting
+  bergs that ships must steer round (ice-breaking hulls go through, sea creatures swim beneath, a submerged
+  boat passes under), snow-covered islands, penguin colonies on the ice and shores, and the hunters of cold
+  water: the **Tusk-Lord Walrus**, **Killer Whales** and **Narwhals** in pods, the **Rime Kraken**, the
+  **Polar Serpent** whose frost breath slows ships and their gun crews, and the **Berg Titan**, a living iceberg.
+- **Diving boats.** Every faction has an undersea unit. Boat-building peoples have a submersible in their own
+  colours: it goes under as it closes (nothing can aim at it then), comes up within range and looses a torpedo
+  ahead, which counts well under half the target's armour and leaves her taking water. Peoples who build no
+  such thing send a beast instead: the Cloven a Tylosaurus, the Gorge-Tribes a Kronosaurus, the Mist-Cloaked
+  Isles an Elasmosaurus, the Fimbulwinter Raiders a Polar Serpent, the Verdant Host a Great Coil Serpent, the
+  Xibalbans a Shonisaurus, the Endless Screaming an Abyssal Maw, and Beasts, Elementals and Dragons a
+  Megalodon, a Sea Elemental and a Sea Dragon.
+
 ## The land
 
 - **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights

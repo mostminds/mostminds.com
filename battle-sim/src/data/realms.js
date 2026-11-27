@@ -608,18 +608,38 @@ export function realmFactions() {
     for (const [id, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w) (mods.as ? assault : army)[uid(f, id)] = mods.w;
     const { civic, ...build } = t;
     out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, cost: COST[f.id] || 1, ...build, civic: [...civic, ...landmarksOf(f.id)], look: f.look, army, assault,
-      ships: f.ships.map((s) => uid(f, s[0])), airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
+      ships: f.ships.map((s) => uid(f, s[0])), undersea: underseaOf(f), airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
   }
   return out;
 }
 
+// What each realm sends beneath the waves: a diving boat of its own make, or, for the peoples who build no
+// such thing, a sea beast broken to the same work. [name] for a boat, or '!creature id' for a beast.
+const UNDERSEA = {
+  graal: ['Pilgrim Diving-Bell'], aurelia: ['Imperial Steam Diver'], aethel: ['Pearl Diver-Galley'], kaelneth: ['Black Fang Lurker'], verdant: '!coilSerpent',
+  grom: ['Deep-Delver Ironfish'], xibalba: '!shonisaurus', velikaya: ['Under-Ice Boat'], tianlong: ['Jade Carp Diver'],
+  ironbound: ['Iron Maw Lurker'], screaming: '!abyssalMaw', cloven: '!tylosaurus', fimbul: '!polarSerpent', ashur: ['Brass Fire-Fish'], greenhide: ['Scrap Diver'], skar: null,
+  crimson: ['Coffin Diver'], khemet: ['Scarab Diver'], drowned: ['Drowned Lurker'],
+  gorge: '!kronosaurus', westmark: ['Republic Diving Boat'], principalities: ["Inventor's Sea-Turtle"], sunkings: ['Royal Diving Galley'], caliphate: ['Brass Whale'], shogunate: ['Iron Turtle-Boat'],
+  mistisles: '!elasmosaurus', thousandgods: ['Makara Diver'],
+};
+/** the id of a realm's undersea unit: a ship class, or a creature for the peoples who use beasts */
+export const underseaOf = (f) => { const u = UNDERSEA[f.id]; return u === null ? `${f.id}_sub` : typeof u === 'string' ? u.slice(1) : `${f.id}_diver`; };
+
 /** Ship classes of every realm: an existing class's sailing and gunnery with the realm's own hull. */
-export function realmShips(BASE) {
+export function realmShips(BASE, SUB = null) {
   const out = {};
+  // each boat-building realm's submersible, in its own colours
+  if (SUB) for (const f of REALMS) {
+    const u = UNDERSEA[f.id];
+    if (!Array.isArray(u)) continue;
+    const first = f.ships[0] && f.ships[0][4] || {};
+    out[`${f.id}_diver`] = { ...SUB, name: u[0], realm: f.id, fleet: f.name, color: first.color ?? f.P.armor, sail: f.P.cloth, trim: f.P.trim };
+  }
   for (const f of REALMS) for (const [id, name, baseId, kind, over = {}] of f.ships) {
     const b = BASE[baseId];
     if (!b) throw new Error(`realms: ship ${f.id}.${id} is based on an unknown class "${baseId}"`);
-    out[uid(f, id)] = { ...b, name, kind, realm: f.id, fleet: f.name, ...over };
+    out[uid(f, id)] = { ...(kind === 'submersible' && SUB ? SUB : b), name, kind, realm: f.id, fleet: f.name, ...over }; // a submersible hull dives and carries torpedoes whatever it was drawn from
   }
   return out;
 }

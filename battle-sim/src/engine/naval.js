@@ -11,7 +11,7 @@ export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES, FORTS }) {
   const W = scn.width || 140, H = scn.height || 90;
   const b = {
     W, H, tick: 0, rng: createRng(seed), ents: [], shots: [], events: [], winner: null,
-    maxTicks: scn.maxTicks || 2500, islands: scn.islands || [],
+    maxTicks: scn.maxTicks || 2500, islands: scn.islands || [], theme: scn.theme || null,
     sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, initial: 0 })),
   };
   // the wind blows toward `dir` and backs and veers a little as the fight goes on
@@ -99,7 +99,7 @@ export function stepNaval(b) {
 // the wind on the beam or quarter, a little less dead before it. Square-riggers point worse than
 // fore-and-aft rigs. Oared craft and beasts do not care.
 export function sailFactor(b, e, heading = e.heading) {
-  if (!e.ship || e.def.oars || e.def.beast) return 1;
+  if (!e.ship || e.def.oars || e.def.beast || e.def.engine) return 1;
   const off = Math.abs(wrap(heading - b.wind.dir)) / DEG; // 0 = running, 180 = head to wind
   const irons = e.def.sails >= 3 ? 128 : 140;             // how close to the wind she will lie
   let f;
@@ -109,7 +109,7 @@ export function sailFactor(b, e, heading = e.heading) {
   else f = 0.82 + 0.18 * (off / 55);
   return f * b.wind.speed * (0.4 + 0.6 * e.rig);
 }
-const submerged = (b, e) => !e.ship && !e.fort && b.tick < e.subUntil;
+const submerged = (b, e) => !e.fort && b.tick < e.subUntil; // sea creatures, and ships built to dive
 const dist = (a, c) => Math.hypot(a.x - c.x, a.y - c.y) - a.radius - c.radius;
 
 function chooseTarget(b, e) {
@@ -135,6 +135,8 @@ function steer(b, e, desired, speedMul = 1) {
   if (e.y < margin) ay += (margin - e.y) * 0.4;
   if (e.y > b.H - margin) ay -= (e.y - (b.H - margin)) * 0.4;
   for (const isl of b.islands) {
+    // pack ice and bergs: sea creatures swim beneath, a diving boat passes under, an ice-breaking bow goes through
+    if (isl.ice && (!e.ship || e.def.icebreaker || e.def.kind === 'icebreaker' || e.def.kind === 'dreadnought' || submerged(b, e))) continue;
     const dx = e.x - isl.x, dy = e.y - isl.y, d = Math.hypot(dx, dy);
     const storming = e.storming && Math.hypot(e.storming.x - isl.x, e.storming.y - isl.y) < isl.r + 3;
     const clear = isl.r + e.radius + (storming ? 0.5 : 4);
@@ -185,7 +187,7 @@ function shipTick(b, e) {
     if (d < range * 0.4) desired = wrap(desired + (wrap(desired - bearing) > 0 ? 0.4 : -0.4));
   }
   // a ship cannot sail into the wind's eye: she beats up to her mark on alternate tacks
-  if (!e.def.oars && !e.def.beast) {
+  if (!e.def.oars && !e.def.beast && !e.def.engine) {
     const eye = wrap(b.wind.dir + Math.PI), irons = (e.def.sails >= 3 ? 52 : 40) * DEG;
     const offEye = wrap(desired - eye);
     if (Math.abs(offEye) < irons) {
@@ -193,7 +195,20 @@ function shipTick(b, e) {
       desired = wrap(eye + e.tack * (irons + 6 * DEG));
     } else e.beating = false;
   }
-  steer(b, e, desired);
+  // a diving boat goes under as she closes, runs in unseen, and comes up to loose her torpedo
+  const dv = e.def.dive;
+  if (dv) {
+    if (!submerged(b, e) && b.tick >= e.nextSub && d < dv.range && (d > 4 || e.hp < e.maxHp * 0.5)) { e.subUntil = b.tick + dv.duration; e.nextSub = b.tick + dv.every + dv.duration; b.events.push({ type: 'submerge', id: e.id }); }
+    if (submerged(b, e)) { steer(b, e, d > 5 ? bearing : desired); return; }
+  }
+  // with a torpedo ready she points her bow at the mark; otherwise she handles like any ship
+  steer(b, e, e.def.torpedo && e.cd <= 3 && d < e.def.torpedo.range * 1.6 ? bearing : desired);
+  const tp = e.def.torpedo;
+  if (tp && e.cd <= 0 && (t.ship || t.def.size >= 3) && !submerged(b, t) && d - t.radius < tp.range && Math.abs(wrap(bearing - e.heading)) < 28 * DEG) {
+    shoot(b, e, t, tp.dmg, tp.acc, tp.range, 'torpedo');
+    e.cd = tp.reload;
+    b.events.push({ type: 'torpedo', id: e.id, to: t.id });
+  }
   fireBroadsides(b, e);
 }
 
@@ -241,14 +256,14 @@ function shoot(b, e, t, dmg, acc, range, kind, broadside = 0, offset = 0) {
   const hit = b.rng.next() < p;
   let dm = hit ? b.rng.int(dmg[0], dmg[1]) : 0;
   const armour = t.ship ? t.def.armour : t.def.armour;
-  dm = Math.round(dm * (100 / (100 + armour)));
+  dm = Math.round(dm * (100 / (100 + (kind === 'torpedo' ? armour * 0.4 : armour)))); // a torpedo strikes below the belt of the armour
   const flight = 1 + Math.floor(d / 7);
   // miss lands somewhere near the target
   const mx = t.x + (hit ? 0 : (b.rng.next() - 0.5) * 6), my = t.y + (hit ? 0 : (b.rng.next() - 0.5) * 6);
   // cannon origin along the hull
   const along = (offset - 0.5) * (e.def.len || 0) * 0.7;
   const ox = e.x + Math.cos(e.heading) * along, oy = e.y + Math.sin(e.heading) * along;
-  b.shots.push({ tick: b.tick + flight, from: e.id, to: t.id, dmg: dm, hit, x: mx, y: my, splash: e.def.weapon?.splash || 0, grapple: e.def.weapon?.grapple });
+  b.shots.push({ tick: b.tick + flight, from: e.id, to: t.id, dmg: dm, hit, x: mx, y: my, splash: e.def.weapon?.splash || 0, grapple: e.def.weapon?.grapple, torpedo: kind === 'torpedo' });
   b.events.push({ type: 'shot', kind, from: e.id, to: t.id, x0: ox, y0: oy, x1: mx, y1: my, flight, hit });
 }
 
@@ -313,13 +328,18 @@ function creatureTick(b, e) {
         const dd = dist(e, o);
         if (dd > a.range || Math.abs(wrap(Math.atan2(o.y - e.y, o.x - e.x) - bearing)) > 0.5) continue;
         hurt(b, o, b.rng.int(a.maxHit >> 1, a.maxHit), e);
-        if (o.alive && o.ship && !o.def.beast) {
+        if (o.alive && a.freeze) {
+          // a breath of the far north: spray freezes on the rigging and the sea thickens round the hull
+          o.slowUntil = b.tick + a.freeze.duration; o.slow = a.freeze.slow;
+          if (o.ship) o.reload = o.reload.map((r) => r + 2);
+          b.events.push({ type: 'frozen', id: o.id });
+        } else if (o.alive && o.ship && !o.def.beast) {
           if (o.rig > 0.35) o.rig = Math.max(0.35, o.rig - 0.15); // sails and tarred rope go up
           o.dot = { until: b.tick + a.burn, from: b.tick, every: 3, dmg: a.burnDmg, by: e.id };
           b.events.push({ type: 'afire', id: o.id });
         }
       }
-      b.events.push({ type: 'ability', id: e.id, name: 'breath', to: t.id, range: a.range, fire: !!a.fire });
+      b.events.push({ type: 'ability', id: e.id, name: 'breath', to: t.id, range: a.range, fire: !!a.fire, frost: !!a.freeze });
     }
     if (a.type === 'swallow' && b.tick >= e.nextSwallow && t.ship && d < 1.2 && t.maxHp <= a.maxHull && t.hp <= t.maxHp * a.below) {
       // small craft go down whole
@@ -410,6 +430,8 @@ function resolveShots(b) {
         if (t.rig > 0.35 && b.rng.chance(0.12)) { t.rig = Math.max(0.35, t.rig - 0.1); if (t.rig <= 0.55 && !t.crippled) { t.crippled = true; b.events.push({ type: 'rigging', id: t.id }); } }
       }
       hurt(b, t, dmg, src);
+      // holed below the waterline: she takes water for a while
+      if (s.torpedo && t.alive && t.ship && !t.dot && dmg > 10) t.dot = { until: b.tick + 15, from: b.tick, every: 3, dmg: 5, by: s.from };
       if (s.grapple) { t.slowUntil = b.tick + s.grapple.duration; t.slow = s.grapple.slow; }
     } else b.events.push({ type: 'splash', x: s.x, y: s.y });
     if (s.splash) {

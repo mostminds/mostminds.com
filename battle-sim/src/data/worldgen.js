@@ -7,6 +7,7 @@ import { combatLevel } from '../engine/combat.js';
 import { STRUCTURES } from './structures.js';
 import { UNITS } from './units.js';
 import { AIRSHIPS } from './airships.js';
+import { SHIPS, CREATURES, FORTS } from './naval.js';
 import { realmFactions, LANDMARKS } from './realms.js';
 
 const clampRow = (y, S) => Math.max(3, Math.min(S - 4, y));
@@ -16,7 +17,7 @@ const clampRow = (y, S) => Math.max(3, Math.min(S - 4, y));
 // layout: how the inside is arranged. homes / small / camp: its buildings, big to small.
 export const FACTIONS = {
   kingdom: {
-    name: 'Kingdom', adj: 'Kingdom', biomes: ['temperate', 'temperate', 'snow'],
+    undersea: 'kingdomSub', name: 'Kingdom', adj: 'Kingdom', biomes: ['temperate', 'temperate', 'snow'],
     wall: 'rampart', strongWall: 'rampart', layout: 'streets', homes: 'house', small: 'hut', camp: 'tent', lookout: 'tower',
     deco: ['crates', 'statue', 'crates'], trees: ['tree', 'tree', 'pine'], guns: ['cannon', 'ballista', 'mortar'], shoreGun: 'battery',
     army: { footman: 0.24, longbow: 0.14, crossbow: 0.13, halberdier: 0.12, knight: 0.16, militia: 0.05, cleric: 0.05, battlemage: 0.06, paladin: 0.05, engineer: 0.03, pikeman: 0.1, scout: 0.04, grenadier: 0.05, warPriest: 0.04 },
@@ -24,7 +25,7 @@ export const FACTIONS = {
     places: { village: 'village', fort: 'border fort', castle: 'castle', city: 'walled city', coast: 'fishing town', harbor: 'harbour city', island: 'island keep' },
   },
   goblin: {
-    name: 'Goblin Horde', adj: 'Goblin', biomes: ['swamp', 'desert', 'jungle', 'temperate'],
+    undersea: 'goblinSub', name: 'Goblin Horde', adj: 'Goblin', biomes: ['swamp', 'desert', 'jungle', 'temperate'],
     wall: 'palisade', strongWall: 'palisade', layout: 'warren', homes: 'hut', small: 'tent', camp: 'tent', lookout: 'tower',
     deco: ['crates', 'barricade', 'crates'], trees: ['tree', 'pine'], guns: ['ballista', 'ballista', 'cannon'], shoreGun: 'harpoon',
     army: { goblin: 0.2, goblinArcher: 0.18, hobgoblin: 0.26, shaman: 0.08, warboss: 0.16, wolfRider: 0.12, tinker: 0.02, goblinSpear: 0.12, bomber: 0.06, trollShaman: 0.05 },
@@ -32,7 +33,7 @@ export const FACTIONS = {
     places: { village: 'warren', fort: 'stockade', castle: 'great stockade', city: 'shanty city', coast: 'wreckers\' cove', harbor: 'corsair haven', island: 'reef stockade' },
   },
   undead: {
-    name: 'Undead', adj: 'Undead', biomes: ['swamp', 'snow', 'temperate'],
+    undersea: 'undeadSub', name: 'Undead', adj: 'Undead', biomes: ['swamp', 'snow', 'temperate'],
     wall: 'ruin', strongWall: 'rampart', layout: 'necropolis', homes: 'keep', small: 'statue', camp: 'pillar', lookout: 'pillar',
     deco: ['statue', 'pillar', 'pillar'], trees: ['pine'], guns: ['mortar', 'ballista'], shoreGun: 'battery',
     army: { skeleton: 0.32, skeletonArcher: 0.2, ghoul: 0.14, necromancer: 0.1, boneColossus: 0.16, bat: 0.08, wight: 0.12, banshee: 0.05, plagueBearer: 0.08 },
@@ -40,7 +41,7 @@ export const FACTIONS = {
     places: { village: 'graveyard', fort: 'barrow fort', castle: 'black keep', city: 'necropolis', coast: 'drowned chapel', harbor: 'ghost harbour', island: 'crypt isle' },
   },
   infernal: {
-    name: 'Infernal', adj: 'Infernal', biomes: ['volcanic'],
+    undersea: 'infernalSub', name: 'Infernal', adj: 'Infernal', biomes: ['volcanic'],
     wall: 'bastions', strongWall: 'rampart', layout: 'rings', homes: 'bastion', small: 'pillar', camp: 'rock', lookout: 'pillar',
     deco: ['pillar', 'statue', 'rock'], trees: [], guns: ['mortar', 'cannon'], shoreGun: 'battery',
     army: { imp: 0.16, pitFiend: 0.3, infernalLord: 0.2, fireElemental: 0.1, hellhound: 0.1, cultist: 0.06, hellknight: 0.16 },
@@ -48,7 +49,7 @@ export const FACTIONS = {
     places: { village: 'ash shrine', fort: 'brimstone redoubt', castle: 'obsidian citadel', city: 'infernal city', coast: 'cinder shore', harbor: 'burning harbour', island: 'ember isle' },
   },
   beasts: {
-    name: 'Beasts', adj: 'Wild', biomes: ['jungle', 'temperate', 'desert'],
+    undersea: 'megalodon', name: 'Beasts', adj: 'Wild', biomes: ['jungle', 'temperate', 'desert'],
     wall: 'ring', strongWall: 'palisade', layout: 'wild', homes: 'rock', small: 'tent', camp: 'tent', lookout: 'tower',
     deco: ['rock', 'barricade', 'crates'], trees: ['tree', 'tree', 'pine'], guns: [], shoreGun: null,
     army: { wolf: 0.14, spider: 0.12, troll: 0.18, ogre: 0.18, cyclops: 0.16, minotaur: 0.14, harpy: 0.08, alphaWolf: 0.08, broodmother: 0.08, ogreMage: 0.06 },
@@ -56,7 +57,7 @@ export const FACTIONS = {
     places: { village: 'den', fort: 'ogre camp', castle: 'giants\' hold', city: 'great lair', coast: 'troll shore', harbor: 'harpy cove', island: 'cyclops isle' },
   },
   elemental: {
-    name: 'Elemental', adj: 'Elemental', biomes: ['snow', 'volcanic', 'desert'],
+    undersea: 'seaElemental', name: 'Elemental', adj: 'Elemental', biomes: ['snow', 'volcanic', 'desert'],
     wall: 'ring', strongWall: 'ring', layout: 'rings', homes: 'pillar', small: 'statue', camp: 'rock', lookout: 'pillar',
     deco: ['pillar', 'rock', 'statue'], trees: ['pine'], guns: [], shoreGun: null,
     army: { golem: 0.28, gargoyle: 0.2, fireElemental: 0.16, iceWraith: 0.16, frostGolem: 0.14, stormElemental: 0.1 },
@@ -64,7 +65,7 @@ export const FACTIONS = {
     places: { village: 'standing stones', fort: 'rune circle', castle: 'stone sanctum', city: 'city of pillars', coast: 'tide stones', harbor: 'drowned sanctum', island: 'rune isle' },
   },
   dragons: {
-    name: 'Dragons', adj: 'Dragon', biomes: ['volcanic', 'snow'],
+    undersea: 'seaDragon', name: 'Dragons', adj: 'Dragon', biomes: ['volcanic', 'snow'],
     wall: 'ring', strongWall: 'ring', layout: 'wild', homes: 'rock', small: 'rock', camp: 'rock', lookout: 'pillar',
     deco: ['rock', 'pillar', 'statue'], trees: ['pine'], guns: [], shoreGun: null,
     army: { drake: 0.4, wyrmling: 0.25, whelp: 0.1, kobold: 0.1, dragonKnight: 0.15 },
@@ -84,6 +85,7 @@ export const SITES = {
   city: { name: 'City siege', mode: 'field', shape: ['plains', 'river'], size: 144, points: 36000, edge: 1.6 },
   coast: { name: 'Coastal settlement landing', mode: 'amphibious', shape: ['coast'], size: 112, points: 14000, edge: 1.2 },
   harbor: { name: 'Harbour city assault', mode: 'amphibious', shape: ['harbor'], size: 128, points: 24000, edge: 1.4 },
+  sea: { name: 'Sea battle', mode: 'naval', shape: ['sea'], size: 210, points: 0, edge: 1 },
   ctf: { name: 'Capture the flag', mode: 'field', shape: ['plains'], size: 112, points: 12000, edge: 1 },
   island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island'], size: 112, points: 16000, edge: 1.3 },
 };
@@ -407,6 +409,100 @@ function civic(p, R, o) {
 // ---------- armies ----------
 // Stronger units cost more than their level alone suggests, so price rises faster than level.
 const priceOf = (id) => Math.pow(combatLevel(UNITS[id]), 1.45) * (UNITS[id].fly ? 1.15 : 1);
+// ---------- sea battles ----------
+// Open water with islands, some of them fortified; two fleets drawn from their factions' own hulls, each with a
+// diving boat (or the beast that does that work) and a few sea monsters bound to it. In the far north the sea is
+// part frozen: pack ice and bergs that ships must steer round, and the hunters of the cold water.
+const seaPrice = (d) => Math.pow(d.level || 30, 1.7);
+const SEA_BEASTS = ['shark', 'eel', 'siren', 'serpent', 'kraken', 'megalodon', 'seaDragon', 'seaElemental', 'ironshell', 'abyssalMaw', 'coilSerpent', 'behemoth', 'triton', 'leviathan',
+  'dunkleosteus', 'leedsichthys', 'tylosaurus', 'shonisaurus', 'kronosaurus', 'elasmosaurus', 'tusoteuthis', 'orthoceras', 'xiphactinus', 'styxosaurus'];
+const ICE_BEASTS = ['tuskWalrus', 'orca', 'narwhal', 'iceKraken', 'polarSerpent', 'bergTitan', 'styxosaurus', 'behemoth'];
+const PACKS = { xiphactinus: 3, orca: 3, narwhal: 4, shark: 4, eel: 3, crab: 5 };
+const COLD = new Set(['velikaya', 'fimbul', 'grom', 'undead', 'elemental']);
+
+function generateNaval({ r, seed, defId, attId, D, A, theme }) {
+  const W = 210, H = 135;
+  const arctic = theme === 'arctic' || (theme !== 'open' && (COLD.has(defId) || COLD.has(attId) ? r.chance(0.75) : r.chance(0.25)));
+  const islands = [], forts = [];
+  const clear = (x, y, rad, gap = 6) => islands.every((i) => Math.hypot(i.x - x, i.y - y) > i.r + rad + gap);
+  // islands: a few big ones and a scatter of small, kept out of the two fleets' forming-up water
+  const nIsl = r.int(4, 8);
+  for (let k = 0, tries = 0; k < nIsl && tries < 200; tries++) {
+    const rad = k < 2 ? r.int(7, 10) : r.int(3, 6), x = r.int(46, W - 46), y = r.int(12, H - 12);
+    if (!clear(x, y, rad)) continue;
+    islands.push({ x, y, r: rad }); k++;
+  }
+  // forts: the defenders (side 1, to the east) hold the islands on their side of the sea; the attackers may hold one of theirs
+  const fortify = (isl, side, strong) => {
+    const toward = side === 1 ? Math.PI : 0; // guns face the enemy
+    if (isl.r <= 5 && strong) { forts.push({ type: 'seaFort', x: isl.x, y: isl.y, side }); return; }
+    const kinds = strong ? ['battery', 'battery', 'mortar', 'harpoon'] : r.chance(0.5) ? ['battery', 'harpoon'] : ['battery'];
+    kinds.forEach((type, i) => {
+      const a = toward + (i - (kinds.length - 1) / 2) * 0.9;
+      forts.push({ type, x: Math.round(isl.x + Math.cos(a) * (isl.r - 1.5)), y: Math.round(isl.y + Math.sin(a) * (isl.r - 1.5)), side });
+    });
+  };
+  const east = islands.filter((i) => i.x > W * 0.52).sort((a, c) => c.r - a.r), west = islands.filter((i) => i.x < W * 0.42);
+  east.slice(0, r.int(1, 3)).forEach((isl, i) => fortify(isl, 1, i === 0));
+  if (west.length && r.chance(0.45)) fortify(r.pick(west), 0, false);
+  // the frozen sea: a field of pack ice across part of the map, bergs adrift, and floes round the islands
+  if (arctic) {
+    const band = r.chance(0.5) ? 'north' : 'south', cy = band === 'north' ? H * 0.2 : H * 0.8;
+    for (let k = 0, tries = 0, n = r.int(12, 18); k < n && tries < 400; tries++) {
+      const rad = r.int(3, 7), x = r.int(34, W - 34), y = Math.round(cy + (r() - 0.5) * H * 0.34);
+      if (y < 5 || y > H - 5 || !clear(x, y, rad, 1.5)) continue;
+      islands.push({ x, y, r: rad, ice: true }); k++;
+    }
+    for (let k = 0, tries = 0, n = r.int(6, 11); k < n && tries < 300; tries++) {
+      const rad = r.pick([1.5, 2, 2.5, 3]), x = r.int(36, W - 36), y = r.int(8, H - 8);
+      if (!clear(x, y, rad, 3)) continue;
+      islands.push({ x, y, r: rad, ice: true, berg: true }); k++;
+    }
+  }
+  // fleets
+  const fleet = (id, F, budget, foeId) => {
+    const groups = [], add = (unit, count) => { const g = groups.find((x) => x.unit === unit); if (g) g.count += count; else groups.push({ unit, count }); };
+    const hulls = F.ships.map((k) => SHIPS[k]).filter(Boolean).sort((a, c) => (c.level || 0) - (a.level || 0));
+    let left = budget;
+    const buy = (d, n = 1) => { add(d.id, n); left -= seaPrice(d) * n; };
+    // what goes beneath: a diving boat or two, or the beast that serves for one
+    const u = SHIPS[F.undersea] || CREATURES[F.undersea];
+    if (u) buy(u, SHIPS[F.undersea] ? r.int(1, 2) : 1);
+    // monsters bound to the fleet: about a quarter of its strength
+    const pool = (arctic ? ICE_BEASTS : SEA_BEASTS).map((k) => CREATURES[k]).filter((c) => c && !(c.refuses && c.refuses.some((x) => x === id)));
+    let beasts = budget * (0.18 + r() * 0.14);
+    for (let k = 0; k < 3 && beasts > 600; k++) {
+      const can = pool.filter((c) => seaPrice(c) * (PACKS[c.id] || 1) <= beasts * 1.25);
+      if (!can.length) break;
+      const c = r.pick(can), n = PACKS[c.id] ? r.int(2, PACKS[c.id]) : 1;
+      buy(c, n); beasts -= seaPrice(c) * n;
+    }
+    // ships of the line: a flagship, then whatever the purse still runs to, biggest first with a tail of small craft
+    if (hulls.length) {
+      if (left > seaPrice(hulls[0])) buy(hulls[0]);
+      for (let guard = 0; guard < 40 && left > 0; guard++) {
+        const can = hulls.filter((h) => seaPrice(h) <= left);
+        if (!can.length) break;
+        buy(r.chance(0.55) ? can[0] : r.pick(can));
+      }
+    }
+    void foeId;
+    return groups;
+  };
+  const base = 9500 + r.int(0, 3500);
+  const fortWorth = forts.filter((f) => f.side === 1).reduce((n, f) => n + seaPrice(FORTS[f.type]) * 2.4, 0) - forts.filter((f) => f.side === 0).reduce((n, f) => n + seaPrice(FORTS[f.type]) * 2.4, 0);
+  const sides = [
+    { name: `${A.adj} fleet`, groups: fleet(attId, A, base + Math.max(0, fortWorth), defId) },
+    { name: `${D.adj} fleet`, groups: fleet(defId, D, base + Math.max(0, -fortWorth), attId) },
+  ];
+  const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
+  return {
+    name: `${arctic ? 'The frozen sea off' : 'The sea off'} ${place}: ${A.adj} fleet against the ${D.adj.toLowerCase()} ${forts.some((f) => f.side === 1) ? 'island forts' : 'squadron'}`,
+    mode: 'naval', seed, site: 'sea', defender: defId, attacker: attId,
+    scn: { width: W, height: H, islands, forts, sides, theme: arctic ? 'arctic' : 'open', maxTicks: 5000 },
+  };
+}
+
 // ---------- capture the flag ----------
 // Two forts face each other across open ground, each built and garrisoned by its own faction,
 // each with a flag at its heart. Side A holds the west fort, side B the east.
@@ -509,6 +605,7 @@ export function generateScenario(opts = {}) {
   if (!opts.attacker && attId === defId) attId = ids[(ids.indexOf(defId) + 1) % ids.length];
   const D = FACTIONS[defId], A = FACTIONS[attId];
   if (siteId === 'ctf') return generateCtf({ r, seed, site, defId, attId, D, A, size: +opts.size });
+  if (siteId === 'sea') return generateNaval({ r, seed, defId, attId, D, A, theme: opts.theme });
   const S = [64, 80, 96, 112, 128, 144, 160].includes(+opts.size) ? +opts.size : site.size;
   const shape = r.pick(site.shape), biome = r.pick(D.biomes), terrainSeed = 1 + r.int(0, 9998);
   const terrain = generateTerrain(shape, S, terrainSeed);

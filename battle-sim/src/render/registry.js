@@ -45,4 +45,9 @@ export const CREATURE_ANIM = { ...(sea.animators || {}) };
 // beasts of the ancient seas (optional until sculpted: a creature without a model is drawn as its nearest kin)
 try { const m = await import('./props/ancientseas.js'); Object.assign(CREATURES, m.creatures || {}); Object.assign(CREATURE_ANIM, m.animators || {}); }
 catch (err) { console.info('ancient sea creatures not available yet', err?.message || err); }
+// the frozen sea: its hunters, and the ice and penguins that dress it (optional until sculpted)
+let arctic = {};
+try { arctic = await import('./props/arctic.js'); Object.assign(CREATURES, arctic.creatures || {}); Object.assign(CREATURE_ANIM, arctic.animators || {}); }
+catch (err) { console.info('arctic sea models not available yet', err?.message || err); }
+export const ARCTIC = arctic;
 for (const m of [humanoid, undead, beasts, monsters, ...laterBodies]) if (m.animators) registerAnimators(m.animators);

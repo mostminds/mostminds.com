@@ -294,7 +294,8 @@ for (const id of ['genDef', 'genAtt']) {
 }
 $('generate').onclick = () => {
   const sites = Object.keys(SITES);
-  const g = generateScenario({ site: $('genSite').value || sites[Math.floor(Math.random() * sites.length)], defender: $('genDef').value, attacker: $('genAtt').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
+  // on the sea, Generate makes a sea battle unless a place on land was asked for by name
+  const g = generateScenario({ site: $('genSite').value || (isNaval() ? 'sea' : sites[Math.floor(Math.random() * sites.length)]), defender: $('genDef').value, attacker: $('genAtt').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
   state.scn[g.mode] = clone({ ...g.scn, mode: g.mode });
   setMode(g.mode);
   $('genName').textContent = g.name;

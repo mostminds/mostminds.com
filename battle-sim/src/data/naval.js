@@ -64,6 +64,20 @@ export const CREATURES = {
                  abilities: [{ type: 'crush', duration: 10, dmg: 8, drag: 0.12 }, { type: 'sweep', radius: 5, maxHit: 20, every: 12 }, { type: 'submerge', every: 26, duration: 6 }] },
   behemoth:    { name: 'Horned Behemoth',   level: 99, hp: 1500, armour: 50, speed: 0.55, size: 6.5, attack: { range: 3.5, maxHit: 48, speed: 6, acc: 0.6 }, model: 'behemoth', alt: 'leviathan', color: 0x2a3444,
                  abilities: [{ type: 'ram', damage: 130, cooldown: 20 }, { type: 'breach', over: 14, duration: 24, dmg: 8 }, { type: 'submerge', every: 32, duration: 8 }] },
+  // ---- Hunters of the frozen sea ----
+  //  breath {.., freeze: {slow, duration}}   a frost breath slows ships and their gun crews instead of burning them
+  tuskWalrus:  { name: 'Tusk-Lord Walrus',  level: 83, hp: 900,  armour: 45, speed: 0.5,  size: 4,   attack: { range: 2.5, maxHit: 44, speed: 5, acc: 0.68 }, model: 'tuskWalrus', alt: 'leviathan', color: 0x7a6252, arctic: true,
+                 abilities: [{ type: 'breach', over: 14, duration: 15, dmg: 6 }, { type: 'sweep', radius: 4, maxHit: 18, every: 12 }] },
+  orca:        { name: 'Killer Whale',      level: 50, hp: 190,  armour: 10, speed: 1.05, size: 3,   attack: { range: 1.5, maxHit: 20, speed: 3, acc: 0.72 }, model: 'orca', alt: 'shark', color: 0x16181c, arctic: true,
+                 abilities: [{ type: 'pack', radius: 9, bonus: 0.3 }, { type: 'overboard', chance: 0.4, crew: 2 }, { type: 'submerge', every: 20, duration: 4 }] },
+  narwhal:     { name: 'Narwhal',           level: 42, hp: 130,  armour: 8,  speed: 1.0,  size: 2.5, attack: { range: 1.5, maxHit: 12, speed: 4, acc: 0.65 }, model: 'narwhal', alt: 'shark', color: 0x9aa4ac, arctic: true, turn: 10,
+                 abilities: [{ type: 'ram', damage: 16, cooldown: 10, perTile: 3, max: 50 }, { type: 'pack', radius: 8, bonus: 0.2 }] },
+  iceKraken:   { name: 'Rime Kraken',       level: 87, hp: 760,  armour: 40, speed: 0.4,  size: 4.5, attack: { range: 4,   maxHit: 34, speed: 5, acc: 0.65 }, model: 'iceKraken', alt: 'kraken', color: 0xb8d8e8, arctic: true,
+                 abilities: [{ type: 'crush', duration: 12, dmg: 9, drag: 0.22 }, { type: 'grapple', slow: 0.15, duration: 7 }, { type: 'sweep', radius: 5, maxHit: 20, every: 11 }] },
+  polarSerpent:{ name: 'Polar Serpent',     level: 80, hp: 620,  armour: 26, speed: 0.75, size: 5,   attack: { range: 3,   maxHit: 30, speed: 5, acc: 0.65 }, model: 'polarSerpent', alt: 'serpent', color: 0xe8f0f4, arctic: true,
+                 abilities: [{ type: 'breath', every: 14, range: 9, maxHit: 22, freeze: { slow: 0.3, duration: 9 } }, { type: 'crush', duration: 8, dmg: 7, drag: 0.1 }, { type: 'submerge', every: 26, duration: 6 }] },
+  bergTitan:   { name: 'Berg Titan',        level: 90, hp: 1100, armour: 60, speed: 0.3,  size: 4.5, attack: { range: 3,   maxHit: 46, speed: 6, acc: 0.6 }, model: 'bergTitan', alt: 'leviathan', color: 0xcfe6f2, arctic: true, shrugs: 0.5, turn: 7,
+                 abilities: [{ type: 'wave', every: 26, range: 10, radius: 5, maxHit: 30, push: 4 }, { type: 'breath', every: 20, range: 7, maxHit: 16, freeze: { slow: 0.25, duration: 10 } }] },
   // ---- Beasts of the ancient seas: prehistoric hunters broken to war ----
   //  pierce {plate, mult}   armour does not count against its bite; against plate of `plate` or more it bites harder still
   //  ram {.., perTile, max, through}   builds damage over a straight run; `through` ignores armour     jet {cycle, burst, speed}   moves in straight bursts
@@ -91,7 +105,18 @@ export const CREATURES = {
   styxosaurus: { name: 'Styxosaurus',   level: 60, hp: 300,  armour: 12, speed: 1.0,  size: 3,   attack: { range: 4,   maxHit: 16, speed: 3, acc: 0.8, reach: true }, model: 'styxosaurus', alt: 'serpent', color: 0x3a5a8a,
                  abilities: [{ type: 'leap', chance: 0.7, crew: 3 }, { type: 'overboard', chance: 0.5, crew: 2 }, { type: 'submerge', every: 18, duration: 4 }] },
 };
-Object.assign(SHIPS, realmShips(SHIPS)); // each realm's own hulls (see realms.js)
+// ---- Diving boats. A submersible goes under as she closes (nothing can aim at her then, and pack ice does not
+// stop her), comes up within torpedo range and looses ahead: a torpedo counts well under half the target's armour
+// and leaves her taking water. dive { every, duration, range }   torpedo { dmg, range, reload, acc }   engine: no need of wind
+export const SUBMERSIBLE = { level: 55, hull: 260, armour: 30, speed: 0.55, turn: 9, crew: 18, len: 5.5, beam: 1.5, kind: 'submersible', engine: true, sails: 0,
+  cannons: { perSide: 1, dmg: [6, 14], range: 9, reload: 9, acc: 0.5 }, torpedo: { dmg: [34, 72], range: 10, reload: 8, acc: 0.75 }, dive: { every: 12, duration: 8, range: 24 } };
+Object.assign(SHIPS, {
+  kingdomSub:  { ...SUBMERSIBLE, name: 'Royal Diving Boat',  color: 0x7a5a36, sail: 0x2f5aa8, trim: 0xc9a23a },
+  goblinSub:   { ...SUBMERSIBLE, name: 'Scrap Diver',        color: 0x5a4a36, sail: 0x8a7a4a, trim: 0x8a8070, hull: 200, armour: 16, crew: 22, torpedo: { dmg: [24, 84], range: 9, reload: 8, acc: 0.62 } },
+  undeadSub:   { ...SUBMERSIBLE, name: 'Coffin Diver',       color: 0x2a2630, sail: 0x8a8a78, trim: 0x9a9a8a, crew: 14 },
+  infernalSub: { ...SUBMERSIBLE, name: 'Brimstone Lurker',   color: 0x2a1a1a, sail: 0xff5a14, trim: 0xb0782a, hull: 320, armour: 38, speed: 0.48 },
+});
+Object.assign(SHIPS, realmShips(SHIPS, SUBMERSIBLE)); // each realm's own hulls and diving boats (see realms.js)
 for (const [id, s] of Object.entries(SHIPS)) s.id = id;
 for (const [id, c] of Object.entries(CREATURES)) c.id = id;
 

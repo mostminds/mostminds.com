@@ -4,6 +4,33 @@ import { buildShip, buildCreature, animateCreature, buildFortModel, shipMuzzle, 
 import { makeBar, setBar } from './stage.js';
 import { SIDE_COLORS } from './landView.js';
 import { TICK_MS } from '../engine/combat.js';
+import { ARCTIC } from './registry.js';
+
+// plain stand-ins for the ice and its birds, used until the sculpted ones are there
+const ICE = { top: 0xf4f8fc, edge: 0xbfe0f0, deep: 0x7fb8d8 };
+function plainFloe(seed) {
+  const g = new THREE.CylinderGeometry(1, 1.06, 0.2, 7 + (seed % 3)); g.translate(0, 0.02, 0);
+  const m = new THREE.Mesh(g, [new THREE.MeshStandardMaterial({ color: ICE.edge, roughness: 0.5 }), new THREE.MeshStandardMaterial({ color: ICE.top, roughness: 0.85 }), new THREE.MeshStandardMaterial({ color: ICE.deep, roughness: 0.5 })]);
+  m.scale.set(1, 1, 0.8 + (seed % 5) * 0.06); m.rotation.y = seed; m.receiveShadow = true; return m;
+}
+function plainBerg(seed) {
+  const grp = new THREE.Group();
+  for (let k = 0; k < 3; k++) { const h = 2.4 - k * 0.7 + (seed % 3) * 0.3, c = new THREE.Mesh(new THREE.ConeGeometry(0.8 - k * 0.18, h, 5 + k), new THREE.MeshStandardMaterial({ color: k ? ICE.edge : ICE.top, roughness: 0.4, flatShading: true })); c.position.set((k - 1) * 0.5, h / 2 - 0.1, Math.sin(seed + k * 2) * 0.35); c.rotation.y = seed + k; c.castShadow = true; grp.add(c); }
+  return grp;
+}
+function plainPenguins(seed) {
+  const grp = new THREE.Group(), birds = [], black = new THREE.MeshStandardMaterial({ color: 0x16181c, roughness: 0.6 }), white = new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: 0.7 }), orange = new THREE.MeshStandardMaterial({ color: 0xf08a1a, roughness: 0.6 });
+  for (let k = 0, n = 4 + (seed % 4); k < n; k++) {
+    const b = new THREE.Group();
+    b.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.14, 3, 8).translate(0, 0.17, 0), black));
+    b.add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6).scale(0.8, 1.25, 0.6).translate(0, 0.16, 0.05), white));
+    b.add(new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.07, 5).rotateX(Math.PI / 2).translate(0, 0.29, 0.1), orange));
+    const a = (k / n) * 6.283 + seed, rr = 0.15 + ((seed * (k + 3)) % 7) * 0.05;
+    b.position.set(Math.cos(a) * rr, 0.12, Math.sin(a) * rr); b.rotation.y = a * 3 + k; b.userData.phase = k * 1.7;
+    grp.add(b); birds.push(b);
+  }
+  grp.userData.birds = birds; return grp;
+}
 
 export class NavalView {
   constructor(stage) {
@@ -22,11 +49,50 @@ export class NavalView {
     geo.rotateX(-Math.PI / 2);
     this.waterGeo = geo;
     this.base = Float32Array.from(geo.attributes.position.array);
-    const water = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x2a6f96, roughness: 0.22, metalness: 0.3 }));
+    const arctic = b.theme === 'arctic';
+    const water = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: arctic ? 0x2f6078 : 0x2a6f96, roughness: 0.22, metalness: 0.3 }));
     water.position.set(b.W / 2, 0, b.H / 2);
     water.receiveShadow = true;
     g.add(water);
+    // pack ice, bergs and the birds that live on them
+    const sc = ARCTIC.scenery || {};
+    this.birds = [];
+    b.islands.forEach((isl, k) => {
+      if (!isl.ice) return;
+      const seed = Math.round(isl.x * 7 + isl.y * 13 + k);
+      if (isl.berg) {
+        const m = (sc.iceberg || plainBerg)(seed);
+        m.position.set(isl.x, 0, isl.y); m.scale.setScalar(isl.r / 1.0); m.rotation.y = seed;
+        g.add(m);
+        return;
+      }
+      // a field of floes fills the patch of pack ice, biggest in the middle
+      const n = Math.max(3, Math.round(isl.r * isl.r * 0.55));
+      for (let j = 0; j < n; j++) {
+        const a = j * 2.4 + seed, rr = Math.sqrt((j + 0.5) / n) * isl.r * 0.92, s = (0.9 + ((seed + j * 7) % 5) * 0.22) * (1.25 - rr / isl.r * 0.6);
+        const m = (sc.floe || plainFloe)(seed + j);
+        m.position.set(isl.x + Math.cos(a) * rr, 0, isl.y + Math.sin(a) * rr); m.scale.multiplyScalar(s); m.rotation.y = a;
+        g.add(m);
+        if ((seed + j) % 4 === 0 && rr < isl.r * 0.7) {
+          const p = (sc.penguinGroup || plainPenguins)(seed + j);
+          p.position.set(m.position.x, 0.14, m.position.z); p.scale.setScalar(1.5); p.rotation.y = a * 2;
+          g.add(p); this.birds.push(p);
+        }
+      }
+    });
     for (const isl of b.islands) {
+      if (isl.ice) continue;
+      if (arctic) {
+        // islands of the far north: grey rock under snow, with a colony of penguins on the shore
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(isl.r * 0.8, isl.r, 1.2, 28), mat(0x8a9098));
+        m.position.set(isl.x, 0.1, isl.y);
+        const top = new THREE.Mesh(new THREE.SphereGeometry(isl.r * 0.72, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xf4f8fc));
+        top.scale.y = 0.55; top.position.set(isl.x, 0.68, isl.y);
+        g.add(m, top);
+        const seed = Math.round(isl.x * 3 + isl.y * 5);
+        for (let j = 0; j < Math.min(4, Math.round(isl.r / 2)); j++) { const a = seed + j * 1.9, p = (sc.penguinGroup || plainPenguins)(seed + j); p.position.set(isl.x + Math.cos(a) * isl.r * 0.82, 0.72, isl.y + Math.sin(a) * isl.r * 0.82); p.scale.setScalar(1.5); g.add(p); this.birds.push(p); }
+        continue;
+      }
       const m = new THREE.Mesh(new THREE.CylinderGeometry(isl.r * 0.8, isl.r, 1.2, 28), mat(0xcdb57a));
       m.position.set(isl.x, 0.1, isl.y);
       const top = new THREE.Mesh(new THREE.SphereGeometry(isl.r * 0.72, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x4f7a3a));
@@ -48,7 +114,7 @@ export class NavalView {
     }
     this.sea = g;
     this.root.add(g);
-    this.stage.setSky(0xb4cddb);
+    this.stage.setSky(b.theme === 'arctic' ? 0xd6e2ea : 0xb4cddb);
     if (this.boundsKey !== `${b.W}x${b.H}`) {
       this.boundsKey = `${b.W}x${b.H}`;
       this.stage.setBounds(b.W, b.H);
@@ -113,7 +179,11 @@ export class NavalView {
           const p = new THREE.Vector3();
           for (let k = 1; k < 3; k++) if (shipMuzzle(gm, e.x1, e.y1, n0 + k, p)) st.puff(p.clone(), 0xeeeeee, 0.3, 0.9);
         }
-        st.projectile(from, to, e.kind === 'spell' ? 'magic' : e.kind, (e.flight * TICK_MS) / 1000 / this.speed, 0.5);
+        if (e.kind === 'torpedo') { // it runs along the surface trailing foam
+          from.y = 0.1; to.y = 0.1;
+          st.projectile(from, to, 'harpoon', (e.flight * TICK_MS) / 1000 / this.speed, 0);
+          for (let k = 1; k <= 4; k++) st.puff(from.clone().lerp(to, k / 5), 0xffffff, 0.25, 0.8);
+        } else st.projectile(from, to, e.kind === 'spell' ? 'magic' : e.kind, (e.flight * TICK_MS) / 1000 / this.speed, 0.5);
         if (e.kind === 'cannon') st.puff(from.clone(), 0xeeeeee, 0.35, 0.9);
       } else if (e.type === 'blast') {
         st.ring(new THREE.Vector3(e.x, 0.1, e.y), e.r, 0xffb060, 0.6);
@@ -151,8 +221,8 @@ export class NavalView {
         }
         if (e.name === 'breath') {
           const t = b.ents[e.to], n = 7;
-          for (let k = 1; k <= n; k++) st.puff(new THREE.Vector3(x.x + (t.x - x.x) * k / n + (Math.random() - 0.5) * k * 0.3, 1.2 + Math.random(), x.y + (t.y - x.y) * k / n + (Math.random() - 0.5) * k * 0.3), e.fire ? [0xff7a1a, 0xffc040, 0xe8e8e8][k % 3] : 0xe8e8e8, 0.5 + k * 0.08, 0.9);
-          msgs.push({ side: x.side, text: `${x.def.name} breathes scalding fire` });
+          for (let k = 1; k <= n; k++) st.puff(new THREE.Vector3(x.x + (t.x - x.x) * k / n + (Math.random() - 0.5) * k * 0.3, 1.2 + Math.random(), x.y + (t.y - x.y) * k / n + (Math.random() - 0.5) * k * 0.3), e.fire ? [0xff7a1a, 0xffc040, 0xe8e8e8][k % 3] : e.frost ? [0xd8f0ff, 0xffffff, 0x9ad0f0][k % 3] : 0xe8e8e8, 0.5 + k * 0.08, 0.9);
+          msgs.push({ side: x.side, text: `${x.def.name} ${e.frost ? 'breathes killing frost: spray freezes on the rigging' : 'breathes scalding fire'}` });
         }
         if (e.name === 'snare') { const t = b.ents[e.to]; st.ring(new THREE.Vector3(t.x, 0, t.y), 2, 0xc8322a, 0.9); msgs.push({ side: x.side, text: `${x.def.name} fouls ${t.def.name}'s rudder: she cannot turn` }); }
         if (e.name === 'leap') msgs.push({ side: x.side, text: `${x.def.name} snatches topmen from ${b.ents[e.to].def.name}'s rigging` });
@@ -161,6 +231,13 @@ export class NavalView {
         if (e.name === 'overboard' && e.n >= 3) msgs.push({ side: x.side, text: `${e.n} hands are swept from ${b.ents[e.to].def.name}'s deck` });
         if (e.name === 'ink' || e.name === 'charm' || e.name === 'ram') msgs.push({ side: x.side, text: `${x.def.name}: ${e.name === 'ink' ? 'ink cloud blinds the gunners' : e.name === 'charm' ? 'song lures a ship off course' : 'rams a hull'}` });
         if (e.name === 'ink') { const t = b.ents[e.to]; st.puff(new THREE.Vector3(t.x, 0.5, t.y), 0x111111, 1.5, 2); }
+      } else if (e.type === 'torpedo') {
+        const x = b.ents[e.id];
+        if (b.tick !== this.torpSaid) { this.torpSaid = b.tick; msgs.push({ side: x.side, text: `${x.def.name} looses a torpedo at ${b.ents[e.to].def.name}` }); }
+      } else if (e.type === 'frozen') {
+        const x = b.ents[e.id];
+        st.ring(new THREE.Vector3(x.x, 0.1, x.y), 2.2, 0xd8f0ff, 0.9);
+        for (let k = 0; k < 3; k++) st.puff(new THREE.Vector3(x.x + (Math.random() - 0.5) * 2, 1 + Math.random() * 2, x.y + (Math.random() - 0.5) * 2), 0xe8f6ff, 0.5, 1.1);
       } else if (e.type === 'refused') {
         msgs.push({ side: e.side, text: `The ${e.name} will not sail in this company and is gone` });
       } else if (e.type === 'afire') {
@@ -199,6 +276,13 @@ export class NavalView {
         if (sm.position.x < 0 || sm.position.x > b.W || sm.position.z < 0 || sm.position.z > b.H) sm.position.set(Math.random() * b.W, 0.2, Math.random() * b.H);
       }
     }
+    // the penguins shuffle, flap and hop
+    if (this.birds && this.birds.length) {
+      for (const p of this.birds) {
+        if (ARCTIC.animateScenery) { ARCTIC.animateScenery(p, t); continue; }
+        for (const bd of p.userData.birds || []) { const ph = bd.userData.phase || 0; bd.rotation.z = Math.sin(t * 6 + ph) * 0.14; bd.position.y = 0.12 + Math.max(0, Math.sin(t * 1.3 + ph * 2) - 0.85) * 0.6; }
+      }
+    }
     const pos = this.waterGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) pos.array[i * 3 + 1] = this.waveH(this.base[i * 3], this.base[i * 3 + 2], t) - 0.15;
     pos.needsUpdate = true;
@@ -230,8 +314,12 @@ export class NavalView {
       if (!e.ship && died === undefined) animateCreature(m, t, m.userData.phase);
       else if (m.userData.beast && died === undefined) animateCreature(m.userData.beast, t, i * 1.3);
       m.userData.rig?.mixer?.update(dt * speed);
-      const sub = !e.ship && b.tick < e.subUntil;
-      m.position.y -= sub ? 1.2 : 0;
+      // creatures sound; a diving boat goes down until only her wake shows
+      const sub = !e.fort && b.tick < e.subUntil;
+      const depth = sub ? (e.ship ? (m.userData.top || 1.6) + 0.5 : 1.2) : 0;
+      m.userData.depth = (m.userData.depth || 0) + (depth - (m.userData.depth || 0)) * Math.min(1, dt * 3 * speed);
+      m.position.y -= m.userData.depth;
+      if (e.ship && m.userData.bar) m.userData.bar.visible = died === undefined && m.userData.depth < 0.6;
       if (died !== undefined) {
         const k = (t - died) * speed;
         m.userData.bar.visible = false; m.userData.ring.visible = false;
