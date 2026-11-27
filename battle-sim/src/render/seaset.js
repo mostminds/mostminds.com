@@ -24,7 +24,7 @@ const PLAN = {
   desert: [['datePalm', 4, 'mid', [0.8, 1.2]], ['saguaro', 3, 'mid', [0.8, 1.3]], ['dune', 2, 'mid', [0.8, 1.2]], ['rockArch', 0.5, 'mid', [0.9, 1.3]], ['ruinColumns', 0.6, 'in', [0.9, 1.2]], ['nomadTent', 0.8, 'mid', [1, 1.1]],
     ['camelGroup', 0.7, 'mid', [1, 1.1]], ['vultureFlock', 0.8, 'air', [1, 1.3]], ['watchRuin', 0.4, 'rim', [1, 1.1]], ['wreck', 0.5, 'rim', [0.9, 1.2]], ['scorpion', 1.2, 'mid', [1, 1.6]], ['lizard', 1.2, 'rim', [1, 1.5]], ['oasisPool', 0.5, 'in', [1, 1.3]]],
   swamp: [['cypress', 5, 'mid', [0.8, 1.2]], ['cypress', 3, 'shore', [0.8, 1.1]], ['reedBed', 5, 'rim', [0.9, 1.3]], ['reedBed', 3, 'shore', [0.9, 1.2]], ['deadTree', 2, 'mid', [0.8, 1.2]], ['bogMound', 1.5, 'mid', [0.9, 1.3]],
-    ['stiltShack', 0.8, 'rim', [1, 1.1]], ['heronGroup', 1, 'shore', [1, 1.3]], ['alligator', 1.4, 'shore', [1, 1.3]], ['lilyPatch', 3, 'shore', [1, 1.5]], ['punt', 0.7, 'shore', [1, 1.1]], ['fireflies', 2, 'mid', [1, 1.4]], ['giantToad', 1.2, 'rim', [1, 1.5]]],
+    ['stiltShack', 0.8, 'rim', [1, 1.1]], ['heronGroup', 1, 'shore', [1, 1.3]], ['alligator', 1.4, 'shore', [1, 1.3]], ['lilyPatch', 3, 'shore', [1, 1.5]], ['punt', 0.7, 'shore', [1, 1.1]], ['fireflies', 0.6, 'mid', [1, 1.4]], ['giantToad', 1.2, 'rim', [1, 1.5]]],
   volcanic: [['basaltColumns', 3, 'mid', [0.8, 1.4]], ['charredTree', 4, 'mid', [0.8, 1.2]], ['obsidianSpire', 3, 'mid', [0.8, 1.4]], ['smokeVent', 1.5, 'mid', [1, 1.4]], ['ashDune', 2, 'mid', [0.9, 1.3]], ['ashRuin', 0.6, 'mid', [1, 1.1]],
     ['fireLizard', 1.5, 'rim', [1, 1.6]], ['emberBats', 0.8, 'air', [1, 1.3]]],
   jungle: [['coconutPalm', 6, 'rim', [0.8, 1.2]], ['coconutPalm', 3, 'mid', [0.9, 1.2]], ['bananaTree', 4, 'mid', [0.9, 1.3]], ['banyan', 0.8, 'in', [0.8, 1.1]], ['bambooThicket', 2.5, 'mid', [0.9, 1.2]], ['fernClump', 6, 'mid', [0.9, 1.5]],
@@ -33,9 +33,10 @@ const PLAN = {
 };
 // The settled island of each sea: pieces set out round its middle. [key, x, z (in island radii), turn (radians), scale]
 const SETTLEMENT = {
-  jungle: [['tribalHall', 0, -0.05, 0, 1], ['market', 0.3, 0.3, 0.4, 0.9], ['shamanHut', -0.52, -0.3, 0.8, 1], ['cookhouse', -0.22, 0.34, -0.5, 1], ['barracks', 0.1, -0.44, 0.1, 0.9], ['boarPen', 0.5, -0.12, 0, 0.9],
-    ['watchTower', 0.55, 0.38, 0, 1], ['watchTower', -0.3, -0.56, 0, 1], ['watchTower', -0.6, 0.2, 0, 1], ['gatehouse', 0, 0.62, 0, 0.9], ['fetishPole', 0.14, 0.2, 0, 1.2], ['fetishPole', -0.14, 0.2, 0, 1.2],
-    ['boardwalk', 0, 1.02, Math.PI / 2, 1], ['boardwalk', 0, 1.24, Math.PI / 2, 1], ['canoe', 0.24, 0.9, 0.6, 1], ['canoe', -0.26, 0.9, -0.5, 1]],
+  // the hall stands back from the middle with open ground before its porch; the market and cook fire flank the way up from the gate
+  jungle: [['tribalHall', 0, -0.22, 0, 1], ['market', 0.46, 0.34, 0.3, 0.85], ['shamanHut', -0.62, -0.3, 0.8, 1], ['cookhouse', -0.44, 0.36, -0.4, 1], ['barracks', -0.02, -0.66, 0, 0.85], ['boarPen', 0.6, -0.24, 0, 0.85],
+    ['watchTower', 0.7, 0.1, 0, 1], ['watchTower', -0.4, -0.62, 0, 1], ['watchTower', -0.7, 0.14, 0, 1], ['gatehouse', 0, 0.72, 0, 0.9], ['fetishPole', 0.2, 0.34, 0, 1.2], ['fetishPole', -0.2, 0.34, 0, 1.2],
+    ['boardwalk', 0, 1.04, Math.PI / 2, 1], ['boardwalk', 0, 1.3, Math.PI / 2, 1], ['canoe', 0.26, 0.92, 0.6, 1], ['canoe', -0.28, 0.92, -0.5, 1]],
   temperate: [['lighthouse', 0.62, -0.5, 0, 1], ['windmill', -0.3, -0.3, 0.5, 1], ['cottage', 0.1, 0.1, 0.2, 1], ['cottage', -0.2, 0.3, -0.4, 1], ['cottage', 0.36, 0.2, 1.2, 1], ['fishingHut', 0.2, 0.8, 0, 1], ['rowboat', -0.1, 0.9, 0.4, 1],
     ['haystacks', -0.5, 0.05, 0, 1], ['sheepFlock', 0.05, -0.4, 0, 1.1], ['stoneWall', -0.1, -0.15, 0, 1], ['stoneWall', 0.14, -0.15, 0, 1]],
   desert: [['oasisPool', 0, 0, 0, 1.4], ['nomadTent', 0.3, 0.2, 0.4, 1], ['nomadTent', -0.3, 0.25, -0.6, 1], ['nomadTent', 0.05, -0.38, 1.4, 1], ['camelGroup', -0.35, -0.2, 0, 1.1], ['ruinColumns', 0.5, -0.3, 0.2, 1.1], ['watchRuin', -0.6, -0.4, 0, 1.1],
@@ -86,7 +87,8 @@ export function dressIslands(b, group, sc) {
       const s = isl.r * 0.62, cone = (sc.volcanoCone || plainVolcano)(seed);
       cone.position.set(isl.x, 0.6, isl.y); cone.scale.multiplyScalar(s); cone.rotation.y = seed;
       group.add(cone); moving.push(cone);
-      craters.set(i, new THREE.Vector3(isl.x, 0.6 + 1.12 * s, isl.y));
+      const cr = cone.userData.crater; // the sculpted cone says where its crater is
+      craters.set(i, new THREE.Vector3(isl.x, 0.6 + (Array.isArray(cr) ? cr[1] + 0.12 : 1.12) * s, isl.y));
       used.push([isl.x, isl.y, s * 0.95]);
       if (sc.lavaFlow) for (let k = 0; k < 3; k++) {
         const a = seed + k * 2.1;
