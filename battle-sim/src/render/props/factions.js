@@ -1549,7 +1549,7 @@ const ORNAMENTS = {
 const R_CELL = 0.2;
 const cellKey = (x, z) => (Math.floor(x / R_CELL) + 2048) * 4096 + Math.floor(z / R_CELL) + 2048;
 const HUMBLE = new Set(['house', 'hut', 'inn', 'stall', 'tent', 'dockhouse', 'alchemist', 'marketHall', 'tower', 'barracks', 'crates', 'cableTower']);
-const GRAND = new Set(['keep', 'palace', 'temple', 'bank', 'shrine']);
+const GRAND = new Set(['keep', 'palace', 'temple', 'bank', 'shrine', 'statue', 'pillar', 'fountain']);
 const byCache = new Map();
 /** a style as it applies to one building: st.by = { humble | grand | plain | <model id>: overrides } (pal and roof merge key by key) */
 function styleFor(st, id) {
@@ -2130,7 +2130,7 @@ function heater(g, s, c1, c2, o = {}) {
 }
 /** a lantern hanging at the local origin (its top): shape 'box' | 'paper' | 'orb' | 'cage' */
 function lamp(g, s, glowCol, o = {}) {
-  const fr = o.frame || IRON, sh = o.shape || 'box', gl = o.glow ?? 1.5;
+  const fr = o.frame || IRON, sh = o.shape || 'box', gl = o.glow ?? 1.0;
   g.surf(K_PLAIN, 0.5, o.frameMetal ?? 0.8);
   if (sh === 'paper') {
     g.cyl(0.012 * s, 0.012 * s, 0.08 * s, 5, fr); g.in(M(0, -0.31 * s, 0), () => { g.lathe([[0.07, 0.26], [0.09, 0.3], [0.07, 0.31]].map(([r, y]) => [r * s, y * s]), nq(8), fr); g.lathe([[0.07, 0], [0.09, 0.012], [0.07, 0.03]].map(([r, y]) => [r * s, y * s]), nq(8), fr);
@@ -2397,12 +2397,12 @@ function shapeOf(p) {
     o[0] = dx; o[1] = dy; o[2] = dz;
   };
 }
-const thatchCol = (base, seed = 0, dark = 0.72, moss = 0) => (x, y, z, nx, ny, nz) => { const s = Math.abs(nx) > Math.abs(nz) ? z : x; let c = mul(base, (0.7 + 0.4 * noise3(s * 17 + seed, y * 2.2, 1.5)) * (0.84 + 0.16 * tri1(y * 3.3)) * (ny > 0.95 ? dark : 1)); if (moss) c = mix(c, [0.16, 0.24, 0.07], moss * smooth(0.45, 0.7, noise3(x * 1.6 + seed, y * 1.6, z * 1.6))); return c; };
-const leafCol = (pal, seed = 0, bloom = null) => (x, y, z, nx, ny) => { const d = cells3(x * 5.5 + seed, y * 5.5, z * 5.5), q = noise3(x * 1.9 + seed, y * 1.9, z * 1.9); if (bloom && d < 0.12 && q > 0.55) return bloom; return mul(pal[Math.floor(q * pal.length * 1.4) % pal.length], (0.55 + 0.8 * smooth(0.02, 0.5, d)) * (0.75 + 0.3 * (ny || 0.5))); };
+const thatchCol = (base, seed = 0, dark = 0.72, moss = 0) => (x, y, z, nx, ny, nz) => { const s = Math.abs(nx) > Math.abs(nz) ? z : x; let c = mul(base, (0.55 + 0.7 * noise3(s * 13 + seed, y * 2.2, 1.5)) * (0.72 + 0.28 * tri1(y * 3.3)) * (ny > 0.95 ? dark : 1)); if (moss) c = mix(c, [0.16, 0.24, 0.07], moss * smooth(0.45, 0.7, noise3(x * 1.6 + seed, y * 1.6, z * 1.6))); return c; };
+const leafCol = (pal, seed = 0, bloom = null) => (x, y, z, nx, ny) => { const d = cells3(x * 2.6 + seed, y * 2.6, z * 2.6), q = hash1(Math.round(x * 2.6 + seed), Math.round(y * 2.6), Math.round(z * 2.6)), f = cells3(x * 7 + seed, y * 7, z * 7); if (bloom && f < 0.1 && q > 0.6) return bloom; return mul(pal[Math.floor(q * pal.length) % pal.length], (0.4 + 1.0 * smooth(0.0, 0.5, d)) * (0.7 + 0.5 * smooth(0.05, 0.4, f)) * (0.7 + 0.35 * (ny || 0.5))); };
 const hidePatch = (col, seed = 0) => { const alt = [col, mul(col, 0.7), mix(col, rgb(0x7a5a30), 0.6), mix(col, rgb(0xc8b070), 0.45)]; return (x, y, z) => { const cu = x * 2.3 + 0.4 * noise3(z * 3 + seed, 1, 2), cv = z * 2.3 + 0.4 * noise3(x * 3, seed, 5), iu = Math.floor(cu), iv = Math.floor(cv), e = Math.min(cu - iu, 1 - (cu - iu), cv - iv, 1 - (cv - iv)); return mul(alt[Math.floor(hash1(iu, iv, seed) * 4)], (e < 0.07 ? 0.5 : 1) * (0.75 + 0.4 * noise3(x * 8 + seed, y * 8, z * 8))); }; };
-const snowOn = (c, a, x, y, z, ny, k, amt = 0.5) => { if (ny > 0.3) { const t = smooth(0.3, 0.7, ny) * smooth(0.62 - amt * 0.6, 0.72 - amt * 0.6, noise3(x * 1.3 + k.s1, y * 0.9, z * 1.3 + k.s2)); tintTo(c, [0.86, 0.9, 0.96], t); a[0] = lerp(a[0], 0.55, t); a[1] *= 1 - t; } };
+const snowOn = (c, a, x, y, z, ny, k, amt = 0.5) => { if (k.roof) ny = Math.abs(ny); if (ny > 0.3) { const t = smooth(0.3, 0.7, ny) * smooth(0.62 - amt * 0.6, 0.72 - amt * 0.6, noise3(x * 1.3 + k.s1, y * 0.9, z * 1.3 + k.s2)); tintTo(c, [0.86, 0.9, 0.96], t); a[0] = lerp(a[0], 0.55, t); a[1] *= 1 - t; } };
 const mossOn = (c, x, y, z, ny, k, amt = 0.6, col = [0.1, 0.17, 0.045]) => { const t = (ny > 0.15 ? smooth(0.15, 0.6, ny) : 0.35 * smooth(0.9, 0.1, y)) * smooth(0.6 - amt * 0.3, 0.8 - amt * 0.3, noise3(x * 1.5 + k.s1, y * 1.5, z * 1.5 + k.s2)) * amt * 1.3; if (t > 0) tintTo(c, col, Math.min(0.9, t)); };
-const STRAW = rgb(0xc9a956), STRAW_OLD = rgb(0x9a8a5a);
+const STRAW = rgb(0xa8873c), STRAW_OLD = rgb(0x7e7248);
 const TILE_GREEN = sw(0x2f7a4a, 0x2a6a40, 0x3a8a55, 0x256038, 0x348050), TILE_GOLD = sw(0xd9a62e, 0xc8962a, 0xe0b440, 0xb88826), TILE_GREY = sw(0x565a62, 0x4a4e56, 0x62666e, 0x50545c);
 const TURQ = sw(0x1fa39c, 0x2ab4ae, 0x188c8c, 0x35bdb0, 0x1a98a8), TERRA = sw(0xc8643a, 0xb85830, 0xd47444, 0xa84e2c, 0xbe6a40), RED_TILE = sw(0xb8402a, 0xa83a26, 0xc64e30, 0x9c3422);
 const SLATE_BLUE = sw(0x34539a, 0x2d4a8c, 0x3e5fa8, 0x2a4480), SLATE_DARK = sw(0x3c4450, 0x343c48, 0x464e5a, 0x2e3640), BLACK_TILE = sw(0x26242a, 0x1e1c22, 0x2e2a32, 0x22202a), PALE_BLUE = sw(0x8fb4d8, 0x7fa6cc, 0x9fc0e0, 0x86acd4);
@@ -2427,7 +2427,8 @@ Object.assign(STYLES, {
     pal: palOf({ stone: [0x7a4a38, 0x6e4232, 0x84523c, 0x5e3a2e, 0x744636], plaster: [0xd8c8a0, 0xccba90], timber: [0x2e241c, 0x261e18, 0x382c22], roof: [0x3c4450, 0x343c48, 0x464e5a, 0x2e3640], moss: [0x44582e, 0x384a28], gold: [0xc89a3a, 0xb88a30], iron: [0x2a2a2e, 0x222226], other: [0x8a2a22, 0xd8b83a, 0x26262a] }),
     roof: { main: { kind: 'gables', stone: 0x7a4a38, st: brickSt, cope: rgb(0xc8b690), steps: 5, fin: 'ball' }, cap: { kind: 'cap', shape: 'bulb', hk: 1.15, drum: 0.2, col: domeTiles(SLATE_DARK), finial: 'ball', finS: 0.5 } },
     by: { humble: { pal: palOf({ stone: [0xd8cba8, 0xcebf98, 0xe0d4b4, 0xc4b690] }), joint: null },
-      grand: { pal: palOf({ stone: [0xe2ded6, 0xd8d2c8, 0xeae6de, 0xcfcac2] }), joint: null, trim: [rgb(0xf4f2ec)] } },
+      grand: { pal: palOf({ stone: [0xe2ded6, 0xd8d2c8, 0xeae6de, 0xcfcac2] }), joint: null, trim: [rgb(0xf4f2ec)], roof: { main: { kind: 'gables', stone: 0xe2ded6, cope: rgb(0xf4f2ec), steps: 5, fin: 'ball' } } },
+      keep: { pal: palOf({ stone: [0x7a4a38, 0x6e4232, 0x84523c, 0x5e3a2e, 0x744636] }), joint: [0.5, 0.47, 0.42, 0.55], trim: [rgb(0xc8b690)] } },
     fx(cls, x, y, z, ny, c, a, k) { // soot: a grime that thickens toward the eaves and runs down in streaks
       if (cls === C_STONE || cls === C_PLASTER) { const s = (0.25 + 0.5 * smooth(0.3, 1, y / k.H)) * smooth(0.45, 0.8, noise3(x * 5.5 + k.s1, y * 0.5, z * 5.5 + k.s2)); c[0] *= 1 - 0.55 * s; c[1] *= 1 - 0.57 * s; c[2] *= 1 - 0.58 * s; }
     },
@@ -2445,19 +2446,19 @@ Object.assign(STYLES, {
     roof: { cap: { kind: 'cap', shape: 'bell', hs: 2.1, col: (a, t, x, y, z) => mul([0.07, 0.06, 0.09], 0.7 + 0.6 * tri1((a / TAU) * 6)), rough: 0.3, metal: 0.4, finial: 'spike', finS: 0.6, fin: [0.2, 0.2, 0.24] } },
     disp: shapeOf({ jag: 0.3, pinch: 0.1 }),
     fx(cls, x, y, z, ny, c, a, k) { // volcanic glass: slick, with a violet sheen along its facets
-      if (cls === C_STONE || k.roof) { a[0] = 0.32; const e = smooth(0.62, 0.8, noise3(x * 2.6 + k.s1, y * 2.6, z * 2.6 + k.s2)); tintTo(c, [0.2, 0.13, 0.3], e * 0.5); }
+      if (cls === C_STONE || k.roof) { a[0] = 0.42; const e = smooth(0.66, 0.84, noise3(x * 3.4 + k.s1, y * 3.4, z * 3.4 + k.s2)); tintTo(c, [0.13, 0.09, 0.2], e * 0.45); }
       if (cls === C_IRON || cls === C_GOLD) { a[0] = 0.4; a[1] = 0.9; }
     },
   },
   verdant: {
-    glow: [1.0, 0.62, 0.12], window: 0.9,
+    glow: [1.0, 0.5, 0.06], window: 0.9,
     pal: palOf({ stone: [0x5e4a32, 0x52402a, 0x6a543a, 0x4a3a26], plaster: [0x8e7852, 0x826c48, 0x9a845c], timber: [0x4a3826, 0x3e2e20, 0x56422c], roof: [0x3f7a2e, 0x4f8a38, 0x2f6a26, 0x5a9440], moss: [0x4a7a30, 0x3c6a28, 0x5a8a38], gold: [0xe0962a, 0xd08622], iron: [0x3a2e22, 0x30261c], other: [0x6a8a3a, 0xe0962a, 0x8a5a3a] }),
-    roof: { main: { kind: 'drape', thick: 0.26, lump: 0.85, lumpF: 2.6, over: 0.24, drop: 0.14, smooth: 2, skirt: 0.24, surf: K_LEAF, rough: 0.85, col: leafCol(sw(0x3f7a2e, 0x4f8a38, 0x2f6a26, 0x5a9440, 0x6aa048), 2, rgb(0xe8c84a)) },
-      cap: { kind: 'cap', shape: 'bulb', rk: 1.25, hk: 1.0, drum: 0, kind2: 0, rough: 0.85, col: (a, t, x, y, z) => leafCol(sw(0x3f7a2e, 0x4f8a38, 0x2f6a26, 0x5a9440), 4)(x, y, z, 0, 0.6), finial: null } },
+    roof: { main: { kind: 'drape', thick: 0.26, lump: 0.85, lumpF: 2.6, over: 0.24, drop: 0.14, smooth: 2, skirt: 0.24, surf: K_LEAF, rough: 0.85, col: leafCol(sw(0x2f6a26, 0x3a7a2c, 0x24581e, 0x4a8a34, 0x1e4c1a), 2, rgb(0xe8c84a)), on: (g, c, env, topAt) => { const rnd = rng(env.seed % 991 + c.i), n = clamp(Math.round(c.w * c.d * 16), 30, 170), lp = sw(0x2f6a26, 0x3a7a2c, 0x4a8a34, 0x5a9a3c, 0x24581e); g.surf(K_LEAF, 0.8); for (let i = 0; i < n; i++) { const x = lerp(c.x0 - 0.15, c.x1 + 0.15, rnd()), z = lerp(c.z0 - 0.15, c.z1 + 0.15, rnd()), y = topAt(x, z), s = 0.1 + 0.12 * rnd(); if (y < c.eY + 0.02) continue; g.in(M(x, y - 0.02, z, (rnd() - 0.5) * 70, rnd() * 360, (rnd() - 0.5) * 70), () => g.poly([[0, 0, -s], [s * 0.6, s * 0.35, 0], [0, s * 0.1, s], [-s * 0.6, s * 0.35, 0]], 0, 1, 0, mul(lp[i % 5], 0.8 + 0.5 * rnd()))); } } },
+      cap: { kind: 'cap', shape: 'bulb', rk: 1.25, hk: 1.0, drum: 0, kind2: 0, rough: 0.85, col: (a, t, x, y, z) => leafCol(sw(0x2f6a26, 0x3a7a2c, 0x24581e, 0x4a8a34), 4)(x, y, z, 0, 0.5 + 0.5 * t), finial: null } },
     disp: shapeOf({ bulge: 0.07, wob: 0.07 }),
     fx(cls, x, y, z, ny, c, a, k) { // bark: furrowed up and down, mossed wherever it faces the sky
       if (cls === C_STONE || cls === C_TIMBER || cls === C_PLASTER) { const f = 0.72 + 0.5 * noise3(x * 8 + k.s1, y * 0.7, z * 8 + k.s2); c[0] *= f; c[1] *= f; c[2] *= f; }
-      if (cls !== C_GLOW && cls !== C_GLASS && !k.roof) mossOn(c, x, y, z, ny, k, 0.75, [0.14, 0.26, 0.06]);
+      if (cls !== C_GLOW && cls !== C_GLASS && !k.roof) mossOn(c, x, y, z, ny, k, 0.5, [0.12, 0.22, 0.05]);
     },
   },
   grom: {
@@ -2474,23 +2475,23 @@ Object.assign(STYLES, {
     },
   },
   xibalba: {
-    glow: [1.0, 0.7, 0.2], window: 0.5, trim: [rgb(0xe8e2cc)],
-    pal: palOf({ stone: [0xd8d2b8, 0xcec8ac, 0xe0dac2, 0xc4bea4], plaster: [0xe4dcc0, 0xdad2b4], timber: [0x5e4028, 0x503622, 0x6a4a30], roof: [0xb8a26a, 0xa8925c, 0xc4ae76], moss: [0x3f7a34, 0x34682c, 0x4c8a3c], gold: [0xe6b430, 0xd8a428], iron: [0x2aa89a, 0x229488], other: [0x2aa89a, 0xb8482e, 0xe6b430] }),
-    roof: { main: { kind: 'step', n: 3, f: 0.75, wall: { stone: 0xd8d2b8 }, floor: rgb(0xbcb69c), band: (x, y, z) => (Math.floor(x * 5) % 3 === 0 ? [0.1, 0.5, 0.46] : [0.62, 0.2, 0.12]), on: (g, A, B, y) => { const s = Math.min(A, B); g.surf(K_STONE, 0.92); g.in(M(0, y + 0.22, 0), () => g.cbox(s * 1.1, 0.44, s * 0.9, 0.02, stoneTint(rgb(0xd8d2b8), 3))); g.in(M(0, y + 0.5, 0), () => g.cbox(s * 1.3, 0.12, s * 1.05, 0.02, stoneTint(rgb(0xb8482e), 5))); g.in(M(0, y + 0.56, 0), () => prism(g, MERLON.step(s * 0.9, 0.42), 0.1, stoneTint(rgb(0xd8d2b8), 7), [0, 0.08])); for (const e of [0, 180]) g.in(M(0, y + 0.74, 0, 0, e, 0), () => g.in(M(0, 0, 0.055), () => sunDisc(g, 0.55, GOLD, { rays: 0 }))); g.surf(K_PLAIN, 1); g.in(M(0, y + 0.17, s * 0.451), () => g.poly([[-0.1, -0.16, 0], [0.1, -0.16, 0], [0.1, 0.12, 0], [-0.1, 0.12, 0]], 0, 0, 1, [0.03, 0.02, 0.02])); return 1.0; } },
-      cap: { kind: 'cap', merlon: 'step', mh: 0.26, edge: rgb(0xd8d2b8), shape: 'low', col: rgb(0xe6b430), metal: 0.9, rough: 0.3, kind2: 0, drum: 0.1 } },
-    by: { humble: { roof: { main: { kind: 'step', n: 2, f: 0.55, wall: { stone: 0xd8d2b8 }, floor: rgb(0xbcb69c), band: (x) => (Math.floor(x * 5) % 3 === 0 ? [0.1, 0.5, 0.46] : [0.62, 0.2, 0.12]), merlon: 'step', mh: 0.2, edge: rgb(0xd8d2b8) } } } },
+    glow: [1.0, 0.7, 0.2], window: 0.5, trim: [rgb(0xcfc6a6)],
+    pal: palOf({ stone: [0xb9af8e, 0xada384, 0xc4ba98, 0xa2987a], plaster: [0xc8be9c, 0xbcb290], timber: [0x5e4028, 0x503622, 0x6a4a30], roof: [0xb8a26a, 0xa8925c, 0xc4ae76], moss: [0x3f7a34, 0x34682c, 0x4c8a3c], gold: [0xe6b430, 0xd8a428], iron: [0x2aa89a, 0x229488], other: [0x2aa89a, 0xb8482e, 0xe6b430] }),
+    roof: { main: { kind: 'step', n: 3, f: 0.75, wall: { stone: 0xb9af8e }, floor: rgb(0x9a9278), band: (x, y, z) => (Math.floor(x * 5 + 40) % 3 === 0 ? [0.04, 0.42, 0.4] : [0.5, 0.1, 0.05]), on: (g, A, B, y) => { const s = Math.min(A, B); g.surf(K_STONE, 0.92); g.in(M(0, y + 0.22, 0), () => g.cbox(s * 1.1, 0.44, s * 0.9, 0.02, stoneTint(rgb(0xb9af8e), 3))); g.in(M(0, y + 0.5, 0), () => g.cbox(s * 1.3, 0.12, s * 1.05, 0.02, stoneTint(rgb(0xb8482e), 5))); g.in(M(0, y + 0.56, 0), () => prism(g, MERLON.step(s * 0.9, 0.42), 0.1, stoneTint(rgb(0xb9af8e), 7), [0, 0.08])); for (const e of [0, 180]) g.in(M(0, y + 0.74, 0, 0, e, 0), () => g.in(M(0, 0, 0.055), () => sunDisc(g, 0.55, GOLD, { rays: 0 }))); g.surf(K_PLAIN, 1); g.in(M(0, y + 0.17, s * 0.451), () => g.poly([[-0.1, -0.16, 0], [0.1, -0.16, 0], [0.1, 0.12, 0], [-0.1, 0.12, 0]], 0, 0, 1, [0.03, 0.02, 0.02])); return 1.0; } },
+      cap: { kind: 'cap', merlon: 'step', mh: 0.26, edge: rgb(0xb9af8e), shape: 'cone', hk: 0.7, seg: 4, surf: K_STONE, rough: 0.9, col: stoneTint(rgb(0xb9af8e), 5), drum: 0.3, drumCol: rgb(0x8a2a18), finial: 'disc', finS: 0.6 } },
+    by: { humble: { roof: { main: { kind: 'step', n: 2, f: 0.55, wall: { stone: 0xb9af8e }, floor: rgb(0x9a9278), band: (x) => (Math.floor(x * 5 + 40) % 3 === 0 ? [0.04, 0.42, 0.4] : [0.5, 0.1, 0.05]), merlon: 'step', mh: 0.2, edge: rgb(0xb9af8e) } } } },
     fx(cls, x, y, z, ny, c, a, k) { // jungle: vines hang from every ledge, the plinth is painted red
       if (cls === C_STONE || cls === C_PLASTER) {
         const v = smooth(0.58, 0.8, noise3(x * 4.5 + k.s1, y * 0.45, z * 4.5 + k.s2)) * smooth(0.25, 0.9, noise3(x * 0.9, y * 0.9 + k.s2, z * 0.9));
         tintTo(c, [0.08, 0.2, 0.05], v * 0.85);
-        const b = smooth(0.32, 0.26, y) * 0.7; tintTo(c, [0.42, 0.12, 0.06], b * (1 - v));
+        const b = smooth(0.32, 0.26, y) * 0.8; tintTo(c, [0.36, 0.07, 0.03], b * (1 - v));
       }
     },
   },
   velikaya: {
     glow: [1.0, 0.66, 0.25], window: 0.7, trim: [rgb(0xf0ede4)],
-    pal: palOf({ stone: [0xd8d4c8, 0xcecabc, 0xe2ded2, 0xc4c0b4], plaster: [0xeeeae0, 0xe4e0d4], timber: [0xa83a2a, 0x2a5aa0, 0x8a2e22, 0x2e7a4a, 0xc8a030], roof: [0x5a4634, 0x4e3c2c, 0x66503c, 0x44342a], moss: [0x3a5a3a, 0x2e4a30], gold: [0xe6b430, 0xd8a428], iron: [0x3a3a40, 0x2e2e34], other: [0xb8342a, 0x2a5ab0, 0xe6b430] }),
-    roof: { main: { kind: 'dome', shape: 'onion', f: 0.3, rk: 0.7, drum: 0.55, drumCol: rgb(0xe8e4d8), drumWin: [0.1, 0.12, 0.2], col: domeSpiral(ONION[0][0], ONION[0][1], 6, 1.4), finial: 'ball', four: true, wall: { stone: 0xd8d4c8 }, merlon: 'none', edge: rgb(0xe8e4d8), floor: rgb(0xa8a498) },
+    pal: palOf({ stone: [0xc4beb0, 0xb8b2a4, 0xcec8ba, 0xaea89a], plaster: [0xe6e2d6, 0xdcd8cc], timber: [0x7a5230, 0x6c4828, 0x865c38, 0x8a3226], roof: [0x5a4634, 0x4e3c2c, 0x66503c, 0x44342a], moss: [0x3a5a3a, 0x2e4a30], gold: [0xe6b430, 0xd8a428], iron: [0x3a3a40, 0x2e2e34], other: [0xb8342a, 0x2a5ab0, 0xe6b430] }),
+    roof: { main: { kind: 'dome', shape: 'onion', f: 0.3, rk: 0.7, drum: 0.55, drumCol: rgb(0xe8e4d8), drumWin: [0.1, 0.12, 0.2], col: domeSpiral(ONION[0][0], ONION[0][1], 6, 1.4), finial: 'ball', four: true, wall: { stone: 0xc4beb0 }, merlon: 'none', edge: rgb(0xd8d4c8), floor: rgb(0xa8a498) },
       cap: { kind: 'cap', shape: 'onion', hk: 1.0, rk: 0.98, drum: 0.3, drumCol: rgb(0xe8e4d8), col: (a, t, x, y, z, sd) => domeSpiral(ONION[sd % 4][0], ONION[sd % 4][1], 6, 1.4)(a, t, x, y, z), finial: 'ball', finS: 0.5 } },
     by: { humble: { roof: { main: { kind: 'keep' } }, pal: palOf({ stone: [0x94703e, 0x866436, 0xa07a46, 0x7a5a30], plaster: [0xa8834c, 0x9a7642] }), joint: [0.2, 0.14, 0.08, 0.7], trim: null, disp: shapeOf({ logs: 0.035 }) } },
     fx(cls, x, y, z, ny, c, a, k) { if (cls !== C_GLOW && cls !== C_GLASS) snowOn(c, a, x, y, z, ny, k, 0.55); },
@@ -2708,7 +2709,7 @@ Object.assign(ORNAMENTS, {
     dress(g, sv, {
       ridge: [300, (a, i) => g.in(M(0, -0.1, -0.06), () => pennon(g, 0.9 * sc, 0.6 * sc, i ? gold : blue, i ? blue : gold))],
       corner: [420, (a, i) => (i % 2 ? g.in(M(0, -0.05, 0), () => pennon(g, 0.8 * sc, 0.5 * sc, blue, gold)) : pinnacle(g, 0.8 * sc, 'bell', { col: SLATE_BLUE[0], finial: 'spike', shaft: 0.3, hk: 1.3, shaftCol: [0.8, 0.78, 0.72] }))],
-      face: [520, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.3 * sc, 0.02), () => hanging(g, 0.42 * sc, Math.min(0.95 * sc, a.y - 0.05), blue, gold, { device: gold, point: true })) : g.in(M(0, -0.25 * sc, 0), () => archFrame(g, 0.34 * sc, 0.72 * sc, 'point', [0.86, 0.84, 0.78], { fill: (x, y) => [[0.7, 0.1, 0.08], [0.12, 0.25, 0.8], [0.9, 0.65, 0.12], [0.12, 0.55, 0.25]][(Math.floor(x * 14 + 40) + Math.floor(y * 11 + 40)) % 4], fillGlow: 0.8, t: 0.03 })))],
+      face: [520, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.3 * sc, 0.02), () => hanging(g, 0.42 * sc, Math.min(0.95 * sc, a.y - 0.05), blue, gold, { device: gold, point: true })) : g.in(M(0, -0.25 * sc, 0), () => archFrame(g, 0.34 * sc, 0.72 * sc, 'point', [0.86, 0.84, 0.78], { fill: (x, y) => [[0.7, 0.1, 0.08], [0.12, 0.25, 0.8], [0.9, 0.65, 0.12], [0.12, 0.55, 0.25]][(Math.floor(x * 14 + 40) + Math.floor(y * 11 + 40)) % 4], fillGlow: 0.3, t: 0.03 })))],
       door: [300, () => bracketLamp(g, 1.1 * sc, [1.0, 0.62, 0.22])],
     });
   },
@@ -2744,12 +2745,12 @@ Object.assign(ORNAMENTS, {
     fs.forEach((a, i) => { const b = fs[i + 1]; if (b && b.dir === a.dir && Math.hypot(a.x - b.x, a.z - b.z) < 4.2) sv.add(g, 2400, () => { const d = facing(a), pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([lerp(a.x, b.x, t) + d[0] * 0.07, lerp(a.y, b.y, t) + 0.36 * sc - 0.38 * Math.sin(t * Math.PI), lerp(a.z, b.z, t) + d[1] * 0.07]); } chain(g, pts, 0.07 * sc, [0.04, 0.04, 0.05]); }); });
   },
   verdant(g, sv) {
-    const sc = sv.sc, amber = [1.0, 0.6, 0.1], bark = (x, y, z) => mul([0.3, 0.22, 0.13], 0.7 + 0.6 * noise3(x * 9, y * 2, z * 9));
-    const bough = (s, lamp2) => { g.surf(K_WOOD, 0.95); limb(g, [[0, -0.15, 0], [0.04 * s, 0.25 * s, 0.05 * s], [0.02 * s, 0.6 * s, 0.16 * s], [0, 0.78 * s, 0.34 * s]], [0.06 * s, 0.05 * s, 0.035 * s, 0.02 * s], { nu: 6, nv: 8, col: bark }); g.surf(K_LEAF, 0.8); for (let i = 0; i < 5; i++) g.in(M(Math.sin(i * 2.4) * 0.12 * s, (0.5 + 0.08 * i) * s, (0.1 + 0.05 * i) * s, i * 40, i * 77, 0), () => g.poly([[0, -0.09 * s, 0], [0.06 * s, 0, 0.015], [0, 0.09 * s, 0], [-0.06 * s, 0, 0.015]], 0, 0, 1, mul([0.2, 0.42, 0.12], 0.8 + 0.1 * i))); if (lamp2) g.in(M(0, 0.76 * s, 0.34 * s), () => lamp(g, 1.1 * s, amber, { shape: 'orb', frame: [0.2, 0.15, 0.08], glow: 1.4 })); };
+    const sc = sv.sc, amber = [1.0, 0.42, 0.04], bark = (x, y, z) => mul([0.3, 0.22, 0.13], 0.7 + 0.6 * noise3(x * 9, y * 2, z * 9));
+    const bough = (s, lamp2) => { g.surf(K_WOOD, 0.95); limb(g, [[0, -0.15, 0], [0.04 * s, 0.25 * s, 0.05 * s], [0.02 * s, 0.6 * s, 0.16 * s], [0, 0.78 * s, 0.34 * s]], [0.06 * s, 0.05 * s, 0.035 * s, 0.02 * s], { nu: 6, nv: 8, col: bark }); g.surf(K_LEAF, 0.8); for (let i = 0; i < 5; i++) g.in(M(Math.sin(i * 2.4) * 0.12 * s, (0.5 + 0.08 * i) * s, (0.1 + 0.05 * i) * s, i * 40, i * 77, 0), () => g.poly([[0, -0.09 * s, 0], [0.06 * s, 0, 0.015], [0, 0.09 * s, 0], [-0.06 * s, 0, 0.015]], 0, 0, 1, mul([0.2, 0.42, 0.12], 0.8 + 0.1 * i))); if (lamp2) g.in(M(0, 0.76 * s, 0.34 * s), () => lamp(g, 1.1 * s, amber, { shape: 'orb', frame: [0.2, 0.15, 0.08], glow: 0.9 })); };
     dress(g, sv, {
       ridge: [420, () => g.in(M(0, -0.1, -0.1), () => bough(1.0 * sc, true))],
       corner: [420, (a, i) => g.in(M(0, -0.1, -0.05), () => bough(0.85 * sc, i % 2 === 0))],
-      face: [520, (a, i) => { g.in(M(0, -a.y + 0.05, 0), () => creeper(g, 0.9 * sc, Math.min(a.wallH || 1.6, a.y + 0.7), i * 7 + a.dir, { n: 3, leaves: 10, bloom: rgb(0xe8c84a), bloomP: 0.12 })); if (i % 2 === 0) g.in(M(0, 0.2 * sc, 0), () => bracketLamp(g, 0.95 * sc, amber, { shape: 'orb', frame: [0.2, 0.15, 0.08], glow: 1.4 })); }],
+      face: [520, (a, i) => { g.in(M(0, -a.y + 0.05, 0), () => creeper(g, 0.9 * sc, Math.min(a.wallH || 1.6, a.y + 0.7), i * 7 + a.dir, { n: 3, leaves: 10, bloom: rgb(0xe8c84a), bloomP: 0.12 })); if (i % 2 === 0) g.in(M(0, 0.2 * sc, 0), () => bracketLamp(g, 0.95 * sc, amber, { shape: 'orb', frame: [0.2, 0.15, 0.08], glow: 0.9 })); }],
       door: [340, (a) => onGround(g, a, 0.12, () => { g.surf(K_WOOD, 0.95); limb(g, [[0, -0.1, 0], [a.e * -0.03, 0.7 * sc, 0.03], [a.e * -0.12, 1.25 * sc, 0.02], [a.e * -0.4, 1.6 * sc, 0]], [0.07 * sc, 0.06 * sc, 0.045 * sc, 0.02 * sc], { nu: 6, nv: 10, amp: 0.1, seed: 3, col: bark }); })],
     });
   },
@@ -2759,7 +2760,7 @@ Object.assign(ORNAMENTS, {
     dress(g, sv, {
       ridge: [520, () => g.in(M(0, -0.12, -0.2), () => vent(1.1 * sc))],
       corner: [300, () => { g.surf(K_STONE, 0.9); g.in(M(0, 0.1 * sc, 0), () => g.cbox(0.26 * sc, 0.2 * sc, 0.26 * sc, 0.03, stoneTint([0.3, 0.29, 0.28], 2))); g.surf(K_PLAIN, 0.4, 0.8); g.in(M(0, 0.22 * sc, 0), () => g.cbox(0.3 * sc, 0.05 * sc, 0.3 * sc, 0.01, bronze)); }],
-      face: [620, (a, i) => { if ((i + a.dir) % 2) { g.in(M(0, 0, 0), () => plate(g, 0.5 * sc, 0.6 * sc, bronze, { rivet: [0.7, 0.5, 0.2], metal: 0.75, rough: 0.45 })); g.in(M(0, 0, 0.03), () => sigil(g, i * 11 + a.dir + 2, 0.42 * sc, [1.0, 0.55, 0.15], 1.2, 0.05)); } else pipe(g, [[-0.34 * sc, -0.45 * sc, 0.07], [-0.34 * sc, 0.1 * sc, 0.07], [-0.1 * sc, 0.3 * sc, 0.07], [0.34 * sc, 0.3 * sc, 0.07], [0.34 * sc, 0.55 * sc, 0.07]], 0.04 * sc, cu); }],
+      face: [620, (a, i) => { if ((i + a.dir) % 2) { g.in(M(0, 0, 0), () => plate(g, 0.5 * sc, 0.6 * sc, bronze, { rivet: [0.7, 0.5, 0.2], metal: 0.75, rough: 0.45 })); g.in(M(0, 0, 0.03), () => sigil(g, i * 11 + a.dir + 2, 0.42 * sc, [1.0, 0.4, 0.06], 0.7, 0.05)); } else pipe(g, [[-0.34 * sc, -0.45 * sc, 0.07], [-0.34 * sc, 0.1 * sc, 0.07], [-0.1 * sc, 0.3 * sc, 0.07], [0.34 * sc, 0.3 * sc, 0.07], [0.34 * sc, 0.55 * sc, 0.07]], 0.04 * sc, cu); }],
       door: [460, (a) => onGround(g, a, 0.16, () => { g.surf(K_STONE, 0.9); g.in(M(0, 0.45 * sc, 0), () => g.cbox(0.26 * sc, 0.9 * sc, 0.26 * sc, 0.03, stoneTint([0.3, 0.29, 0.28], 4))); g.surf(K_PLAIN, 0.4, 0.8); for (const y of [0.2, 0.7]) g.in(M(0, y * sc, 0), () => g.cbox(0.29 * sc, 0.07 * sc, 0.29 * sc, 0.01, bronze)); g.in(M(0, 0.9 * sc, 0), () => finial(g, 'flame', 0.6 * sc, { fin: [0.5, 0.32, 0.12] })); })],
     });
   },
