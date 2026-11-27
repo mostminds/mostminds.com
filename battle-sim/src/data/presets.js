@@ -16,7 +16,7 @@ export const PRESETS = [
   // ---------------- Field battles ----------------
   {
     id: 'breakout', name: 'Arena breakout: 12 Knights vs 12 Cyclopes', mode: 'field',
-    scn: { size: 40, shape: 'plains', biome: 'temperate', structures: ring(20, 20, 17, 'pillar'),
+    scn: { size: 40, shape: 'plains', biome: 'temperate', fronts: false, structures: ring(20, 20, 17, 'pillar'), // an arena fight: no rally points
       sides: [{ name: 'Garrison', posture: 'defend', groups: [g('knight', 12)], placed: [] },
               { name: 'Cyclopes', posture: 'attack', groups: [g('cyclops', 12)], placed: [] }] },
   },
@@ -252,8 +252,8 @@ for (const p of PRESETS) enlarge(p);
 
 // Army sizes retuned by search (tools: many seeded battles per preset) after ranks, trades, supply and
 // the larger maps changed the odds. The factor scales every group on side B; breakout is set by hand.
-const BALANCE = { coralteeth: 2.05, dragons: 1.26, emberreach: 0.63, frostfang: 0.89, highcrag: 0.71, horde: 1.19, ironbay: 0.63,
-  landing: 1.12, saltmarsh: 1.33, saltspire: 1.26, siege: 1.12, sunscar: 0.8, twinpeaks: 1.5, wildwood: 1.19 };
+const BALANCE = { coralteeth: 1.54, dragons: 1.59, greenmantle: 1.15, emberreach: 1, frostfang: 0.92, highcrag: 1.12, horde: 1.19, ironbay: 0.63,
+  landing: 0.84, saltmarsh: 1.25, saltspire: 1.99, siege: 0.84, sunscar: 0.64, twinpeaks: 1.41, wildwood: 1.19 };
 for (const p of PRESETS) {
   const f = BALANCE[p.id];
   if (f) for (const gr of p.scn.sides[1].groups) gr.count = Math.max(1, Math.round(gr.count * f));

@@ -115,7 +115,10 @@ export function frontsTick(b) {
   if (!F) return;
   if (b.tick % 4 === 0) {
     let turned = false;
+    // a landing force's beaches are nobody's to take until it has men ashore
+    if (b.mode === 'amphibious' && !F.ashore) F.ashore = b.units.some((u) => u.alive && u.side === 0 && u.x >= 0 && u.aboard < 0 && !u.def.fly);
     for (const p of fixedPoints(b)) {
+      if (b.mode === 'amphibious' && p.home === 0 && !F.ashore) continue;
       let mine = 0, theirs = 0;
       for (const u of b.units) {
         if (!u.alive || u.x < 0 || u.aboard >= 0 || u.def.fly || distTo(u, p) > HOLD_R) continue;
@@ -274,9 +277,11 @@ export function frontsWinner(b, alive0, alive1) {
   if (alive0 === 0) return 1;
   if (alive1 === 0) return 0;
   const pts = fixedPoints(b), held = [pts.filter((p) => p.side === 0).length, pts.filter((p) => p.side === 1).length];
+  // every point held, and held for a while, with the enemy general dead
+  F.sole ||= [0, 0];
   for (const side of [0, 1]) {
     const lead = b.units[F.leader[1 - side]];
-    if (held[side] === pts.length && !(lead && lead.alive)) return side;
+    if (held[side] === pts.length && !(lead && lead.alive)) { if (!F.sole[side]) F.sole[side] = b.tick; if (b.tick - F.sole[side] >= 60) return side; } else F.sole[side] = 0;
   }
   if (b.tick >= b.maxTicks) {
     // time: more points, then the general still standing
