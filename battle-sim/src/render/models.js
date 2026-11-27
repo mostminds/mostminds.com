@@ -863,7 +863,7 @@ function buildWarBeast(def, sideColor) {
 }
 
 export function buildShip(def, sideColor) {
-  if (def.beast && NAVAL_CREATURES[def.beast] && !instantiateCustom(def.id, def.len, 'ship')) return buildWarBeast(def, sideColor);
+  if (def.beast && !def.kind && NAVAL_CREATURES[def.beast] && !instantiateCustom(def.id, def.len, 'ship')) return buildWarBeast(def, sideColor);
   if (!instantiateCustom(def.id, def.len, 'ship')) { const ss = guarded(`ship:${def.id}`, () => REG.ship(def, sideColor)); if (ss) return ss; }
   const custom = instantiateCustom(def.id, def.len, 'ship');
   if (custom) {

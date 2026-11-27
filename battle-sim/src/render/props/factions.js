@@ -1957,9 +1957,10 @@ const ROOFS = {
       roofEdge(g, f.A, f.B, y1, o);
       const R = Math.min(f.A, f.B) * (o.rk ?? 0.78), long = f.A / f.B;
       let top = 0;
-      g.in(M(0, y1, 0), () => { top = domeOn(g, R, o, sd); });
-      if (long > 1.4) for (const e of [-1, 1]) g.in(M(e * (f.A - R * 0.5 - 0.08), y1, 0), () => domeOn(g, R * 0.5, { ...o, drumWin: null }, sd + e));
-      else if (o.four && R > 0.75) for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) g.in(M(sx * (f.A - R * 0.26), y1, sz * (f.B - R * 0.26)), () => domeOn(g, R * 0.24, { ...o, drumWin: null, finS: 0.3 }, sd + sx + sz * 2));
+      const od = { ...o, kind: o.surf };
+      g.in(M(0, y1, 0), () => { top = domeOn(g, R, od, sd); });
+      if (long > 1.4) for (const e of [-1, 1]) g.in(M(e * (f.A - R * 0.5 - 0.08), y1, 0), () => domeOn(g, R * 0.5, { ...od, drumWin: null }, sd + e));
+      else if (o.four && R > 0.75) for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) g.in(M(sx * (f.A - R * 0.26), y1, sz * (f.B - R * 0.26)), () => domeOn(g, R * 0.24, { ...od, drumWin: null, finS: 0.3 }, sd + sx + sz * 2));
       c.top = y1 + top;
     });
   },
@@ -1970,7 +1971,7 @@ const ROOFS = {
       if (o.merlon) { g.surf(K_STONE, 0.93); g.cyl(R, R, 0.2, nq(16), o.edge || [0.6, 0.58, 0.5], false, true); const nm = Math.max(6, Math.round((TAU * R) / 0.34)), shape = MERLON[o.merlon](0.2, o.mh || 0.22); for (let i = 0; i < nm; i++) g.in(M(0, 0.2, 0, 0, (i * 360) / nm, 0).multiply(M(0, 0, R - 0.06)), () => prism(g, shape, 0.1, o.merlonCol || o.edge || [0.6, 0.58, 0.5], [0, 0.04])); c.top = y0 + 0.42; if (!o.shape) return; }
       const Rd = o.merlon ? R * 0.6 : R * (o.rk ?? 1);
       let top = 0;
-      g.in(M(0, o.merlon ? 0.2 : 0, 0), () => { top = domeOn(g, Rd, { drum: 0.12, hk: clamp(((c.rY - c.eY) / (profTop(DOME[o.shape || 'cone']) * Rd)) * (o.hs ?? 1), 0.7, 3.2), ...o }, env.seed % 577 + c.i); });
+      g.in(M(0, o.merlon ? 0.2 : 0, 0), () => { top = domeOn(g, Rd, { drum: 0.12, hk: clamp(((c.rY - c.eY) / (profTop(DOME[o.shape || 'cone']) * Rd)) * (o.hs ?? 1), 0.7, 3.2), ...o, kind: o.surf }, env.seed % 577 + c.i); });
       c.top = y0 + (o.merlon ? 0.2 : 0) + top;
     });
   },
@@ -2690,6 +2691,276 @@ Object.assign(STYLES, {
         if (band > 0) tintTo(c, Math.floor(u * 0.8) % 3 === 0 ? [0.75, 0.1, 0.35] : [0.92, 0.9, 0.84], band * 0.9);
       }
     },
+  },
+});
+// ---------- what each realm hangs on its buildings ----------
+const facing = (a) => [[0, 1], [1, 0], [0, -1], [-1, 0]][a.dir ?? 0];
+/** something standing on the ground in front of the door, midway between the two door anchors; fn(width) runs facing out */
+function atDoor(g, sv, est, out, fn) {
+  if (sv.door.length < 2) return;
+  const [a, b] = sv.door, d = facing(a);
+  sv.add(g, est, () => g.in(M((a.x + b.x) / 2 + d[0] * out, 0, (a.z + b.z) / 2 + d[1] * out, 0, a.yaw, 0), () => fn(Math.hypot(a.x - b.x, a.z - b.z))));
+}
+const onGround = (g, a, out, fn) => g.in(M(0, -a.y, out), fn);
+Object.assign(ORNAMENTS, {
+  graal(g, sv) {
+    const sc = sv.sc, blue = rgb(0x2d4a9c), gold = rgb(0xe0aa2e);
+    dress(g, sv, {
+      ridge: [300, (a, i) => g.in(M(0, -0.1, -0.06), () => pennon(g, 0.9 * sc, 0.6 * sc, i ? gold : blue, i ? blue : gold))],
+      corner: [420, (a, i) => (i % 2 ? g.in(M(0, -0.05, 0), () => pennon(g, 0.8 * sc, 0.5 * sc, blue, gold)) : pinnacle(g, 0.8 * sc, 'bell', { col: SLATE_BLUE[0], finial: 'spike', shaft: 0.3, hk: 1.3, shaftCol: [0.8, 0.78, 0.72] }))],
+      face: [520, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.3 * sc, 0.02), () => hanging(g, 0.42 * sc, Math.min(0.95 * sc, a.y - 0.05), blue, gold, { device: gold, point: true })) : g.in(M(0, -0.25 * sc, 0), () => archFrame(g, 0.34 * sc, 0.72 * sc, 'point', [0.86, 0.84, 0.78], { fill: (x, y) => [[0.7, 0.1, 0.08], [0.12, 0.25, 0.8], [0.9, 0.65, 0.12], [0.12, 0.55, 0.25]][(Math.floor(x * 14 + 40) + Math.floor(y * 11 + 40)) % 4], fillGlow: 0.8, t: 0.03 })))],
+      door: [300, () => bracketLamp(g, 1.1 * sc, [1.0, 0.62, 0.22])],
+    });
+  },
+  aurelia(g, sv) {
+    const sc = sv.sc, holy = sv.id === 'temple' || sv.id === 'shrine';
+    const relic = (s) => { g.in(M(0, -0.06 * s, 0.02, -6, 0, 0), () => skull(g, 1.5 * s, true)); g.surf(K_PLAIN, 0.4, 0.85); for (const e of [-1, 1]) g.in(M(0, -0.02 * s, 0.03, 0, 0, e * 42), () => { g.cbox(0.035 * s, 0.7 * s, 0.03, 0.006, rgb(0x5a4030)); g.in(M(0, 0.33 * s, 0.01), () => g.cbox(0.2 * s, 0.11 * s, 0.07, 0.012, [0.5, 0.48, 0.44])); }); };
+    dress(g, sv, {
+      ridge: [200, () => g.in(M(0, -0.06, -0.1), () => finial(g, 'ball', 0.7 * sc, { fin: BRASS }))],
+      corner: [400, () => pinnacle(g, 0.8 * sc, 'bulb', { col: SLATE_DARK[0], finial: 'ball', shaft: 0.26, shaftCol: [0.4, 0.26, 0.2], finS: 0.35 })],
+      face: [700, (a, i) => (holy || (i + a.dir) % 3 === 0 ? relic(0.8 * sc) : (i + a.dir) % 3 === 1 ? g.in(M(0, 0.3 * sc, 0.02), () => hanging(g, 0.4 * sc, Math.min(0.85 * sc, a.y - 0.05), rgb(0x1e1e22), rgb(0xd8b83a), { chief: true, point: true })) : g.in(M(0, 0, 0), () => windowPane(g, 0.3 * sc, 0.42 * sc, { col: [1.0, 0.7, 0.3], glow: 0.7, trim: [0.13, 0.1, 0.08], trimKind: K_WOOD, shape: 'screen' })))],
+      door: [300, () => bracketLamp(g, 1.1 * sc, [1.0, 0.55, 0.18])],
+    });
+  },
+  aethel(g, sv) {
+    const sc = sv.sc, silver = rgb(0xdde2ea), marble = (x, y, z) => mul([0.93, 0.91, 0.86], 0.9 + 0.14 * noise3(x * 4, y * 9, z * 4));
+    dress(g, sv, {
+      ridge: [500, () => g.in(M(0, -0.05, -0.1), () => finial(g, 'crystal', 0.9 * sc, { fin: silver, cglow: 1.3 }))],
+      corner: [600, () => pinnacle(g, 0.9 * sc, 'bell', { col: PALE_BLUE[0], finial: 'crystal', shaft: 0.35, hk: 1.6, shaftCol: [0.94, 0.92, 0.86], finS: 0.45, fin: silver, r: 0.085 })],
+      face: [420, (a, i) => g.in(M(0, -0.32 * sc, 0), () => archFrame(g, 0.36 * sc, 0.82 * sc, 'ogee', silver, { kind: K_PLAIN, metal: 0.85, rough: 0.3, fill: [0.35, 0.7, 0.95], fillGlow: 0.55, t: 0.025 }))],
+      door: [360, (a) => onGround(g, a, 0.16, () => columnOn(g, Math.min(1.7, a.wallH || 1.6), 0.075, marble, silver, { capMetal: 0.8 }))],
+    });
+  },
+  kaelneth(g, sv) {
+    const sc = sv.sc, ob = (x, y, z) => mul([0.06, 0.05, 0.08], 0.6 + 0.9 * noise3(x * 5, y * 5, z * 5)), red = rgb(0x7a0e18), fs = sv.faces;
+    const shards = (s, n) => { for (let i = 0; i < n; i++) g.in(M(0, 0, 0, i ? 26 : 6, i * (360 / Math.max(1, n - 1)), 0), () => thorn(g, (i ? 0.55 : 1) * s, (i ? 0.06 : 0.085) * s, ob, { rough: 0.25, metal: 0.5 })); };
+    dress(g, sv, {
+      ridge: [400, () => g.in(M(0, -0.12, -0.06), () => shards(0.9 * sc, 4))],
+      corner: [400, () => g.in(M(0, -0.1, 0), () => shards(0.85 * sc, 4))],
+      eave: [300, () => g.in(M(0, -0.12, 0, 20, 0, 0), () => thorn(g, 0.6 * sc, 0.06 * sc, ob, { rough: 0.25, metal: 0.5 }))],
+      face: [460, (a, i) => g.in(M(0, 0.32 * sc, 0.02), () => hanging(g, 0.44 * sc, Math.min(1.05 * sc, a.y), red, [0.03, 0.03, 0.04], { point: true, device: [0.03, 0.03, 0.04] }))],
+      door: [320, () => bracketLamp(g, 1.1 * sc, [1.0, 0.08, 0.05], { shape: 'cage' })],
+    });
+    fs.forEach((a, i) => { const b = fs[i + 1]; if (b && b.dir === a.dir && Math.hypot(a.x - b.x, a.z - b.z) < 4.2) sv.add(g, 2400, () => { const d = facing(a), pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([lerp(a.x, b.x, t) + d[0] * 0.07, lerp(a.y, b.y, t) + 0.36 * sc - 0.38 * Math.sin(t * Math.PI), lerp(a.z, b.z, t) + d[1] * 0.07]); } chain(g, pts, 0.07 * sc, [0.04, 0.04, 0.05]); }); });
+  },
+  verdant(g, sv) {
+    const sc = sv.sc, amber = [1.0, 0.6, 0.1], bark = (x, y, z) => mul([0.3, 0.22, 0.13], 0.7 + 0.6 * noise3(x * 9, y * 2, z * 9));
+    const bough = (s, lamp2) => { g.surf(K_WOOD, 0.95); limb(g, [[0, -0.15, 0], [0.04 * s, 0.25 * s, 0.05 * s], [0.02 * s, 0.6 * s, 0.16 * s], [0, 0.78 * s, 0.34 * s]], [0.06 * s, 0.05 * s, 0.035 * s, 0.02 * s], { nu: 6, nv: 8, col: bark }); g.surf(K_LEAF, 0.8); for (let i = 0; i < 5; i++) g.in(M(Math.sin(i * 2.4) * 0.12 * s, (0.5 + 0.08 * i) * s, (0.1 + 0.05 * i) * s, i * 40, i * 77, 0), () => g.poly([[0, -0.09 * s, 0], [0.06 * s, 0, 0.015], [0, 0.09 * s, 0], [-0.06 * s, 0, 0.015]], 0, 0, 1, mul([0.2, 0.42, 0.12], 0.8 + 0.1 * i))); if (lamp2) g.in(M(0, 0.76 * s, 0.34 * s), () => lamp(g, 1.1 * s, amber, { shape: 'orb', frame: [0.2, 0.15, 0.08], glow: 1.4 })); };
+    dress(g, sv, {
+      ridge: [420, () => g.in(M(0, -0.1, -0.1), () => bough(1.0 * sc, true))],
+      corner: [420, (a, i) => g.in(M(0, -0.1, -0.05), () => bough(0.85 * sc, i % 2 === 0))],
+      face: [520, (a, i) => { g.in(M(0, -a.y + 0.05, 0), () => creeper(g, 0.9 * sc, Math.min(a.wallH || 1.6, a.y + 0.7), i * 7 + a.dir, { n: 3, leaves: 10, bloom: rgb(0xe8c84a), bloomP: 0.12 })); if (i % 2 === 0) g.in(M(0, 0.2 * sc, 0), () => bracketLamp(g, 0.95 * sc, amber, { shape: 'orb', frame: [0.2, 0.15, 0.08], glow: 1.4 })); }],
+      door: [340, (a) => onGround(g, a, 0.12, () => { g.surf(K_WOOD, 0.95); limb(g, [[0, -0.1, 0], [a.e * -0.03, 0.7 * sc, 0.03], [a.e * -0.12, 1.25 * sc, 0.02], [a.e * -0.4, 1.6 * sc, 0]], [0.07 * sc, 0.06 * sc, 0.045 * sc, 0.02 * sc], { nu: 6, nv: 10, amp: 0.1, seed: 3, col: bark }); })],
+    });
+  },
+  grom(g, sv) {
+    const sc = sv.sc, bronze = (x, y, z) => mul([0.5, 0.32, 0.12], 0.75 + 0.5 * noise3(x * 11, y * 11, z * 11)), cu = (x, y, z) => mix(mul([0.55, 0.3, 0.14], 0.8 + 0.4 * noise3(x * 9, y * 9, z * 9)), [0.25, 0.5, 0.42], smooth(0.6, 0.8, noise3(x * 4, y * 4 + 3, z * 4)) * 0.6);
+    const vent = (s) => { pipe(g, [[0, -0.2, 0], [0, 0.3 * s, 0], [0, 0.5 * s, 0.06 * s]], 0.055 * s, cu); g.in(M(0, 0.5 * s, 0.06 * s), () => plume(g, 0.7 * s, [0.8, 0.8, 0.78], 3)); };
+    dress(g, sv, {
+      ridge: [520, () => g.in(M(0, -0.12, -0.2), () => vent(1.1 * sc))],
+      corner: [300, () => { g.surf(K_STONE, 0.9); g.in(M(0, 0.1 * sc, 0), () => g.cbox(0.26 * sc, 0.2 * sc, 0.26 * sc, 0.03, stoneTint([0.3, 0.29, 0.28], 2))); g.surf(K_PLAIN, 0.4, 0.8); g.in(M(0, 0.22 * sc, 0), () => g.cbox(0.3 * sc, 0.05 * sc, 0.3 * sc, 0.01, bronze)); }],
+      face: [620, (a, i) => { if ((i + a.dir) % 2) { g.in(M(0, 0, 0), () => plate(g, 0.5 * sc, 0.6 * sc, bronze, { rivet: [0.7, 0.5, 0.2], metal: 0.75, rough: 0.45 })); g.in(M(0, 0, 0.03), () => sigil(g, i * 11 + a.dir + 2, 0.42 * sc, [1.0, 0.55, 0.15], 1.2, 0.05)); } else pipe(g, [[-0.34 * sc, -0.45 * sc, 0.07], [-0.34 * sc, 0.1 * sc, 0.07], [-0.1 * sc, 0.3 * sc, 0.07], [0.34 * sc, 0.3 * sc, 0.07], [0.34 * sc, 0.55 * sc, 0.07]], 0.04 * sc, cu); }],
+      door: [460, (a) => onGround(g, a, 0.16, () => { g.surf(K_STONE, 0.9); g.in(M(0, 0.45 * sc, 0), () => g.cbox(0.26 * sc, 0.9 * sc, 0.26 * sc, 0.03, stoneTint([0.3, 0.29, 0.28], 4))); g.surf(K_PLAIN, 0.4, 0.8); for (const y of [0.2, 0.7]) g.in(M(0, y * sc, 0), () => g.cbox(0.29 * sc, 0.07 * sc, 0.29 * sc, 0.01, bronze)); g.in(M(0, 0.9 * sc, 0), () => finial(g, 'flame', 0.6 * sc, { fin: [0.5, 0.32, 0.12] })); })],
+    });
+  },
+  xibalba(g, sv) {
+    const sc = sv.sc, lime = stoneTint(rgb(0xd8d2b8), 3);
+    dress(g, sv, {
+      ridge: [300, () => g.in(M(0, 0.1 * sc, -0.1), () => sunDisc(g, 0.8 * sc, GOLD, { rays: 12 }))],
+      corner: [200, () => { g.surf(K_STONE, 0.92); prism(g, MERLON.step(0.34 * sc, 0.36 * sc), 0.14, lime, [0, 0.06]); g.in(M(0, 0.16 * sc, 0.075), () => g.stud(0.05 * sc, [0.1, 0.55, 0.5], 6)); }],
+      face: [480, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.1 * sc, 0.02), () => sunDisc(g, 0.85 * sc, GOLD, { rays: 16, ray: [0.1, 0.5, 0.46] })) : g.in(M(0, (a.wallH || 1.6) - a.y - 0.05, 0), () => creeper(g, 1.0 * sc, -Math.min(1.1, a.y) * sc, i * 5 + a.dir, { n: 4, leaves: 9, size: 0.08 })))],
+      door: [520, (a) => onGround(g, a, 0.18, () => megalith(g, 1.15 * sc, 0.17 * sc, a.e + 3, { col: rgb(0xcec8ac), moss: 0.3, sq: 0.9, flat: [1, 0.45], paint: (x, y, z, c) => (y > 0.25 * sc && y < 0.95 * sc && Math.abs(x) < 0.09 * sc && (Math.floor(y * 9) % 2 === 0) ? [0.1, 0.5, 0.46] : c) }))],
+    });
+  },
+  velikaya(g, sv) {
+    const sc = sv.sc, hum = HUMBLE.has(sv.id);
+    dress(g, sv, {
+      ridge: [560, (a, i) => g.in(M(0, -0.25 * sc, -0.04, 0, 90, 0), () => crossedBeams(g, 0.62 * sc, rgb(0xa83a2a), { head: rgb(0xe6b430) }))],
+      corner: [520, (a, i) => pinnacle(g, 0.85 * sc, 'onion', { col: domeSpiral(ONION[i % 4][0], ONION[i % 4][1], 5, 1.4), finial: 'ball', shaft: 0.3, shaftCol: [0.9, 0.88, 0.82], finS: 0.32, r: 0.1, capK: 1.35, sides: 10 })],
+      face: [420, (a, i) => { const c1 = [rgb(0x2a5ab0), rgb(0xb8342a), rgb(0x2a8a5a)][(i + a.dir) % 3]; g.in(M(0, -0.22 * sc, 0), () => archFrame(g, 0.36 * sc, 0.6 * sc, 'ogee', c1, { kind: K_WOOD, fill: [1.0, 0.72, 0.3], fillGlow: 0.6, t: 0.04, stripe: rgb(0xeee8d8) })); }],
+      door: [300, () => bracketLamp(g, 1.0 * sc, [1.0, 0.62, 0.22])],
+    });
+    void hum;
+  },
+  tianlong(g, sv) {
+    const sc = sv.sc, red = rgb(0x9a2418), lan = [1.0, 0.16, 0.06];
+    dress(g, sv, {
+      ridge: [260, () => g.in(M(0, -0.06, -0.1), () => horn(g, [[0, 0, -0.1], [0, 0.04, 0.08], [0, 0.2 * sc, 0.2 * sc], [0, 0.42 * sc, 0.2 * sc], [0, 0.5 * sc, 0.08 * sc]], 0.07 * sc, GOLD, mul(GOLD, 0.6), { metal: 0.6, rings: 12, nu: 6 }))],
+      corner: [420, (a, i) => (i % 2 ? null : pinnacle(g, 0.72 * sc, 'sweep', { col: TILE_GREEN[0], finial: 'ball', shaft: 0.42, shaftCol: red, shaftKind: K_WOOD, hk: 0.9, capK: 1.5, sides: 8 }))],
+      face: [360, (a, i) => ((i + a.dir) % 2 ? null : g.in(M(0, 0.2 * sc, 0), () => bracketLamp(g, 1.25 * sc, lan, { shape: 'paper', tassel: GOLD, frame: [0.12, 0.08, 0.05], glow: 0.95 })))],
+      door: [300, (a) => { onGround(g, a, 0.14, () => columnOn(g, Math.min(1.5, a.wallH || 1.5), 0.07, red, GOLD, { capMetal: 0.8 })); g.in(M(a.e * -0.2, 0.42 * sc, 0), () => bracketLamp(g, 1.1 * sc, lan, { shape: 'paper', tassel: GOLD, frame: [0.12, 0.08, 0.05], glow: 0.95 })); }],
+    });
+  },
+  ironbound(g, sv) {
+    const sc = sv.sc, iron = (x, y, z) => mul([0.07, 0.065, 0.065], 0.7 + 0.7 * noise3(x * 12, y * 12, z * 12));
+    dress(g, sv, {
+      ridge: [900, (a, i) => g.in(M(0, -0.1, -0.08, 8, 0, 0), () => { thorn(g, 0.8 * sc, 0.035 * sc, iron); g.in(M(0, 0.5 * sc, 0.0, 0, 0, 0), () => skull(g, 1.5 * sc, true)); })],
+      corner: [330, () => { for (const ry of [-40, 0, 40]) g.in(M(0, -0.1, 0, 34, ry, 0), () => thorn(g, 0.6 * sc, 0.055 * sc, iron)); }],
+      eave: [300, () => g.in(M(0, -0.1, 0, 30, 0, 0), () => thorn(g, 0.6 * sc, 0.055 * sc, iron))],
+      face: [900, (a, i) => { if ((i + a.dir) % 2) { plate(g, 0.62 * sc, 0.5 * sc, iron, { rivet: [0.25, 0.22, 0.2] }); g.in(M(0.12 * sc, -0.12 * sc, 0), () => plate(g, 0.4 * sc, 0.34 * sc, iron, { rivet: [0.25, 0.22, 0.2] })); } else { chain(g, [[0, 0.5 * sc, 0.05], [0, 0.05 * sc, 0.07]], 0.06 * sc, [0.05, 0.05, 0.05]); g.in(M(0, -0.2 * sc, 0.03, -10, 0, 0), () => skull(g, 1.6 * sc, true)); } }],
+      door: [1300, (a) => onGround(g, a, 0.2, () => { skullPile(g, 1.3 * sc, 4, a.e + 2); })],
+    });
+  },
+  screaming(g, sv) {
+    const sc = sv.sc, fl = [[[0.7, 1.0, 0.3], [0.9, 0.3, 0.9], [0.3, 0.9, 0.8]], [[1.0, 0.4, 0.9], [0.5, 0.3, 1.0], [0.3, 0.9, 0.5]]];
+    const spike = (s, i) => g.in(M(0, 0, 0, (i % 3 - 1) * 14, i * 50, 10), () => crystal(g, 0.09 * s, 0.75 * s, i * 7 + 3, { deep: [rgb(0x5a1a8a), rgb(0x1a7a7a), rgb(0x8a1a5a)][i % 3], bright: [rgb(0xe89aff), rgb(0x9affe8), rgb(0xff9ad8)][i % 3], glow: 1.0 }));
+    dress(g, sv, {
+      ridge: [500, (a, i) => g.in(M(0, -0.08, -0.1), () => { g.surf(K_PLAIN, 0.4, 0.85); g.lathe([[0.1 * sc, 0], [0.14 * sc, 0.06 * sc], [0.08 * sc, 0.1 * sc]], 8, BRASS); g.in(M(0, 0.06 * sc, 0), () => fire(g, 0.7 * sc, fl[i % 2], i + 1, 1.5)); })],
+      corner: [520, (a, i) => g.in(M(0, -0.12, 0), () => { spike(sc, i); g.in(M(0.1 * sc, 0, 0.04, 20, 0, -24), () => spike(0.6 * sc, i + 1)); })],
+      eave: [300, (a, i) => g.in(M(0, -0.12, 0, 24, 0, 0), () => spike(0.8 * sc, i))],
+      face: [620, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.05, 0.02), () => eyeball(g, 1.5 * sc, [[1.0, 0.85, 0.1], [0.9, 0.2, 0.9], [0.3, 1.0, 0.4]][i % 3])) : g.in(M(0, -0.3 * sc, 0.0, 90, 0, 0), () => g.in(M(0, 0.0, 0.0, 0, 0, 0), () => { for (const [x, r] of [[-0.14, 0.2], [0.1, 0.26], [0.02, 0.15]]) g.in(M(x * sc, 0, -Math.abs(x) * sc - 0.02), () => g.in(M(0, 0, 0, -90, 0, 0), () => mushroom(g, 0.12 * sc, r * sc, [rgb(0x9a3a8a), rgb(0x3a8a7a), rgb(0xb8a03a)][i % 3], i + x * 9, 0.7))); })))],
+      door: [900, (a) => onGround(g, a, 0.2, () => fungi(g, 1.3 * sc, [rgb(0x9a3a8a), rgb(0x3a8a7a)][a.e > 0 ? 0 : 1], a.e + 2, 0.7))],
+    });
+  },
+  cloven(g, sv) {
+    const sc = sv.sc, blood = [0.3, 0.03, 0.02];
+    dress(g, sv, {
+      ridge: [700, (a, i) => g.in(M(0, -0.35 * sc, -0.12), () => { for (const e of [-1, 1]) g.in(M(0, 0, 0, 8, 0, e * 24), () => stake(g, 0.03 * sc, 1.1 * sc, i + e, rgb(0x4a3a2a))); g.in(M(0, 0.62 * sc, 0.03), () => skull(g, 1.3 * sc, true)); for (const e of [-1, 1]) g.in(M(e * 0.05 * sc, 0.8 * sc, 0, 0, 0, e * -40), () => horn(g, [[0, 0, 0], [0, 0.2 * sc, 0.04], [0, 0.4 * sc, -0.03]], 0.035 * sc, BONE, BONE_OLD, { nu: 6, nv: 8 })); })],
+      corner: [330, () => g.in(M(0, -0.15, 0, 16, 0, 0), () => horn(g, [[0, 0, -0.03], [0, 0.2 * sc, 0.12 * sc], [0, 0.55 * sc, 0.2 * sc], [0, 0.9 * sc, 0.1 * sc]], 0.07 * sc, mul(BONE, 0.9), rgb(0x5a4a3a), { rings: 24 }))],
+      face: [650, (a, i) => g.in(M(0, -a.y, 0.14), () => ((i + a.dir) % 2 ? boneRack(g, 0.8 * sc, 1.0 * sc, i + 3) : megalith(g, 0.9 * sc, 0.16 * sc, i * 3 + a.dir, { col: rgb(0x6e6a5e), lean: 0.08, paint: (x, y, z, c, u, v) => (v > 0.3 && v < 0.85 && noise3(x * 9, y * 3, z * 9) > 0.52 ? blood : c) })))],
+      door: [600, (a) => onGround(g, a, 0.22, () => megalith(g, 1.5 * sc, 0.2 * sc, a.e * 5 + 7, { col: rgb(0x6e6a5e), lean: a.e * -0.06, paint: (x, y, z, c, u, v) => (v > 0.25 && (noise3(x * 7, y * 2.5, z * 7) > 0.55 || Math.abs(Math.hypot(x, y - 0.9 * sc) - 0.12 * sc) < 0.025) ? blood : c) }))],
+    });
+  },
+  fimbul(g, sv) {
+    const sc = sv.sc, paints = [rgb(0x8a2a22), rgb(0x2a4a7a), rgb(0xc8a44a), rgb(0x2e5a3a)];
+    dress(g, sv, {
+      ridge: [560, () => g.in(M(0, -0.3 * sc, -0.02, 0, 90, 0), () => crossedBeams(g, 0.85 * sc, rgb(0x4e3828), { head: rgb(0x7a5a3a) }))],
+      corner: [330, () => g.in(M(0, -0.15, 0, 10, 0, 0), () => horn(g, [[0, 0, -0.03], [0, 0.25 * sc, 0.1 * sc], [0, 0.6 * sc, 0.12 * sc], [0, 0.95 * sc, 0.0]], 0.06 * sc, mul(BONE, 1.0), BONE_OLD, { rings: 20, flat: [1, 0.6] }))],
+      face: [820, (a, i) => { for (const e of [-1, 1]) g.in(M(e * 0.3 * sc, 0, 0.04, 0, 0, e * 8), () => roundShield(g, 0.24 * sc, rgb(0x6a5236), paints[(i * 2 + (e > 0 ? 1 : 0) + a.dir) % 4], i + e + 3)); }],
+      door: [380, (a) => onGround(g, a, 0.14, () => rib(g, [0, 0, 0], [a.e * -0.55 * sc, 1.7 * sc, 0.02], [a.e * 0.22 * sc, 0.25 * sc, 0], 0.06 * sc, a.e + 3))],
+    });
+  },
+  ashur(g, sv) {
+    const sc = sv.sc, brass = (x, y, z) => mul([0.62, 0.45, 0.14], 0.75 + 0.45 * noise3(x * 11, y * 11, z * 11)), dark = stoneTint([0.1, 0.08, 0.08], 3);
+    dress(g, sv, {
+      ridge: [520, () => g.in(M(0, -0.15, -0.25), () => { g.surf(K_STONE, 0.9); g.cyl(0.13 * sc, 0.1 * sc, 0.7 * sc, 8, dark, false, true); g.in(M(0, 0.68 * sc, 0), () => plume(g, 1.0 * sc, [0.05, 0.045, 0.045], 2)); })],
+      corner: [200, () => { g.surf(K_STONE, 0.9); prism(g, MERLON.step(0.36 * sc, 0.4 * sc), 0.14, dark, [0, 0.06]); }],
+      face: [560, (a, i) => { if ((i + a.dir) % 2) { plate(g, 0.56 * sc, 0.66 * sc, brass, { rivet: [0.8, 0.6, 0.2], metal: 0.85, rough: 0.35 }); g.surf(K_PLAIN, 0.5, 0.3); g.in(M(0, 0, 0.03), () => prism(g, MERLON.step(0.32 * sc, 0.36 * sc).map(([x, y]) => [x, y - 0.18 * sc]), 0.02, [0.06, 0.1, 0.2], [0, 0])); } else { g.surf(K_PLAIN, 0.6, 0, 1.3); g.in(M(0, -0.1 * sc, 0.012), () => g.poly([[-0.16 * sc, -0.2 * sc, 0], [0.16 * sc, -0.2 * sc, 0], [0.16 * sc, 0.1 * sc, 0], [0, 0.22 * sc, 0], [-0.16 * sc, 0.1 * sc, 0]], 0, 0, 1, [1.0, 0.3, 0.04])); g.surf(K_PLAIN, 0.4, 0.85); for (const x of [-0.08, 0, 0.08]) g.in(M(x * sc, -0.05 * sc, 0.02), () => g.cbox(0.025 * sc, 0.44 * sc, 0.025, 0.005, [0.05, 0.045, 0.04])); } }],
+      door: [460, (a) => onGround(g, a, 0.18, () => { g.surf(K_STONE, 0.9); g.in(M(0, 0, 0, 0, 45, 0), () => g.lathe([[0.2 * sc, 0], [0.15 * sc, 0.9 * sc], [0.19 * sc, 0.95 * sc], [0.19 * sc, 1.02 * sc]], 4, dark)); g.surf(K_PLAIN, 0.4, 0.85); g.in(M(0, 0.5 * sc, 0, 0, 45, 0), () => g.lathe([[0.19 * sc, 0], [0.18 * sc, 0.09 * sc]], 4, brass)); g.in(M(0, 1.02 * sc, 0), () => finial(g, 'flame', 0.6 * sc, { fin: [0.5, 0.36, 0.12] })); })],
+    });
+  },
+  greenhide(g, sv) {
+    const sc = sv.sc, rnd = sv.rnd, red = rgb(0xb8281c), rust = rustCol(3);
+    dress(g, sv, {
+      ridge: [800, (a, i) => g.in(M(0, -0.3, -0.05, 12 + rnd() * 8, 0, (rnd() - 0.5) * 14), () => { stake(g, 0.045 * sc, 1.4 * sc, i + 5, rgb(0x4e3c28)); g.in(M(0, 1.1 * sc, 0.04), () => skull(g, 1.6 * sc, true)); for (const e of [-1, 1]) g.in(M(e * 0.06 * sc, 1.25 * sc, 0, 0, 0, e * -55), () => horn(g, [[0, 0, 0], [0, 0.2 * sc, 0.05], [0, 0.42 * sc, -0.02]], 0.04 * sc, BONE, BONE_OLD, { nu: 6, nv: 8 })); })],
+      corner: [400, (a, i) => g.in(M(0, -0.2, 0, 18 + rnd() * 10, 0, (rnd() - 0.5) * 20), () => horn(g, [[0, 0, -0.04], [0, 0.2 * sc, 0.16 * sc], [0, 0.6 * sc, 0.26 * sc], [0, 1.0 * sc, 0.1 * sc]], 0.085 * sc, mul(BONE, 0.95), rgb(0x6a5a40), { rings: 18 }))],
+      face: [760, (a, i) => { g.in(M(0, 0, 0, 0, 0, (rnd() - 0.5) * 14), () => plate(g, 0.7 * sc, 0.5 * sc, rust, { metal: 0.5, rough: 0.8, rivet: [0.12, 0.1, 0.09] })); if ((i + a.dir) % 2) g.in(M(0, -0.06 * sc, 0.03), () => teethGlyph(g, 0.56 * sc, 1.2 * sc, red, 5)); else g.in(M(0.18 * sc, 0.2 * sc, 0.02, 0, 0, -9), () => plate(g, 0.4 * sc, 0.36 * sc, rustCol(9), { metal: 0.5, rough: 0.8, rivet: [0.12, 0.1, 0.09] })); }],
+      door: [420, (a) => onGround(g, a, 0.16, () => { for (const [rx, rz, hh] of [[10, a.e * 8, 1.3], [16, a.e * -14, 0.9]]) g.in(M(rz * 0.01, 0, 0, rx, 0, rz), () => stake(g, 0.05 * sc, hh * sc, a.e + rx)); })],
+    });
+  },
+  skar(g, sv) {
+    const sc = sv.sc, rnd = sv.rnd, grn = [0.3, 1.0, 0.18], cu = (x, y, z) => mix(mul([0.55, 0.3, 0.14], 0.8 + 0.4 * noise3(x * 9, y * 9, z * 9)), [0.25, 0.5, 0.42], smooth(0.5, 0.75, noise3(x * 4, y * 4 + 3, z * 4)) * 0.7), rags = [rgb(0x7a2a22), rgb(0x8a8a5a), rgb(0x4a6a8a), rgb(0x6a5a40)];
+    dress(g, sv, {
+      ridge: [560, (a, i) => g.in(M(0, -0.2, -0.2, (rnd() - 0.5) * 16, 0, (rnd() - 0.5) * 16), () => { pipe(g, [[0, 0, 0], [0.02, 0.35 * sc, 0], [0.1 * sc, 0.6 * sc, 0.02], [0.08 * sc, 0.95 * sc, 0]], 0.05 * sc, cu); g.in(M(0.08 * sc, 0.95 * sc, 0), () => plume(g, 0.6 * sc, [0.25, 0.8, 0.2], i, 0.9)); })],
+      corner: [420, (a, i) => g.in(M(0, -0.05, 0, (rnd() - 0.5) * 14, 0, (rnd() - 0.5) * 14), () => vessel(g, 1.0 * sc, grn, { metalCol: [0.55, 0.3, 0.14] }))],
+      eave: [300, (a, i) => g.in(M(0, -0.25, 0.04, 14, 0, (rnd() - 0.5) * 20), () => stake(g, 0.03 * sc, 0.8 * sc, i + 2, rgb(0x3e3428), rgb(0x3e3428)))],
+      face: [560, (a, i) => { const q = (i + a.dir) % 3; if (q === 0) g.in(M(0, -0.1 * sc, 0), () => scaffold(g, 0.9 * sc, Math.min(1.5, a.y + 0.5) * sc, rgb(0x54463a), i + 2)); else if (q === 1) g.in(M(0, 0.3 * sc, 0.02, 0, 0, (rnd() - 0.5) * 12), () => awning(g, 0.8 * sc, 0.4 * sc, rags[i % 4], rags[(i + 1) % 4], { n: 3, scallop: 5 })); else { pipe(g, [[-0.3 * sc, 0.4 * sc, 0.06], [-0.3 * sc, -0.1 * sc, 0.06], [0.1 * sc, -0.2 * sc, 0.06], [0.3 * sc, -0.5 * sc, 0.06]], 0.035 * sc, cu); g.in(M(-0.3 * sc, 0.4 * sc, 0.06), () => vessel(g, 0.7 * sc, grn, { metalCol: [0.55, 0.3, 0.14] })); } }],
+      door: [320, () => bracketLamp(g, 1.1 * sc, grn, { shape: 'cage', frame: [0.3, 0.17, 0.08] })],
+    });
+  },
+  crimson(g, sv) {
+    const sc = sv.sc, pale = [0.72, 0.86, 1.0], stone = [0.2, 0.2, 0.22];
+    dress(g, sv, {
+      ridge: [260, () => g.in(M(0, -0.06, -0.08), () => finial(g, 'spike', 0.9 * sc, { fin: [0.2, 0.2, 0.24] }))],
+      corner: [520, (a, i) => (i % 2 ? gargoyle(g, 0.9 * sc, stone) : pinnacle(g, 0.85 * sc, 'bell', { col: BLACK_TILE[0], finial: 'spike', shaft: 0.3, hk: 2.2, shaftCol: [0.2, 0.2, 0.22], r: 0.085, finS: 0.4, fin: [0.3, 0.3, 0.34] }))],
+      eave: [460, () => g.in(M(0, -0.2, -0.1), () => gargoyle(g, 0.85 * sc, stone))],
+      face: [520, (a, i) => { const q = (i + a.dir) % 3; if (q === 0) g.in(M(0, 0.1, 0), () => batMotif(g, 0.8 * sc, [0.05, 0.05, 0.06])); else if (q === 1) g.in(M(0, -0.3 * sc, 0), () => archFrame(g, 0.3 * sc, 0.8 * sc, 'point', [0.25, 0.25, 0.28], { fill: [0.9, 0.05, 0.07], fillGlow: 1.0, t: 0.03 })); else g.in(M(0, 0.25 * sc, 0), () => bracketLamp(g, 1.0 * sc, pale, { shape: 'cage', glow: 1.3 })); }],
+      door: [320, () => bracketLamp(g, 1.15 * sc, pale, { shape: 'cage', glow: 1.3 })],
+    });
+  },
+  khemet(g, sv) {
+    const sc = sv.sc, sand = stoneTint(rgb(0xe2c488), 3), bands = (x, y, z) => { const b = Math.floor(y * 9 / sc); return y > 0.5 * sc ? [[0.12, 0.25, 0.6], [0.85, 0.8, 0.62], [0.6, 0.16, 0.1], [0.85, 0.8, 0.62], [0.15, 0.45, 0.25]][((b % 5) + 5) % 5] : [0.85, 0.74, 0.5]; };
+    dress(g, sv, {
+      ridge: [120, () => g.in(M(0, -0.04, -0.12, 0, 45, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); g.lathe([[0.16 * sc, 0], [0, 0.26 * sc]], 4, GOLD); })],
+      corner: [160, () => g.in(M(0, -0.02, 0), () => obeliskOn(g, 0.55 * sc, 0.07 * sc, sand, GOLD))],
+      face: [360, (a, i) => g.in(M(0, -a.y, 0.11), () => columnOn(g, Math.min((a.wallH || 1.6) - 0.1, 2.0), 0.09 * sc, bands, (x, y, z) => (Math.floor(Math.atan2(z, x) * 2.6 + 9) % 2 ? [0.15, 0.45, 0.25] : [0.85, 0.62, 0.12])))],
+      door: [200, (a) => onGround(g, a, 0.24, () => obeliskOn(g, 1.7 * sc, 0.1 * sc, (x, y, z) => (Math.abs(x) < 0.03 && Math.floor(y * 8) % 2 ? [0.4, 0.3, 0.16] : sand(x, y, z)), GOLD))],
+    });
+  },
+  drowned(g, sv) {
+    const sc = sv.sc, gh = [0.3, 1.0, 0.6], rusty = rustCol(5), fs = sv.faces;
+    dress(g, sv, {
+      ridge: [520, (a, i) => g.in(M(0, -0.25, -0.15, i ? -8 : 10, 0, i ? 7 : -9), () => { g.surf(K_WOOD, 0.95); g.cyl(0.04 * sc, 0.028 * sc, 1.3 * sc, 6, [0.16, 0.15, 0.12], false, true); g.in(M(0, 1.05 * sc, 0.03), () => g.beam(0.7 * sc, 0.035, 0.035, 0.008, [0.14, 0.13, 0.1], 2)); g.in(M(0, 1.04 * sc, 0.05), () => rag(g, 0.6 * sc, 0.7 * sc, [0.42, 0.45, 0.38], i * 5 + 1, 0.8)); })],
+      corner: [330, (a, i) => g.in(M(0, -0.1, 0), () => { g.surf(K_WOOD, 0.95); g.cyl(0.03 * sc, 0.025 * sc, 0.75 * sc, 5, [0.16, 0.15, 0.12], false, true); g.surf(K_PLAIN, 0.6, 0.6); g.tube([[0, 0.72 * sc, 0], [0, 0.8 * sc, 0.08 * sc], [0, 0.74 * sc, 0.16 * sc]], 0.012, 4, rusty); g.in(M(0, 0.74 * sc, 0.16 * sc), () => lamp(g, 0.95 * sc, gh, { shape: 'cage', frame: [0.25, 0.14, 0.08], glow: 1.5 })); })],
+      face: [520, (a, i) => { seaCrust(g, 1.3 * sc, i * 3 + a.dir); if (i % 2 === 0) g.in(M(0.25 * sc, 0.3 * sc, 0), () => bracketLamp(g, 0.95 * sc, gh, { shape: 'cage', frame: [0.25, 0.14, 0.08], glow: 1.5 })); }],
+      door: [300, () => bracketLamp(g, 1.1 * sc, gh, { shape: 'cage', frame: [0.25, 0.14, 0.08], glow: 1.5 })],
+    });
+    fs.forEach((a, i) => { const b = fs[i + 1]; if (b && b.dir === a.dir && Math.hypot(a.x - b.x, a.z - b.z) < 4.2) sv.add(g, 2400, () => { const d = facing(a), pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([lerp(a.x, b.x, t) + d[0] * 0.07, lerp(a.y, b.y, t) + 0.2 * sc - 0.45 * Math.sin(t * Math.PI), lerp(a.z, b.z, t) + d[1] * 0.07]); } chain(g, pts, 0.07 * sc, mul(RUST, 0.6), 0.5); }); });
+  },
+  gorge(g, sv) {
+    const sc = sv.sc, tusk = (s, e = 1) => horn(g, [[0, -0.2, 0], [e * 0.1 * s, 0.3 * s, 0.1 * s], [e * 0.3 * s, 0.75 * s, 0.22 * s], [e * 0.34 * s, 1.2 * s, 0.14 * s], [e * 0.2 * s, 1.5 * s, -0.04 * s]], 0.1 * s, mul(BONE, 1.05), rgb(0x8a7a5a), { rings: 26, nu: nq(10) });
+    dress(g, sv, {
+      ridge: [800, (a, i) => g.in(M(0, -0.2, -0.15), () => { for (const e of [-1, 1]) g.in(M(e * 0.08 * sc, 0, 0), () => tusk(0.8 * sc, e)); })],
+      corner: [420, (a, i) => g.in(M(0, -0.1, 0), () => tusk(0.6 * sc, i % 2 ? 1 : -1))],
+      face: [700, (a, i) => g.in(M(0, -a.y, 0.12), () => { if ((i + a.dir) % 2) { for (let q = 0; q < 5; q++) rib(g, [(q - 2) * 0.17 * sc, 0, 0], [(q - 2) * 0.17 * sc, 0.75 * sc, 0.02], [0, 0.1, 0.12 * sc], 0.028 * sc, q + i); logTo(g, [-0.45 * sc, 0.4 * sc, 0.06], [0.45 * sc, 0.42 * sc, 0.06], 0.02, 0.02, i, { seg: 5, capB: true }); } else boneRack(g, 0.8 * sc, 1.1 * sc, i + 5); })],
+      door: [1300, (a) => onGround(g, a, 0.22, () => { megalith(g, 0.5 * sc, 0.22 * sc, a.e + 5, { col: rgb(0x5e5448), flat: [1, 0.9], moss: 0 }); g.in(M(0, 0.46 * sc, 0), () => skullPile(g, 1.1 * sc, 3, a.e + 4)); })],
+    });
+  },
+  westmark(g, sv) {
+    const sc = sv.sc, or = rgb(0xe07a1e), wh = rgb(0xeeeae0), bl = rgb(0x2a4a8a);
+    dress(g, sv, {
+      ridge: [300, (a, i) => g.in(M(0, -0.1, -0.06), () => pennon(g, 0.85 * sc, 0.55 * sc, i ? bl : or, wh, { bars: 0 }))],
+      corner: [420, (a, i) => (i % 2 ? g.in(M(0, -0.05, 0), () => pennon(g, 0.8 * sc, 0.5 * sc, or, wh)) : pinnacle(g, 0.8 * sc, 'bulb', { col: rgb(0x4a9a80), finial: 'ball', shaft: 0.26, shaftCol: [0.4, 0.14, 0.09], finS: 0.32 }))],
+      face: [420, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.05, 0), () => windowPane(g, 0.36 * sc, 0.56 * sc, { col: [0.75, 0.86, 0.95], glow: 0.45, trim: wh, shape: 'screen' })) : g.in(M(0, 0.35 * sc, 0), () => { g.surf(K_WOOD, 0.9); g.beamTo([0, 0, 0], [0, 0.04, 0.5 * sc], 0.06, 0.06, 0.01, woodTint(rgb(0x3a2a20), 2), 1); rope(g, [[0, 0, 0.45 * sc], [0, -0.4 * sc, 0.45 * sc]], 0.01); g.surf(K_PLAIN, 0.5, 0.8); g.in(M(0, -0.44 * sc, 0.45 * sc), () => g.add(new THREE.TorusGeometry(0.04 * sc, 0.012, 4, 8), IRON)); }))],
+      door: [300, () => bracketLamp(g, 1.05 * sc, [1.0, 0.75, 0.4])],
+    });
+  },
+  principalities(g, sv) {
+    const sc = sv.sc, marble = [0.94, 0.91, 0.84];
+    dress(g, sv, {
+      ridge: [200, () => g.in(M(0, -0.06, -0.1), () => finial(g, 'ball', 0.6 * sc))],
+      corner: [200, () => { g.surf(K_STONE, 0.9); prism(g, MERLON.swallow(0.3 * sc, 0.38 * sc), 0.14, stoneTint(rgb(0xe8cfa0), 2), [0, 0.06]); }],
+      face: [330, (a, i) => g.in(M(0, -a.y + 0.04, 0), () => { for (const e of [-1, 1]) g.in(M(e * 0.3 * sc, 0, 0), () => archFrame(g, 0.48 * sc, Math.min(1.15 * sc, a.y + 0.35), 'round', marble, { fill: [0.09, 0.07, 0.06], t: 0.045 })); })],
+      door: [300, (a) => onGround(g, a, 0.15, () => columnOn(g, Math.min(1.6, a.wallH || 1.5), 0.075, (x, y, z) => mul(marble, 0.9 + 0.15 * noise3(x * 5, y * 8, z * 5)), marble))],
+    });
+  },
+  sunkings(g, sv) {
+    const sc = sv.sc, white = [0.93, 0.92, 0.87], gold = rgb(0xf0c030), black = [0.03, 0.03, 0.035];
+    const balcony = (w, s) => { g.surf(K_PLAIN, 0.5, 0.8); for (const y of [0, 0.22 * s]) g.in(M(0, y, 0.16 * s), () => g.cbox(w, 0.02, 0.02, 0.004, black)); for (let i = 0; i <= 6; i++) g.in(M(-w / 2 + (w * i) / 6, 0.11 * s, 0.16 * s), () => g.cbox(0.014, 0.22 * s, 0.014, 0.003, black)); for (const e of [-1, 1]) g.in(M(e * w / 2, 0, 0.08 * s), () => g.cbox(0.02, 0.02, 0.16 * s, 0.004, black)); g.in(M(0, -0.02, 0.08 * s), () => g.cbox(w, 0.03, 0.17 * s, 0.006, white)); g.in(M(0, 0.3 * s, 0.012), () => windowPane(g, 0.24 * s, 0.5 * s, { col: [0.2, 0.16, 0.12], glow: 0.0, shape: 'round', trim: gold, trimKind: K_PLAIN, trimMetal: 0.9 })); };
+    dress(g, sv, {
+      ridge: [300, (a, i) => (i === 0 ? g.in(M(0, -0.3 * sc, -0.12), () => bellFrame(g, 1.0 * sc, white)) : g.in(M(0, -0.06, -0.1), () => finial(g, 'ball', 0.6 * sc, { fin: gold })))],
+      apex: [300, () => g.in(M(0, -0.06, 0), () => finial(g, 'ball', 0.7 * sc, { fin: gold }))],
+      corner: [420, () => pinnacle(g, 0.8 * sc, 'hemi', { col: (a2, t) => (Math.floor((a2 / TAU) * 12) % 2 ? [0.12, 0.25, 0.62] : [0.86, 0.84, 0.78]), rough: 0.35, finial: 'ball', shaft: 0.3, shaftCol: white, finS: 0.3, fin: gold })],
+      face: [420, (a, i) => g.in(M(0, -0.1 * sc, 0), () => balcony(0.6 * sc, sc))],
+      door: [420, (a) => g.in(M(a.e * -0.12, -0.55 * sc, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); g.in(M(0, 0.5 * sc, 0.03), () => g.cbox(0.09 * sc, 1.0 * sc, 0.06, 0.012, gold)); g.in(M(0, 1.06 * sc, 0.03, 0, 0, a.e * 30), () => g.add(new THREE.TorusGeometry(0.09 * sc, 0.03 * sc, 5, 10, 4.2), gold)); g.in(M(0, 1.02 * sc, 0.04), () => g.stud(0.06 * sc, gold, 6)); })],
+    });
+  },
+  caliphate(g, sv) {
+    const sc = sv.sc, sand = rgb(0xdfc292);
+    dress(g, sv, {
+      ridge: [200, () => g.in(M(0, -0.1, -0.06), () => pennon(g, 0.8 * sc, 0.5 * sc, rgb(0x1f8a5a), null))],
+      corner: [460, (a, i) => (i % 2 ? null : pinnacle(g, 0.85 * sc, 'point', { col: TURQ[0], finial: 'ball', shaft: 0.55, shaftCol: sand, r: 0.085, capK: 1.25, finS: 0.3 }))],
+      face: [420, (a, i) => ((i + a.dir) % 2 ? g.in(M(0, 0.25 * sc, 0.02), () => awning(g, 0.8 * sc, 0.42 * sc, rgb(0xc8402c), rgb(0xeadfc4))) : g.in(M(0, -0.3 * sc, 0), () => archFrame(g, 0.4 * sc, 0.7 * sc, 'horse', rgb(0xeadfc4), { stripe: rgb(0xb8402c), fill: [0.05, 0.12, 0.18], t: 0.04 })))],
+      door: [340, (a) => g.in(M(0, -0.5 * sc, 0), () => archFrame(g, 0.5 * sc, 0.95 * sc, 'horse', rgb(0xeadfc4), { stripe: rgb(0xb8402c), fill: [0.1, 0.3, 0.34], fillGlow: 0.3, t: 0.045 }))],
+    });
+  },
+  shogunate(g, sv) {
+    const sc = sv.sc, dark = rgb(0x2a2420), red = rgb(0xb42a1c);
+    dress(g, sv, {
+      ridge: [260, () => g.in(M(0, -0.06, -0.1), () => horn(g, [[0, 0, -0.1], [0, 0.03, 0.06], [0, 0.16 * sc, 0.16 * sc], [0, 0.36 * sc, 0.12 * sc]], 0.065 * sc, rgb(0xc8a44a), rgb(0x5a5e66), { metal: 0.5, rings: 10, nu: 6, flat: [0.5, 1] }))],
+      corner: [420, (a, i) => (i % 2 ? null : pinnacle(g, 0.7 * sc, 'sweep', { col: TILE_GREY[0], finial: 'spike', shaft: 0.36, shaftCol: [0.9, 0.88, 0.82], hk: 0.9, capK: 1.5, sides: 8, finS: 0.3, fin: rgb(0xc8a44a) }))],
+      face: [300, (a, i) => g.in(M(0, 0.02, 0), () => windowPane(g, 0.46 * sc, 0.42 * sc, { col: [0.96, 0.9, 0.72], glow: 0.55, shape: 'screen', trim: dark, trimKind: K_WOOD }))],
+    });
+    atDoor(g, sv, 700, 0.42, (w) => gateFrame(g, clamp(w * 0.62, 0.8, 1.5), 1.45 * sc, red, { curve: 0.12, cap: [0.08, 0.08, 0.09], foot: [0.3, 0.3, 0.3], r: 0.06 }));
+  },
+  mistisles(g, sv) {
+    const sc = sv.sc, spiral = (x, y, z, c, u, v) => { const yy = v - 0.6, xx = (u - 0.5) * 1.6, d = Math.hypot(xx, yy * 1.4), an = Math.atan2(yy, xx); return u > 0.3 && u < 0.7 && d < 0.3 && tri1(d * 7 - an / TAU) > 0.62 ? mul(c, 1.7) : c; };
+    const wicker = (w, h, sd) => { g.surf(K_WOOD, 0.95); g.sheet(nq(12), nq(8), (u, v) => [(u - 0.5) * w, v * h, 0.05 + 0.012 * Math.sin(u * 40 + Math.floor(v * 8) * Math.PI)], (x, y, z, nx, ny, nz, u, v) => mul([0.42, 0.33, 0.18], (Math.floor(u * 13) + Math.floor(v * 8)) % 2 ? 1.05 : 0.6)); for (let i = 0; i <= 4; i++) g.in(M(-w / 2 + (w * i) / 4, 0, 0.05), () => stake(g, 0.018, h * 1.15, sd + i, rgb(0x5e5a4c), rgb(0x5e5a4c))); };
+    dress(g, sv, {
+      ridge: [300, () => g.in(M(0, -0.12, -0.12, 0, 0, 0), () => { g.surf(K_ROOF, 0.96); g.lathe([[0.11 * sc, 0], [0.13 * sc, 0.1 * sc], [0.05 * sc, 0.2 * sc], [0.07 * sc, 0.26 * sc], [0, 0.36 * sc]], 7, thatchCol(STRAW_OLD, 3)); })],
+      corner: [330, (a, i) => g.in(M(0, -0.1, 0), () => megalith(g, 0.5 * sc, 0.09 * sc, i + 3, { moss: 0.7 }))],
+      face: [520, (a, i) => g.in(M(0, -a.y, 0.1), () => ((i + a.dir) % 2 ? wicker(0.9 * sc, 0.6 * sc, i) : megalith(g, 1.0 * sc, 0.17 * sc, i * 3 + a.dir + 1, { moss: 0.75, lean: 0.04, paint: spiral })))],
+      door: [620, (a) => onGround(g, a, 0.26, () => megalith(g, 1.8 * sc, 0.2 * sc, a.e * 3 + 9, { moss: 0.8, lean: a.e * -0.04, paint: spiral }))],
+    });
+  },
+  thousandgods(g, sv) {
+    const sc = sv.sc, mari = rgb(0xf0921e), yel = rgb(0xf0c81e), pens = [rgb(0xd8287a), rgb(0xf0921e), rgb(0x1a9a8a), rgb(0xf0c81e)], sandC = [0.62, 0.36, 0.2];
+    dress(g, sv, {
+      ridge: [300, (a, i) => g.in(M(0, -0.1, -0.06), () => pennon(g, 0.85 * sc, 0.5 * sc, pens[i % 4], pens[(i + 1) % 4], { bars: 4, hgt: 0.2 * sc }))],
+      corner: [420, (a, i) => (i % 2 ? g.in(M(0, -0.05, 0), () => pennon(g, 0.7 * sc, 0.42 * sc, pens[(i + 1) % 4], null, { hgt: 0.18 * sc })) : pinnacle(g, 0.8 * sc, 'bulb', { col: domeBands(rgb(0xc88a5a), rgb(0xa86c42), 6, 0.3), finial: 'bud', shaft: 0.26, shaftCol: sandC, hk: 1.4, finS: 0.32 }))],
+      face: [620, (a, i) => { for (let q = -1; q <= 1; q++) g.in(M(q * 0.26 * sc, -0.05, 0), () => nicheFigure(g, 0.95 * sc, [0.78, 0.6, 0.42], { sill: sandC })); g.in(M(0, 0.36 * sc, 0), () => garland(g, 0.95 * sc, 0.16 * sc, mari, yel)); }],
+      door: [460, (a) => { g.in(M(0, 0.1 * sc, 0), () => nicheFigure(g, 1.5 * sc, [0.9, 0.86, 0.78], { sill: sandC, back: [0.3, 0.08, 0.1] })); g.in(M(0, 0.6 * sc, 0), () => garland(g, 0.6 * sc, 0.14 * sc, mari, rgb(0xd8287a))); }],
+    });
   },
 });
 

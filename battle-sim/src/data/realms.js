@@ -199,7 +199,7 @@ export const REALMS = [
       ['snowLeopard', 'Snow Leopard', 'alphaWolf', m.q('leopard', 0xd8e0e8, 1.1, { glow: 0x9ad8ff }), { w: 0.05 }],
       ['iceConstruct', 'Ice-and-Stone Colossus', 'frostGolem', m.g(0xa8c8dc, 2.0), { k: 1.5, w: 0.05, as: true }],
     ],
-    ships: [['icebreaker', 'Icebreaker Galleon', 'galleon', 'icebreaker', { color: 0x5a3a24, sail: 0xe8e0d0, sail2: 0xa82a2a }], ['icecutter', 'Ice Cutter', 'cutter', 'icebreaker', { color: 0x5a3a24, sail: 0xe8e0d0 }]],
+    ships: [['icebreaker', 'Icebreaker Galleon', 'galleon', 'icebreaker', { color: 0x5a3a24, sail: 0xe8e0d0, sail2: 0xa82a2a }], ['icecutter', 'Ice Brig', 'brigantine', 'icebreaker', { color: 0x5a3a24, sail: 0xe8e0d0, len: 7 }]],
     air: { name: 'Tsar\'s Sky-Sled', style: 'kingdom', color: 0x5a3a24, envelope: 0xa82a2a, pods: 'axemen' } },
 
   { id: 'tianlong', name: 'The Celestial Dynasty of Tian-Long', adj: 'Celestial', group: 0, town: 'civ', look: 'kingdom', biomes: ['temperate', 'jungle', 'desert'],
@@ -327,7 +327,7 @@ export const REALMS = [
       ['greatSpider', 'Great Forest Spider', 'boneColossus', { body: 'spider', fur: 0x2a3a2a, scale: 3.0, howdah: true }, { w: 0.04, abilities: [{ type: 'poison', damage: 5, chance: 0.5 }, { type: 'siege', mult: 2 }, { type: 'cleave', radius: 2, mult: 0.5 }] }],
       ['rockIdol', 'Rogue Idol', 'golem', m.g(0x6a6a5a, 2.6, { crude: true }), { k: 1.8, w: 0.03, as: true, size: 3 }],
     ],
-    ships: [['hulk', 'Scrap-Hulk', 'galleon', 'scrapHulk', { color: 0x5a4a36, sail: 0x8a7a5a }], ['paddler', 'Paddle Wreck', 'sloop', 'scrapHulk', { color: 0x5a4a36, sail: 0x8a7a5a }]],
+    ships: [['hulk', 'Scrap-Hulk', 'galleon', 'scrapHulk', { color: 0x5a4a36, sail: 0x8a7a5a }], ['paddler', 'Paddle Wreck', 'brigantine', 'scrapHulk', { color: 0x5a4a36, sail: 0x8a7a5a, len: 7 }]],
     air: { name: 'Scrap Blimp', style: 'goblin', color: 0x5a4630, envelope: 0x6a7a3a, pods: 'boy', hangar: '!glider' } },
 
   { id: 'skar', name: 'The Warrens of Skar', adj: 'Skarrish', group: 1, town: 'tribal', look: 'goblin', biomes: ['swamp', 'temperate', 'volcanic'],
@@ -406,7 +406,7 @@ export const REALMS = [
       ['wreckColossus', 'Wreck Colossus', 'boneColossus', m.b('wreckColossus', { color: 0x4a3a2a, glow: 0x5affa0, scale: 3.0 }, { body: 'golem', stone: 0x4a3a2a, scale: 2.6 }), { k: 1.3, w: 0.05, style: 'ranged', range: 8, rng: 70, projectile: 'rock' }],
       ['rotLeviathan', 'Rotting Leviathan', 'drake', m.b('crab', { shell: 0x5a6a5a, scale: 3.4, kind: 'leviathan' }, { body: 'dragon', scales: 0x5a6a5a, scale: 1.4 }), { w: 0.03, fly: false, as: true }],
     ],
-    ships: [['ghostGalleon', 'Ghost Galleon', 'galleon', 'shroudGalleon', { color: 0x3a3a34, sail: 0x1a1a1a, ghost: true }], ['ghostSloop', 'Ghost Sloop', 'sloop', 'shroudGalleon', { color: 0x3a3a34, sail: 0x1a1a1a, ghost: true }], ['dreadManowar', 'Drowned Flagship', 'manowar', 'shroudGalleon', { color: 0x3a3a34, sail: 0x1a1a1a, ghost: true }]],
+    ships: [['ghostGalleon', 'Ghost Galleon', 'galleon', 'shroudGalleon', { color: 0x3a3a34, sail: 0x1a1a1a, ghost: true }], ['ghostSloop', 'Ghost Brig', 'brigantine', 'shroudGalleon', { color: 0x3a3a34, sail: 0x1a1a1a, ghost: true, len: 7 }], ['dreadManowar', 'Drowned Flagship', 'manowar', 'shroudGalleon', { color: 0x3a3a34, sail: 0x1a1a1a, ghost: true }]],
     air: { name: 'Phantom Galleon', style: 'undead', color: 0x3a3a34, envelope: 0x2a4a3a, pods: 'depthGuard' } },
 
   // =========================== Outcasts and Distant Lands ===========================
@@ -444,7 +444,7 @@ export const REALMS = [
       ['seaDrake', 'Captive Sea-Drake', 'wyrmling', m.d(0x2a7a8a, 0.9, { wings: false, collar: 0xd8b03a }), { w: 0.04, fly: false }],
       ['grenadierW', 'Grenadier', 'grenadier', m.h('doublet', 'sling', { cuirass: true }), { w: 0.05 }],
     ],
-    ships: [['fluyt', 'Armed Fluyt', 'galleon', 'fluyt', { color: 0x6b4a2e, sail: 0xf0ead8, sail2: 0xd8782a }], ['jacht', 'War Yacht', 'cutter', 'fluyt', { color: 0x6b4a2e, sail: 0xf0ead8 }], ['eastIndiaman', 'Republic Flagship', 'manowar', 'fluyt', { color: 0x5a3a24, sail: 0xf0ead8, sail2: 0xd8782a }]],
+    ships: [['fluyt', 'Armed Fluyt', 'galleon', 'fluyt', { color: 0x6b4a2e, sail: 0xf0ead8, sail2: 0xd8782a }], ['jacht', 'War Yacht', 'brigantine', 'fluyt', { color: 0x6b4a2e, sail: 0xf0ead8, len: 7 }], ['eastIndiaman', 'Republic Flagship', 'manowar', 'fluyt', { color: 0x5a3a24, sail: 0xf0ead8, sail2: 0xd8782a }]],
     air: { name: 'Merchant Airship', style: 'kingdom', color: 0x6b4a2e, envelope: 0xd8782a, pods: 'marine' } },
 
   { id: 'principalities', name: 'The Merchant Principalities', adj: 'Principality', group: 3, town: 'civ', look: 'kingdom', biomes: ['temperate', 'desert'],
@@ -480,7 +480,7 @@ export const REALMS = [
       ['arenaBull', 'Armoured Arena Bull', 'minotaur', m.q('bull', 0x1a1a1a, 1.5, { armor: 0xb8c0c8 }), { k: 0.8, w: 0.05 }],
       ['diestro', 'Sword Master', 'knight', m.h('doublet', 'rapier', { hat: 'plumed', cloth: 0x1a1a1a }), { k: 1.2, w: 0.05, speed: 3 }],
     ],
-    ships: [['treasure', 'Treasure Galleon', 'galleon', 'treasureGalleon', { color: 0x5a3a24, sail: 0xf0ead8, sail2: 0xa8201a, emblem: 'cross' }], ['armada', 'Armada Flagship', 'manowar', 'treasureGalleon', { color: 0x5a3a24, sail: 0xf0ead8, sail2: 0xa8201a, emblem: 'cross' }], ['caravel', 'Caravel', 'cutter', 'treasureGalleon', { color: 0x6b4a2e, sail: 0xf0ead8, emblem: 'cross' }]],
+    ships: [['treasure', 'Treasure Galleon', 'galleon', 'treasureGalleon', { color: 0x5a3a24, sail: 0xf0ead8, sail2: 0xa8201a, emblem: 'cross' }], ['armada', 'Armada Flagship', 'manowar', 'treasureGalleon', { color: 0x5a3a24, sail: 0xf0ead8, sail2: 0xa8201a, emblem: 'cross' }], ['caravel', 'Caravel', 'brigantine', 'treasureGalleon', { color: 0x6b4a2e, sail: 0xf0ead8, emblem: 'cross', len: 7 }]],
     air: { name: 'Sun Galleon', style: 'kingdom', color: 0x5a3a24, envelope: 0xa8201a, pods: 'rodelero' } },
 
   { id: 'caliphate', name: 'The Caliphates of the Great Desert', adj: 'Caliphate', group: 3, town: 'civ', look: 'kingdom', biomes: ['desert', 'desert'],

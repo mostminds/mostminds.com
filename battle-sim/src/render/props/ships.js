@@ -16,6 +16,9 @@
 // Each class is built at up to three tiers (see TIERS), the lighter ones only when a ship is first
 // seen from far enough away; the returned group carries userData.lod so rigkit.setLod can swap
 // them, and userData.setSide(hex) to change her colours when she is taken.
+//
+// A class with a `kind` that fleets.js knows (cog, junk, longship, dreadnought, ...) is built there instead, from the kit
+// this module hands it (see KIT below); everything else about the ship object (tiers, flags, muzzles, top) is the same.
 import * as THREE from 'three';
 import { S, H as HP, rgb, noise3, fbm3, buildPartGeometry, sculptMaterial } from '../sculpt.js';
 import { getDetail, setLod } from '../rigkit.js';

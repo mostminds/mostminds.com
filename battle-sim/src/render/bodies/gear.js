@@ -2330,7 +2330,7 @@ OUTFITS.sunGold = (G) => {
   ]);
   const cz = ch.front + 0.02;
   G.add('torso', [], [
-    gm(H.extrude(SHAPES.sun.map(([x, y]) => [x * 0.05 * k, y * 0.05 * k]), 0.006, 0.002)).at(0, G.chestY + 0.014, cz),
+    gm(H.extrude(SHAPES.sun.map(([x, y]) => [x * 0.05 * k, y * 0.05 * k]), 0.006, 0)).at(0, G.chestY + 0.014, cz),
     gm(H.sphere(0.024 * k, 12), tone(g, 0, 0, 0.08)).scale(1, 1, 0.45).at(0, G.chestY + 0.014, cz + 0.004).lod(1),
     tqm(H.torus(0.026 * k, 0.004, 14, 5)).at(0, G.chestY + 0.014, cz + 0.006).lod(1),
   ]);
@@ -2342,7 +2342,7 @@ OUTFITS.sunGold = (G) => {
   const sk = skirt(G, { mat: (x) => cloth(x, c), len: 0.1, flare: 0.03, top: 0.025, fold: 0.004, hem: { color: g, h: 0.012, metal: 0.8, rough: 0.4 } });
   if (sk) {
     const ring = hemRing({ ...sk, rHem: sk.rTop + 0.006 }, 0), fl = [];
-    for (let i = 0; i < 14; i++) { const a = ((i + 0.5) / 14) * Math.PI * 2, q = ring(a); if (Math.abs(Math.sin(a)) < 0.3) continue; fl.push(feather([q[0], sk.y1 - 0.03, q[1]], [Math.sin(a) * 0.28, -1, Math.cos(a) * 0.28], 0.15 + (i % 2) * 0.02, 0.045, [Math.sin(a), 0.3, Math.cos(a)], fc[i % 3]).lod(i % 2 ? 1 : 99)); }
+    for (let i = 0; i < 14; i++) { const a = ((i + 0.5) / 14) * Math.PI * 2, q = ring(a); if (Math.abs(Math.sin(a)) < 0.3) continue; fl.push(feather([q[0], sk.y1 - 0.03, q[1]], [Math.sin(a) * 0.28, -1, Math.cos(a) * 0.28], 0.15 + (i % 2) * 0.02, 0.045, [Math.sin(a), 0.3, Math.cos(a)], fc[i % 3]).lod(i % 3 ? 1 : 99)); }
     G.add('root', [], [fl, flap(G, sk, 1, { color: c, len: 0.27, w: 0.1, trim: g, ragged: 0.0 }), flap(G, sk, -1, { color: c, len: 0.24, w: 0.11, trim: g, ragged: 0.0 })]);
   }
   // bands on arms and legs
@@ -2371,7 +2371,7 @@ OUTFITS.sunGold = (G) => {
   const hs = helmShell(G, 'cap', gm, { sy: G.Lk, y: 0.1 });
   const rays = []; for (let i = 0; i <= 18; i++) { const a = (i / 18) * Math.PI, r = i % 2 ? 1.0 : 1.75; rays.push([Math.cos(a) * r, Math.sin(a) * r * 1.05]); }
   const hh = [hs.hard, hs.place(tqm(H.torus(1.08, 0.05, 26, 6)).rot(90, 0, 0).rot(-6, 0, 0).at(0, 0.44, 0)).lod(1),
-    gm(H.extrude(rays.map(([x, yy]) => [x * R, yy * R]), 0.006, 0.002)).rot(-10, 0, 0).at(0, R * 0.62 * G.Lk, R * 0.2),
+    gm(H.extrude(rays.map(([x, yy]) => [x * R, yy * R]), 0.006, 0)).rot(-10, 0, 0).at(0, R * 0.62 * G.Lk, R * 0.2),
     gm(H.sphere(R * 0.3, 10), tone(g, 0, 0, 0.08)).scale(1, 1, 0.4).at(0, R * (0.62 * G.Lk + 0.36), R * 0.16).lod(1), tqm(H.torus(R * 0.32, R * 0.05, 12, 5)).rot(-10, 0, 0).at(0, R * (0.62 * G.Lk + 0.36), R * 0.17).lod(1)];
   for (let i = -3; i <= 3; i++) hh.push(feather([i * R * 0.2, R * 0.8 * G.Lk, -R * 0.35], [Math.sin(i * 0.3), 1, -0.3], R * (2.7 - Math.abs(i) * 0.3), R * 0.42, [0, 0.2, 1], fc[(i + 3) % 3]).lod(Math.abs(i) % 2 ? 1 : 99));
   G.add('head', [], hh);
