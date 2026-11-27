@@ -40,6 +40,9 @@ export const rubble = buildings.rubble;
 export const SIEGE = siegeMod.siege;
 export const craft = siegeMod.craft;
 export const ship = ships.ship;
-export const CREATURES = sea.creatures;
-export const CREATURE_ANIM = sea.animators || {};
+export const CREATURES = { ...sea.creatures };
+export const CREATURE_ANIM = { ...(sea.animators || {}) };
+// beasts of the ancient seas (optional until sculpted: a creature without a model is drawn as its nearest kin)
+try { const m = await import('./props/ancientseas.js'); Object.assign(CREATURES, m.creatures || {}); Object.assign(CREATURE_ANIM, m.animators || {}); }
+catch (err) { console.info('ancient sea creatures not available yet', err?.message || err); }
 for (const m of [humanoid, undead, beasts, monsters, ...laterBodies]) if (m.animators) registerAnimators(m.animators);

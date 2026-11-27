@@ -184,6 +184,25 @@ Nine great sea monsters that any fleet may bind or ally with (add them from the 
 - **Great Coil Serpent**: constricts and batters.
 - **Horned Behemoth**, a whale with a spiral horn: devastating rams that leave a ship taking water.
 
+### Beasts of the ancient seas
+
+Ten prehistoric hunters, also in the ship list of a naval battle:
+
+- **Dunkleosteus**, the armoured bone-shearer: armour does not count against its bite, and ironclad plate only
+  makes it bite harder.
+- **Leedsichthys**, the gilded giant: slow, with by far the most hit points in the sea; enemy ships near it
+  shoot at it before anything behind it.
+- **Tylosaurus**, the mottled mosasaur: fast, sweeps decks with its tail and drags crew overboard.
+- **Shonisaurus**, the red-backed ichthyosaur: its ram grows with every tile of straight run before impact.
+- **Kronosaurus**, the pliosaur: the heaviest bite in the sea, and a chance to break a weakened ship's back outright.
+- **Elasmosaurus**, the serpent-neck: strikes from seven tiles away, taking crew rather than hull.
+- **Tusoteuthis**, the scarlet squid: fouls a ship's rudder from medium range so she cannot turn, then closes to crush.
+- **Orthoceras**, the cone-shelled lancer: moves only in straight jet bursts and punches through armour.
+- **Xiphactinus**, the fang-fish: weak alone; bites harder for each of its kind nearby, goes for damaged ships
+  and cripples oared ones. Add two or three.
+- **Styxosaurus**, the stinger-neck: fast, rears up to snatch topmen from the rigging. (There are no fliers in
+  sea battles yet, so its anti-flier role is not in the game.)
+
 ## The land
 
 - **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights

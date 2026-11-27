@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { S, H, noise3, distanceTo, buildPartGeometry } from '../sculpt.js';
 import { assemble, cloneRigged, getDetail } from '../rigkit.js';
+import { install as installDeepkin } from './deepkin.js';
 
 const DEG = Math.PI / 180, PI = Math.PI;
 const _c = new THREE.Color(), _c2 = new THREE.Color();
@@ -1578,6 +1579,10 @@ function animSiren(model, { t, phase }) {
   (rig.hair || []).forEach((h, i) => R(h, Math.sin(w * 1.2 + i * 1.9) * 0.045, 0, Math.sin(w * 0.9 + i * 2.3) * 0.04));
 }
 
+// the great beasts live in deepkin.js and are built with this file's kit
+const deepkin = installDeepkin({ tone, mix, rnd, lerp, clamp, smooth, cached, into, loft, blade, eye, spike, aim, surf, station, hull, span, slab, under, fan, place, horn,
+  coreGeo, barnacle, harpoon, ribbonGeo, newLay, layChain, eulerDeg, poseChain, R, P, pulse, frac, rigged });
+
 export const creatures = {
   shark: (def) => rigged(def, sharkDesc),
   eel: (def) => rigged(def, eelDesc),
@@ -1586,6 +1591,7 @@ export const creatures = {
   kraken: (def) => rigged(def, krakenDesc),
   crab: (def) => rigged(def, crabDesc),
   siren: (def) => rigged(def, sirenDesc, 1.32),
+  ...deepkin.creatures,
 };
 export const animators = {
   shark: animShark,
@@ -1595,4 +1601,5 @@ export const animators = {
   kraken: animKraken,
   crab: animCrab,
   siren: animSiren,
+  ...deepkin.animators,
 };

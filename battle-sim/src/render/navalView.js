@@ -154,6 +154,8 @@ export class NavalView {
           for (let k = 1; k <= n; k++) st.puff(new THREE.Vector3(x.x + (t.x - x.x) * k / n + (Math.random() - 0.5) * k * 0.3, 1.2 + Math.random(), x.y + (t.y - x.y) * k / n + (Math.random() - 0.5) * k * 0.3), e.fire ? [0xff7a1a, 0xffc040, 0xe8e8e8][k % 3] : 0xe8e8e8, 0.5 + k * 0.08, 0.9);
           msgs.push({ side: x.side, text: `${x.def.name} breathes scalding fire` });
         }
+        if (e.name === 'snare') { const t = b.ents[e.to]; st.ring(new THREE.Vector3(t.x, 0, t.y), 2, 0xc8322a, 0.9); msgs.push({ side: x.side, text: `${x.def.name} fouls ${t.def.name}'s rudder: she cannot turn` }); }
+        if (e.name === 'leap') msgs.push({ side: x.side, text: `${x.def.name} snatches topmen from ${b.ents[e.to].def.name}'s rigging` });
         if (e.name === 'crush') msgs.push({ side: x.side, text: `${x.def.name} wraps itself round ${b.ents[e.to].def.name}` });
         if (e.name === 'breach') msgs.push({ side: x.side, text: `${x.def.name} holes ${b.ents[e.to].def.name} below the waterline` });
         if (e.name === 'overboard' && e.n >= 3) msgs.push({ side: x.side, text: `${e.n} hands are swept from ${b.ents[e.to].def.name}'s deck` });
@@ -165,6 +167,10 @@ export class NavalView {
         const x = b.ents[e.id];
         for (let k = 0; k < 4; k++) st.puff(new THREE.Vector3(x.x + (Math.random() - 0.5) * 2, 1 + Math.random() * 2, x.y + (Math.random() - 0.5) * 2), k % 2 ? 0xff7a1a : 0xffc040, 0.5, 1.2);
         if (b.tick !== this.fireSaid) { this.fireSaid = b.tick; msgs.push({ side: 1 - x.side, text: `${x.def.name} is set alight` }); }
+      } else if (e.type === 'keel') {
+        const x = b.ents[e.id], m = b.ents[e.by];
+        st.ring(new THREE.Vector3(x.x, 0, x.y), 3, 0xffffff, 1.2);
+        msgs.push({ side: m.side, text: `${m.def.name} breaks ${x.def.name}'s back in one bite` });
       } else if (e.type === 'swallowed') {
         const x = b.ents[e.id], m = b.ents[e.by];
         st.ring(new THREE.Vector3(x.x, 0, x.y), 3, 0x1a1424, 1.4);

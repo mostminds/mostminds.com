@@ -64,6 +64,32 @@ export const CREATURES = {
                  abilities: [{ type: 'crush', duration: 10, dmg: 8, drag: 0.12 }, { type: 'sweep', radius: 5, maxHit: 20, every: 12 }, { type: 'submerge', every: 26, duration: 6 }] },
   behemoth:    { name: 'Horned Behemoth',   level: 99, hp: 1500, armour: 50, speed: 0.55, size: 6.5, attack: { range: 3.5, maxHit: 48, speed: 6, acc: 0.6 }, model: 'behemoth', alt: 'leviathan', color: 0x2a3444,
                  abilities: [{ type: 'ram', damage: 130, cooldown: 20 }, { type: 'breach', over: 14, duration: 24, dmg: 8 }, { type: 'submerge', every: 32, duration: 8 }] },
+  // ---- Beasts of the ancient seas: prehistoric hunters broken to war ----
+  //  pierce {plate, mult}   armour does not count against its bite; against plate of `plate` or more it bites harder still
+  //  ram {.., perTile, max, through}   builds damage over a straight run; `through` ignores armour     jet {cycle, burst, speed}   moves in straight bursts
+  //  keelbreak {below, chance}   may sink a weakened ship outright     snare {every, range, duration, slow}   fouls the rudder: no turning
+  //  pack {radius, bonus}   bites harder for each of its kind nearby     oarbreak {slow, duration}   cripples oared ships
+  //  leap {chance, crew}   snatches topmen from the rigging     screen: enemy ships within this range shoot at it first     attack.reach: strikes at range with its neck
+  dunkleosteus:{ name: 'Dunkleosteus',  level: 82, hp: 620,  armour: 70, speed: 0.6,  size: 3.5, attack: { range: 2,   maxHit: 46, speed: 5, acc: 0.7 }, model: 'dunkleosteus', alt: 'shark', color: 0x6a7a4a, shrugs: 0.75,
+                 abilities: [{ type: 'pierce', plate: 30, mult: 1.35 }] },
+  leedsichthys:{ name: 'Leedsichthys',  level: 86, hp: 2600, armour: 25, speed: 0.3,  size: 7,   attack: { range: 3,   maxHit: 16, speed: 6, acc: 0.6 }, model: 'leedsichthys', alt: 'leviathan', color: 0xc8a03a, screen: 16, turn: 6,
+                 abilities: [{ type: 'sweep', radius: 5, maxHit: 12, every: 14 }] },
+  tylosaurus:  { name: 'Tylosaurus',    level: 84, hp: 720,  armour: 24, speed: 0.95, size: 4.5, attack: { range: 2.5, maxHit: 42, speed: 4, acc: 0.72 }, model: 'tylosaurus', alt: 'serpent', color: 0x5a7a3a,
+                 abilities: [{ type: 'overboard', chance: 0.7, crew: 5 }, { type: 'sweep', radius: 3.5, maxHit: 16, every: 9 }, { type: 'submerge', every: 20, duration: 5 }] },
+  shonisaurus: { name: 'Shonisaurus',   level: 85, hp: 700,  armour: 22, speed: 1.05, size: 5,   attack: { range: 2.5, maxHit: 24, speed: 5, acc: 0.65 }, model: 'shonisaurus', alt: 'shark', color: 0xa8482a, turn: 9,
+                 abilities: [{ type: 'ram', damage: 40, cooldown: 14, perTile: 5, max: 150 }, { type: 'breach', over: 12, duration: 15, dmg: 6 }] },
+  kronosaurus: { name: 'Kronosaurus',   level: 93, hp: 1050, armour: 35, speed: 0.7,  size: 5,   attack: { range: 2.5, maxHit: 76, speed: 6, acc: 0.66 }, model: 'kronosaurus', alt: 'leviathan', color: 0xc86a2a,
+                 abilities: [{ type: 'keelbreak', below: 0.45, chance: 0.5 }, { type: 'submerge', every: 28, duration: 5 }] },
+  elasmosaurus:{ name: 'Elasmosaurus',  level: 76, hp: 480,  armour: 15, speed: 0.6,  size: 5,   attack: { range: 7,   maxHit: 12, speed: 3, acc: 0.8, reach: true }, model: 'elasmosaurus', alt: 'serpent', color: 0xc89a4a,
+                 abilities: [{ type: 'overboard', chance: 0.9, crew: 4 }, { type: 'leap', chance: 0.35, crew: 2 }] },
+  tusoteuthis: { name: 'Tusoteuthis',   level: 79, hp: 460,  armour: 10, speed: 1.0,  size: 4,   attack: { range: 2.5, maxHit: 24, speed: 4, acc: 0.7 }, model: 'tusoteuthis', alt: 'kraken', color: 0xc8322a,
+                 abilities: [{ type: 'snare', every: 18, range: 9, duration: 12, slow: 0.45 }, { type: 'crush', duration: 9, dmg: 7, drag: 0.1 }, { type: 'ink', accPenalty: 0.3, duration: 6 }] },
+  orthoceras:  { name: 'Orthoceras',    level: 72, hp: 320,  armour: 60, speed: 0.55, size: 3.5, attack: { range: 1.5, maxHit: 14, speed: 5, acc: 0.6 }, model: 'orthoceras', alt: 'eel', color: 0xd8c8a0, jet: { cycle: 11, burst: 5, speed: 3.4 },
+                 abilities: [{ type: 'ram', damage: 24, cooldown: 10, perTile: 6, max: 80, through: true }, { type: 'breach', over: 10, duration: 12, dmg: 5 }] },
+  xiphactinus: { name: 'Xiphactinus',   level: 45, hp: 140,  armour: 8,  speed: 1.1,  size: 2.5, attack: { range: 1.5, maxHit: 18, speed: 3, acc: 0.7 }, model: 'xiphactinus', alt: 'shark', color: 0x2a9a6a,
+                 abilities: [{ type: 'pack', radius: 8, bonus: 0.25 }, { type: 'frenzy', below: 0.8, mult: 1.6 }, { type: 'oarbreak', slow: 0.4, duration: 8 }] },
+  styxosaurus: { name: 'Styxosaurus',   level: 60, hp: 300,  armour: 12, speed: 1.0,  size: 3,   attack: { range: 4,   maxHit: 16, speed: 3, acc: 0.8, reach: true }, model: 'styxosaurus', alt: 'serpent', color: 0x3a5a8a,
+                 abilities: [{ type: 'leap', chance: 0.7, crew: 3 }, { type: 'overboard', chance: 0.5, crew: 2 }, { type: 'submerge', every: 18, duration: 4 }] },
 };
 Object.assign(SHIPS, realmShips(SHIPS)); // each realm's own hulls (see realms.js)
 for (const [id, s] of Object.entries(SHIPS)) s.id = id;

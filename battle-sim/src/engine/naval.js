@@ -117,7 +117,9 @@ function chooseTarget(b, e) {
   for (const o of b.ents) {
     if (!o.alive || o.side === e.side || submerged(b, o)) continue;
     const d = Math.hypot(o.x - e.x, o.y - e.y);
-    const s = d + (o.hp / o.maxHp) * 15;
+    let s = d + (o.hp / o.maxHp) * 15;
+    // a living barricade fills the gunners' sights: ships near it shoot at it before anything behind
+    if (e.ship && o.def.screen && d < o.def.screen) s -= 60;
     if (s < bs) { bs = s; best = o; }
   }
   e.target = best ? best.id : -1;
@@ -139,15 +141,18 @@ function steer(b, e, desired, speedMul = 1) {
     if (d < clear) { ax += (dx / d) * (clear - d) * 0.5; ay += (dy / d) * (clear - d) * 0.5; }
   }
   desired = Math.atan2(ay, ax);
-  const turn = (e.ship ? e.def.turn : 14) * DEG;
-  const diff = wrap(desired - e.heading);
-  e.heading = wrap(e.heading + Math.max(-turn, Math.min(turn, diff)));
+  // a fouled rudder will not answer; a creature in mid-jet cannot swerve
+  const turn = (e.ship ? e.def.turn : (e.def.turn ?? 14)) * DEG * (b.tick < (e.rudderUntil || 0) ? 0 : (e.turnScale ?? 1));
+  const diff = wrap(desired - e.heading), turned = Math.max(-turn, Math.min(turn, diff));
+  e.heading = wrap(e.heading + turned);
+  e.straight = Math.abs(turned) < 4 * DEG; // for those that build speed on a straight run
   let spd = e.def.speed * speedMul * (b.tick < e.slowUntil ? e.slow : 1);
   if (e.ship) spd *= 0.35 + 0.65 * Math.max(0.25, e.crew / e.def.crew); // short-handed ships are slow
   if (e.ship) spd *= sailFactor(b, e);
   if (submerged(b, e)) spd *= 1.4;
   e.x += Math.cos(e.heading) * spd;
   e.y += Math.sin(e.heading) * spd;
+  e.run = e.straight ? (e.run || 0) + spd : 0;
 }
 
 function shipTick(b, e) {
@@ -262,13 +267,21 @@ function creatureTick(b, e) {
   const bearing = Math.atan2(t.y - e.y, t.x - e.x);
   // ranged creatures hover at range, others close in
   const want = atk.range > 4 ? (d < atk.range * 0.5 ? bearing + Math.PI : d > atk.range * 0.9 ? bearing : bearing + Math.PI / 2) : bearing;
-  steer(b, e, want, d < atk.range * 0.7 && atk.range <= 4 ? 0.2 : 1);
+  if (e.def.jet) {
+    // jet-propelled: a few ticks of straight, violent thrust, then a drift in which it lines up the next run
+    const burst = (b.tick + e.id * 7) % e.def.jet.cycle < e.def.jet.burst;
+    e.turnScale = burst ? 0.08 : 1.6;
+    steer(b, e, bearing, burst ? e.def.jet.speed : 0.12);
+  } else steer(b, e, want, d < atk.range * 0.7 && atk.range <= 4 ? 0.2 : 1);
   if (submerged(b, e)) return;
 
   for (const a of e.def.abilities) {
     if (a.type === 'ram' && b.tick >= e.nextRam && d < 1) {
       e.nextRam = b.tick + a.cooldown;
-      hurt(b, t, Math.round(a.damage * (100 / (100 + (t.def.armour || 0)))), e);
+      // some build their blow over a long straight run, and some go clean through plate
+      const run = a.perTile ? Math.min(a.max, (e.run || 0) * a.perTile) : 0;
+      hurt(b, t, Math.round((a.damage + run) * (a.through ? 1 : 100 / (100 + (t.def.armour || 0)))), e);
+      e.run = 0;
       b.events.push({ type: 'ability', id: e.id, name: 'ram', to: t.id });
     }
     if (a.type === 'sweep' && b.tick >= e.nextSweep && d < a.radius) {
@@ -316,6 +329,12 @@ function creatureTick(b, e) {
       e.cd = Math.max(e.cd, 6); // it takes a moment to get a brig down
       return;
     }
+    if (a.type === 'snare' && b.tick >= (e.nextSnare || 0) && t.ship && d < a.range) {
+      // long arms round the rudder: she cannot turn, and can barely make way
+      e.nextSnare = b.tick + a.every;
+      t.rudderUntil = b.tick + a.duration; t.slowUntil = Math.max(t.slowUntil, b.tick + a.duration); t.slow = a.slow;
+      b.events.push({ type: 'ability', id: e.id, name: 'snare', to: t.id });
+    }
     if (a.type === 'charm' && b.tick >= e.nextCharm && t.ship && d < atk.range) {
       e.nextCharm = b.tick + a.every;
       t.charmUntil = b.tick + a.duration; t.charmBy = e.id;
@@ -325,13 +344,17 @@ function creatureTick(b, e) {
   if (e.cd <= 0 && d <= atk.range) {
     e.cd = atk.speed;
     const hit = b.rng.next() < atk.acc;
-    let dmg = hit ? Math.round(b.rng.int(0, atk.maxHit) * (100 / (100 + (t.def.armour || 0)))) : 0;
+    // bone shears that treat iron plate like driftwood: armour does not count, and thick plate only makes it worse
+    const pierce = e.def.abilities.find((a) => a.type === 'pierce');
+    let dmg = hit ? Math.round(b.rng.int(pierce ? atk.maxHit >> 2 : 0, atk.maxHit) * (pierce ? ((t.def.armour || 0) >= pierce.plate ? pierce.mult : 1) : 100 / (100 + (t.def.armour || 0)))) : 0;
     for (const a of e.def.abilities) {
       // claws that shear a weakened hull in two; jaws that go mad at the scent of a wounded ship
       if (a.type === 'shear' && t.ship && t.hp < t.maxHp * a.below) dmg = Math.round(dmg * a.mult);
       if (a.type === 'frenzy' && t.hp < t.maxHp * a.below) { dmg = Math.round(dmg * a.mult); e.cd = Math.max(1, atk.speed - 1); }
+      // hunters in a pack: each of its kind close by adds to the bite
+      if (a.type === 'pack') { let n = 0; for (const o of b.ents) if (o !== e && o.alive && o.side === e.side && o.def.id === e.def.id && dist(e, o) < a.radius) n++; dmg = Math.round(dmg * (1 + a.bonus * Math.min(3, n))); }
     }
-    if (atk.range > 4) {
+    if (atk.range > 4 && !atk.reach) {
       b.shots.push({ tick: b.tick + 2, from: e.id, to: t.id, dmg, hit, x: t.x, y: t.y });
       b.events.push({ type: 'shot', kind: 'spell', from: e.id, to: t.id, x0: e.x, y0: e.y, x1: t.x, y1: t.y, flight: 2, hit });
     } else {
@@ -340,6 +363,12 @@ function creatureTick(b, e) {
     }
     for (const a of e.def.abilities) {
       if (a.type === 'grapple' && hit) { t.slowUntil = b.tick + a.duration; t.slow = a.slow; }
+      // a bite that breaks a weakened ship's back: she goes down at once
+      if (a.type === 'keelbreak' && hit && t.alive && t.ship && t.hp < t.maxHp * a.below && b.rng.chance(a.chance)) { t.hp = 0; t.alive = false; e.kills++; b.events.push({ type: 'keel', id: t.id, by: e.id }); b.events.push({ type: 'death', id: t.id }); }
+      // oars snapped off along one side: a galley crawls
+      if (a.type === 'oarbreak' && hit && t.ship && t.def.oars) { t.slowUntil = b.tick + a.duration; t.slow = a.slow; }
+      // topmen snatched out of the rigging: fewer hands, and sail that nobody is left to trim
+      if (a.type === 'leap' && hit && t.ship && b.rng.chance(a.chance)) { t.crew = Math.max(0, t.crew - b.rng.int(1, a.crew)); if (t.rig > 0.35) t.rig = Math.max(0.35, t.rig - 0.05); b.events.push({ type: 'ability', id: e.id, name: 'leap', to: t.id }); }
       // coils or arms round the hull: held, crushed a little every moment, and dragged down when nearly broken
       if (a.type === 'crush' && hit && t.ship && !t.dot) { t.dot = { until: b.tick + a.duration, from: b.tick, every: 2, dmg: a.dmg, by: e.id, grip: true, drag: a.drag || 0 }; t.gripBy = e.id; t.slowUntil = b.tick + a.duration; t.slow = 0.15; b.events.push({ type: 'ability', id: e.id, name: 'crush', to: t.id }); }
       // sailors washed or snatched off the deck
