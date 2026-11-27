@@ -167,6 +167,28 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
 - **Under the walkways.** Troops arriving at ground level pass beneath walkways and viaducts; those coming off
   a wall or terrace cross on top.
 
+## The realms
+
+Twenty-seven further factions, in four groups, each with its own troops, beasts, ships, airship (where it
+flies one) and way of building. They are described in `src/data/realms.js`: one entry per realm, expanded
+into units, ship classes and map-generator factions. Pick them under *Generate a scenario* or add their
+troops from the army list.
+
+- **The Realms of Order:** the Graalish Kingdoms, the Aurelian Empire, the Aethelian Dominion, the Shadow-Kin
+  of Kael'Neth, the Verdant Host of Athel-Vael, the Grom Holds, the Xibalban Temple-Cities, the Tsardom of
+  Velikaya, the Celestial Dynasty of Tian-Long.
+- **The Forces of Destruction:** the Ironbound Legions, the Endless Screaming, the Cloven Herds, the
+  Fimbulwinter Raiders, the Ziggurat Forges of Ashur, the Greenhide Hordes, the Warrens of Skar.
+- **The Undead Legions:** the Crimson Aristocracy, the Eternal Dynasties of Khemet, the Drowned Armada.
+- **Outcasts and Distant Lands:** the Gorge-Tribes of the Steppe, the Free Republic of Westmark, the Merchant
+  Principalities, the Kingdoms of the Sun, the Caliphates of the Great Desert, the Shogunate of the Rising
+  Sun, the Mist-Cloaked Isles, the Kingdoms of the Thousand Gods.
+
+All designs are original and drawn from history and folklore; none copies another game's factions,
+creatures or names. A realm's troops take their statistics from a unit of the first roster scaled by a
+factor, so the realms stay in balance with it. Where a body, costume, weapon, hull or building style has
+not been sculpted yet, the descriptor names a stand-in (`alt`) and the game uses that.
+
 `docs/TACTICS.md` describes the squad AI and the published frameworks it draws on.
 
 ## Graphics
