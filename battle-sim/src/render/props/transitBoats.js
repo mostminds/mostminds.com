@@ -227,6 +227,7 @@ function shape(o) {
       const c = Math.pow((tp - y) / (tp + dpp), 1 / e), sn = Math.sqrt(Math.max(0, 1 - c * c)); return hw * Math.pow(sn, e);
     },
     topAt: (x) => H.top(H.s(x)),
+    stem: (s) => [H.x(s), H.top(s), 0],
     side(x, sd, dt = 0, ins = 0) { const s = H.s(x); return H.at(s, H.aAt(s, dt, sd), ins); },
   };
   return H;
@@ -355,7 +356,7 @@ function skull(k, x, y, z, s = 1, ry = 0, bone = BONE, eye = null, horns = 0, ho
 }
 function eyeball(k, p, d, r, iris, white = 0xe8e0d0) {
   const n = new V3(...d).normalize();
-  k.s(ball(r, 10, 8), white, T(p[0], p[1], p[2])); k.g(ball(r * 0.55, 8, 6), iris, T(p[0] + n.x * r * 0.58, p[1] + n.y * r * 0.58, p[2] + n.z * r * 0.58)); k.s(ball(r * 0.26, 6, 5), DARK, T(p[0] + n.x * r * 0.96, p[1] + n.y * r * 0.96, p[2] + n.z * r * 0.96));
+  k.s(ball(r, 8, 6), white, T(p[0], p[1], p[2])); k.g(ball(r * 0.55, 6, 4), iris, T(p[0] + n.x * r * 0.58, p[1] + n.y * r * 0.58, p[2] + n.z * r * 0.58)); k.s(ball(r * 0.26, 5, 3), DARK, T(p[0] + n.x * r * 0.96, p[1] + n.y * r * 0.96, p[2] + n.z * r * 0.96));
 }
 /** a membrane wing in its local xy plane (bat, drake), fanning from the origin */
 function wing(k, m, R, spread, fingers, mem, bone) {
@@ -431,6 +432,14 @@ function faSail(k, A, B, Cc, D, col, o = {}) {
   if (o.owner) for (const l of [0.012, -0.012]) { const [v0, v1] = o.owner; k.o(surf(o.nu ?? 10, 2, (u, v, out) => P(u, v0 + (v1 - v0) * v, out, l), WHITE)); }
   return P;
 }
+/** a round device painted on a sail, both faces (P is the sail's own mapping) */
+function sailDisc(k, P, u0, v0, ru, rv, col, lift = 0.014, bag = 'cloth') { for (const l of [lift, -lift]) k.add(bag, surf(18, 2, (u, v, out) => { const a = u * TAU; P(u0 + ru * v * Math.cos(a), v0 + rv * v * Math.sin(a), out, l); }, col, { closeU: true }), null); }
+/** a floor of lashed poles running fore and aft */
+function floorPoles(k, H, xa, xb, y, col, r = 0.035) {
+  const hw0 = H.halfAt((xa + xb) / 2, y, H.th), n = Math.max(3, Math.floor((hw0 * 2) / (r * 2.05)));
+  for (let q = 0; q < n; q++) { const z = -hw0 + r * 1.2 + ((hw0 * 2 - r * 2.4) * q) / (n - 1); let a = null, b = null; for (let x = xa; x <= xb; x += 0.05) if (H.halfAt(x, y, H.th) > Math.abs(z) + r) { a ??= x; b = x; } if (a === null || b - a < 0.2) continue; k.s(cyl(r, r, b - a, 5), sh(col, 0.85 + 0.3 * rnd(q * 3.3)), T((a + b) / 2, y - r, z, 0, 0, HP)); }
+  for (let x = xa + 0.3; x < xb - 0.2; x += 0.7) { const hw = H.halfAt(x, y, H.th); k.s(box(0.03, 0.02, hw * 2), 0x3a2a1a, T(x, y - 0.005, 0)); }
+}
 /** a deckhouse: walls x0..x1, width w, wall height h standing on y; roof kinds */
 function cabin(k, x0, x1, w, h, y, o = {}) {
   const cx = (x0 + x1) / 2, L = x1 - x0, wall = o.wall ?? 0x8a6a40, trim = o.trim ?? sh(wall, 0.7), roofC = o.roofCol ?? 0x7a3a2a, rb = o.roofBag || 'solid';
@@ -490,7 +499,7 @@ function kAccent(L) {
     case 'aurelia': return { top: c1, mid: tr, low: sh(c1, 0.6), sail: (u, v, i) => (v < 0.16 ? tr : i % 3 === 1 ? c2 : c1), fig: 'eagle' };
     case 'graal': return { top: c1, mid: c2, low: sh(c1, 0.55), sail: (u, v, i) => (i & 1 ? c1 : c2), fig: 'lily' };
     case 'principalities': return { top: c1, mid: c2, low: sh(c1, 0.6), sail: (u, v, i) => (i & 1 ? c1 : c2), fig: 'lion' };
-    case 'sunkings': return { top: c1, mid: tr, low: sh(c1, 0.6), sail: (u, v, i, j) => { const dx = u - 0.5, dy = v - 0.45; return dx * dx + dy * dy < 0.045 ? tr : c1; }, fig: 'sun' };
+    case 'sunkings': return { top: c1, mid: tr, low: sh(c1, 0.6), sail: (u, v, i, j) => (j === 7 ? tr : c1), disc: tr, fig: 'sun' };
     default: return { top: c1, mid: c2, low: sh(c1, 0.6), sail: (u, v, i) => (i & 1 ? c2 : sh(c2, 0.9)), fig: 'shield' };
   }
 }
@@ -517,9 +526,9 @@ function kingdomGondola(k, C) {
   gunwale(k, H, sh(tr, 0.9), 0.02, { bag: 'metal', s0: 0.04, s1: 0.96 });
   floor(k, H, -1.45, 1.3, GD, sh(W, 1.1));
   // the iron stem-head and the figure on the prow
-  const bt = H.at(0.995, 0.5); post(k, [[bt[0] - 0.14, bt[1] - 0.06, 0], [bt[0] - 0.02, bt[1] - 0.02, 0], [bt[0] + 0.07, bt[1] + 0.12, 0]], 0.03, tr, 'metal');
+  const bt = H.stem(0.995); post(k, [[bt[0] - 0.14, bt[1] - 0.06, 0], [bt[0] - 0.02, bt[1] - 0.02, 0], [bt[0] + 0.07, bt[1] + 0.12, 0]], 0.03, tr, 'metal');
   kFigure(k, L, A, [bt[0] + 0.07, bt[1] + 0.12, 0], 1.05);
-  const st = H.at(0.005, 0.5); post(k, [[st[0] + 0.14, st[1] - 0.05, 0], [st[0] + 0.02, st[1], 0], [st[0] - 0.04, st[1] + 0.14, 0], [st[0] + 0.02, st[1] + 0.22, 0]], 0.026, sh(W, 0.7));
+  const st = H.stem(0.005); post(k, [[st[0] + 0.14, st[1] - 0.05, 0], [st[0] + 0.02, st[1], 0], [st[0] - 0.04, st[1] + 0.14, 0], [st[0] + 0.02, st[1] + 0.22, 0]], 0.026, sh(W, 0.7));
   lampPost(k, -1.42, H.topAt(-1.42), -0.16, 0.7, L.glow, 0x2a2a2e, -1);
   // the boatman's oar on its forked rest
   const fp = H.side(-0.92, 1, 0, -0.02); k.s(rbox(0.06, 0.24, 0.06, 0.015, 1), sh(W, 0.7), T(fp[0], fp[1] + 0.1, fp[2])); k.m(torus(0.035, 0.012, 4, 8, PI), tr, T(fp[0], fp[1] + 0.24, fp[2], 0, HP, 0));
@@ -543,8 +552,9 @@ function kingdomRiver(k, C) {
   if (f === 'aurelia') for (const sz of [-1, 1]) k.m(box(0.66, 0.04, 0.02), tr, T(0.8, RD + 0.5, sz * 0.49));
   // mast and square sail
   const mx = 1.28; k.rod('solid', sh(W, 0.75), [mx, RD - 0.05, 0], [mx, 2.75, 0], 0.04, 8); k.m(cyl(0.07, 0.05, 0.12, 8), tr, T(mx, 2.75, 0));
-  sqSail(k, mx, 1.22, 2.5, 1.36, (u, v, i, j) => A.sail(u, v, i, j), { owner: [0.06, 0.16], bil: 0.16, nu: 12 });
-  if (f === 'aurelia') { k.m(cyl(0.16, 0.16, 0.02, 14), tr, T(mx + 0.26, 1.9, 0, 0, 0, HP)); }
+  const SP = sqSail(k, mx, 1.22, 2.5, 1.36, (u, v, i, j) => A.sail(u, v, i, j), { owner: [0.06, 0.16], bil: 0.16, nu: 12 });
+  if (A.disc) sailDisc(k, SP, 0.5, 0.52, 0.16, 0.17, A.disc, 0.014, 'metal');
+  if (f === 'aurelia') sailDisc(k, SP, 0.5, 0.55, 0.13, 0.14, tr, 0.014, 'metal');
   flagstaff(k, mx, 2.8, 0, 0.3, { h: 0.2, w: 0.6, knob: tr });
   for (const sd of [-1, 1]) { k.rod('solid', ROPE, [mx, 2.55, 0], [H.x1 - 0.1, H.topAt(1.95), 0], 0.008, 3); k.rod('solid', ROPE, [mx, 2.55, 0], [mx - 0.2, H.topAt(mx - 0.2), sd * 0.66], 0.008, 3); }
   // shields along the rails, or gilt roundels
@@ -594,7 +604,8 @@ function baseHull(k, C, shp, o = {}) {
   for (const p of o.paint || []) paint(k, H, ...p);
   if (o.owner) ownerBand(k, H, ...o.owner);
   if (o.gun !== false) gunwale(k, H, o.gun ?? sh(C.L.wood, 0.7), o.gunR ?? 0.022, o.gunO ?? {});
-  if (o.floor !== false) floor(k, H, o.fx0 ?? H.x0 + 0.3, o.fx1 ?? H.x1 - 0.35, C.deck, o.floor ?? sh(C.L.wood, 1.1), o.floorO ?? {});
+  if (o.poles) floorPoles(k, H, o.fx0 ?? H.x0 + 0.3, o.fx1 ?? H.x1 - 0.35, C.deck, o.floor ?? sh(C.L.wood, 1.1));
+  else if (o.floor !== false) floor(k, H, o.fx0 ?? H.x0 + 0.3, o.fx1 ?? H.x1 - 0.35, C.deck, o.floor ?? sh(C.L.wood, 1.1), o.floorO ?? {});
   return H;
 }
 /** the boatman's long oar on its forked rest at the stern quarter */
@@ -664,7 +675,7 @@ function elvenHull(k, C, shp, o) {
 function elvenGondola(k, C) {
   const L = C.L, dark = C.f === 'kaelneth', tr = dark ? 0x8a7a9a : L.trim, gl = L.glow, W = dark ? 0x241e2c : L.wood;
   const H = elvenHull(k, C, { ...G_SHAPE, B: 0.84, bowRise: dark ? 0.26 : 0.18, sternRise: 0.4, sr: 2.2, pb: 1.7, ps: 1.7, ex: 2.2, rocker: 0.14 }, { fx0: -1.42, fx1: 1.32 });
-  const bt = H.at(0.995, 0.5), st = H.at(0.005, 0.5);
+  const bt = H.stem(0.995), st = H.stem(0.005);
   if (dark) { // a scythe of a prow, finned flanks and a violet crystal
     k.m(slab([[0, 0], [0.22, 0.25], [0.2, 0.62], [0.05, 0.95], [0.12, 0.6], [0.08, 0.3], [-0.1, 0.08]], 0.03), 0x2a2432, T(bt[0] - 0.08, bt[1] - 0.06, 0));
     k.g(slab([[0.2, 0.62], [0.05, 0.95], [0.08, 0.92], [0.22, 0.6]], 0.036), gl, T(bt[0] - 0.08, bt[1] - 0.06, 0));
@@ -685,18 +696,18 @@ function elvenGondola(k, C) {
 function elvenRiver(k, C) {
   const L = C.L, dark = C.f === 'kaelneth', tr = dark ? 0x8a7a9a : L.trim, gl = L.glow, W = dark ? 0x241e2c : L.wood, c2 = L.cloth2;
   const H = elvenHull(k, C, { ...R_SHAPE, B: 1.42, tr: 0, ps: 1.9, pb: 1.9, qs: 0.6, bowRise: 0.22, sternRise: 0.5, sr: 2.2, ex: 2.6, dp: 3 }, { fx0: -1.85, fx1: 1.8 });
-  const bt = H.at(0.995, 0.5), st = H.at(0.005, 0.5);
+  const bt = H.stem(0.995), st = H.stem(0.005);
   // a pavilion of slender posts and a leaf roof
   for (const [x, z] of [[0.5, -0.42], [0.5, 0.42], [1.1, -0.42], [1.1, 0.42]]) { k.add(dark ? 'metal' : 'solid', cyl(0.025, 0.03, 0.95, 6), dark ? 0x2a2432 : 0xf4f0e6, T(x, RD + 0.475, z)); k.m(torus(0.035, 0.01, 4, 8), tr, T(x, RD + 0.9, z, HP)); }
   if (dark) { k.m(gable(0.78, 0.4, 1.05), 0x2a2432, T(0.8, RD + 0.95, 0)); for (const sz of [-1, 1]) for (const x of [0.45, 0.8, 1.15]) k.m(cone(0.03, 0.26, 4), 0x2a2432, T(x, RD + 0.98, sz * 0.55, sz * 0.9, 0, 0)); k.g(box(0.8, 0.02, 0.02), gl, T(0.8, RD + 1.36, 0)); }
-  else for (const sz of [-1, 1]) k.c(leaf(0.95, 0.75, 0.12, (u, v, i, j) => (i === 1 || i === 2 ? sh(c2, 1.1) : c2), { nv: 8, nu: 4 }), null, T(0.33, RD + 0.92, sz * 0.02, sz * 0.55, 0, -HP));
+  else { for (const sz of [-1, 1]) k.c(leaf(1.0, 0.7, -0.08, (u, v, i, j) => (i === 0 || j === 7 ? c2 : (j & 1 ? 0xf4f0e6 : 0xe8e4d8)), { nv: 8, nu: 4 }), null, T(0.31, RD + 0.98, sz * 0.27, -sz * (HP - 0.42), 0, -HP)); k.m(cyl(0.02, 0.02, 0.96, 6), tr, T(0.8, RD + 0.99, 0, 0, 0, HP)); }
   lantern(k, 0.8, RD + 0.86, 0, gl, tr, 1.1, 'dome');
   // the mast and a leaf of a sail, fore and aft
   const mx = 1.3; k.rod('solid', dark ? 0x2a2432 : 0xe8e0cc, [mx, RD, 0], [mx, 3.0, 0], 0.035, 8); k.add(dark ? 'glow' : 'metal', oct(0.07), dark ? gl : tr, T(mx, 3.08, 0, 0, 0, 0, 1, 1.5, 1));
   const sc = dark ? (u, v, i, j) => (i === 5 ? gl : j & 1 ? L.cloth : sh(L.cloth, 0.8)) : (u, v, i, j) => (i === 5 ? sh(c2, 1.2) : (i + j) % 4 === 0 ? 0xe8f0ec : L.cloth);
   faSail(k, [mx, 1.5, 0], [-0.55, 1.55, 0], [-0.35, 2.35, 0], [mx - 0.05, 2.95, 0], sc, { owner: [0.05, 0.13], bil: 0.14 });
   k.rod('solid', dark ? 0x2a2432 : 0xe8e0cc, [mx, 1.5, 0], [-0.6, 1.55, 0], 0.02, 5);
-  if (dark) { k.m(slab([[0, 0], [0.3, 0.3], [0.32, 0.8], [0.08, 1.2], [0.16, 0.75], [0.1, 0.35], [-0.12, 0.1]], 0.04), 0x2a2432, T(bt[0] - 0.1, bt[1] - 0.1, 0)); k.g(slab([[0.32, 0.8], [0.08, 1.2], [0.12, 1.16], [0.34, 0.78]], 0.046), gl, T(bt[0] - 0.1, bt[1] - 0.1, 0)); for (const sd of [-1, 1]) for (const x of [-1.3, -0.4, 0.5, 1.4]) { const p = H.side(x, sd, 0.03, -0.01); bladeFin(k, p[0] + 0.2, p[1], p[2], 1.1, 0x2a2432, gl, sd); } k.g(oct(0.09), gl, T(st[0] + 0.1, st[1] + 0.3, 0, 0, 0, 0, 1, 1.8, 1)); }
+  if (dark) { k.m(slab([[0, 0], [0.3, 0.3], [0.32, 0.8], [0.08, 1.2], [0.16, 0.75], [0.1, 0.35], [-0.12, 0.1]], 0.04), 0x2a2432, T(bt[0] - 0.1, bt[1] - 0.1, 0)); k.g(slab([[0.32, 0.8], [0.08, 1.2], [0.12, 1.16], [0.34, 0.78]], 0.046), gl, T(bt[0] - 0.1, bt[1] - 0.1, 0)); for (const sd of [-1, 1]) for (const x of [-1.5, -0.9, -0.3, 0.3, 0.9, 1.5]) { const p = H.side(x, sd, 0.03, -0.01); bladeFin(k, p[0] + 0.2, p[1], p[2], 1.0, 0x2a2432, gl, sd); } k.g(oct(0.09), gl, T(st[0] + 0.1, st[1] + 0.3, 0, 0, 0, 0, 1, 1.8, 1)); }
   else { swanNeck(k, bt[0] - 0.1, bt[1] - 0.05, 1.45, 0xf4f0e8, GOLD); for (const sd of [-1, 1]) { const p = H.side(1.2, sd, 0.04, -0.02); k.s(leaf(1.15, 0.34, 0.05, (u, v, i, j) => (j > 5 ? 0xe8e0d0 : 0xf8f4ec), { nv: 8, nu: 4 }), null, T(p[0], p[1] - 0.03, p[2] + sd * 0.02, 0, sd > 0 ? 0 : PI, HP + 0.06)); } featherFan(k, st[0] + 0.04, st[1] - 0.03, 0, 9, 0.6, 0xf4f0e8, 0xe0d8c8, 1.5, 0.15); }
   riverOars(k, C, H, { shaft: dark ? 0x3a3242 : 0xe8e0cc, bcol: dark ? 0x2a2432 : 0xd8c8a0, lockCol: tr });
   k.s(rbox(0.05, 0.5, 0.05, 0.01, 1), dark ? 0x2a2432 : 0xe8e0cc, T(-1.95, H.topAt(-1.95) + 0.1, 0)); lampPost(k, -1.85, H.topAt(-1.85), 0.3, 0.75, gl, dark ? 0x2a2432 : tr, -1, 'dome');
@@ -732,7 +743,7 @@ function runeStone(k, x, y, z, s, glow, ry = 0) { k.push(T(x, y, z, 0, ry, 0, s)
 function dwarfGondola(k, C) {
   const L = C.L, tr = L.trim, M = L.metal;
   const H = dwarfHull(k, C, { ...G_SHAPE, B: 0.96, bowRise: 0.2, sternRise: 0.12, br: 2, ex: 3.2, tr: 0.32, ps: 3, qs: 0.4, rocker: 0.02, dp: 5 }, { fx0: -1.55, fx1: 1.3 });
-  const bt = H.at(0.995, 0.5);
+  const bt = H.stem(0.995);
   k.m(cone(0.09, 0.32, 6), tr, T(bt[0] + 0.1, 0.05, 0, 0, 0, -HP)); // a gilt ram
   runeStone(k, bt[0] - 0.12, bt[1] - 0.02, 0, 1.0, L.glow, 0);
   k.m(rbox(0.08, 0.5, 0.08, 0.02, 1), M, T(bt[0] - 0.24, bt[1] + 0.05, 0)); k.m(cyl(0.07, 0.07, 0.06, 8), tr, T(bt[0] - 0.24, bt[1] + 0.32, 0));
@@ -757,7 +768,7 @@ function dwarfRiver(k, C) {
   const wx = -1.98, wy = 0.34; paddleWheel(k, C, wx, wy, 0.46, 1.0, { rim: sh(M, 1.2), pad: L.wood, hub: tr, n: 8 });
   for (const sz of [-1, 1]) { k.m(rbox(0.7, 0.08, 0.08, 0.02, 1), sh(M, 1.1), T(-1.72, wy + 0.08, sz * 0.62, 0, 0, -0.1)); k.m(cyl(0.07, 0.07, 0.1, 8), tr, T(wx, wy, sz * 0.62, HP)); k.m(rbox(0.06, 0.5, 0.06, 0.02, 1), sh(M, 1.1), T(-1.68, wy + 0.25, sz * 0.62)); }
   k.m(cyl(0.035, 0.035, 2.2, 6), COPPER, T(-0.6, RD + 0.28, 0.55, 0, 0, HP)); k.m(cyl(0.035, 0.035, 2.2, 6), COPPER, T(-0.6, RD + 0.28, -0.55, 0, 0, HP));
-  const bt = H.at(0.995, 0.5); k.m(cone(0.12, 0.4, 6), tr, T(bt[0] + 0.14, 0.08, 0, 0, 0, -HP)); runeStone(k, bt[0] - 0.14, bt[1] - 0.04, 0, 1.3, L.glow);
+  const bt = H.stem(0.995); k.m(cone(0.12, 0.4, 6), tr, T(bt[0] + 0.14, 0.08, 0, 0, 0, -HP)); runeStone(k, bt[0] - 0.14, bt[1] - 0.04, 0, 1.3, L.glow);
   for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) { const p = H.side(-1.3 + i * 0.5, sd, 0.12, -0.02); roundShield(k, p[0], p[1], p[2], sd > 0 ? 0 : PI, 0.13, i & 1 ? L.cloth : L.cloth2, tr, tr); }
   flagstaff(k, 1.35, RD, 0.45, 1.2, { h: 0.26, w: 0.62, kind: 'point', col: M, knob: tr });
   heap(k, 1.6, RD, 0, [['ore', 0, -0.3, 1.5, 0, 0x5a5a66], ['ore', 0.05, 0.3, 1.4, 0, 0xc8a040], ['cask', 0.28, 0.0, 1.4, 0.1], ['ingot', -0.05, 0.02, 1.4, 0.3]], H);
@@ -788,8 +799,8 @@ function dwarfRaft(k, C) {
 // =====================================================================================================
 function eLook(L) {
   const f = L.faction;
-  if (f === 'shogunate') return { hull: 0x1c1616, top: 0xa81a1a, rim: 0xa81a1a, sail: (u, v) => { const dx = (u - 0.45) * 1.3, dy = v - 0.55; return dx * dx + dy * dy < 0.05 ? 0xb81a1a : 0xece4d4; }, hoodC: 0xb8a070, lan: 0xfff0d0 };
-  if (f === 'thousandgods') return { hull: 0x2a7a7a, top: 0xe87a1a, rim: GOLD, sail: (u, v, i, j) => { const dx = u - 0.45, dy = v - 0.5, r = dx * dx + dy * dy; return r < 0.02 ? L.cloth2 : r < 0.05 ? GOLD : j & 1 ? 0xe87a1a : 0xf08a2a; }, hoodC: L.cloth2, lan: 0xffb040 };
+  if (f === 'shogunate') return { hull: 0x1c1616, top: 0xa81a1a, rim: 0xa81a1a, sail: () => 0xece4d4, disc: [0x1a1414, 0xece4d4, 0xa81a1a], hoodC: 0xb8a070, lan: 0xfff0d0 };
+  if (f === 'thousandgods') return { hull: 0x2a7a7a, top: 0xe87a1a, rim: GOLD, sail: (u, v, i, j) => (j & 1 ? 0xe87a1a : 0xf08a2a), disc: [GOLD, L.cloth2], hoodC: L.cloth2, lan: 0xffb040 };
   return { hull: 0x6a2a1e, top: 0xb8201a, rim: GOLD, sail: (u, v, i, j) => (j & 1 ? 0xa8402a : 0xb85030), hoodC: 0xa88a50, lan: 0xff5030 };
 }
 function eastHull(k, C, shp, E, o = {}) {
@@ -800,7 +811,7 @@ function oculus(k, H, x, dt, s = 1) { for (const sd of [-1, 1]) { const p = H.si
 function eastGondola(k, C) {
   const L = C.L, f = C.f, E = eLook(L);
   const H = eastHull(k, C, { ...G_SHAPE, B: 0.92, bowRise: 0.16, br: 2, sternRise: 0.3, sr: 2, ex: 3.0, tr: 0.45, ps: 2.6, qs: 0.45, rocker: 0.04, dp: 4 }, E, { fx0: -1.5, fx1: 1.3 });
-  const bt = H.at(0.995, 0.5);
+  const bt = H.stem(0.995);
   if (f === 'thousandgods') { lotus(k, bt[0] - 0.06, bt[1] - 0.02, 0, 1.3, 0xe86a8a, 0xf8d0d8, 8); parasol(k, 0.95, GD, 0, 1.15, 0.42, L.cloth2, 0xe87a1a); garland(k, [H.side(-0.9, 1, 0, -0.02), [-0.1, H.topAt(-0.1) - 0.08, 0.47], H.side(0.6, 1, 0, -0.02)], 0xf09a20); garland(k, [H.side(-0.9, -1, 0, -0.02), [-0.1, H.topAt(-0.1) - 0.08, -0.47], H.side(0.6, -1, 0, -0.02)], 0xf09a20); }
   else hood(k, 0.66, 1.24, H.topAt(0.9) - 0.02, 0.84, 0.44, (u, v, i, j) => sh(E.hoodC, (i + j) & 1 ? 0.85 : 1), { ribs: 3, ribCol: 0x5a4026 });
   if (f === 'tianlong') { dragonHead(k, bt[0] + 0.06, bt[1] + 0.1, 0, 0.9, 0x2a8a6a, { belly: GOLD, mane: 0xb8201a }); k.s(sweep([[H.x0 + 0.05, H.top(0) - 0.05, 0], [H.x0 - 0.15, H.top(0) + 0.1, 0], [H.x0 - 0.05, H.top(0) + 0.3, 0], [H.x0 - 0.18, H.top(0) + 0.38, 0]], (v) => 0.05 - v * 0.04, 6, 12, 0x2a8a6a), null); paperLantern(k, 1.24, H.topAt(0.9) + 0.38, 0, E.lan, 1); paperLantern(k, -1.45, H.topAt(-1.45) + 0.55, -0.2, E.lan, 0.9); k.rod('solid', 0x2a1a14, [-1.45, H.topAt(-1.45), -0.2], [-1.45, H.topAt(-1.45) + 0.46, -0.2], 0.012, 4); }
@@ -821,12 +832,13 @@ function eastRiver(k, C) {
   // the mast and a battened sail
   const mx = 1.3; k.rod('solid', 0x5a3a24, [mx, RD, 0], [mx, 3.2, 0], 0.04, 8);
   const sc = E.sail, P = faSail(k, [mx + 0.1, 1.45, 0], [-0.45, 1.5, 0], [-0.5, 2.55, 0], [mx - 0.05, 3.15, 0], (u, v, i, j) => sc(u, v, i, j), { owner: [0.03, 0.1], bil: 0.06, nv: 10 });
+  if (E.disc) E.disc.forEach((c, q) => sailDisc(k, P, 0.48, 0.52, 0.2 - q * (E.disc.length > 2 ? 0.05 : 0.08), 0.17 - q * (E.disc.length > 2 ? 0.043 : 0.07), c, 0.012 + q * 0.004));
   for (let b = 0; b <= 6; b++) { const v = b / 6, a = [0, 0, 0], c = [0, 0, 0]; P(0, v, a, 0.02); P(1, v, c, 0.02); k.rod('solid', 0x3a2a1a, a, c, 0.012, 4); }
   k.rod('solid', 0x3a2a1a, [mx, 3.0, 0], [-0.45, 1.52, 0], 0.006, 3);
   oculus(k, H, 1.82, 0.16, 1.3);
-  if (f === 'tianlong') { const bt = H.at(0.995, 0.5); dragonHead(k, bt[0] + 0.1, bt[1] + 0.18, 0, 1.4, 0x2a8a6a, { belly: GOLD, mane: 0xb8201a }); for (const x of [-1.4, -0.3, 1.9]) paperLantern(k, x, H.topAt(x) + 0.55, x > 0 ? 0 : 0.6, E.lan, 1.1); k.rod('solid', 0x2a1a14, [-1.4, H.topAt(-1.4), 0.6], [-1.4, H.topAt(-1.4) + 0.62, 0.6], 0.012, 4); k.rod('solid', 0x2a1a14, [-0.3, H.topAt(-0.3), 0.6], [-0.3, H.topAt(-0.3) + 0.62, 0.6], 0.012, 4); k.s(sweep([[H.x0 + 0.1, H.top(0), 0], [H.x0 - 0.15, H.top(0) + 0.2, 0], [H.x0 - 0.02, H.top(0) + 0.45, 0], [H.x0 - 0.2, H.top(0) + 0.55, 0]], (v) => 0.07 - v * 0.05, 6, 12, 0x2a8a6a), null); }
+  if (f === 'tianlong') { const bt = H.stem(0.995); dragonHead(k, bt[0] + 0.1, bt[1] + 0.18, 0, 1.4, 0x2a8a6a, { belly: GOLD, mane: 0xb8201a }); for (const x of [-1.4, -0.3, 1.9]) paperLantern(k, x, H.topAt(x) + 0.55, x > 0 ? 0 : 0.6, E.lan, 1.1); k.rod('solid', 0x2a1a14, [-1.4, H.topAt(-1.4), 0.6], [-1.4, H.topAt(-1.4) + 0.62, 0.6], 0.012, 4); k.rod('solid', 0x2a1a14, [-0.3, H.topAt(-0.3), 0.6], [-0.3, H.topAt(-0.3) + 0.62, 0.6], 0.012, 4); k.s(sweep([[H.x0 + 0.1, H.top(0), 0], [H.x0 - 0.15, H.top(0) + 0.2, 0], [H.x0 - 0.02, H.top(0) + 0.45, 0], [H.x0 - 0.2, H.top(0) + 0.55, 0]], (v) => 0.07 - v * 0.05, 6, 12, 0x2a8a6a), null); }
   if (f === 'shogunate') { torii(k, 1.98, H.topAt(1.98) - 0.06, 0, 0.8); for (const sd of [-1, 1]) nobori(k, -1.85, H.topAt(-1.85) - 0.05, sd * 0.5, 1.5, 0xf0ece0); paperLantern(k, 0.4, RD + 1.5, 0, E.lan, 0.9); }
-  if (f === 'thousandgods') { const bt = H.at(0.995, 0.5); lotus(k, bt[0] - 0.08, bt[1], 0, 1.8, 0xe86a8a, 0xf8d0d8, 10); for (const sd of [-1, 1]) garland(k, [H.side(-1.7, sd, 0, -0.02), [-0.6, H.topAt(-0.6) - 0.1, sd * 0.75], H.side(0.45, sd, 0, -0.02)], 0xf09a20, 16, 0.035); parasol(k, -1.85, H.topAt(-1.85), 0.45, 1.2, 0.36, L.cloth2, 0xe87a1a); }
+  if (f === 'thousandgods') { const bt = H.stem(0.995); lotus(k, bt[0] - 0.08, bt[1], 0, 1.8, 0xe86a8a, 0xf8d0d8, 10); for (const sd of [-1, 1]) garland(k, [H.side(-1.7, sd, 0, -0.02), [-0.6, H.topAt(-0.6) - 0.1, sd * 0.75], H.side(0.45, sd, 0, -0.02)], 0xf09a20, 16, 0.035); parasol(k, -1.85, H.topAt(-1.85), 0.45, 1.2, 0.36, L.cloth2, 0xe87a1a); }
   yuloh(k, C, H, { oar: { shaft: 0x6a4a2a } }); riverOars(k, C, H, { xs: [-0.5], shaft: 0x6a4a2a });
   heap(k, 1.6, RD, 0, [['bale', 0, -0.32, 1.4, 0.1, 0xc8b070], ['jar', 0.05, 0.32, 1.5, 0, 0x4a3a2a], ['basket', 0.28, 0.0, 1.4], ['bale', 0.0, -0.3, 1.2, -0.2, 0xb8a060, 0.24], ['jar', -0.1, 0.05, 1.3, 0, 0x6a4a3a]], H);
   heap(k, -1.72, RD, 0, [['jar', 0, -0.5, 1.3, 0, 0x4a3a2a], ['basket', 0.02, 0.5, 1.3]], H);
@@ -856,10 +868,10 @@ function eastRaft(k, C) {
 function teethRow(k, H, dt, h, col, n = 22, s0 = 0.1, s1 = 0.9, bag = 'solid') { const w = ((s1 - s0) * (H.x1 - H.x0)) / n; for (const sd of [-1, 1]) for (let i = 0; i < n; i++) { const s = s0 + ((s1 - s0) * (i + 0.5)) / n, p = H.at(s, H.aAt(s, dt, sd), -0.011); k.add(bag, slab([[-w / 2, 0], [w / 2, 0], [0, -h]], 0.006), col, T(p[0], p[1], p[2], 0, sd > 0 ? 0 : PI, 0)); } }
 function brassLamp(k, x, y, z, glow, s = 1) { k.push(T(x, y, z, 0, 0, 0, s)); k.m(cone(0.07, 0.12, 8), BRASS, T(0, 0.02, 0)); k.g(ball(0.055, 8, 6), glow, T(0, -0.07, 0)); for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; k.m(box(0.008, 0.12, 0.008), BRASS, T(Math.cos(a) * 0.06, -0.07, Math.sin(a) * 0.06)); } k.m(cone(0.04, 0.05, 8), BRASS, T(0, -0.14, 0, PI)); k.m(cone(0.012, 0.08, 4), BRASS, T(0, 0.12, 0)); k.pop(); }
 function hangLamp(k, x, y0, z, h, glow) { k.rod('metal', BRASS, [x, y0, z], [x, y0 + h, z], 0.014, 5); k.rod('metal', BRASS, [x, y0 + h, z], [x + 0.16, y0 + h, z], 0.01, 4); k.rod('metal', BRASS, [x + 0.16, y0 + h, z], [x + 0.16, y0 + h - 0.08, z], 0.005, 3); brassLamp(k, x + 0.16, y0 + h - 0.16, z, glow, 0.9); }
-function umbel(k, p, s, dir = 1, col = 0x8a9a3a, band = GOLD) { k.push(T(p[0], p[1], p[2], 0, 0, -dir * 0.5, s)); k.m(cyl(0.05, 0.05, 0.05, 10), band, T(0, 0, 0)); k.s(rev([[0.04, 0], [0.07, 0.05], [0.14, 0.14], [0.17, 0.2], [0.0, 0.18]], 12, (u, v, i) => (i & 1 ? col : sh(col, 1.25))), null, T(0, 0.02, 0)); k.pop(); }
+function umbel(k, p, s, dir = 1, col = 0x8a9a3a, band = GOLD) { s *= 0.7; k.push(T(p[0], p[1], p[2], 0, 0, -dir * 1.0, s)); k.m(cyl(0.05, 0.05, 0.05, 10), band, T(0, 0, 0)); k.s(rev([[0.04, 0], [0.07, 0.05], [0.14, 0.14], [0.17, 0.2], [0.0, 0.18]], 12, (u, v, i) => (i & 1 ? col : sh(col, 1.25))), null, T(0, 0.02, 0)); k.pop(); }
 function wedjat(k, H, x, dt, glow, s = 1) { for (const sd of [-1, 1]) { const p = H.side(x, sd, dt, -0.014); k.push(TA(p, [0, 0, sd]).multiply(T(0, 0, 0, 0, 0, 0, s))); k.g(cyl(0.07, 0.07, 0.008, 12), glow, T(0, 0, 0, 0, 0, 0, 1.6, 1, 0.8)); k.s(cyl(0.032, 0.032, 0.012, 10), 0x101418, T(0, 0.002, 0)); k.s(box(0.26, 0.01, 0.02), 0x101418, T(0, 0.004, -0.09 * sd)); k.s(box(0.02, 0.01, 0.12), 0x101418, T(0.02, 0.004, 0.1 * sd)); k.pop(); } }
 function papyrusHull(k, C, shp, o = {}) {
-  const L = C.L, P = 0xb8b070, tie = 0x6a5030;
+  const L = C.L, P = 0xc8c078, tie = 0x6a5030;
   const H = baseHull(k, C, shp, { col: { out: P, strake: 0, fn: (s, dt, y, j, i) => ((Math.floor(s * 38) % 6 === 0) ? tie : sh(P, i & 1 ? 0.9 : 1.06)), in: sh(P, 0.85), rim: sh(P, 0.8), bottom: sh(P, 0.55), wl: -0.05 }, paint: [[0.0, 0.05, GOLD, 0.15, 0.85, 'metal'], [0.05, 0.1, L.cloth2 === 0xd8ceb0 ? 0x2a6a9a : L.cloth2, 0.15, 0.85]], owner: [0.12, 0.17, 0.22, 0.78], gun: sh(P, 0.85), gunO: { s0: 0.0, s1: 1.0 }, gunR: 0.04, floor: 0xa89058, m: 18, ...o });
   return H;
 }
@@ -867,7 +879,7 @@ function desertGondola(k, C) {
   const L = C.L, f = C.f;
   if (f === 'khemet') {
     const H = papyrusHull(k, C, { ...G_SHAPE, B: 0.86, bowRise: 0.55, sternRise: 0.6, br: 2, sr: 2, ex: 2.0, rocker: 0.16, pb: 1.8, ps: 1.8 }, { fx0: -1.35, fx1: 1.25 });
-    const bt = H.at(1, 0.5), st = H.at(0, 0.5);
+    const bt = H.stem(1), st = H.stem(0);
     umbel(k, [bt[0] + 0.02, bt[1] - 0.03, 0], 1.1, 1); k.s(sweep([[st[0] + 0.1, st[1] - 0.15, 0], [st[0] - 0.02, st[1], 0], [st[0] + 0.1, st[1] + 0.15, 0], [st[0] + 0.25, st[1] + 0.1, 0]], (v) => 0.06 - v * 0.03, 7, 12, 0xb8b070), null); umbel(k, [st[0] + 0.28, st[1] + 0.06, 0], 0.9, -1);
     wedjat(k, H, 1.25, 0.15, L.glow, 0.9);
     pole(k, C, [-1.2, GD + 0.9, 0.3], { col: 0x8a6a40, shoe: GOLD });
@@ -892,8 +904,8 @@ function desertGondola(k, C) {
 function desertRiver(k, C) {
   const L = C.L, f = C.f;
   if (f === 'khemet') {
-    const H = papyrusHull(k, C, { ...R_SHAPE, tr: 0, ps: 1.8, pb: 1.8, qs: 0.6, bowRise: 0.75, sternRise: 0.95, br: 2.2, sr: 2.2, ex: 2.4, rocker: 0.2, dp: 2.5 }, { fx0: -1.75, fx1: 1.75 });
-    const bt = H.at(1, 0.5), st = H.at(0, 0.5);
+    const H = papyrusHull(k, C, { ...R_SHAPE, tr: 0, ps: 1.8, pb: 1.8, qs: 0.6, bowRise: 1.0, sternRise: 1.2, br: 2.8, sr: 2.8, ex: 2.4, rocker: 0.24, dp: 2.5 }, { fx0: -1.7, fx1: 1.7 });
+    const bt = H.stem(1), st = H.stem(0);
     umbel(k, [bt[0] + 0.02, bt[1] - 0.03, 0], 1.5, 1);
     k.s(sweep([[st[0] + 0.15, st[1] - 0.25, 0], [st[0] - 0.02, st[1], 0], [st[0] + 0.15, st[1] + 0.22, 0], [st[0] + 0.38, st[1] + 0.12, 0]], (v) => 0.09 - v * 0.04, 7, 14, 0xb8b070), null); umbel(k, [st[0] + 0.42, st[1] + 0.06, 0], 1.2, -1);
     wedjat(k, H, 1.65, 0.2, L.glow, 1.3);
@@ -902,7 +914,7 @@ function desertRiver(k, C) {
     for (const sz of [-1, 1]) for (let i = 0; i < 6; i++) k.s(box(0.08, 0.5, 0.012), i & 1 ? 0x2a6a9a : 0xb83a2a, T(0.55 + i * 0.11, RD + 0.3, sz * 0.456));
     k.m(rbox(0.74, 0.08, 1.0, 0.02, 1), GOLD, T(0.8, RD + 0.7, 0, 0, 0, 0)); k.m(cyl(0.16, 0.16, 0.03, 16), GOLD, T(0.8, RD + 1.0, 0, HP, HP, 0)); k.g(cyl(0.1, 0.1, 0.034, 14), mix(L.glow, 0xffd070, 0.6), T(0.8, RD + 1.0, 0, HP, HP, 0)); for (const sz of [-1, 1]) k.m(sweep([[0.8, RD + 0.78, sz * 0.05], [0.8, RD + 0.9, sz * 0.22], [0.8, RD + 1.15, sz * 0.2]], (v) => 0.025 * (1 - v * 0.7), 5, 8, GOLD), null);
     const mx = 1.3; k.rod('solid', 0x6a4a2a, [mx, RD, 0], [mx, 3.0, 0], 0.04, 8); k.m(cyl(0.06, 0.05, 0.1, 8), GOLD, T(mx, 3.0, 0));
-    sqSail(k, mx, 1.5, 2.85, 1.0, (u, v, i, j) => (v > 0.9 || u < 0.08 || u > 0.92 ? GOLD : j === 4 ? 0x2a6a9a : 0xf0e8d4), { owner: [0.15, 0.25], bil: 0.12, boom: true, taper: -0.4 });
+    sqSail(k, mx, 1.5, 2.85, 1.0, (u, v, i, j) => (j === 0 || j === 7 ? GOLD : 0xf0e8d4), { owner: [0.15, 0.24], bil: 0.12, boom: true, taper: -0.4 });
     for (const sd of [-1, 1]) { const p = H.side(-1.55, sd, 0, -0.02); p[1] += 0.12; k.rod('solid', 0x6a4a2a, [p[0], RD, p[2] * 0.9], [p[0], p[1] + 0.05, p[2]], 0.025, 5); oar(k, C, p, sd, { e: [p[0] - 0.9, -0.12, p[2] + sd * 0.5], h: [p[0] + 0.35, p[1] + 0.35, p[2] - sd * 0.1], bl: 0.6, bw: 0.2, shaft: 0x6a4a2a, bcol: 0x2a6a9a, lock: false }); }
     heap(k, 1.55, RD, 0, [['amphora', 0, -0.25, 1.5, 0, 0xb86a42], ['amphora', 0.0, 0.25, 1.5, 0.5, 0xa85a3a], ['basket', 0.3, 0.0, 1.4, 0, 0xc8a050], ['jar', -0.05, 0.0, 1.3, 0, 0x2a6a9a]], H);
     heap(k, -1.82, RD, 0, [['jar', 0, 0.0, 1.2, 0, 0x2a6a9a]], H);
@@ -941,7 +953,7 @@ function desertRaft(k, C) {
   }
   // palm logs, a carpet laid over them, brass lamps on posts
   for (let i = 0; i < 7; i++) { const z = -0.69 + i * 0.23; k.s(cyl(0.12, 0.12, 2.9, 9), (px, py, pz) => sh(0x8a6a40, Math.floor((py + 1.5) * 8) & 1 ? 0.85 : 1.0), T(0, 0.12, z, 0, 0, HP)); }
-  for (const x of [-1.2, 0, 1.2]) k.s(cyl(0.05, 0.05, 1.72, 6), 0x6a4a2a, T(x, 0.22, 0, HP)); for (let i = 0; i < 20; i++) k.s(box(0.13, 0.03, 1.58), sh(0xb89a62, 0.9 + rnd(i) * 0.2), T(-1.33 + i * 0.14, FD - 0.015, 0));
+  for (const x of [-1.2, 0, 1.2]) { k.s(cyl(0.05, 0.05, 1.72, 6), 0x6a4a2a, T(x, 0.22, 0, HP)); for (let i = 0; i < 7; i++) k.s(torus(0.125, 0.014, 4, 14), ROPE, T(x + 0.07, 0.12, -0.69 + i * 0.23, 0, HP, 0)); } for (let i = 0; i < 20; i++) k.s(box(0.13, 0.03, 1.58), sh(0xb89a62, 0.9 + rnd(i) * 0.2), T(-1.33 + i * 0.14, FD - 0.015, 0));
   k.c(surf(10, 6, (u, v, out) => { out[0] = -0.75 + u * 1.3; out[1] = FD + 0.006; out[2] = -0.6 + v * 1.2; }, (u, v, i, j) => (i === 0 || i === 9 || j === 0 || j === 5 ? GOLD : (i + j) % 3 === 0 ? L.cloth2 : 0x8a2a3a)));
   k.o(box(2.6, 0.04, 0.012), WHITE, T(0, 0.16, 0.81)); k.o(box(2.6, 0.04, 0.012), WHITE, T(0, 0.16, -0.81));
   for (const [x, z] of [[1.35, -0.7], [1.35, 0.7], [-1.35, -0.7]]) hangLamp(k, x, FD, z, 0.8, L.glow);
@@ -964,7 +976,7 @@ function horseHead(k, x, y, s, col, mane = GOLD) { k.push(T(x, y, 0, 0, 0, 0, s)
 function northGondola(k, C) {
   const L = C.L, R = L.cloth;
   const H = northHull(k, C, { ...G_SHAPE, bowRise: 0.3, br: 2.2, sternRise: 0.24, ex: 2.5 }, { fx0: -1.45, fx1: 1.3 });
-  const bt = H.at(0.995, 0.5), st = H.at(0.005, 0.5);
+  const bt = H.stem(0.995), st = H.stem(0.005);
   horseHead(k, bt[0] - 0.04, bt[1], 1.05, R, GOLD);
   k.s(rbox(0.06, 0.42, 0.06, 0.015, 1), sh(L.wood, 0.7), T(st[0] + 0.05, st[1] + 0.12, 0)); onion(k, st[0] + 0.05, st[1] + 0.33, 0, 0.7, GOLD);
   for (const x of [-0.85, 0.65]) { k.rod('solid', 0x5a3a24, [x, H.topAt(x), -0.38], [x, H.topAt(x) + 0.55, -0.38], 0.014, 5); k.rod('solid', 0x5a3a24, [x, H.topAt(x) + 0.55, -0.38], [x, H.topAt(x) + 0.55, 0.38], 0.012, 4); k.rod('solid', 0x5a3a24, [x, H.topAt(x), 0.38], [x, H.topAt(x) + 0.55, 0.38], 0.014, 5); }
@@ -979,11 +991,11 @@ function northGondola(k, C) {
 function northRiver(k, C) {
   const L = C.L, R = L.cloth;
   const H = northHull(k, C, { ...R_SHAPE, tr: 0, ps: 2.4, qs: 0.55, sternRise: 0.3, bowRise: 0.35, br: 2.2, ex: 3 }, { fx0: -1.85, fx1: 1.85 });
-  const bt = H.at(0.995, 0.5); horseHead(k, bt[0] - 0.06, bt[1] - 0.02, 1.45, R, GOLD);
+  const bt = H.stem(0.995); horseHead(k, bt[0] - 0.06, bt[1] - 0.02, 1.45, R, GOLD);
   cabin(k, 0.48, 1.12, 0.94, 0.6, RD, { wall: 0x8a5a3a, trim: L.cloth2, roof: 'onion', roofCol: R, dome: GOLD, drum: L.cloth2, winGlow: true, winCol: L.glow, nwin: 2 });
   for (const sz of [-1, 1]) for (const x of [0.62, 0.98]) k.s(slab([[-0.1, 0], [0.1, 0], [0.1, 0.2], [0, 0.28], [-0.1, 0.2]], 0.01), L.cloth2, T(x, RD + 0.25, sz * 0.48));
   const mx = 1.3; k.rod('solid', 0x5a3a24, [mx, RD, 0], [mx, 2.8, 0], 0.04, 8); onion(k, mx, 2.8, 0, 0.5, GOLD);
-  sqSail(k, mx, 1.25, 2.5, 1.36, (u, v, i, j) => (v > 0.45 && v < 0.6 ? L.cloth2 : (u > 0.45 && u < 0.55) ? L.cloth2 : R), { owner: [0.06, 0.16], bil: 0.16, nu: 12 });
+  sqSail(k, mx, 1.25, 2.5, 1.36, (u, v, i, j) => (j === 6 ? L.cloth2 : j === 7 ? GOLD : R), { owner: [0.06, 0.16], bil: 0.16, nu: 12 });
   rudder(k, shape({ ...R_SHAPE, tr: 0.2 }), sh(L.wood, 0.8), sh(L.wood, 0.6), { knob: GOLD });
   riverOars(k, C, H, { shaft: 0x9a7a4a, bcol: R });
   for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) { const p = H.side(-1.5 + i * 0.42, sd, 0.1, -0.012); roundShield(k, p[0], p[1], p[2], sd > 0 ? 0 : PI, 0.13, i & 1 ? R : L.cloth2, GOLD, GOLD); }
@@ -1032,7 +1044,7 @@ function batFig(k, x, y, z, s, col, eye) { k.push(T(x, y, z, 0, 0, 0, s)); k.s(b
 function undeadGondola(k, C) {
   const L = C.L, f = C.f, U = uLook(L);
   const H = undeadHull(k, C, { ...G_SHAPE, B: 0.86, ex: f === 'crimson' ? 2.6 : 4.5, pb: f === 'crimson' ? 2.2 : 1.3, ps: f === 'crimson' ? 2.2 : 1.3, qb: 0.8, qs: 0.8, bowRise: f === 'crimson' ? 0.45 : 0.22, br: 2, sternRise: 0.2 }, U, { fx0: -1.45, fx1: 1.3, barn: 30, weed: 10 });
-  const bt = H.at(0.995, 0.5), st = H.at(0.005, 0.5);
+  const bt = H.stem(0.995), st = H.stem(0.005);
   if (f === 'crimson') { // black lacquer, a bat at the prow with its wings spread, gothic lamps
     post(k, [[bt[0] - 0.12, bt[1] - 0.05, 0], [bt[0], bt[1], 0], [bt[0] + 0.05, bt[1] + 0.14, 0]], 0.03, U.trim, 'metal');
     batFig(k, bt[0] + 0.05, bt[1] + 0.22, 0, 1.5, 0x1a1418, U.glow);
@@ -1052,7 +1064,7 @@ function undeadGondola(k, C) {
 function undeadRiver(k, C) {
   const L = C.L, f = C.f, U = uLook(L);
   const H = undeadHull(k, C, { ...R_SHAPE, tr: f === 'crimson' ? 0.45 : 0.3, bowRise: 0.3, sternRise: 0.4, ex: f === 'crimson' ? 3 : 3.6 }, U, { fx0: -1.9, fx1: 1.85, barn: 60, weed: 18 });
-  const bt = H.at(0.995, 0.5), mx = 1.3;
+  const bt = H.stem(0.995), mx = 1.3;
   if (f === 'crimson') {
     cabin(k, 0.48, 1.12, 0.94, 0.62, RD, { wall: 0x1a1418, wallBag: 'metal', trim: U.trim, roof: 'gable', rh: 0.42, roofCol: 0x2a1a1e, winGlow: true, winCol: U.glow, nwin: 2, winGeo: slab([[-0.06, -0.1], [0.06, -0.1], [0.06, 0.04], [0, 0.12], [-0.06, 0.04]], 0.012) });
     for (const x of [0.48, 1.12]) k.m(cone(0.04, 0.3, 4), 0x1a1418, T(x, RD + 1.08, 0));
@@ -1078,7 +1090,7 @@ function coffin(k, x, y, z, l, w, h, col, lid, ry = 0, trim) { const pts = [[-l 
 function undeadRaft(k, C) {
   const L = C.L, f = C.f, U = uLook(L);
   if (f === 'crimson') { // black coffins for floats, a lacquered deck, candelabra
-    for (const z of [-0.5, 0.0, 0.5]) for (const x of [-0.75, 0.75]) coffin(k, x, 0.16, z, 1.4, 0.46, 0.22, 0x1a1418, 0x2a1a1e, 0, U.trim);
+    for (const z of [-0.5, 0.0, 0.5]) for (const x of [-0.75, 0.75]) { coffin(k, x, -0.06, z, 1.4, 0.46, 0.22, 0x1a1418, 0x2a1a1e, 0, U.trim); for (const dx of [-0.4, 0.4]) k.s(torus(0.2, 0.014, 4, 16), 0x3a2a24, T(x + dx, 0.05, z, 0, HP, 0, 1, 0.7, 1.2)); }
     for (let i = 0; i < 20; i++) k.s(box(0.14, 0.04, 1.6), sh(0x1e1a1c, 0.9 + rnd(i) * 0.25), T(-1.33 + i * 0.14, FD - 0.02, 0));
     for (const z of [-0.8, 0.8]) { k.m(box(2.9, 0.06, 0.04), U.trim, T(0, FD - 0.02, z)); k.c(surf(12, 2, (u, v, out) => { out[0] = -1.4 + u * 2.8; out[1] = FD - 0.02 - v * 0.18 - Math.abs(Math.sin(u * PI * 6)) * 0.06 * v; out[2] = z * 1.01; }, U.band)); }
     for (const [x, z] of [[1.35, 0.65], [-1.35, -0.65], [1.35, -0.65]]) { k.rod('metal', 0x1a1418, [x, FD, z], [x, FD + 0.7, z], 0.016, 5); k.m(torus(0.1, 0.01, 4, 10, PI), 0x1a1418, T(x, FD + 0.7, z, 0, 0, PI)); for (const d of [-0.1, 0, 0.1]) { k.s(cyl(0.015, 0.015, 0.1, 5), 0xf0e8d8, T(x, FD + 0.76 + (d ? 0 : 0.06), z + d)); k.g(cone(0.012, 0.04, 5), U.glow, T(x, FD + 0.83 + (d ? 0 : 0.06), z + d)); } }
@@ -1108,7 +1120,7 @@ function undeadRaft(k, C) {
 // =====================================================================================================
 function iLook(L) {
   const f = L.faction;
-  if (f === 'ashur') return { hull: 0x4a3020, plate: 0x6a4a2a, band: 0x2a4a8a, trim: L.trim, fire: L.glow, bag: 'solid' };
+  if (f === 'ashur') return { hull: 0x8a5a2a, plate: 0x6a4a2a, band: 0x2a4a8a, trim: L.trim, fire: L.glow, bag: 'metal' };
   if (f === 'ironbound') return { hull: 0x2a2a30, plate: 0x3a3a42, band: L.cloth, trim: 0x8a8a90, fire: L.glow, bag: 'metal' };
   return { hull: 0x1c1a1c, plate: 0x2a2224, band: L.cloth, trim: L.trim, fire: L.glow, bag: 'metal' };
 }
@@ -1125,7 +1137,7 @@ function bullHead(k, x, y, s, col, horn) { k.push(T(x, y, 0, 0, 0, 0, s)); k.add
 function infernalGondola(k, C) {
   const L = C.L, f = C.f, I = iLook(L);
   const H = infernalHull(k, C, { ...G_SHAPE, B: 0.92, bowRise: 0.3, br: 2, sternRise: 0.18, ex: 3.2, tr: f === 'ironbound' ? 0.4 : 0, ps: f === 'ironbound' ? 3 : 2.2, qs: f === 'ironbound' ? 0.4 : 0.6 }, I, { fx0: -1.5, fx1: 1.3, spk: 8 });
-  const bt = H.at(0.995, 0.5);
+  const bt = H.stem(0.995);
   if (f === 'ashur') { bullHead(k, bt[0] + 0.02, bt[1] + 0.06, 1.1, I.trim, I.trim); brazier(k, 1.15, GD, 0.0, 1.2, I.trim, I.fire); for (const sd of [-1, 1]) for (let q = 0; q < 3; q++) k.s(box(0.08, 0.08, +(0.16 - q * 0.05).toFixed(2)), sh(0xb08a5a, 1 - q * 0.08), T(-1.45, H.topAt(-1.45) + 0.04 + q * 0.08, sd * 0.16)); }
   else if (f === 'ironbound') { k.m(cone(0.1, 0.4, 4), 0x4a4a52, T(bt[0] + 0.12, 0.05, 0, 0, PI / 4, -HP)); hood(k, 0.66, 1.25, H.topAt(0.9), 0.84, 0.36, 0x2a2a30, { bag: 'metal', nu: 8, nv: 4, ribs: 4, ribCol: 0x5a5a62 }); k.g(box(0.02, 0.1, 0.2), I.fire, T(1.26, H.topAt(1.0) + 0.12, 0)); k.m(cyl(0.1, 0.1, 0.24, 8), 0x2a2a30, T(-1.45, GD + 0.12, 0.15)); k.m(cyl(0.04, 0.05, 0.5, 6), 0x3a3a42, T(-1.48, GD + 0.48, 0.15)); k.g(box(0.02, 0.06, 0.08), I.fire, T(-1.345, GD + 0.12, 0.15)); }
   else { hornPair(k, bt[0] - 0.1, bt[1] - 0.04, 0, 1.4, 0x2a2224); skull(k, bt[0] + 0.03, bt[1] + 0.02, 0, 1.1, 0, 0xd8ccb8, I.fire); brazier(k, 1.1, GD, 0.0, 1.2, 0x2a2224, I.fire); }
@@ -1139,7 +1151,7 @@ function infernalRiver(k, C) {
   const L = C.L, f = C.f, I = iLook(L), mx = 1.3;
   if (f === 'ironbound') C.wheel = true;
   const H = infernalHull(k, C, { ...R_SHAPE, x0: f === 'ironbound' ? -1.72 : -2.1, tr: f === 'ironbound' ? 0.75 : 0.42, ps: f === 'ironbound' ? 4 : 3.4, qs: f === 'ironbound' ? 0.3 : 0.42, bowRise: 0.3, br: 2, sternRise: f === 'ironbound' ? 0.05 : 0.3, ex: 3.4 }, I, { fx0: f === 'ironbound' ? -1.6 : -1.9, fx1: 1.8, spk: 14 });
-  const bt = H.at(0.995, 0.5);
+  const bt = H.stem(0.995);
   if (f === 'ironbound') {
     cabin(k, 0.46, 1.14, 1.0, 0.66, RD, { wallBag: 'metal', wall: 0x3a3a42, trim: 0x5a5a62, roof: 'flat', roofCol: 0x2a2a30, roofBag: 'metal', winGlow: true, winCol: I.fire, nwin: 2, winGeo: box(0.16, 0.05, 0.012), doorCol: 0x1a1a1c });
     for (const z of [-0.22, 0.22]) { k.m(cyl(0.09, 0.1, 1.2, 10), 0x2a2a30, T(0.8, RD + 1.25, z)); k.m(cyl(0.11, 0.11, 0.05, 10), I.band, T(0.8, RD + 1.4, z)); k.g(cyl(0.07, 0.07, 0.02, 10), I.fire, T(0.8, RD + 1.86, z)); for (let i = 0; i < 4; i++) k.m(cone(0.02, 0.1, 4), 0x2a2a30, T(0.8 + Math.cos(i * HP) * 0.1, RD + 1.88, z + Math.sin(i * HP) * 0.1)); }
@@ -1152,7 +1164,7 @@ function infernalRiver(k, C) {
     for (let q = 0; q < 4; q++) k.s(rbox(0.68 - q * 0.14, 0.18, 0.96 - q * 0.2, 0.01, 1), q & 1 ? sh(0xb08a5a, 0.85) : 0xb08a5a, T(0.8, RD + 0.09 + q * 0.18, 0));
     k.s(box(0.69, 0.04, 0.97), I.band, T(0.8, RD + 0.18, 0)); k.g(box(0.1, 0.12, 1.0), I.fire, T(0.8, RD + 0.06, 0)); brazier(k, 0.8, RD + 0.72, 0, 1.4, I.trim, I.fire);
     k.rod('solid', 0x4a3020, [mx + 0.12, RD, 0], [mx + 0.12, 2.7, 0], 0.04, 8);
-    sqSail(k, mx + 0.12, 1.3, 2.45, 1.3, (u, v, i, j) => { const dx = u - 0.5, dy = v - 0.5; return dx * dx + dy * dy < 0.04 ? I.trim : j & 1 ? L.cloth : sh(L.cloth, 0.8); }, { owner: [0.06, 0.15], bil: 0.14 });
+    const SP = sqSail(k, mx + 0.12, 1.3, 2.45, 1.3, (u, v, i, j) => (j & 1 ? L.cloth : sh(L.cloth, 0.8)), { owner: [0.06, 0.15], bil: 0.14 }); sailDisc(k, SP, 0.5, 0.55, 0.15, 0.17, I.trim, 0.014, 'metal'); for (let q = 0; q < 8; q++) { const a = (q / 8) * TAU; sailDisc(k, SP, 0.5 + Math.cos(a) * 0.24, 0.55 + Math.sin(a) * 0.26, 0.03, 0.035, I.trim, 0.014, 'metal'); }
     bullHead(k, bt[0] + 0.04, bt[1] + 0.1, 1.4, I.trim, I.trim);
     for (const sd of [-1, 1]) for (let i = 0; i < 5; i++) for (let q = 0; q < 3; q++) { const x = -1.85 + i * 0.12; k.s(box(0.1, 0.08, +(0.1 - q * 0.03).toFixed(2)), sh(0xb08a5a, 1 - q * 0.08), T(x, H.topAt(x) + 0.04 + q * 0.08, sd * 0.45)); }
     riverOars(k, C, H, { shaft: 0x5a3a24, bcol: I.trim });
@@ -1176,15 +1188,15 @@ function infernalRiver(k, C) {
 }
 function infernalRaft(k, C) {
   const L = C.L, f = C.f, I = iLook(L);
-  if (f === 'ashur') { for (let i = 0; i < 8; i++) { const z = -0.7 + i * 0.2; k.s(cyl(0.11, 0.11, 2.9, 9), sh(0x5a3a24, 0.85 + rnd(i) * 0.3), T(0, 0.13, z, 0, 0, HP)); for (const sx of [-1, 1]) k.m(cyl(0.115, 0.115, 0.06, 9), I.trim, T(sx * 1.43, 0.13, z, 0, 0, HP)); } }
-  else for (const z of [-0.5, 0.5]) { const F = shape({ x0: -1.5, x1: 1.5, B: 0.55, draft: 0.16, free: 0.16, bowRise: 0.08, ex: 3, pb: 3, ps: 3, th: 0.02 }); k.push(T(0, 0, z)); shell(k, F, hcol(F, { out: I.hull, strake: 0, fn: (s) => sh(I.hull, Math.floor(s * 10) & 1 ? 1.2 : 0.9), in: I.plate, rim: I.trim }), { m: 8, nv: 20, bag: 'metal' }); k.pop(); }
+  if (f === 'ashur') { for (let i = 0; i < 8; i++) { const z = -0.7 + i * 0.2; k.s(cyl(0.11, 0.11, 2.9, 12), sh(0x5a3a24, 0.85 + rnd(i) * 0.3), T(0, 0.13, z, 0, 0, HP)); for (const sx of [-1, 1]) k.m(cyl(0.115, 0.115, 0.06, 12), I.trim, T(sx * 1.43, 0.13, z, 0, 0, HP)); for (const x of [-0.7, 0.7]) k.m(torus(0.113, 0.014, 4, 14), I.trim, T(x, 0.13, z, 0, HP, 0)); } }
+  else for (const z of [-0.5, 0.5]) { const F = shape({ x0: -1.5, x1: 1.5, B: 0.55, draft: 0.16, free: 0.16, bowRise: 0.08, ex: 3, pb: 3, ps: 3, th: 0.02 }); k.push(T(0, 0, z)); shell(k, F, hcol(F, { out: I.hull, strake: 0, fn: (s) => sh(I.hull, Math.floor(s * 10) & 1 ? 1.2 : 0.9), in: I.plate, rim: I.trim }), { m: 12, nv: 36, bag: 'metal' }); k.pop(); rivetRow(k, { at: (ss, a, ins) => { const p = F.at(ss, a, ins); return [p[0], p[1], p[2] + z]; }, aAt: F.aAt }, 0.06, 0x8a8a90, 0.08, 0.92, 12); }
   if (f === 'ashur') for (let i = 0; i < 16; i++) k.s(box(0.17, 0.03, 1.6), sh(0x6a4a2a, 0.9 + rnd(i) * 0.2), T(-1.27 + i * 0.17, FD - 0.015, 0));
-  else { for (let i = 0; i <= 14; i++) k.m(box(0.03, 0.04, 1.6), I.plate, T(-1.4 + i * 0.2, FD - 0.02, 0)); for (let i = 0; i <= 7; i++) k.m(box(2.84, 0.04, 0.03), I.plate, T(0, FD - 0.025, -0.78 + i * 0.223)); k.g(box(2.6, 0.01, 1.4), mix(I.fire, 0x000000, 0.6), T(0, 0.12, 0)); }
+  else { for (let i = 0; i <= 14; i++) k.m(box(0.03, 0.04, 1.6), I.plate, T(-1.4 + i * 0.2, FD - 0.02, 0)); for (let i = 0; i <= 7; i++) k.m(box(2.84, 0.04, 0.03), I.plate, T(0, FD - 0.025, -0.78 + i * 0.223)); k.g(box(2.6, 0.01, 1.4), mix(I.fire, 0x000000, 0.82), T(0, 0.12, 0)); }
   for (const z of [-0.8, 0.8]) k.m(box(2.96, 0.08, 0.04), I.trim, T(0, FD - 0.03, z));
   k.o(box(2.4, 0.05, 0.012), WHITE, T(0, FD - 0.06, 0.826)); k.o(box(2.4, 0.05, 0.012), WHITE, T(0, FD - 0.06, -0.826));
   if (f === 'ashur') { for (let q = 0; q < 3; q++) k.s(rbox(0.55 - q * 0.14, 0.12, 0.55 - q * 0.14, 0.01, 1), q & 1 ? sh(0xb08a5a, 0.85) : 0xb08a5a, T(1.15, FD + 0.06 + q * 0.12, 0)); k.s(box(0.56, 0.03, 0.56), I.band, T(1.15, FD + 0.1, 0)); brazier(k, 1.15, FD + 0.36, 0, 1.3, I.trim, I.fire); for (const sd of [-1, 1]) for (let i = 0; i < 6; i++) for (let q = 0; q < 2; q++) k.s(box(0.1, 0.08, 0.06), 0xb08a5a, T(-1.3 + i * 0.5, FD + 0.04 + q * 0.08, sd * 0.78)); }
   else if (f === 'ironbound') { k.m(rbox(0.5, 0.36, 0.7, 0.03, 1), 0x3a3a42, T(1.15, FD + 0.18, 0)); k.m(cyl(0.06, 0.07, 0.6, 8), 0x2a2a30, T(1.15, FD + 0.6, 0)); k.g(cyl(0.045, 0.045, 0.02, 8), I.fire, T(1.15, FD + 0.9, 0)); k.g(box(0.02, 0.08, 0.3), I.fire, T(1.405, FD + 0.18, 0)); rivetRow(k, shape({ x0: -1.5, x1: 1.5, B: 1.62, free: FD, draft: 0.05, ex: 8, pb: 8, ps: 8 }), 0.03, 0x9a9aa0, 0.05, 0.95, 14); for (let i = 0; i < 9; i++) k.m(torus(0.04, 0.012, 4, 8), 0x4a4a52, T(-1.2 + i * 0.07, FD + 0.01, 0.65, i & 1 ? HP : 0, 0, 0)); }
-  else { brazier(k, 1.2, FD, 0, 1.6, 0x2a2224, I.fire); for (const [x, z] of [[1.42, 0.75], [1.42, -0.75], [-1.42, -0.75], [-1.42, 0.75]]) k.m(cone(0.05, 0.4, 5), 0x2a2224, T(x, FD + 0.2, z)); skull(k, 1.45, FD + 0.42, 0.75, 1.0, 0, 0xd8ccb8, I.fire); }
+  else { for (const sz of [-1, 1]) for (let i = 0; i < 10; i++) k.m(cone(0.03, 0.18, 5), 0x2a2224, T(-1.35 + i * 0.3, FD, sz * 0.84, sz * 1.2, 0, 0)); brazier(k, 1.2, FD, 0, 1.6, 0x2a2224, I.fire); for (const [x, z] of [[1.42, 0.75], [1.42, -0.75], [-1.42, -0.75], [-1.42, 0.75]]) k.m(cone(0.05, 0.4, 5), 0x2a2224, T(x, FD + 0.2, z)); skull(k, 1.45, FD + 0.42, 0.75, 1.0, 0, 0xd8ccb8, I.fire); }
   flagstaff(k, -1.4, FD, -0.62, 1.1, { h: 0.24, w: 0.55, kind: 'swallow', col: 0x2a2224, knob: I.trim, knobGeo: cone(0.04, 0.12, 4) });
   heap(k, 0.72, FD, 0, [['crate', 0, -0.35, 1.5, 0.1, 0x4a2a1a], ['cask', 0.0, 0.35, 1.4, 0.0, 0x3a2a1a], ['ingot', -0.1, 0.0, 1.3, 0.2, f === 'ashur' ? I.trim : 0x4a4a52]]);
   heap(k, -1.25, FD, 0, [['cask', 0, 0.0, 1.2, 0, 0x3a2a1a], ['crate', 0.1, -0.3, 1.1, 0.3, 0x4a2a1a]]);
@@ -1205,7 +1217,7 @@ function crookedPole(k, x, y, z, h, col, lean = 0.1) { k.s(sweep([[x, y, z], [x 
 function goblinGondola(k, C) {
   const L = C.L, sk = C.f === 'skar', G = L.trim;
   const H = goblinHull(k, C, { ...G_SHAPE, B: 0.94, bowRise: 0.22, br: 2, sternRise: 0.12, ex: 2.4, tr: 0.35, ps: 2.6, qs: 0.5, rocker: 0.05 }, { fx0: -1.45, fx1: 1.3 });
-  const bt = H.at(0.995, 0.5);
+  const bt = H.stem(0.995);
   for (let i = 0; i < 6; i++) k.s(cone(0.024, 0.1, 4), BONE, T(bt[0] - 0.04 - i * 0.05, bt[1] - 0.1, (i & 1 ? 0.06 : -0.06) * (1 + i * 0.4), PI));
   if (sk) { // copper pipes, a gear and a green sight-glass tank
     for (const sd of [-1, 1]) { const pts = []; for (let i = 0; i <= 8; i++) { const s = 0.12 + i * 0.09; pts.push(H.at(s, H.aAt(s, 0.1 + (i % 3 === 1 ? 0.04 : 0), sd), -0.03)); } k.m(sweep(pts, 0.022, 5, 24, COPPER), null); }
@@ -1224,7 +1236,7 @@ function goblinGondola(k, C) {
 function goblinRiver(k, C) {
   const L = C.L, sk = C.f === 'skar', G = L.trim; C.wheel = true;
   const H = goblinHull(k, C, { ...R_SHAPE, x0: -1.72, tr: 0.7, ps: 4, qs: 0.3, ex: 3.2, bowRise: 0.22, sternRise: 0.08 }, { fx0: -1.6, fx1: 1.8 });
-  const bt = H.at(0.995, 0.5);
+  const bt = H.stem(0.995);
   if (sk) { // a copper boiler house with a spark-spire, pipes everywhere, a green-glowing wheel
     k.m(cyl(0.34, 0.34, 0.9, 12), COPPER, T(0.8, RD + 0.38, 0, 0, 0, HP)); for (const x of [0.45, 0.8, 1.15]) k.m(cyl(0.355, 0.355, 0.04, 12, true), BRASS, T(x, RD + 0.38, 0, 0, 0, HP)); k.g(cyl(0.12, 0.12, 0.02, 10), G, T(1.26, RD + 0.38, 0, 0, 0, HP));
     for (const z of [-0.45, 0.45]) { k.m(cyl(0.09, 0.09, 0.5, 8), 0x3a342c, T(0.62, RD + 0.25, z)); k.g(cyl(0.06, 0.06, 0.3, 8), G, T(0.62, RD + 0.3, z * 1.02)); }
@@ -1250,8 +1262,9 @@ function goblinRiver(k, C) {
 }
 function goblinRaft(k, C) {
   const L = C.L, sk = C.f === 'skar', G = L.trim;
-  if (sk) for (const z of [-0.5, 0.5]) { k.m(cyl(0.22, 0.22, 2.6, 12), COPPER, T(0, 0.1, z, 0, 0, HP)); for (const sx of [-1, 1]) k.m(hemi(0.22, 12, 4), COPPER, T(sx * 1.3, 0.1, z, 0, 0, -sx * HP)); for (const x of [-0.9, 0, 0.9]) k.m(cyl(0.23, 0.23, 0.05, 12, true), BRASS, T(x, 0.1, z, 0, 0, HP)); }
-  else for (const [x, z, r] of [[-1.0, -0.5, 0.2], [0.05, -0.55, 0.24], [1.0, -0.45, 0.19], [-0.95, 0.52, 0.23], [0.1, 0.5, 0.2], [1.05, 0.55, 0.22]]) { k.push(T(x, 0.1, z, 0, rnd(x * 7 + z) * 0.4, HP)); k.s(rev([[0, -0.4], [r * 0.85, -0.4], [r, -0.2], [r * 1.05, 0], [r, 0.2], [r * 0.85, 0.4], [0, 0.4]], 10, sh(0x6a5a3a, 0.85 + rnd(x + z) * 0.3)), null); k.m(cyl(r * 1.06, r * 1.06, 0.04, 10, true), 0x5a5a4a, T(0, -0.25, 0)); k.m(cyl(r * 1.06, r * 1.06, 0.04, 10, true), 0x5a5a4a, T(0, 0.25, 0)); k.pop(); }
+  if (sk) for (const z of [-0.5, 0.5]) { for (let i = 0; i < 14; i++) for (const a of [0.5, -0.5]) k.m(ball(0.016, 5, 3), BRASS, T(-1.2 + i * 0.185, 0.1 + Math.sin(a) * 0.225, z + Math.cos(a) * 0.225)); k.m(cyl(0.22, 0.22, 2.6, 18), COPPER, T(0, 0.1, z, 0, 0, HP)); for (const sx of [-1, 1]) k.m(hemi(0.22, 12, 4), COPPER, T(sx * 1.3, 0.1, z, 0, 0, -sx * HP)); for (const x of [-0.9, 0, 0.9]) k.m(cyl(0.23, 0.23, 0.05, 12, true), BRASS, T(x, 0.1, z, 0, 0, HP)); }
+  else for (const [x, z, r] of [[-1.0, -0.5, 0.2], [0.05, -0.55, 0.24], [1.0, -0.45, 0.19], [-0.95, 0.52, 0.23], [0.1, 0.5, 0.2], [1.05, 0.55, 0.22]]) { k.push(T(x, 0.1, z, 0, rnd(x * 7 + z) * 0.4, HP)); k.s(rev([[0, -0.4], [r * 0.85, -0.4], [r, -0.2], [r * 1.05, 0], [r, 0.2], [r * 0.85, 0.4], [0, 0.4]], 16, sh(0x6a5a3a, 0.85 + rnd(x + z) * 0.3)), null); k.m(cyl(r * 1.06, r * 1.06, 0.04, 10, true), 0x5a5a4a, T(0, -0.25, 0)); k.m(cyl(r * 1.06, r * 1.06, 0.04, 10, true), 0x5a5a4a, T(0, 0.25, 0)); k.pop(); }
+  for (const x of [-1.0, 0.05, 1.0]) for (const sz of [-1, 1]) k.s(sweep([[x - 0.2, FD - 0.03, sz * 0.2], [x, 0.0, sz * 0.75], [x + 0.2, FD - 0.03, sz * 0.2]], 0.012, 4, 10, ROPE), null);
   for (let i = 0; i < 15; i++) { const w = 1.35 + rnd(i) * 0.35; k.s(box(0.16, 0.04, w), sh(sk ? 0x5a4a3a : L.wood, 0.8 + rnd(i * 3) * 0.35), T(-1.32 + i * 0.19, FD - 0.02 + (rnd(i * 5) - 0.5) * 0.02, (rnd(i * 2) - 0.5) * 0.15, (rnd(i * 4) - 0.5) * 0.06, 0, 0)); }
   k.o(box(1.8, 0.1, 0.012), WHITE, T(0, FD - 0.06, 0.78)); k.o(box(1.8, 0.1, 0.012), WHITE, T(0, FD - 0.06, -0.78));
   if (sk) { k.m(cyl(0.12, 0.12, 0.45, 10), 0x3a342c, T(1.2, FD + 0.22, 0.45)); k.g(cyl(0.08, 0.08, 0.3, 8), G, T(1.2, FD + 0.25, 0.45)); k.m(sweep([[1.2, FD + 0.45, 0.45], [1.2, FD + 0.7, 0.3], [0.8, FD + 0.6, -0.1], [0.6, FD + 0.1, -0.6]], 0.025, 5, 16, COPPER), null); crookedPole(k, -1.4, FD, -0.6, 1.2, 0x3a342c); k.g(ball(0.06, 8, 6), G, T(-1.3, FD + 1.24, -0.6)); k.o(flagGeo(0.4, 0.24, 'rag'), WHITE, T(-1.33, FD + 1.05, -0.6)); }
@@ -1283,9 +1296,9 @@ function savColor(type, S) {
   switch (type) {
     case 'dugout': return { out: S.wood, strake: 0, fn: (s, dt, y, j, i) => sh(S.wood, 0.8 + 0.35 * rnd(i * 7 + j * 3)), in: sh(S.wood, 0.7), rim: sh(S.wood, 1.15), bottom: sh(S.wood, 0.55) };
     case 'skin': return { out: S.hide, strake: 0, fn: (s, dt, y, j, i) => (Math.floor(s * 44) % 5 === 0 ? sh(S.hide, 0.6) : sh(S.hide, 0.92 + 0.16 * rnd(Math.floor(s * 9) + i * 3))), in: sh(S.hide, 0.7), rim: S.wood, bottom: sh(S.hide, 0.6) };
-    case 'scale': return { out: S.hide, strake: 0, fn: (s, dt, y, j, i) => sh(S.hide, ((i + (j & 1)) & 1) ? 0.78 : 1.08 + (dt < 0.1 ? 0.1 : 0)), in: sh(S.hide, 0.6), rim: S.bone, bottom: sh(S.hide, 0.7) };
-    case 'leaf': return { out: S.hide, strake: 0, fn: (s, dt, y, j, i) => ((j + Math.abs(i - 8)) % 6 === 0 ? sh(S.hide, 1.35) : sh(S.hide, 0.9 + (dt < 0.05 ? 0.25 : 0))), in: (s, y, j, i) => ((j + Math.abs(i - 25)) % 6 === 0 ? sh(S.hide, 1.4) : sh(S.hide, 1.12)), rim: sh(S.hide, 0.7), bottom: (s, y, j, i) => (i === 7 || i === 8 ? 0xc8d890 : sh(S.hide, 0.8)), wl: -0.02 };
-    case 'flesh': return { out: S.hide, strake: 0, fn: (s, dt, y, j, i) => { const r = rnd(i * 13 + j * 7); return r > 0.85 ? 0x8a2a4a : r > 0.6 ? sh(S.hide, 0.85) : S.hide; }, in: 0x6a1a3a, rim: 0x8a3a5a, bottom: sh(S.hide, 0.7), wl: -0.05 };
+    case 'scale': return { out: S.hide, strake: 0, fn: (s, dt, y, j, i) => sh(S.hide, (((i >> 1) + (j & 1)) & 1 ? 0.93 : 1.04) * (dt < 0.12 ? 1.12 : 1)), in: sh(S.hide, 0.6), rim: S.bone, bottom: sh(S.hide, 0.7) };
+    case 'leaf': return { out: S.hide, strake: 0, fn: (s, dt, y, j, i) => sh(S.hide, 1.12 - Math.min(0.3, dt * 0.6)), in: (s, y, j, i) => sh(S.hide, 1.15 + Math.max(0, 0.15 - Math.abs(i - 25) * 0.04)), rim: sh(S.hide, 0.7), bottom: sh(S.hide, 0.8), wl: -0.02 };
+    case 'flesh': return { out: S.hide, strake: 0, fn: (s, dt, y, j, i) => sh(S.hide, 0.92 + 0.1 * Math.sin(s * 31 + i * 0.9) * Math.sin(j * 0.7)), in: 0x6a1a3a, rim: 0x8a3a5a, bottom: sh(S.hide, 0.7), wl: -0.05 };
     default: return { out: S.hide };
   }
 }
@@ -1294,23 +1307,28 @@ function savHull(k, C, S, type, shp, o = {}) {
   if (type === 'reed') { // bundles of reed along the hull's lines, bound with cord
     const H = shape({ ...shp, th: 0.05 });
     const n = o.bundles ?? 5;
-    for (let b = 0; b < n; b++) { const a = 0.06 + (0.88 * b) / (n - 1), pts = []; for (let i = 0; i <= 12; i++) pts.push(H.at(0.01 + 0.98 * sv(i / 12), a, 0.05)); reedBundle(k, pts, (v) => (o.r ?? 0.09) * (0.45 + 0.55 * Math.sin(PI * Math.min(1, v * 1.04 + 0.01))), S.hide, 8, sh(S.wood, 0.9), 30); }
+    for (let b = 0; b < n; b++) { const a = 0.06 + (0.88 * b) / (n - 1), pts = []; for (let i = 0; i <= 12; i++) pts.push(H.at(0.01 + 0.98 * sv(i / 12), a, 0.05)); reedBundle(k, pts, (v) => (o.r ?? 0.09) * (0.45 + 0.55 * Math.sin(PI * Math.min(1, v * 1.04 + 0.01))), S.hide, 8, sh(S.wood, 0.9), o.seg ?? 30); }
     floor(k, H, H.x0 + 0.35, H.x1 - 0.4, C.deck, 0xa89058, { step: 0.12 });
     return H;
   }
   if (type === 'stone') { // a floating slab of rock
     const H = shape({ ...shp, ex: 8, pb: 3, ps: 3, qb: 0.4, qs: 0.4 });
     const top = C.deck;
-    for (let i = 0; i < 14; i++) { const x = H.x0 + 0.15 + ((H.x1 - H.x0 - 0.3) * i) / 13, hw = H.hw(H.s(x)); if (hw < 0.08) continue; k.s(rbox(0.3, 0.18 + rnd(i) * 0.06, hw * 2, 0.04, 1), sh(S.hide, 0.8 + rnd(i * 3) * 0.3), T(x, top - 0.1 - rnd(i) * 0.03, 0, 0, 0, (rnd(i * 5) - 0.5) * 0.08), true); k.s(dodec(hw * 0.7), sh(S.hide, 0.7 + rnd(i * 7) * 0.2), T(x, top - 0.26, 0, rnd(i) * 3, rnd(i * 2) * 3, 0, 1.2, 0.5, 1.1), true); }
+    for (let i = 0; i < 14; i++) { const x = H.x0 + 0.15 + ((H.x1 - H.x0 - 0.3) * i) / 13, hw = H.hw(H.s(x)); if (hw < 0.08) continue; k.s(rbox(0.3, 0.18 + rnd(i) * 0.06, hw * 2, 0.04, o.rs ?? 3), sh(S.hide, 0.8 + rnd(i * 3) * 0.3), T(x, top - 0.1 - rnd(i) * 0.03, 0, 0, 0, (rnd(i * 5) - 0.5) * 0.08), true); k.s(dodec(hw * 0.7), sh(S.hide, 0.7 + rnd(i * 7) * 0.2), T(x, top - 0.26, 0, rnd(i) * 3, rnd(i * 2) * 3, 0, 1.2, 0.5, 1.1), true); }
     for (let i = 0; i < 10; i++) { const x = H.x0 + 0.3 + ((H.x1 - H.x0 - 0.6) * i) / 9, hw = H.hw(H.s(x)); k.s(box(0.2, 0.02, hw * 1.7), sh(S.hide, 1.15 + rnd(i) * 0.1), T(x, top - 0.005, 0), true); }
     for (let i = 0; i < (o.shards ?? 8); i++) { const r = rnd(i * 9.1 + 3), x = H.x0 + 0.2 + (H.x1 - H.x0 - 0.4) * r, sd = i & 1 ? 1 : -1, hw = H.hw(H.s(x)); k.g(oct(0.06 + rnd(i) * 0.05), S.paint, T(x, top - 0.12, sd * (hw + 0.02), 0, 0, sd * 0.9, 0.7, 2.2, 0.7)); }
     k.g(box((H.x1 - H.x0) * 0.8, 0.012, 0.04), S.paint, T((H.x0 + H.x1) / 2, top - 0.2, H.B * 0.42)); k.g(box((H.x1 - H.x0) * 0.8, 0.012, 0.04), S.paint, T((H.x0 + H.x1) / 2, top - 0.2, -H.B * 0.42));
     for (let i = 0; i < 6; i++) k.s(dodec(0.06 + rnd(i) * 0.04), sh(S.hide, 0.9), T(H.x0 + 0.4 + i * (H.x1 - H.x0 - 0.8) / 5, -0.05 - rnd(i) * 0.1, (rnd(i * 3) - 0.5) * H.B * 0.4), true);
+    for (let i = 0; i < (o.pebbles ?? 10); i++) { const x = H.x0 + 0.3 + (H.x1 - H.x0 - 0.6) * rnd(i * 4.7), sd = i & 1 ? 1 : -1, hw = H.hw(H.s(x)); k.s(new THREE.IcosahedronGeometry(0.04 + rnd(i * 2) * 0.04, 1), sh(S.hide, 0.8 + rnd(i) * 0.3), T(x, top + 0.1 + rnd(i * 3) * 0.4, sd * (hw + 0.14 + rnd(i * 5) * 0.12), rnd(i), rnd(i * 3), 0, 1, 0.8, 1.1), true); }
+    for (let i = 0; i < 6; i++) { const x = H.x0 + 0.4 + i * (H.x1 - H.x0 - 0.8) / 5; for (const sd of [-1, 1]) k.g(box(0.1, 0.012, 0.012), mix(S.paint, 0xffffff, 0.3), T(x, top - 0.08, sd * (H.hw(H.s(x)) + 0.004), 0, 0, (i % 3 - 1) * 0.6)); }
     k.o(box((H.x1 - H.x0) * 0.6, 0.05, 0.012), WHITE, T((H.x0 + H.x1) / 2, top - 0.08, H.B / 2 + 0.01)); k.o(box((H.x1 - H.x0) * 0.6, 0.05, 0.012), WHITE, T((H.x0 + H.x1) / 2, top - 0.08, -H.B / 2 - 0.01));
     return { ...H, halfAt: (x) => H.hw(H.s(x)) * 0.9 + 0.12, th: 0 };
   }
-  const H = baseHull(k, C, { th: type === 'dugout' ? 0.07 : 0.035, ...shp }, { col: savColor(type, S), owner: o.owner ?? [0.1, 0.15, 0.25, 0.75], gun: type === 'dugout' ? sh(S.wood, 1.1) : type === 'leaf' ? sh(S.hide, 0.75) : type === 'flesh' ? 0x7a2a4a : S.wood, gunR: type === 'dugout' ? 0.03 : 0.024, floor: type === 'leaf' ? sh(S.hide, 1.2) : type === 'flesh' ? 0x8a3a5a : sh(S.wood, 1.2), floorO: { step: 0.14 }, ...o });
+  const H = baseHull(k, C, { th: type === 'dugout' ? 0.07 : 0.035, ...shp }, { col: savColor(type, S), owner: o.owner ?? [0.1, 0.15, 0.25, 0.75], gun: type === 'dugout' ? sh(S.wood, 1.1) : type === 'leaf' ? sh(S.hide, 0.75) : type === 'flesh' ? 0x7a2a4a : S.wood, gunR: type === 'dugout' ? 0.03 : 0.024, floor: type === 'leaf' ? sh(S.hide, 1.2) : type === 'flesh' ? 0x8a3a5a : sh(S.wood, 1.2), floorO: { step: 0.14 }, poles: type !== 'flesh', ...o });
   if (type === 'skin' || type === 'scale') ribs(k, H, o.ribs ?? [-1.1, -0.6, -0.1, 0.4, 0.9], S.bone, 0.016);
+  if (type === 'scale') spikes(k, H, 0.0, S.bone, 9, 0.1, 0.1, 0.9, 'solid', 1.6);
+  if (type === 'leaf') for (const sd of [-1, 1]) for (let q = 0; q < 7; q++) { const x0 = H.x0 + 0.5 + q * ((H.x1 - H.x0 - 1.0) / 6), pts = []; for (let t = 0; t <= 4; t++) pts.push(H.side(x0 + t * 0.12, sd, 0.32 - t * 0.075, -0.006)); k.s(sweep(pts, 0.008, 3, 6, sh(S.hide, 1.4)), null); }
+  if (type === 'flesh') for (const sd of [-1, 1]) for (let q = 0; q < 3; q++) { const pts = []; for (let t = 0; t <= 8; t++) { const x = H.x0 + 0.4 + t * ((H.x1 - H.x0 - 0.8) / 8); pts.push(H.side(x, sd, 0.12 + q * 0.09 + Math.sin(t * 1.7 + q) * 0.035, -0.008)); } k.s(sweep(pts, 0.012, 4, 24, 0x7a1a3a), null); }
   if (type === 'skin') for (const sd of [-1, 1]) for (let i = 0; i < 14; i++) { const s = 0.1 + i * 0.058, p = H.at(s, sd > 0 ? 1 : 0, -0.02); k.s(cyl(0.006, 0.006, 0.12, 3), 0x3a2a1a, T(p[0], p[1] - 0.05, p[2], sd * 0.3, 0, 0)); }
   return H;
 }
@@ -1343,8 +1361,8 @@ function savGondola(k, C) {
   if (type === 'reed') Object.assign(shp, { bowRise: 0.5, sternRise: 0.4, br: 2.2, sr: 2.2, pb: 1.8, ps: 1.8, ex: 2.2, rocker: 0.12 });
   if (type === 'skin' || type === 'scale') Object.assign(shp, { bowRise: 0.18, sternRise: 0.12, ex: 2.8, pb: 2.0, ps: 2.0 });
   if (type === 'stone') Object.assign(shp, { B: 0.9 });
-  const H = savHull(k, C, S, type, shp, { fx0: -1.45, fx1: 1.32 });
-  const bt = type === 'stone' ? [H.x1 - 0.1, GD, 0] : H.at(0.995, 0.5), st = type === 'stone' ? [H.x0 + 0.1, GD, 0] : H.at(0.005, 0.5);
+  const H = savHull(k, C, S, type, shp, { fx0: -1.45, fx1: 1.32, rs: 2, bundles: 5, seg: 24 });
+  const bt = type === 'stone' ? [H.x1 - 0.1, GD, 0] : H.stem(0.995), st = type === 'stone' ? [H.x0 + 0.1, GD, 0] : H.stem(0.005);
   savFigure(k, C, S, [bt[0] - 0.05, bt[1] - 0.02, 0], 1.0, 1);
   if (f === 'mistisles') { // an outrigger to starboard
     for (const x of [-0.5, 0.5]) k.s(sweep([[x, H.topAt(x), 0.3], [x, H.topAt(x) + 0.08, 0.7], [x, 0.12, 1.1]], 0.025, 5, 8, S.wood), null);
@@ -1375,8 +1393,8 @@ function savRiver(k, C) {
   if (type === 'reed') Object.assign(shp, { bowRise: 0.7, sternRise: 0.55, pb: 1.8, ps: 1.8, ex: 2.2, rocker: 0.15 });
   if (type === 'flesh') Object.assign(shp, { ex: 2.4, bowRise: 0.3 });
   if (type === 'dugout') Object.assign(shp, { B: 1.3, ex: 2.4, bowRise: 0.28, sternRise: 0.22 });
-  const H = savHull(k, C, S, type, shp, { fx0: -1.85, fx1: 1.82, bundles: 7, r: 0.11, shards: 12, ribs: [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5] });
-  const bt = type === 'stone' ? [H.x1 - 0.1, RD, 0] : H.at(0.995, 0.5), st = type === 'stone' ? [H.x0 + 0.1, RD, 0] : H.at(0.005, 0.5), mx = 1.3;
+  const H = savHull(k, C, S, type, shp, { fx0: -1.85, fx1: 1.82, bundles: 7, r: 0.11, shards: 16, rs: 2, pebbles: 24, ribs: [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5] });
+  const bt = type === 'stone' ? [H.x1 - 0.1, RD, 0] : H.stem(0.995), st = type === 'stone' ? [H.x0 + 0.1, RD, 0] : H.stem(0.005), mx = 1.3;
   savFigure(k, C, S, [bt[0] - 0.06, bt[1] - 0.02, 0], 1.45, 1);
   if (['beasts', 'cloven', 'xibalba', 'mistisles', 'dragons', 'greenhide'].includes(f)) savFigure(k, C, S, [st[0] + 0.08, st[1] - 0.04, 0], 1.0, -1);
   // the shelter amidships-forward
@@ -1395,7 +1413,7 @@ function savRiver(k, C) {
   }
   // sails for the peoples that use them
   if (f === 'beasts' || f === 'fimbul' || f === 'greenhide') { k.rod('solid', S.wood, [mx, RD, 0], [mx, 2.55, 0], 0.04, 7); sqSail(k, mx, 1.35, 2.35, 1.2, (u, v, i, j) => { if (f === 'greenhide') return [0x6a5a3a, 0x4a4238, 0x8a1a14, 0x7a6a4a][(i * 3 + j * 5) % 4]; const dx = u - 0.5, dy = v - 0.5, r = dx * dx + dy * dy; return f === 'beasts' && r < 0.04 && Math.abs(dx * 6 - Math.round(dx * 6)) < 0.25 ? S.paint : f === 'fimbul' ? sh(S.hide, (i + j) & 1 ? 0.95 : 1.05) : sh(S.hide, 1.1 + ((i + j) & 1) * 0.1); }, { owner: [0.06, 0.16], bil: 0.12, nu: 8, nv: 6, spar: S.wood, boom: true }); if (f === 'beasts') for (let i = 0; i < 4; i++) k.s(cone(0.02, 0.12, 4), S.bone, T(mx + 0.05, 2.38, -0.6 + i * 0.4, PI)); }
-  if (f === 'dragons') { k.rod('solid', S.bone, [mx, RD, 0], [mx, 2.7, 0], 0.04, 7); for (const sz of [-1, 1]) wing(k, T(mx + 0.04, 2.55, 0, 0, sz > 0 ? -HP : HP, -1.25), 1.0, 1.6, 4, sh(S.hide, 0.8), S.bone); k.o(surf(3, 3, (u, v, out) => { out[0] = mx + 0.06; out[1] = 2.5 - v * 0.6; out[2] = (u - 0.5) * 0.3; }, WHITE)); }
+  if (f === 'dragons') { k.rod('solid', S.bone, [mx, RD, 0], [mx, 2.7, 0], 0.04, 7); for (const sz of [-1, 1]) wing(k, T(mx + 0.04, 2.6, 0, 0, sz > 0 ? -HP : HP, -1.5), 1.45, 1.75, 4, sh(S.hide, 0.8), S.bone); k.o(surf(3, 3, (u, v, out) => { out[0] = mx + 0.06; out[1] = 2.5 - v * 0.6; out[2] = (u - 0.5) * 0.3; }, WHITE)); }
   if (f === 'mistisles') { k.rod('solid', S.wood, [mx + 0.25, RD, 0], [mx - 0.05, 2.0, 0], 0.035, 6); const A = [mx + 0.25, RD + 0.2, 0]; k.rod('solid', S.wood, A, [-0.5, 2.9, 0], 0.025, 5); k.rod('solid', S.wood, A, [-0.6, 1.4, 0], 0.025, 5); faSail(k, A, [-0.6, 1.4, 0], [-0.5, 2.9, 0], A, (u, v, i, j) => (j === 3 ? S.paint : sh(0xc8b890, 0.9 + ((i + j) & 1) * 0.1)), { owner: [0.6, 0.72], bil: 0.12 }); }
   if (f === 'fimbul') { icicles(k, H, 18); for (const sd of [-1, 1]) for (let i = 0; i < 3; i++) { const p = H.side(-1.4 + i * 0.6, sd, 0.08, -0.012); roundShield(k, p[0], p[1], p[2], sd > 0 ? 0 : PI, 0.14, i & 1 ? S.paint : 0xd8d0c0, 0x6a6a70, 0x8a8a90); } }
   if (f === 'gorge') for (const sd of [-1, 1]) for (let i = 0; i < 9; i++) { const s = 0.12 + i * 0.09, p = H.at(s, H.aAt(s, 0.07, sd), -0.012); k.s(slab([[-0.1, 0], [0.1, 0], [0.06, -0.12], [0, -0.17], [-0.06, -0.12]], 0.006), S.felt[i % 4], T(p[0], p[1], p[2], 0, sd > 0 ? 0 : PI, 0)); }
@@ -1420,7 +1438,7 @@ function savCargo(f) {
 }
 function savRaft(k, C) {
   const L = C.L, f = C.f, S = svOf(C);
-  const logs = (n, col, r = 0.12, len = 3.0, jag = 0) => { for (let i = 0; i < n; i++) { const z = -0.8 + r + ((1.6 - 2 * r) * i) / (n - 1), l = len - jag * rnd(i * 3) * 0.5; k.s(cyl(r * (0.92 + rnd(i) * 0.12), r, l, 9), (px, py, pz) => sh(col, 0.85 + rnd(Math.floor(py * 4) + i * 5) * 0.3), T((rnd(i * 7) - 0.5) * jag * 0.3, FD - r, z, 0, 0, HP)); for (const sx of [-1, 1]) k.s(cyl(r * 0.85, r * 0.85, 0.012, 9), mix(col, 0xe8d0a0, 0.6), T(sx * l / 2 + (rnd(i * 7) - 0.5) * jag * 0.3 + sx * 0.006, FD - r, z, 0, 0, HP)); } for (const x of [-1.2, 0, 1.2]) k.s(cyl(0.02, 0.02, 1.65, 4), 0x3a2a1a, T(x, FD - 0.005, 0, HP)); };
+  const logs = (n, col, r = 0.12, len = 3.0, jag = 0) => { for (let i = 0; i < n; i++) { const z = -0.8 + r + ((1.6 - 2 * r) * i) / (n - 1), l = len - jag * rnd(i * 3) * 0.5; k.s(cyl(r * (0.92 + rnd(i) * 0.12), r, l, 9), (px, py, pz) => sh(col, 0.85 + rnd(Math.floor(py * 4) + i * 5) * 0.3), T((rnd(i * 7) - 0.5) * jag * 0.3, FD - r, z, 0, 0, HP)); for (const sx of [-1, 1]) k.s(cyl(r * 0.85, r * 0.85, 0.012, 9), mix(col, 0xe8d0a0, 0.6), T(sx * l / 2 + (rnd(i * 7) - 0.5) * jag * 0.3 + sx * 0.006, FD - r, z, 0, 0, HP)); } for (const x of [-1.2, 0, 1.2]) { k.s(cyl(0.02, 0.02, 1.65, 4), 0x3a2a1a, T(x, FD - 0.005, 0, HP)); for (let i = 0; i < n; i++) { const z = -0.8 + r + ((1.6 - 2 * r) * i) / (n - 1); k.s(torus(r * 1.03, 0.014, 4, 14), 0x5a4428, T(x + 0.04, FD - r, z, 0, HP, 0)); } } };
   switch (f) {
     case 'gorge': { // a kelek: poles over blown-up skins
       for (const x of [-1.1, -0.37, 0.37, 1.1]) for (const z of [-0.55, 0, 0.55]) k.s(ball(0.2, 10, 8), sh(S.hide, 0.9 + rnd(x * 3 + z) * 0.2), T(x, 0.07, z, 0, 0, 0.3, 1.25, 0.85, 1.0));
@@ -1429,7 +1447,8 @@ function savRaft(k, C) {
       break;
     }
     case 'verdant': { // a great lily pad with an upturned rim
-      k.s(surf(36, 5, (u, v, out) => { const a = 0.18 + u * (TAU - 0.36), r = 0.15 + v * 0.85; out[0] = Math.cos(a) * r * 1.5; out[2] = Math.sin(a) * r * 0.82; out[1] = FD - 0.03 + (v > 0.85 ? (v - 0.85) * 0.8 : 0); }, (u, v, i, j) => (i % 4 === 0 ? sh(S.hide, 1.3) : sh(S.hide, 0.95 + (j === 4 ? 0.2 : 0)))), null);
+      k.c(surf(36, 5, (u, v, out) => { const a = 0.18 + u * (TAU - 0.36), r = 0.15 + v * 0.85; out[0] = Math.cos(a) * r * 1.5; out[2] = Math.sin(a) * r * 0.82; out[1] = FD - 0.03 + (v > 0.85 ? (v - 0.85) * 0.8 : 0); }, (u, v, i, j) => (i % 4 === 0 ? sh(S.hide, 1.3) : sh(S.hide, 0.95 + (j === 4 ? 0.2 : 0)))), null);
+      k.c(surf(1, 5, (u, v, out) => { const a = (u - 0.5) * 0.36, r = 0.15 + v * 0.85; out[0] = Math.cos(a) * r * 0.15 * 1.5; out[2] = Math.sin(a) * r * 0.15 * 0.82; out[1] = FD - 0.03; }, sh(S.hide, 0.95)), null);
       k.s(surf(36, 1, (u, v, out) => { const a = 0.18 + u * (TAU - 0.36); out[0] = Math.cos(a) * 1.5 * (1 - v * 0.05); out[2] = Math.sin(a) * 0.82 * (1 - v * 0.05); out[1] = FD - 0.15 + v * 0.0; }, sh(S.hide, 0.6), { flip: true }), null);
       k.s(cyl(1.5, 1.5, 0.14, 30, true), sh(S.hide, 0.7), T(0, FD - 0.1, 0, 0, 0, 0, 1, 1, 0.547));
       for (const [x, z] of [[1.1, 0.35], [-1.25, -0.3], [0.9, -0.45]]) { lotus(k, x, FD, z, 1.0, S.paint, 0xf8e8f0, 7); k.g(ball(0.04, 8, 6), L.glow, T(x, FD + 0.07, z)); }
@@ -1437,7 +1456,8 @@ function savRaft(k, C) {
       break;
     }
     case 'screaming': { // a mat of flesh with eyes on stalks
-      k.s(surf(16, 10, (u, v, out) => { out[0] = (u - 0.5) * 3.0; out[2] = (v - 0.5) * 1.6; out[1] = FD - 0.02 + 0.03 * Math.sin(u * 17) * Math.sin(v * 11); }, (u, v, i, j) => { const r = rnd(i * 13 + j * 7); return r > 0.85 ? 0x8a2a4a : r > 0.55 ? sh(S.hide, 0.85) : S.hide; }), null);
+      k.s(surf(16, 10, (u, v, out) => { out[0] = (u - 0.5) * 3.0; out[2] = (v - 0.5) * 1.6; out[1] = FD - 0.02 + 0.03 * Math.sin(u * 17) * Math.sin(v * 11); }, (u, v, i, j) => sh(S.hide, 0.92 + 0.1 * Math.sin(i * 1.3) * Math.sin(j * 0.9))), null);
+      for (let q = 0; q < 5; q++) { const pts = []; for (let t = 0; t <= 6; t++) pts.push([-1.3 + t * 0.43, FD + 0.012, -0.6 + q * 0.3 + Math.sin(t * 1.9 + q) * 0.08]); k.s(sweep(pts, 0.014, 4, 18, 0x7a1a3a), null); }
       k.s(cyl(0.8, 0.86, 0.3, 24, true), sh(S.hide, 0.7), T(0, FD - 0.16, 0, 0, 0, 0, 1.88, 1, 1));
       for (let i = 0; i < 6; i++) { const x = -1.3 + i * 0.52, z = (i & 1 ? 0.72 : -0.72), hh = 0.3 + rnd(i) * 0.25; k.s(sweep([[x, FD, z], [x + 0.05, FD + hh * 0.5, z * 1.05], [x, FD + hh, z]], (v) => 0.04 - v * 0.02, 5, 8, sh(S.hide, 0.85)), null); eyeball(k, [x, FD + hh + 0.04, z], [1, 0.3, z], 0.06, L.glow); }
       for (let i = 0; i < 5; i++) k.s(sweep([[1.4, FD - 0.05, -0.5 + i * 0.25], [1.65, FD - 0.12, -0.55 + i * 0.27], [1.8, FD - 0.05, -0.5 + i * 0.25]], (v) => 0.04 * (1 - v * 0.8), 5, 8, sh(S.hide, 0.8)), null);
@@ -1445,15 +1465,16 @@ function savRaft(k, C) {
     }
     case 'xibalba': for (let i = 0; i < 5; i++) { const z = -0.62 + i * 0.31; reedBundle(k, [[-1.5, 0.3, z * 0.85], [-1.25, 0.1, z], [0, 0.08, z], [1.25, 0.1, z], [1.52, 0.38, z * 0.8]], (v) => 0.17 * (0.4 + 0.6 * Math.sin(PI * Math.min(1, v * 1.1 + 0.03))), S.hide, 5, 0x6a4a2a, 28); } for (let i = 0; i < 12; i++) k.s(box(0.14, 0.03, 1.4), sh(0xa89058, 0.9 + rnd(i) * 0.2), T(-1.05 + i * 0.18, FD - 0.01, 0)); break;
     case 'elemental': { // a disc of rock adrift
-      for (let i = 0; i < 9; i++) { const a = (i / 9) * TAU; k.s(dodec(0.42), sh(S.hide, 0.75 + rnd(i) * 0.3), T(Math.cos(a) * 0.95, FD - 0.25, Math.sin(a) * 0.5, rnd(i) * 3, rnd(i * 2) * 3, 0, 1.2, 0.55, 1.0), true); }
+      for (let i = 0; i < 14; i++) { const a = (i / 14) * TAU; k.s(new THREE.IcosahedronGeometry(0.05 + rnd(i * 3) * 0.05, 1), sh(S.hide, 0.8 + rnd(i) * 0.3), T(Math.cos(a) * 1.75, FD + 0.15 + rnd(i * 2) * 0.35, Math.sin(a) * 0.98), true); }
+      for (let i = 0; i < 9; i++) { const a = (i / 9) * TAU; k.s(new THREE.IcosahedronGeometry(0.42, 1), sh(S.hide, 0.75 + rnd(i) * 0.3), T(Math.cos(a) * 0.95, FD - 0.25, Math.sin(a) * 0.5, rnd(i) * 3, rnd(i * 2) * 3, 0, 1.2, 0.55, 1.0), true); }
       k.s(dodec(0.7), sh(S.hide, 0.85), T(0, FD - 0.32, 0, 0.3, 0.2, 0, 1.8, 0.48, 1.05), true);
-      for (let i = 0; i < 18; i++) k.s(box(0.24, 0.03, 0.24), sh(S.hide, 1.05 + rnd(i) * 0.15), T(-1.2 + (i % 6) * 0.48, FD - 0.015, -0.5 + Math.floor(i / 6) * 0.5, 0, rnd(i * 3) * 0.3, 0), true);
+      for (let i = 0; i < 18; i++) k.s(rbox(0.24, 0.04, 0.24, 0.015, 1), sh(S.hide, 1.05 + rnd(i) * 0.15), T(-1.2 + (i % 6) * 0.48, FD - 0.015, -0.5 + Math.floor(i / 6) * 0.5, 0, rnd(i * 3) * 0.3, 0), true);
       for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU + 0.2; k.g(oct(0.07 + rnd(i) * 0.04), i & 1 ? S.paint : mix(S.paint, 0xffffff, 0.4), T(Math.cos(a) * 1.45, FD - 0.08, Math.sin(a) * 0.78, Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.5, 0.7, 2.4, 0.7)); }
       k.g(cyl(1.55, 1.55, 0.012, 32, true), S.paint, T(0, 0.02, 0, 0, 0, 0, 1, 1, 0.53));
       break;
     }
     case 'mistisles': for (let i = 0; i < 11; i++) { const z = -0.75 + i * 0.15; k.s(sweep([[-1.5, 0.1, z], [0.8, 0.1, z], [1.3, 0.14, z], [1.5, 0.32, z * 0.9]], 0.075, 7, 14, (u, v, ii, j) => (j % 3 === 0 ? 0x6a7a3a : sh(0x9aa050, 0.95 + rnd(i) * 0.15))), null); } for (let i = 0; i < 9; i++) k.s(box(2.7, 0.03, 0.15), sh(0xb8b070, 0.9 + rnd(i * 3) * 0.15), T(-0.2, FD - 0.015, -0.68 + i * 0.17)); break;
-    case 'fimbul': logs(8, 0x6a5a48, 0.11); for (let i = 0; i < 7; i++) k.s(box(0.3 + rnd(i) * 0.3, 0.03, 0.25 + rnd(i * 2) * 0.3), 0xf0f4f8, T(-1.2 + rnd(i * 3) * 2.4, FD + 0.01, -0.6 + rnd(i * 5) * 1.2, 0, rnd(i) * 2, 0)); for (const sz of [-1, 1]) for (let i = 0; i < 12; i++) { const l = 0.08 + rnd(i * 3 + sz) * 0.14; k.m(cone(0.016, l, 5), 0xd8f0ff, T(-1.4 + i * 0.25, FD - 0.05 - l / 2, sz * 0.8, PI)); } break;
+    case 'fimbul': logs(8, 0x6a5a48, 0.11); for (let i = 0; i < 7; i++) k.s(ball(0.3, 10, 6), 0xf0f4f8, T(-1.25 + rnd(i * 3) * 2.5, FD - 0.01, -0.6 + rnd(i * 5) * 1.2, 0, rnd(i) * 2, 0, 0.8 + rnd(i) * 0.6, 0.12, 0.6 + rnd(i * 2) * 0.5)); for (const sz of [-1, 1]) for (let i = 0; i < 12; i++) { const l = 0.08 + rnd(i * 3 + sz) * 0.14; k.m(cone(0.016, l, 5), 0xd8f0ff, T(-1.4 + i * 0.25, FD - 0.05 - l / 2, sz * 0.8, PI)); } break;
     case 'dragons': logs(7, 0x4a3024, 0.12); k.c(surf(8, 4, (u, v, out) => { out[0] = -0.6 + u * 1.2; out[1] = FD + 0.01; out[2] = -0.7 + v * 1.4; }, (u, v, i, j) => sh(S.hide, (i + j) & 1 ? 0.8 : 1.05))); break;
     default: logs(f === 'greenhide' ? 7 : 8, S.wood, f === 'greenhide' ? 0.13 : 0.11, 3.0, f === 'greenhide' ? 1 : 0);
   }
