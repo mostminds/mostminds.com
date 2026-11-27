@@ -563,7 +563,7 @@ B.thousandgods = (k, L) => { // a saffron temple-spire of a balloon: lotus skirt
   for (let s = 0; s < 4; s++) { const a = s * PI / 2 + PI / 4, end = [Math.cos(a) * 1.95, 3.3, Math.sin(a) * 1.95], pts = []; for (let t = 0; t <= 12; t++) { const f = t / 12; pts.push([tip[0] + (end[0] - tip[0]) * f, tip[1] + (end[1] - tip[1]) * f - 0.3 * Math.sin(PI * f), tip[2] + (end[2] - tip[2]) * f]); }
     k.s(sweep(pts, 0.008, 3, 12, ROPE), null); for (let t = 1; t < 12; t++) k.add(t === 6 ? 'owner' : 'cloth', box(0.15, 0.17, 0.008), t === 6 ? WHITE : FL[(t + s) % 6], T(pts[t][0], pts[t][1] - 0.1, pts[t][2], 0, -a + PI / 2, 0)); k.rod('solid', ROPE, end, [Math.cos(a) * 0.66, 0.5, Math.sin(a) * 0.66], 0.008, 3); }
   tub(k, { w: 1.04, d: 1.04, h: 0.46, col: L.wood, th: 0.06, rim: gold });
-  for (let s = 0; s < 4; s++) { k.push(T(0, 0, 0, 0, s * PI / 2, 0)); for (let i = 0; i < 4; i++) { const x = -0.33 + i * 0.22, c = FL[(i + s) % 6]; k.s(rbox(0.16, 0.3, 0.03, 0.012, 1), sh(L.wood, 0.7), T(x, 0.25, 0.525)); k.s(ball(0.045, 8, 6), c, T(x, 0.3, 0.55)); k.s(rev([[0.06, 0], [0.065, 0.03], [0.035, 0.1], [0, 0.12]], 7, c), null, T(x, 0.14, 0.55)); } k.o(box(0.96, 0.06, 0.014), WHITE, T(0, 0.06, 0.528)); k.pop(); }
+  for (let s = 0; s < 4; s++) { k.push(T(0, 0, 0, 0, s * PI / 2, 0)); for (let i = 0; i < 4; i++) { const x = -0.33 + i * 0.22, c = FL[(i + s) % 6]; k.s(box(0.16, 0.3, 0.03), sh(L.wood, 0.7), T(x, 0.25, 0.525)); k.s(ball(0.045, 6, 4), c, T(x, 0.3, 0.55)); k.s(rev([[0.06, 0], [0.065, 0.03], [0.035, 0.1], [0, 0.12]], 7, c), null, T(x, 0.14, 0.55)); } k.o(box(0.96, 0.06, 0.014), WHITE, T(0, 0.06, 0.528)); k.pop(); }
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { k.m(rev([[0.06, 0], [0.07, 0.5], [0.09, 0.52], [0.05, 0.6], [0.07, 0.64], [0.02, 0.72], [0, 0.8]], 8, gold), null, T(x * 0.52, 0, z * 0.52)); }
   stores(k, L, { w: 1.04, kinds: ['jar', 'sack', 'bale'], bagCol: main, netCol: 0xd8a84a });
 };
@@ -1191,7 +1191,7 @@ G.gorge = (k, L) => { // a round felt-wrapped pannier like a little tent, red la
   k.o(rev([[0.455, -1.13], [0.482, -1.09], [0.48, -1.04]], 24, [WHITE, 0xc8c8c8], { sx: 0.98, sz: 0.64 }), null);
   for (const x of [-1, 1]) { k.s(cyl(0.012, 0.012, 0.5, 5), 0x4a3424, T(x * 0.47, -0.72, 0)); k.s(cone(0.05, 0.22, 8), hair, T(x * 0.47, -0.6, 0)); k.s(torus(0.035, 0.008, 4, 8), red, T(x * 0.47, -0.49, 0, PI / 2)); }
   for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU; k.s(cyl(0.008, 0.008, 0.34, 4), 0x6a4a2a, T(Math.cos(a) * 0.47, -1.02, Math.sin(a) * 0.307, 0, -a, i & 1 ? 0.5 : -0.5)); }
-  for (const x of [-0.2, 0.2]) { k.s(ball(0.05, 8, 6), 0x3a2e28, T(x, -1.31, 0.2, 0, 0, 0, 1, 1.2, 1)); k.s(cone(0.03, 0.06, 6), 0x2a2220, T(x, -1.25, 0.2)); k.rod('solid', SINEW, [x, -1.22, 0.2], [x, -1.14, 0.25], 0.006, 3); }
+  for (const x of [-0.2, 0.2]) { k.s(ball(0.04, 8, 6), 0x3a2e28, T(x, -1.29, 0.24, 0, 0, 0, 1, 1.2, 1)); k.rod('solid', SINEW, [x, -1.25, 0.24], [x, -1.14, 0.27], 0.006, 3); }
   k.c(surf(4, 4, (u, v, out) => { out[0] = (u - 0.5) * 0.3; out[1] = -0.86 - v * 0.26; out[2] = 0.31 + 0.012 * Math.sin(v * PI); }, (u, v, i, j) => (i === 0 || i === 3 || j === 3 ? 0xc8a040 : (i + j) & 1 ? red : 0x2a4a6a)));
   load(k, [['sack', -0.2, 0.0, 1.1, 0, felt], ['jar', 0.04, 0.06, 0.9, 0, 0x6a4a3a], ['bundle', 0.24, 0.0, 0.9, 1.2, 0x8a6a4a], ['sack', 0.02, -0.1, 0.8, 1, 0xb8a888]], -1.2);
 };
@@ -1253,13 +1253,13 @@ G.elemental = (k, L) => { // a hovering stone trough ringed by crystal, held und
   k.s(torus(0.1, 0.035, 5, 7), stone, T(0, 0.02, 0, 0, PI / 2, 0), true); for (let i = 0; i < 7; i++) k.g(box(0.012, 0.03, 0.03), glow, T(0.036, 0.02 + Math.sin(i * 0.898) * 0.1, Math.cos(i * 0.898) * 0.1));
   k.c(gem(0.07, 0.4, 6), (x, y) => (y > 0.05 ? mix(cr, 0xffffff, 0.4) : cr), T(0, -0.36, 0, PI, 0, 0), true); k.g(gem(0.03, 0.24, 5), glow, T(0, -0.36, 0, PI, 0, 0), true);
   for (let i = 0; i < 4; i++) { const a = i * PI / 2 + PI / 4; k.g(cyl(0.007, 0.007, 1, 4, true), glow, TA([Math.cos(a) * 0.2, -0.68, Math.sin(a) * 0.13], [Math.cos(a) * 0.36, -0.44, Math.sin(a) * 0.22], 1, 0.52, 1)); }
-  k.s(rev([[0, -1.35], [0.22, -1.32], [0.42, -1.2], [0.5, -1.02], [0.49, -0.92], [0.42, -0.93], [0.4, -1.16], [0, -1.2]], 9, (u, v, i, j) => (j > 4 ? dk : (i + j) & 1 ? stone : sh(stone, 0.86)), { sx: 0.94, sz: 0.62, rot: 0.2 }), null, null, true);
+  k.s(rev([[0, -1.33], [0.22, -1.3], [0.42, -1.2], [0.5, -1.02], [0.49, -0.92], [0.42, -0.93], [0.4, -1.16], [0, -1.2]], 9, (u, v, i, j) => (j > 4 ? dk : (i + j) & 1 ? stone : sh(stone, 0.86)), { sx: 0.94, sz: 0.62, rot: 0.2 }), null, null, true);
   k.o(rev([[0.5, -1.12], [0.54, -1.05], [0.525, -0.99]], 9, [WHITE, 0xc8c8c8], { sx: 0.94, sz: 0.62, rot: 0.2 }), null, null, true);
   for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU + 0.4, c = Math.cos(a) * 0.47, s = Math.sin(a) * 0.31; k.c(gem(0.035 + 0.02 * rnd(i), 0.22 + 0.14 * rnd(i * 3), 5), (x, y) => (y > 0.05 ? mix(cr, 0xffffff, 0.4) : i & 1 ? cr : mix(cr, 0x6a8ad8, 0.5)), T(c, -0.88, s, 0.25 * Math.sin(a), 0, -0.25 * Math.cos(a)), true); }
   for (let i = 0; i < 4; i++) k.s(new THREE.DodecahedronGeometry(0.05 + 0.03 * rnd(i)), i & 1 ? stone : dk, T(Math.cos(i * 1.7) * 0.5, -1.25 + 0.1 * rnd(i * 2), Math.sin(i * 1.7) * 0.36, i, i, 0), true);
   for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU + 0.2; k.add(i % 4 === 0 ? 'glow' : 'cloth', gem(0.022 + 0.015 * rnd(i), 0.1 + 0.08 * rnd(i * 2), 5), i % 4 === 0 ? glow : cr, T(Math.cos(a) * 0.3, -0.52 + 0.06 * Math.sin(a * 3), Math.sin(a) * 0.2, i, i * 2, i * 3), true); }
   for (let i = 0; i < 9; i++) { const a = (i / 9) * TAU + 0.2; k.s(new THREE.DodecahedronGeometry(0.06), i & 1 ? sh(stone, 1.1) : dk, T(Math.cos(a) * 0.46, -0.97, Math.sin(a) * 0.3, i, i * 3, 0, 1, 1.5, 1), true); k.g(box(0.012, 0.07, 0.012), glow, T(Math.cos(a) * 0.5, -1.0, Math.sin(a) * 0.335)); }
-  for (let i = 0; i < 5; i++) k.c(gem(0.04, 0.2, 5), mix(cr, 0x6a8ad8, 0.5), T(Math.cos(i * 1.3) * 0.25, -1.36 + 0.06, Math.sin(i * 1.3) * 0.16, PI + 0.4 * Math.cos(i), 0, 0.4 * Math.sin(i)), true);
+  for (let i = 0; i < 5; i++) k.c(gem(0.04, 0.2, 5), mix(cr, 0x6a8ad8, 0.5), T(Math.cos(i * 1.3) * 0.25, -1.24, Math.sin(i * 1.3) * 0.16, PI + 0.4 * Math.cos(i), 0, 0.4 * Math.sin(i)), true);
   for (const x of [-0.3, 0.3]) k.g(box(0.03, 0.1, 0.01), glow, T(x, -1.12, 0.268 - Math.abs(x) * 0.12, 0, x > 0 ? -0.3 : 0.3, 0));
   load(k, [['jar', -0.2, 0.0, 1, 0, 0x8a8a92], ['crate', 0.04, 0.04, 0.95, 0.2, 0x8a8478], ['sack', 0.24, 0.0, 0.9, 0, 0x9a9aa0]], -1.19); k.s(new THREE.DodecahedronGeometry(0.07), 0xd8b040, T(0.0, -1.12, -0.12), true);
 };

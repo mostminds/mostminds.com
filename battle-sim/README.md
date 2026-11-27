@@ -301,6 +301,12 @@ Supply runs to a timetable on three kinds of line (`src/engine/transit.js`):
   up to six soldiers at a time who are posted to a point far from where they stand. It passes over a mast
   that has fallen or whose point has changed hands.
 
+Every faction has its own vehicles (`src/render/props/transit*.js`). Peoples with engines run two pump
+handcars a line, each worked by two of the army's own soldiers; savage peoples drive a caravan of pack beasts
+with pannier baskets along a beaten trail. Cable gondolas and balloons are in each faction's manner too. A
+train or caravan can be attacked and destroyed, its crew can be killed (a handcar with no hands stops), and
+raiders go for it; what it carried spills where it stops. Preview them with `node tools/transit-shot.cjs`.
+
 The track and masts are laid when the battle is built, so they follow whatever rally points the map has.
 Set `fronts: false` or `transit: false` on a scenario to do without them.
 
