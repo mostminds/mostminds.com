@@ -411,7 +411,7 @@ export function finishBuild(b, s, u) {
   s.done = true;
   const idx = b.structures.length;
   b.structures.push({ type: s.type, x: s.x, y: s.y, rot: s.rot, side: s.side, w: s.w, h: s.h, hp: def.hp || 0, maxHp: def.hp || 0, destroyed: false, built: true });
-  rebuildGrid(b); b.fields.clear();
+  rebuildGrid(b); b.gridStale = b.tick;
   b.hasRamparts = b.level.some((l) => l > 0);
   if (def.weapon) addGun(b, idx);
   const p = b.cmd.points[s.point];
@@ -454,7 +454,7 @@ function medicDuty(b, u) {
   if (!best || (b.tick + u.id) % 5 === 0) near(b, u.x, u.y, 16, (a) => { if (a.side === u.side) consider(a, 0); });
   if (!best) return false;
   if (Math.max(Math.abs(best.x - u.x), Math.abs(best.y - u.y)) <= Math.max(1, heal.range - 1)) return false; // close enough: the ordinary healing takes over
-  const f = field(b, `m${best.id}`, 3, () => [best.y * b.W + best.x]);
+  const f = field(b, `m${best.id}`, 3, () => [best.y * b.W + best.x], 40);
   if (!f || f[u.y * b.W + u.x] >= 32767) return false;
   walk(b, u, f, heal.range, Math.max(1, heal.range - 1));
   return true;

@@ -15,6 +15,7 @@ const optional = async (file) => { try { return await import(file); } catch (err
 const CARS = await optional('./transitCars.js');     // buildHandcar(look, sideColor, index)
 const BEASTS = await optional('./transitBeasts.js'); // buildPackBeast(look, sideColor, index)
 const AIR = await optional('./transitAir.js');       // buildGondola(look, sideColor), buildBalloon(look, sideColor)
+const BOATS = await optional('./transitBoats.js');  // buildBoat(look, sideColor, kind)
 const tryBuild = (fn, alt, ...a) => { if (fn) { try { const o = fn(...a); if (o) return o; } catch (err) { console.warn('transit: a sculpt failed, using the plain one', err); } } return alt(...a); };
 
 const FAMILY = {
@@ -263,6 +264,24 @@ function plainBalloon(L, side) {
 }
 
 /** what a faction's line looks like on the ground */
+/** a supply boat for the rivers, canals and straits: 'gondola', 'riverboat' or 'raft' (+x is the bow, origin on the water) */
+export function buildVessel(L, side, kind) { return tryBuild(BOATS.buildBoat, plainBoat, L, side, kind); }
+function plainBoat(L, side, kind) {
+  const g = new THREE.Group(), wood = M(L.savage ? 0x6a4e30 : L.wood, { rough: 0.85 }), len = kind === 'gondola' ? 3.4 : kind === 'raft' ? 3 : 4.2, wide = kind === 'gondola' ? 0.9 : kind === 'raft' ? 1.6 : 1.5;
+  if (kind === 'raft') for (let i = 0; i < 7; i++) put(g, cyl(0.12, 0.12, len, 8), wood, 0, 0.05, -wide / 2 + 0.12 + i * (wide - 0.24) / 6, 0, 0, Math.PI / 2);
+  else {
+    const hull = put(g, ball(0.5, 14, 8), wood, 0, 0.05, 0); hull.scale.set(len, 0.55, wide);
+    put(g, box(len * 0.82, 0.05, wide * 0.8), M(shade(L.savage ? 0x6a4e30 : L.wood, 1.2)), 0, 0.3, 0);
+    if (kind === 'gondola') { put(g, cyl(0.04, 0.06, 0.8, 6), wood, len / 2 - 0.1, 0.6, 0, 0, 0, -0.4); put(g, cyl(0.04, 0.06, 0.8, 6), wood, -len / 2 + 0.1, 0.6, 0, 0, 0, 0.4); }
+    else { put(g, cyl(0.05, 0.05, 2.4, 6), wood, 0.3, 1.4, 0); put(g, box(0.04, 1.4, 1.3), M(L.cloth, { double: 1 }), 0.32, 1.6, 0); }
+  }
+  put(g, box(0.5, 0.3, 0.02), M(side, { double: 1 }), -len / 2 + 0.3, 0.9, 0);
+  put(g, box(0.4, 0.3, 0.4), M(0xa07a4a), len * 0.3, 0.45, 0); put(g, box(0.36, 0.28, 0.36), M(0xa07a4a), -len * 0.3, 0.45, 0.1);
+  g.userData.len = len; g.userData.deck = 0.32;
+  g.userData.seats = [[-len * 0.4, 0], [-0.4, -0.25], [-0.4, 0.25], [0.2, -0.25], [0.2, 0.25], [0.6, 0]].map(([x, z]) => new THREE.Vector3(x, 0.32, z));
+  return g;
+}
+
 export function trackLook(L) {
   if (L.savage) return { trail: true, bed: 0x7a6248, stake: L.hide ?? 0x6a4a32 };
   return { bed: L.fam === 'desert' ? 0xb8a070 : L.fam === 'infernal' || L.fam === 'undead' ? 0x3a3634 : 0x6f6a60, sleeper: L.fam === 'elven' ? 0xd8d0bc : L.fam === 'undead' ? 0xd8d0b8 : L.wood,

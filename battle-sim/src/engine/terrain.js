@@ -22,6 +22,8 @@ export const MAP_SHAPES = {
   fjord: 'Fjord coast',
   atoll: 'Atoll',
   twinIsles: 'Twin isles',
+  region: 'Borderland: rivers and a canal',
+  isles: 'Island chain and mainland',
 };
 
 export const BIOMES = {
@@ -55,9 +57,116 @@ function classify(h) {
   return DEEP;
 }
 
+// ------------------------------------------------------------------------------------------
+// The big maps. A borderland: three villages, two forts and a walled city with its castle, strung along
+// a river with a canal off it to the city. An island chain: three islands (two villages and a fort) off
+// a mainland that holds a fort, a village and the city. The layout is worked out from the seed alone,
+// so the terrain and the settlement generator agree on where everything goes.
+//   sites   [{ id, kind, x, y }]          tile centres of each settlement
+//   rivers  [[[x, y], ...], ...]          centre lines of the waterways, in tiles, with their widths
+//   docks   { siteId: [x, y] }            a point in the water beside each settlement's dock
+//   lines   [[siteId, ...], ...]          the boat lines, in calling order
+//   isles   [{ x, y, rx, ry }]            (island chain) the islands, and the mainland's coast line
+// ------------------------------------------------------------------------------------------
+export function regionLayout(shape, S, seed = 7) {
+  const j = (k, a) => (hash(k, 77, seed) - 0.5) * 2 * a * S;
+  const P = (x, y) => [Math.round(x * S), Math.round(y * S)];
+  if (shape === 'region') {
+    const at = (id, kind, x, y, k) => { const [px, py] = P(x, y); return { id, kind, x: Math.round(px + j(k, 0.015)), y: Math.round(py + j(k + 1, 0.02)) }; };
+    const sites = [at('v1', 'village', 0.27, 0.16, 1), at('v3', 'village', 0.29, 0.5, 3), at('v2', 'village', 0.27, 0.84, 5),
+      at('f1', 'fort', 0.6, 0.2, 7), at('f2', 'fort', 0.6, 0.8, 9), at('city', 'city', 0.79, 0.5, 11)];
+    const rx = (y, k) => Math.round(S * 0.445 + j(k, 0.015) + Math.sin(y / S * 9 + seed) * S * 0.012);
+    const river = [[rx(-4, 20), -4], ...[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9].map((f, i) => [rx(f * S, 21 + i), Math.round(f * S)]), [rx(S + 4, 31), S + 4]];
+    const city = sites[5], junction = [rx(S / 2, 25), Math.round(S / 2)];
+    // the canal comes into the city south of its west gate, to a basin in the dock quarter
+    const cy2 = city.y + Math.round(S * 0.07), canal = [junction, [Math.round(S * 0.6), cy2], [city.x - 12, cy2]];
+    const nearRiver = (s) => { let best = null, bd = 1e9; for (let y = 0; y < S; y += 2) { const x = riverXAt(river, y), d = Math.hypot(x - s.x, y - s.y); if (d < bd) { bd = d; best = [Math.round(x + Math.sign(s.x - x) * 2), y]; } } return best; };
+    const docks = {};
+    for (const s of sites) docks[s.id] = s.kind === 'city' ? [city.x - 14, cy2] : nearRiver(s);
+    return { shape, S, sites, rivers: [{ pts: river, w: 3.2, deep: 1.6 }, { pts: canal, w: 1.8, deep: 0.6, canal: true }], docks,
+      fords: [0.07, 0.34, 0.66, 0.93].map((f) => Math.round(f * S)), lines: [['v1', 'f1', 'v3', 'f2', 'v2'], ['v3', 'city']], kinds: ['riverboat', 'gondola'] };
+  }
+  if (shape === 'isles') {
+    const isles = [{ x: 0.3, y: 0.24, rx: 0.1, ry: 0.11 }, { x: 0.48, y: 0.5, rx: 0.1, ry: 0.12 }, { x: 0.3, y: 0.77, rx: 0.1, ry: 0.11 }]
+      .map((o, i) => ({ x: Math.round(o.x * S + j(40 + i, 0.012)), y: Math.round(o.y * S + j(43 + i, 0.012)), rx: o.rx * S, ry: o.ry * S }));
+    const coast = Math.round(S * 0.655);
+    const sites = [{ id: 'v1', kind: 'village', x: isles[0].x, y: isles[0].y }, { id: 'v3', kind: 'village', x: isles[1].x, y: isles[1].y }, { id: 'f2', kind: 'fort', x: isles[2].x, y: isles[2].y },
+      { id: 'f1', kind: 'fort', x: Math.round(S * 0.77), y: Math.round(S * 0.16) }, { id: 'v2', kind: 'village', x: Math.round(S * 0.77), y: Math.round(S * 0.86) },
+      { id: 'city', kind: 'city', x: Math.round(S * 0.83), y: Math.round(S * 0.51) }];
+    const docks = {};
+    for (const [k, s] of sites.entries()) docks[s.id] = k < 3 ? [Math.round(s.x + isles[k].rx + 3), s.y] : [coast - 4, s.y];
+    return { shape, S, sites, isles, coast, docks, rivers: [], lines: [['f1', 'v1', 'v3', 'city'], ['v2', 'f2', 'v3']], kinds: ['riverboat', 'riverboat'],
+      causeways: [[isles[0], isles[1]], [isles[2], isles[1]], [isles[1], { x: coast + 4, y: isles[1].y }]] };
+  }
+  return null;
+}
+/** where a north-south river's centre line crosses row y */
+function riverXAt(pts, y) {
+  for (let k = 0; k < pts.length - 1; k++) {
+    const [x0, y0] = pts[k], [x1, y1] = pts[k + 1];
+    if (y >= y0 && y <= y1) { const t = (y - y0) / Math.max(1, y1 - y0), u = t * t * (3 - 2 * t); return x0 + (x1 - x0) * u; }
+  }
+  return pts[pts.length - 1][0];
+}
+/** cut a waterway along a centre line: deep in the middle, shallows to either side */
+function carve(t, S, pts, w, deep, seed) {
+  const dens = [];
+  for (let k = 0; k < pts.length - 1; k++) {
+    const [x0, y0] = pts[k], [x1, y1] = pts[k + 1], n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+    for (let i = 0; i < n; i++) { const f = i / n, u = f * f * (3 - 2 * f); dens.push([x0 + (x1 - x0) * (Math.abs(x1 - x0) > Math.abs(y1 - y0) ? f : u), y0 + (y1 - y0) * (Math.abs(x1 - x0) > Math.abs(y1 - y0) ? u : f)]); }
+  }
+  const R = Math.ceil(w + 2);
+  for (const [cx, cy] of dens) {
+    const ww = w * (0.85 + noise(cx * 0.07, cy * 0.07, seed + 61) * 0.35);
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const x = Math.round(cx + dx), y = Math.round(cy + dy);
+      if (x < 0 || y < 0 || x >= S || y >= S) continue;
+      const d = Math.hypot(x - cx, y - cy), i = y * S + x;
+      if (d <= deep) t[i] = DEEP;
+      else if (d <= ww && t[i] !== DEEP) t[i] = SHALLOW;
+      else if (d <= ww + 1 && t[i] === GRASS) t[i] = SAND;
+    }
+  }
+}
+function regionTerrain(shape, S, seed) {
+  const L = regionLayout(shape, S, seed), t = new Uint8Array(S * S), f = 6 / S;
+  if (shape === 'region') {
+    t.fill(GRASS);
+    for (const r of L.rivers) carve(t, S, r.pts, r.w, r.deep, seed + (r.canal ? 5 : 0));
+    // a few meres and bog pools out in the open country, well away from the settlements and the river
+    for (let y = 2; y < S - 2; y++) for (let x = 2; x < S - 2; x++) {
+      const i = y * S + x;
+      if (t[i] !== GRASS || L.sites.some((s) => Math.hypot(s.x - x, s.y - y) < S * 0.13) || Math.abs(riverXAt(L.rivers[0].pts, y) - x) < 12 || x < S * 0.12 || x > S * 0.93) continue;
+      const v = fbm(x * f * 1.6, y * f * 1.6, seed + 90);
+      if (v > 0.71) t[i] = v > 0.75 ? DEEP : SHALLOW; else if (v > 0.69) t[i] = SAND;
+    }
+    // fords across the river, away from the docks
+    for (const fy of L.fords) for (let y = fy - 2; y <= fy + 2; y++) for (let x = 0; x < S; x++) { const i = y * S + x; if (y > 0 && y < S && isWater(t[i]) && Math.abs(x - riverXAt(L.rivers[0].pts, y)) < 8) t[i] = FORD; }
+    return t;
+  }
+  // the island chain
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const nx = x / S, ny = y / S, n = fbm(nx * 6, ny * 6, seed) - 0.5;
+    let h = (x - L.coast) / S * 6 + n * 0.5;                        // the mainland, east of the coast line
+    for (const o of L.isles) h = Math.max(h, (1 - Math.hypot((x - o.x) / o.rx, (y - o.y) / o.ry)) * 0.7 + n * 0.25);
+    if (x < 3) h = Math.min(h, -0.3);                                // open water to the west for the boats
+    t[y * S + x] = classify(h);
+  }
+  // causeways at low water between the islands and over to the mainland
+  for (const [a, c] of L.causeways) {
+    const n = Math.ceil(Math.hypot(c.x - a.x, c.y - a.y) * 2);
+    for (let k = 0; k <= n; k++) {
+      const cx = a.x + ((c.x - a.x) * k) / n, cy = a.y + ((c.y - a.y) * k) / n;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = Math.round(cx + dx), y = Math.round(cy + dy); if (x > 0 && y > 0 && x < S - 1 && y < S - 1 && isWater(t[y * S + x])) t[y * S + x] = FORD; }
+    }
+  }
+  return t;
+}
+
 export function generateTerrain(shape, size, seed = 7) {
   if (shape === 'field' || !shape) shape = 'plains';
   if (shape === 'amphibious') shape = 'island';
+  if (shape === 'region' || shape === 'isles') return regionTerrain(shape, size, seed);
   const t = new Uint8Array(size * size);
   const S = size, f = 6 / S;
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {

@@ -155,6 +155,11 @@ function updateHud() {
     const pts = b.fronts.points.map((id) => b.cmd.points[id]), gen = (i) => { const u = b.units[b.fronts.leader[i]]; return u ? (u.alive ? '' : ' †') : ''; };
     st = `${st === 'Battle in progress' ? 'Rally points' : st + ' · points'} ${pts.filter((q) => q.side === 0).length}${gen(0)} – ${pts.filter((q) => q.side === 1).length}${gen(1)}`;
   }
+  // waves still to come: when the next one is due
+  if (b && b.reserve && sim.started && b.winner === null) {
+    const next = Math.min(...[0, 1].map((i) => (b.reserve[i] && b.reserve[i][0] ? b.reserve[i][0].at : Infinity)));
+    if (next < Infinity) { const secs = Math.max(0, Math.round(((next - b.tick) * TICK_MS) / 1000)); st += ` · next wave ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`; }
+  }
   // capture the flag: the score is the story
   if (b && b.ctf && sim.started) st = `${st === 'Battle in progress' ? 'Flags' : st + ' · flags'} ${b.ctf.score[0]} – ${b.ctf.score[1]} (first to ${b.ctf.toWin})`;
   $('hudState').textContent = st;
@@ -289,7 +294,13 @@ $('loadPreset').onclick = () => {
 };
 
 // ---------- generated scenarios ----------
-$('genSite').replaceChildren(new Option('Any place', ''), ...Object.entries(SITES).map(([k, v]) => new Option(v.name, k)));
+{
+  // the big maps first; the single settlements are kept for smaller fights
+  const big = document.createElement('optgroup'), small = document.createElement('optgroup');
+  big.label = 'Campaigns (the big maps)'; small.label = 'One settlement (smaller fights)';
+  for (const [k, v] of Object.entries(SITES)) (v.big ? big : small).append(new Option(v.name, k));
+  $('genSite').replaceChildren(new Option('Any place', ''), big, small);
+}
 $('genSite').value = '';
 $('genSea').append(...Object.entries(SEA_THEMES).map(([k, v]) => new Option(v, k)));
 for (const id of ['genDef', 'genAtt']) {
@@ -301,7 +312,8 @@ for (const id of ['genDef', 'genAtt']) {
 $('generate').onclick = () => {
   const sites = Object.keys(SITES);
   // on the sea, Generate makes a sea battle unless a place on land was asked for by name
-  const g = generateScenario({ site: $('genSite').value || (isNaval() ? 'sea' : sites[Math.floor(Math.random() * sites.length)]), defender: $('genDef').value, attacker: $('genAtt').value, theme: $('genSea').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
+  void sites; // with no place named, a land battle is a borderland war and an island assault an island campaign
+  const g = generateScenario({ site: $('genSite').value || (isNaval() ? 'sea' : state.mode === 'amphibious' ? 'isles' : 'region'), defender: $('genDef').value, attacker: $('genAtt').value, theme: $('genSea').value, size: +$('genSize').value, seed: 1 + Math.floor(Math.random() * 1e9) });
   state.scn[g.mode] = clone({ ...g.scn, mode: g.mode });
   setMode(g.mode);
   $('genName').textContent = g.name;

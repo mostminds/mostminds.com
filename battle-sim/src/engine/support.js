@@ -230,7 +230,7 @@ function beastLanding(b, s) {
     if (spot && !b.sid[spot[1] * b.W + spot[0]]) {
       const gd = STRUCTURES[s.def.siege], idx = b.structures.length;
       b.structures.push({ type: s.def.siege, x: spot[0], y: spot[1], rot: 0, side: s.side, w: gd.w, h: gd.h, hp: gd.hp || 0, maxHp: gd.hp || 0, destroyed: false, built: true });
-      rebuildGrid(b); b.fields.clear();
+      rebuildGrid(b); b.gridStale = b.tick;
       addGun(b, idx);
       gunAt = idx;
       b.events.push({ type: 'built', s: idx, side: s.side, kind: s.def.siege, by: -1, landed: true });

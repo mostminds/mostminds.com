@@ -2,7 +2,7 @@
 // island stronghold) laid out in the building style of the faction that holds it, with a
 // garrison inside and an attacking army sized to the defences. Everything it returns is an
 // ordinary scenario, so the armies and the map stay editable afterwards.
-import { generateTerrain, GRASS, SAND } from '../engine/terrain.js';
+import { generateTerrain, regionLayout, GRASS, SAND, FORD, isWater } from '../engine/terrain.js';
 import { combatLevel } from '../engine/combat.js';
 import { STRUCTURES } from './structures.js';
 import { UNITS, leaderOf } from './units.js';
@@ -88,6 +88,9 @@ export const SITES = {
   sea: { name: 'Sea battle', mode: 'naval', shape: ['sea'], size: 210, points: 0, edge: 1 },
   ctf: { name: 'Capture the flag', mode: 'field', shape: ['plains'], size: 112, points: 12000, edge: 1 },
   island: { name: 'Island stronghold', mode: 'amphibious', shape: ['island', 'island', 'peninsula'], size: 112, points: 16000, edge: 1.3 },
+  // the big maps: three villages, two forts and a city with its castle
+  region: { name: 'Borderland war', mode: 'field', shape: ['region'], size: 256, points: 150000, edge: 1.3, big: true },
+  isles: { name: 'Island campaign', mode: 'amphibious', shape: ['isles'], size: 256, points: 150000, edge: 1.35, big: true },
 };
 
 // ---------- helpers ----------
@@ -111,6 +114,7 @@ class Plan {
   constructor(size, terrain, rng) {
     this.S = size; this.t = terrain; this.r = rng;
     this.occ = new Uint8Array(size * size); // 1 = built, 2 = road kept clear
+    this.paths = new Uint8Array(size * size); // roads and squares, for drawing
     this.out = [];
   }
   land(x, y) { return x >= 1 && y >= 1 && x < this.S - 1 && y < this.S - 1 && this.t[y * this.S + x] === GRASS; }
@@ -145,7 +149,10 @@ class Plan {
     this.out.push({ type, x, y, rot: 0, ...extra });
     return true;
   }
-  road(x, y, w, h) { this.mark(x, y, w, h, 2); }
+  road(x, y, w, h) {
+    this.mark(x, y, w, h, 2);
+    for (let j = Math.max(0, y); j < Math.min(this.S, y + h); j++) for (let i = Math.max(0, x); i < Math.min(this.S, x + w); i++) if (this.t[j * this.S + i] === GRASS || this.t[j * this.S + i] === SAND) this.paths[j * this.S + i] = 1;
+  }
   /** try `tries` random spots inside a rectangle */
   scatter(type, rect, count, gap = 1, extra = {}, tries = 14) {
     let done = 0;
@@ -330,7 +337,7 @@ const CIVIC = {
 
 // Districts for the main part of a settlement. Returns true when it built an upper town on terraces.
 function civic(p, R, o) {
-  const { siteId, defId, r, town, S, cy, sea, shoreRow, rampart } = o;
+  const { siteId, defId, r, town, S, cy, sea, shoreRow, rampart, noUpper } = o;
   const has = new Set(CIVIC[defId] || []);
   const cx = R.x + (R.w >> 1), my = R.y + (R.h >> 1);
   const area = R.w * R.h, big = siteId === 'city' || siteId === 'harbor', mid = big || siteId === 'castle' || siteId === 'coast';
@@ -349,7 +356,7 @@ function civic(p, R, o) {
   p.road(cx - plaza, my - plaza, plaza * 2 + 1, plaza * 2 + 1);
 
   let levelled = false;
-  if ((big || siteId === 'castle') && R.w >= 26 && R.h >= 30 && (has.has('palace') || has.has('temple'))) {
+  if (!noUpper && (big || siteId === 'castle') && R.w >= 26 && R.h >= 30 && (has.has('palace') || has.has('temple'))) {
     // The upper town: a terrace over the eastern part, a higher one for the palace, an elevated walkway
     // in from the west wall, a rail viaduct in from the east, and a cable car up from the square.
     levelled = true;
@@ -627,6 +634,7 @@ export function generateScenario(opts = {}) {
   const D = FACTIONS[defId], A = FACTIONS[attId];
   if (siteId === 'ctf') return generateCtf({ r, seed, site, defId, attId, D, A, size: +opts.size });
   if (siteId === 'sea') return generateNaval({ r, seed, defId, attId, D, A, theme: opts.theme });
+  if (site.big) return generateRegion({ r, seed, siteId, site, defId, attId, D, A });
   const S = [64, 80, 96, 112, 128, 144, 160].includes(+opts.size) ? +opts.size : site.size;
   const shape = r.pick(site.shape), biome = r.pick(D.biomes), terrainSeed = 1 + r.int(0, 9998);
   const terrain = generateTerrain(shape, S, terrainSeed);
@@ -849,6 +857,289 @@ export function generateScenario(opts = {}) {
   return {
     name: `${place}: ${A.adj} ${sea ? 'landing' : 'assault'} on a ${D.adj.toLowerCase()} ${D.places[siteId]}`,
     mode: site.mode, seed, site: siteId, defender: defId, attacker: attId,
-    scn: { size: S, shape, biome, terrainSeed, relief: { hills: 1, cliffs: sea ? 0.5 : 1 }, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, points, style: defId, look, maxTicks: 4000 },
+    scn: { size: S, shape, biome, terrainSeed, roads: encodeMask(p.paths), relief: { hills: 1, cliffs: sea ? 0.5 : 1 }, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, points, style: defId, look, maxTicks: 4000 },
+  };
+}
+
+// ---------- the big maps ----------
+/** a tile mask as run lengths, alternating clear and set, in base 36 */
+export function encodeMask(m) {
+  const out = [];
+  let v = 0, n = 0;
+  for (let i = 0; i < m.length; i++) { const b = m[i] ? 1 : 0; if (b === v) n++; else { out.push(n.toString(36)); v = b; n = 1; } }
+  out.push(n.toString(36));
+  return out.join(',');
+}
+
+/** A path for a road between two tiles that keeps off anything built, prefers straight runs and crosses water only where it must */
+function roadPath(p, a, b) {
+  const S = p.S, N = S * S, cost = new Float32Array(N * 4).fill(Infinity), from = new Int32Array(N * 4).fill(-1), heap = [];
+  const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
+  const step = (x, y) => {
+    if (x < 1 || y < 1 || x >= S - 1 || y >= S - 1) return 0;
+    const i = y * S + x, t = p.t[i];
+    if (p.occ[i] === 1 && Math.max(Math.abs(x - b[0]), Math.abs(y - b[1])) > 1 && Math.max(Math.abs(x - a[0]), Math.abs(y - a[1])) > 1) return 0;
+    return t === FORD ? 3 : isWater(t) ? 7 : t === SAND ? 1.3 : p.occ[i] === 2 ? 0.7 : 1;
+  };
+  const h = (x, y) => (Math.abs(x - b[0]) + Math.abs(y - b[1])) * 0.7;
+  const push = (c, s) => { heap.push([c, s]); let i = heap.length - 1; while (i > 0) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { let m = i; const l = i * 2 + 1, r = l + 1; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  for (let d = 0; d < 4; d++) { const s0 = (a[1] * S + a[0]) * 4 + d; cost[s0] = 0; push(h(a[0], a[1]), s0); }
+  let end = -1, guard = 0;
+  while (heap.length && guard++ < 900000) {
+    const [f, st] = pop(), t = st >> 2, d = st & 3, x = t % S, y = (t / S) | 0, c = cost[st];
+    if (f - h(x, y) > c + 1e-6) continue;
+    if (x === b[0] && y === b[1]) { end = st; break; }
+    const wet = isWater(p.t[t]);
+    for (let nd = 0; nd < 4; nd++) {
+      if (nd === ((d + 2) & 3) || (wet && nd !== d)) continue; // over water a road runs straight: that is a bridge
+      const nx = x + DX[nd], ny = y + DY[nd], k = step(nx, ny);
+      if (!k) continue;
+      const nc = c + k + (nd === d ? 0 : 4), ns = (ny * S + nx) * 4 + nd;
+      if (nc < cost[ns]) { cost[ns] = nc; from[ns] = st; push(nc + h(nx, ny), ns); }
+    }
+  }
+  if (end < 0) return null;
+  const path = [];
+  for (let st = end; st >= 0; st = from[st]) path.push([(st >> 2) % S, ((st >> 2) / S) | 0]);
+  return path.reverse();
+}
+
+/** lay a road along a path: three tiles wide on land, a stone bridge over each stretch of water */
+function layRoad(p, path, wide = 3) {
+  if (!path) return;
+  const S = p.S, o = wide >> 1;
+  for (let k = 0; k < path.length; k++) {
+    const [x, y] = path[k];
+    if (!isWater(p.t[y * S + x])) { p.road(x - o, y - o, wide, wide); continue; }
+    // the run of water from here, all in one direction
+    let e = k;
+    while (e + 1 < path.length && isWater(p.t[path[e + 1][1] * S + path[e + 1][0]])) e++;
+    const [x0, y0] = path[Math.max(0, k - 1)], [x1, y1] = path[Math.min(path.length - 1, e + 1)], rot = x0 !== x1 ? 0 : 1, len = (rot ? Math.abs(y1 - y0) : Math.abs(x1 - x0)) + 3;
+    const bx = rot ? x - 1 : Math.min(x0, x1) - 1, by = rot ? Math.min(y0, y1) - 1 : y - 1;
+    if (len <= 44) { p.out.push({ type: 'stoneBridge', x: bx, y: by, rot, len, side: 1 }); p.mark(bx, by, rot ? 2 : len, rot ? len : 2); }
+    k = e;
+  }
+}
+
+/** guns on the towers and bastions of every wall inside a rectangle, so the walls can be fought from */
+function manWalls(p, R, list, most) {
+  const kit = list.length ? list : ['ballista'];
+  let n = 0;
+  for (const st of p.out.slice()) {
+    if (n >= most || st.x < R.x - 1 || st.y < R.y - 1 || st.x > R.x + R.w || st.y > R.y + R.h) continue;
+    const o = st.type === 'castleTower' ? 1 : st.type === 'bastion' ? 1 : st.type === 'tower' ? 0 : -1;
+    if (o < 0) continue;
+    p.out.push({ type: kit[n % kit.length], x: st.x + o, y: st.y + o, rot: 0, side: 1, onWall: true });
+    n++;
+  }
+}
+
+function generateRegion({ r, seed, siteId, site, defId, attId, D, A }) {
+  const isles = siteId === 'isles', S = site.size, shape = site.shape[0];
+  const biome = r.pick(D.biomes), terrainSeed = 1 + r.int(0, 9998);
+  const terrain = generateTerrain(shape, S, terrainSeed), L = regionLayout(shape, S, terrainSeed);
+  const p = new Plan(S, terrain, r);
+  const even = (n) => Math.max(8, Math.round(n / 4) * 4);
+  const clampXY = (x, y) => [Math.max(4, Math.min(S - 5, Math.round(x))), Math.max(4, Math.min(S - 5, Math.round(y)))];
+  const points = [], ends = {}, rects = {};
+  const point = (x, y, role, siteRef, extra = {}) => { const [px, py] = clampXY(x, y); points.push({ x: px, y: py, side: 1, role, site: siteRef, ...extra }); };
+  const look = D.look || defId;
+  const civ = (R, kind, cxy) => civic(p, R, { siteId: kind, defId, r, town: R, S, cy: cxy, sea: false, shoreRow: null, rampart: D.strongWall === 'rampart', noUpper: true });
+  // the gates of a rectangle, just outside each face
+  const gatesOf = (R) => ({ west: [R.x - 2, R.y + (R.h >> 1)], east: [R.x + R.w + 1, R.y + (R.h >> 1)], north: [R.x + (R.w >> 1), R.y - 2], south: [R.x + (R.w >> 1), R.y + R.h + 1] });
+
+  // ---- the city, with its castle, its upper town on terraces and its walled districts
+  const C0 = L.sites.find((s) => s.kind === 'city');
+  {
+    const w = even(76), h = even(104);
+    const R = { x: Math.min(S - w - 14, C0.x - (w >> 1)), y: Math.max(6, Math.min(S - h - 6, C0.y - (h >> 1))), w, h };
+    rects.city = R;
+    const wall = D.strongWall === 'ring' ? 'rampart' : D.strongWall;
+    enclose(p, wall, R, 1, ['west', 'north', 'south', 'east'], D);
+    const m = wall === 'rampart' ? 4 : 2, I = inner(R, m);
+    const half = Math.round(I.w * 0.48), lower = { x: I.x, y: I.y, w: half, h: I.h };
+    const bx = lower.x + lower.w; // the boulevard between the lower and the upper town
+    p.road(bx, I.y, 3, I.h);
+    const E = { x: bx + 3, y: I.y, w: I.x + I.w - bx - 3, h: I.h };
+    // the castle in the north of the east half
+    const K = { x: E.x + 1, y: E.y + 1, w: even(E.w - 2), h: even(Math.min(36, E.h * 0.36)) };
+    rampart(p, K.x, K.y, K.w, K.h, 1, ['south']);
+    const KI = inner(K, 4);
+    p.road(KI.x, KI.y + KI.h - 6, KI.w, 6);
+    (p.put('keep', KI.x + (KI.w >> 1) - 2, KI.y + 2, { side: 1 }, 0) || p.put('keep', KI.x + 1, KI.y + 1, { side: 1 }, 0));
+    p.scatter(D.camp === 'rock' ? 'crates' : D.camp, { x: KI.x, y: KI.y + 7, w: KI.w, h: KI.h - 8 }, 3, 1);
+    manWalls(p, K, D.guns, 6);
+    point(K.x + (K.w >> 1), KI.y + KI.h - 3, 'hq', 'city', { main: true, name: 'the castle' });
+    // the upper town: a terrace over the rest of the east half, a higher one in its middle for the palace or temple
+    const U = { x: E.x, y: K.y + K.h + 4, w: E.w, h: E.y + E.h - (K.y + K.h + 4) };
+    p.road(E.x, K.y + K.h, E.w, 4); // the street under the castle walls
+    if (U.h >= 20) {
+      p.out.push({ type: 'terrace', x: U.x, y: U.y, rot: 0, len: U.w, wid: U.h, side: 1 });
+      const hw = even(Math.min(16, U.w - 10)), hh = even(Math.min(16, U.h - 14)), hx = U.x + U.w - hw - 2, hy = U.y + ((U.h - hh) >> 1);
+      p.out.push({ type: 'terraceHigh', x: hx, y: hy, rot: 0, len: hw, wid: hh, side: 1 });
+      const has = new Set(CIVIC[defId] || []);
+      (has.has('palace') && p.put('palace', hx + ((hw - 7) >> 1), hy + ((hh - 6) >> 1), { side: 1 }, 0)) || (has.has('temple') && p.put('temple', hx + ((hw - 4) >> 1), hy + ((hh - 5) >> 1), { side: 1 }, 0)) || p.put('keep', hx + ((hw - 5) >> 1), hy + ((hh - 5) >> 1), { side: 1 }, 0);
+      // stairs up from the boulevard, and from the terrace to the high terrace
+      for (const f of [0.2, 0.5, 0.8]) p.out.push({ type: 'stairs', x: U.x, y: U.y + Math.round(U.h * f), rot: 1, side: 1 });
+      p.out.push({ type: 'stairs', x: hx - 2, y: hy + (hh >> 1), rot: 1, side: 1 });
+      p.road(U.x + 2, hy + (hh >> 1) - 1, hx - U.x - 2, 3);
+      // houses on the terrace
+      const T = { x: U.x + 3, y: U.y + 2, w: hx - U.x - 5, h: U.h - 4 };
+      if (D.layout === 'streets') for (let y = T.y; y + 3 <= T.y + T.h; y += 4) for (let x = T.x; x + 3 <= T.x + T.w; x += 4) p.put(r.chance(0.7) ? D.homes : D.small, x, y, {}, 0);
+      else LAYOUTS[D.layout](p, T, D, 0.9);
+      // a footbridge from the high terrace over the street to the castle's south wall
+      p.out.push({ type: 'walkway', x: hx + (hw >> 1), y: K.y + K.h - 1, rot: 1, len: hy - (K.y + K.h) + 1, side: 1 });
+      point(U.x + Math.round(U.w * 0.3), U.y + (U.h >> 1), 'post', 'city', { name: 'the upper town' });
+    }
+    // the lower town: three districts behind their own walls and gates
+    const thirds = [0, 1, 2].map((k) => ({ x: lower.x, y: lower.y + Math.round((lower.h * k) / 3), w: lower.w, h: Math.round(lower.h / 3) }));
+    for (const k of [1, 2]) {
+      const y = thirds[k].y - 1, gx = lower.x + (lower.w >> 1) - 1;
+      p.force('castleWall', lower.x, y, { rot: 0, len: gx - lower.x, side: 1 });
+      p.force('castleGate', gx, y, { rot: 0, side: 1 });
+      p.force('castleWall', gx + 3, y, { rot: 0, len: lower.x + lower.w - gx - 3, side: 1 });
+      p.out.push({ type: 'stairs', x: lower.x + 3, y: y - 1, rot: 0, side: 1 }, { type: 'stairs', x: lower.x + lower.w - 5, y: y + 1, rot: 0, side: 1 });
+      // a walkway from the district wall over the boulevard onto the terrace
+      p.out.push({ type: 'walkway', x: bx - 1, y, rot: 0, len: 5, side: 1 });
+    }
+    thirds.forEach((Dk, k) => {
+      const Z = { x: Dk.x + 1, y: Dk.y + 1, w: Dk.w - 2, h: Dk.h - 3 }, cx = Z.x + (Z.w >> 1), cy = Z.y + (Z.h >> 1);
+      if (k < 2) civ(Z, 'city', cy);
+      // lanes every few blocks, houses packed between
+      for (let x = Z.x + 7; x < Z.x + Z.w - 3; x += 9) p.road(x, Z.y, 2, Z.h);
+      p.road(Z.x, cy - 1, Z.w, 3); p.road(cx - 1, Z.y, 3, Z.h);
+      if (D.layout === 'streets') for (let y = Z.y; y + 3 <= Z.y + Z.h; y += 3) for (let x = Z.x; x + 3 <= Z.x + Z.w; x += 3) p.put(r.chance(0.65) ? D.homes : D.small, x, y, {}, 0) || p.put(D.small, x, y, {}, 0);
+      else LAYOUTS[D.layout](p, Z, D, 1);
+      point(cx, cy, k === 1 ? 'post' : 'post', 'city', { name: ['the north quarter', 'the gate quarter', 'the dock quarter'][k] });
+    });
+    manWalls(p, R, D.guns, 10);
+    ends.city = gatesOf(R);
+  }
+
+  // ---- forts
+  for (const F0 of L.sites.filter((s) => s.kind === 'fort')) {
+    const w = even(30), h = even(32), R = { x: F0.x - (w >> 1), y: F0.y - (h >> 1), w, h };
+    rects[F0.id] = R;
+    enclose(p, D.wall, R, 1, ['west', 'east'], D);
+    const Y = inner(R, D.wall === 'rampart' ? 4 : D.wall === 'bastions' ? 5 : 2);
+    p.road(Y.x, F0.y - 1, Y.w, 3); p.road(F0.x - 1, Y.y, 3, Y.h);
+    if (D.layout === 'streets') { p.put('keep', Y.x + Y.w - 7, F0.y - 7, {}, 1); p.scatter(D.camp, Y, 6, 1); p.scatter('crates', Y, 5, 0); }
+    else LAYOUTS[D.layout](p, Y, D, 0.6);
+    manWalls(p, R, D.guns, 6);
+    point(F0.x + 4, F0.y, 'post', F0.id, { main: true, name: 'the fort' });
+    point(Y.x + 2, F0.y + 4, 'post', F0.id, { name: 'the fort gate' });
+    ends[F0.id] = gatesOf(R);
+  }
+
+  // ---- villages
+  for (const V0 of L.sites.filter((s) => s.kind === 'village')) {
+    const w = even(32), h = even(40), R = { x: V0.x - (w >> 1), y: V0.y - (h >> 1), w, h };
+    rects[V0.id] = R;
+    civ(R, 'village', V0.y);
+    LAYOUTS[D.layout](p, R, D, 0.75);
+    for (let i = 0; i < 5; i++) p.put('barricade', R.x - 3, R.y + 3 + Math.round((R.h - 6) * (i / 4)), { rot: 1 }, 0);
+    if (D.lookout === 'tower') for (const [tx, ty] of [[R.x - 2, V0.y - 8], [R.x - 2, V0.y + 7], [R.x + R.w, V0.y]]) p.put('tower', tx, ty, { side: 1 });
+    manWalls(p, { x: R.x - 4, y: R.y - 2, w: R.w + 8, h: R.h + 4 }, D.guns.slice(0, 2), 3);
+    point(V0.x, V0.y, 'post', V0.id, { main: true, name: `the village` });
+    point(R.x + 3, R.y + Math.round(R.h * 0.25), 'post', V0.id, { name: 'the village edge' });
+    ends[V0.id] = gatesOf(R);
+  }
+
+  // ---- docks: a landing stage with a gun and sandbags, the hub of each place's boats
+  const waterways = [];
+  const dockAt = {};
+  for (const [id, [wx, wy]] of Object.entries(L.docks)) {
+    // the bank nearest the water point
+    let bank = null, bd = 1e9;
+    for (let y = wy - 14; y <= wy + 14; y++) for (let x = wx - 14; x <= wx + 14; x++) {
+      if (!p.land(x, y) || p.occ[y * S + x] === 1) continue;
+      const d = Math.hypot(x - wx, y - wy);
+      if (d < bd) { bd = d; bank = [x, y]; }
+    }
+    if (!bank) continue;
+    const dx = Math.sign(wx - bank[0]), dy = Math.sign(wy - bank[1]), rot = Math.abs(wx - bank[0]) >= Math.abs(wy - bank[1]) ? 0 : 1;
+    const len = 7, X = rot ? bank[0] : dx > 0 ? bank[0] - 1 : bank[0] - len + 2, Y = rot ? (dy > 0 ? bank[1] - 1 : bank[1] - len + 2) : bank[1];
+    p.out.push({ type: 'dock', x: X, y: Y, rot, len, side: 1 }); p.mark(X, Y, rot ? 2 : len, rot ? len : 2);
+    const ix = bank[0] - (rot ? 0 : dx * 3), iy = bank[1] - (rot ? dy * 3 : 0); // a little way inland
+    for (const [ox, oy] of rot ? [[-3, 0], [3, 0]] : [[0, -3], [0, 3]]) p.put('sandbags', ix + ox - (rot ? 0 : dx), iy + oy, { side: 1 });
+    p.put(D.shoreGun || (D.guns[0] || 'harpoon'), ix + (rot ? 2 : 0), iy + (rot ? 0 : 2), { side: 1 }) || p.put('harpoon', ix - 2, iy - 2, { side: 1 });
+    p.put('crates', ix + (rot ? -2 : 0), iy + (rot ? 0 : -2), { side: 1 });
+    if (D.lookout === 'tower') p.put('tower', ix - (rot ? 0 : dx * 3) + 2, iy - (rot ? dy * 3 : 0) + 2, { side: 1 });
+    point(ix, iy, 'hub', id, { hub: true, name: 'the landing' });
+    dockAt[id] = { water: [wx, wy], land: [ix, iy] };
+  }
+  L.lines.forEach((ids, k) => { const stops = ids.filter((id) => dockAt[id]).map((id) => ({ site: id, x: dockAt[id].water[0], y: dockAt[id].water[1] })); if (stops.length >= 2) waterways.push({ kind: L.kinds[k] || 'riverboat', stops }); });
+
+  // ---- the attackers' side: camps on the west edge, or (for the islands) the beaches they mean to take
+  const host = A;
+  const camps = [];
+  if (!isles) {
+    const siege = host.guns.length ? host.guns : ['ballista', 'mortar'];
+    for (const [k, fy] of [0.5, 0.2, 0.8].entries()) {
+      const [cx0, cy0] = clampXY(S * 0.06, S * fy);
+      points.push({ x: cx0, y: cy0, side: 0, role: k === 0 ? 'hq' : 'camp', main: true });
+      camps.push([cx0 + 7, cy0]);
+      p.road(cx0 - 1, cy0 - 1, 3, 3);
+      const mine = { side: 0, style: attId, look: host.look || attId };
+      for (const [dx, dy, type, extra] of [[3, -3, siege[k % siege.length], {}], [3, 2, siege[(k + 1) % siege.length], {}], [-3, -1, 'crates', {}], [-3, 1, 'crates', {}], [-4, -4, 'tent', {}], [-4, 3, 'tent', {}],
+        [6, -5, 'barricade', { rot: 1 }], [6, 4, 'barricade', { rot: 1 }], [1, -7, 'sandbags', {}], [1, 7, 'sandbags', {}]]) p.put(type, cx0 + dx, cy0 + dy, { ...mine, ...extra });
+    }
+  } else {
+    // a beach on the seaward side of each island
+    for (const [k, o] of L.isles.entries()) {
+      let bx = Math.round(o.x - o.rx * 0.8);
+      while (bx < o.x && !p.land(bx, o.y)) bx++;
+      points.push({ x: bx + 3, y: o.y + (k === 1 ? 6 : 0), side: 0, role: k === 1 ? 'hq' : 'camp', beach: true, main: true });
+      camps.push([bx + 3, o.y]);
+    }
+  }
+
+  // ---- roads between everything
+  const E = (id, face) => ends[id] && ends[id][face];
+  const link = (a, b) => { if (a && b) layRoad(p, roadPath(p, clampXY(a[0], a[1]), clampXY(b[0], b[1]))); };
+  for (const [id, d] of Object.entries(dockAt)) { const R = rects[id]; if (R) link(d.land, [Math.max(R.x - 1, Math.min(R.x + R.w, d.land[0])), Math.max(R.y - 1, Math.min(R.y + R.h, d.land[1]))]); }
+  const east = (y) => [S - 3, y];
+  if (!isles) {
+    link(camps[1], E('v1', 'west')); link(camps[0], E('v3', 'west')); link(camps[2], E('v2', 'west'));
+    link(E('v1', 'south'), E('v3', 'north')); link(E('v3', 'south'), E('v2', 'north'));
+    link(E('v1', 'east'), E('f1', 'west')); link(E('v2', 'east'), E('f2', 'west')); link(E('v3', 'east'), E('city', 'west'));
+    link(E('f1', 'east'), E('city', 'north')); link(E('f2', 'east'), E('city', 'south'));
+  } else {
+    for (const [k, id] of ['v1', 'v3', 'f2'].entries()) link(camps[k], E(id, 'west'));
+    link(E('f1', 'south'), E('city', 'north')); link(E('v2', 'north'), E('city', 'south'));
+  }
+  // the defenders' road in from their own edge
+  for (const id of ['city', 'f1', 'f2']) { const g = E(id, 'east'); if (g && (!isles || id !== 'f2')) link(g, east(g[1])); }
+  if (isles) { const g = E('v2', 'east'); if (g) link(g, east(g[1])); }
+
+  // ---- countryside: woods and boulders, farms round the villages
+  const wilds = Math.round((S * S) / 170), all = { x: 2, y: 2, w: S - 4, h: S - 4 };
+  for (const t of D.trees) p.scatter(t, all, Math.round(wilds / Math.max(1, D.trees.length)), 1, {}, 4);
+  p.scatter('rock', all, Math.round(wilds / (D.trees.length ? 5 : 1.5)), 2, {}, 4);
+  for (const R of Object.values(rects)) p.scatter(D.small, { x: R.x - 12, y: R.y - 10, w: R.w + 24, h: R.h + 20 }, 6, 2);
+
+  // ---- armies, in waves
+  const garrison = muster(D.army, site.points / (D.cost || 1), r);
+  const hostArmy = muster({ ...host.army, ...host.assault }, (site.points * site.edge) / (host.cost || 1), r);
+  const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
+  const sides = [
+    { name: `${host.adj} ${isles ? 'invasion' : 'host'}`, posture: 'attack', groups: hostArmy, placed: [], leader: leaderOf(attId), faction: attId, waves: 4 },
+    { name: `${place} march`, posture: 'defend', groups: garrison, placed: [], leader: leaderOf(defId), faction: defId, waves: 4 },
+  ];
+  const zep = (id) => (AIRSHIPS[`${id}Zeppelin`] ? [{ unit: `${id}Zeppelin`, count: 1 }] : []);
+  sides[0].airships = zep(attId);
+  sides[1].airships = zep(defId);
+  if (isles) {
+    sides[0].ships = [{ unit: host.ships[0], count: 3 }];
+    if (host.ships[1]) sides[0].ships.push({ unit: host.ships[1], count: 2 });
+    if (D.ships.length) sides[1].ships = [{ unit: D.ships[0], count: 2 }];
+  }
+  return {
+    name: `${place}: ${host.adj} ${isles ? 'island campaign against' : 'war on'} the ${D.adj.toLowerCase()} march`,
+    mode: site.mode, seed, site: siteId, defender: defId, attacker: attId,
+    scn: { size: S, shape, biome, terrainSeed, roads: encodeMask(p.paths), relief: { hills: 1, cliffs: isles ? 0.4 : 0.8 }, region: true,
+      structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, points, waterways, waveEvery: 240,
+      style: defId, look, maxTicks: 9000 },
   };
 }

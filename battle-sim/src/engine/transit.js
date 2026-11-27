@@ -18,13 +18,14 @@ import { addCrate } from './command.js';
 import { plannedPoints } from './fronts.js';
 
 export const RIDE = 9000;   // u.aboard >= RIDE means "in the basket of balloon line (aboard - RIDE)"
-const STOP = { rail: 12, cable: 8, balloon: 10 };   // ticks a vehicle stands at a stop
+const STOP = { rail: 12, cable: 8, balloon: 10, boat: 14 };   // ticks a vehicle stands at a stop
 const STEP = { rail: 1, cable: 0.7, balloon: 0.8 }; // tiles a tick
 const TRAIN_LOAD = 8, CAR_LOAD = 3, BASKET_LOAD = 3, BASKET_MEN = 6;
 const FAR = 26;            // a soldier posted this far from his point looks for a balloon
 const MAST_R = 10;         // and will walk this far to a mast
 
 const CAR_HP = 220, BEAST_HP = 150; // a handcar's frame; a pack beast
+const BOAT_HP = 260, BOAT_LOAD = 6, BOAT_MEN = 6, DOCK_R = 18; // a supply boat; men walk this far to a landing for one
 
 // Peoples who keep no engines: their stores come up the trail on the backs of beasts.
 export const SAVAGE = new Set(['beasts', 'dragons', 'cloven', 'fimbul', 'gorge', 'verdant', 'screaming', 'xibalba', 'greenhide', 'mistisles', 'elemental']);
@@ -45,17 +46,20 @@ export function sideFaction(b, side) {
 const plans = new WeakMap();
 
 /** Dijkstra over the tiles a track may cross, with a price on every bend so the line runs straight */
-function routes(W, H, free, sx, sy) {
+function routes(W, H, free, sx, sy, goal = null) {
   const N = W * H, cost = new Float32Array(N * 4).fill(Infinity), from = new Int32Array(N * 4).fill(-1);
   const heap = [];
   const push = (c, s) => { heap.push([c, s]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { let m = i; const l = i * 2 + 1, r = l + 1; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
   const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
-  for (let d = 0; d < 4; d++) { cost[(sy * W + sx) * 4 + d] = 0; push(0, (sy * W + sx) * 4 + d); }
+  // with a goal: A* toward it, stopping at the first tile 3 to 5 tiles off it
+  const h = goal ? (x, y) => Math.max(0, Math.max(Math.abs(x - goal.x), Math.abs(y - goal.y)) - 5) : () => 0;
+  for (let d = 0; d < 4; d++) { cost[(sy * W + sx) * 4 + d] = 0; push(h(sx, sy), (sy * W + sx) * 4 + d); }
   while (heap.length) {
-    const [c, s] = pop();
-    if (c > cost[s]) continue;
-    const t = s >> 2, d = s & 3, x = t % W, y = (t / W) | 0;
+    const [f0, s] = pop();
+    const t = s >> 2, d = s & 3, x = t % W, y = (t / W) | 0, c = cost[s];
+    if (f0 - h(x, y) > c + 1e-6) continue;
+    if (goal) { const g = Math.max(Math.abs(x - goal.x), Math.abs(y - goal.y)); if (g >= 3 && g <= 5) return { cost, from, end: s }; }
     for (let nd = 0; nd < 4; nd++) {
       if (nd === ((d + 2) & 3)) continue;
       const nx = x + DX[nd], ny = y + DY[nd];
@@ -63,10 +67,10 @@ function routes(W, H, free, sx, sy) {
       const f = free[ny * W + nx];
       if (!f) continue;
       const nc = c + f + (nd === d ? 0 : 7), ns = (ny * W + nx) * 4 + nd;
-      if (nc < cost[ns]) { cost[ns] = nc; from[ns] = s; push(nc, ns); }
+      if (nc < cost[ns]) { cost[ns] = nc; from[ns] = s; push(nc + h(nx, ny), ns); }
     }
   }
-  return { cost, from };
+  return { cost, from, end: -1 };
 }
 
 /**
@@ -78,7 +82,7 @@ export function planTransit(b, scn, SCENERY) {
   const key = `${(scn.structures || []).length}:${JSON.stringify(scn.points || 0)}:${scn.terrainSeed}:${scn.shape}:${scn.size}`;
   const had = plans.get(scn);
   if (had && had.key === key) return had.plan;
-  const { W, H } = b, N = W * H, pts = plannedPoints(b, scn);
+  const { W, H } = b, N = W * H, pts = plannedPoints(b, scn), anyMain = pts.some((p) => p.main);
   // ground a track or a mast may stand on: dry, and clear of everything built
   const free = new Float32Array(N), solid = new Uint8Array(N);
   for (let i = 0; i < N; i++) free[i] = b.terrain[i] === FORD ? 4 : isWater(b.terrain[i]) ? 0 : 1;
@@ -98,7 +102,7 @@ export function planTransit(b, scn, SCENERY) {
   // ---- rail: from the army's edge of the map past each of its points
   for (const side of [0, 1]) {
     if (scn.mode === 'amphibious' && side === 0) continue; // a landing force is supplied by sea
-    const mine = pts.map((p, i) => ({ ...p, pi: i })).filter((p) => p.side === side);
+    const mine = pts.map((p, i) => ({ ...p, pi: i })).filter((p) => p.side === side && (!anyMain || p.main));
     if (!mine.length) continue;
     const ex = side === 0 ? 1 : W - 2, hq = mine.find((p) => p.role === 'hq') || mine[0];
     let depot = null;
@@ -108,13 +112,7 @@ export function planTransit(b, scn, SCENERY) {
     const path = [depot], stations = [{ k: 0, pi: -1, x: depot[0], y: depot[1] }];
     let cur = depot;
     for (const p of order) {
-      const { cost, from } = routes(W, H, free, cur[0], cur[1]);
-      let best = -1, bs = Infinity;
-      for (let y = Math.max(1, p.y - 9); y <= Math.min(H - 2, p.y + 9); y++) for (let x = Math.max(1, p.x - 9); x <= Math.min(W - 2, p.x + 9); x++) {
-        const d = cheb(x, y, p);
-        if (d < 3) continue;
-        for (let dir = 0; dir < 4; dir++) { const c = cost[(y * W + x) * 4 + dir]; if (c === Infinity) continue; const sc = d * 9 + c * 0.25; if (sc < bs) { bs = sc; best = (y * W + x) * 4 + dir; } }
-      }
+      const { from, end: best } = routes(W, H, free, cur[0], cur[1], p);
       if (best < 0) continue;
       const leg = [];
       for (let s = best; s >= 0; s = from[s]) leg.push([(s >> 2) % W, ((s >> 2) / W) | 0]);
@@ -142,6 +140,7 @@ export function planTransit(b, scn, SCENERY) {
   // ---- masts: one at each rally point (a mooring tower already standing there serves)
   const moor = (scn.structures || []).filter((s) => STRUCTURES[s.type] && STRUCTURES[s.type].mooring);
   pts.forEach((p, pi) => {
+    if (anyMain && !p.main) return;
     if (scn.mode === 'amphibious' && p.side === 0) return; // nobody raises a mast on a beach under fire
     const near = moor.find((s) => (s.side ?? 1) === p.side && Math.hypot(s.x + 1 - p.x, s.y + 1 - p.y) <= 9);
     if (near) { plan.masts.push({ pi, side: p.side, x: near.x, y: near.y, type: near.type }); return; }
@@ -207,6 +206,7 @@ export function initTransit(b, scn, plan) {
     const stops = chain(list.sort((a, c) => a.stop - c.stop));
     makeLine(b, 'cable', b.structures[stops[0].st].side ?? 1, stops, strung(stops, STEP.cable)).cargo = CAR_LOAD;
   }
+  if (b.fronts && scn.waterways) waterLines(b, scn.waterways);
   if (!plan || !b.fronts) { if (!b.transit.lines.length) b.transit = null; return; }
   const pointOf = (pi) => { const p = b.cmd.points.find((q) => q.fixed && q.src === pi); return p ? p.id : -1; };
   for (const r of plan.rails) {
@@ -242,6 +242,66 @@ export function initTransit(b, scn, plan) {
   if (!b.transit.lines.length) b.transit = null;
 }
 
+/** a path over water (fords too: boats pass over them) from one tile to another */
+function waterPath(b, a, z) {
+  const { W, H } = b, N = W * H, from = new Int32Array(N).fill(-1), q = new Int32Array(N);
+  const wet = (i) => isWater(b.terrain[i]) || b.terrain[i] === FORD;
+  const s0 = a[1] * W + a[0], g = z[1] * W + z[0];
+  let h = 0, t = 0; q[t++] = s0; from[s0] = s0;
+  while (h < t) {
+    const i = q[h++];
+    if (i === g) break;
+    const x = i % W;
+    for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) { if (j < 0 || j >= N || from[j] >= 0 || !wet(j)) continue; from[j] = i; q[t++] = j; }
+  }
+  if (from[g] < 0) return null;
+  const out = [];
+  for (let i = g; ; i = from[i]) { out.push([i % W, (i / W) | 0]); if (i === s0) break; }
+  return out.reverse();
+}
+/** the nearest water tile to (x, y) */
+function wetNear(b, x, y) {
+  for (let r = 0; r < 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const nx = x + dx, ny = y + dy;
+    if (nx > 0 && ny > 0 && nx < b.W - 1 && ny < b.H - 1 && (isWater(b.terrain[ny * b.W + nx]) || b.terrain[ny * b.W + nx] === FORD)) return [nx, ny];
+  }
+  return null;
+}
+/** Boats between the landings: one for each side on each waterway. A side's boat runs only between landings it
+ * holds; take an enemy's landings and his boat line is yours to use. */
+function waterLines(b, ways) {
+  for (const way of ways) {
+    const stops = [];
+    for (const st of way.stops) {
+      const p = b.cmd.points.find((q) => q.fixed && q.hub && q.site === st.site);
+      const w = p && wetNear(b, st.x, st.y);
+      if (p && w) stops.push({ x: w[0], y: w[1], st: -1, point: p.id, site: st.site, land: [p.x, p.y] });
+    }
+    if (stops.length < 2) continue;
+    // one path through every landing in turn
+    const path = [];
+    let ok = true;
+    for (let k = 0; k < stops.length; k++) {
+      if (k === 0) { stops[0].k = 0; path.push([stops[0].x, stops[0].y]); continue; }
+      const leg = waterPath(b, [stops[k - 1].x, stops[k - 1].y], [stops[k].x, stops[k].y]);
+      if (!leg) { ok = false; break; }
+      for (let i = 1; i < leg.length; i++) path.push(leg[i]);
+      stops[k].k = path.length - 1;
+    }
+    if (!ok) continue;
+    for (const side of [0, 1]) {
+      const L = makeLine(b, 'boat', side, stops.map((s0) => ({ ...s0 })), path);
+      L.faction = sideFaction(b, side);
+      L.vessel = SAVAGE.has(L.faction) && way.kind === 'riverboat' ? 'raft' : way.kind;
+      L.hp = L.maxHp = BOAT_HP; L.cargo = 0; L.crew = []; L.crewless = true; L.idle = true;
+      // the landing nearest the side's own edge of the map is where its boats load
+      L.home = L.stops.reduce((best, s0, i) => (side === 0 ? s0.x < L.stops[best].x : s0.x > L.stops[best].x) ? i : best, 0);
+      b.transit.boats ||= [[], []];
+      b.transit.boats[side].push(L);
+    }
+  }
+}
+
 /** the next stop ahead of the vehicle in the way it is going, or null at the end of the line */
 function ahead(L, dir) {
   const here = L.at.get(L.k), i = here !== undefined ? here + dir : null;
@@ -250,8 +310,9 @@ function ahead(L, dir) {
   return null;
 }
 
-function setDown(b, L, u) {
-  const spot = freeTileNear(b, Math.max(1, Math.min(b.W - 2, Math.round(L.x))), Math.max(1, Math.min(b.H - 2, Math.round(L.y))), u.def.size || 1, u.side);
+function setDown(b, L, u, at = null) {
+  const [ax, ay] = at || [L.x, L.y];
+  const spot = freeTileNear(b, Math.max(1, Math.min(b.W - 2, Math.round(ax))), Math.max(1, Math.min(b.H - 2, Math.round(ay))), u.def.size || 1, u.side);
   if (!spot) return false;
   u.x = spot[0]; u.y = spot[1]; u.px = spot[0]; u.py = spot[1]; u.aboard = -1; u.ride = null; u.noRide = b.tick + 160;
   occupy(b, u, 1);
@@ -269,15 +330,20 @@ function call(b, L, si) {
     if (si === 0) L.cargo = CAR_LOAD;
     else if (L.cargo > 0) { const st = b.structures[s.st]; if (addCrate(b, L.side, st.x - 1, st.y + st.h, 1)) { L.cargo--; n = 1; } }
   } else {
-    if (si === 0) L.cargo = BASKET_LOAD;
+    const boat = L.kind === 'boat', room = boat ? BOAT_MEN : BASKET_MEN;
+    if (boat) {
+      // stores are loaded at the home landing and set down where they are short
+      if (si === L.home) L.cargo = BOAT_LOAD;
+      else if (p && p.side === L.side && L.cargo > 0 && p.stock < 6) { n = Math.min(2, L.cargo, 6 - p.stock); p.stock += n; L.cargo -= n; }
+    } else if (si === 0) L.cargo = BASKET_LOAD;
     else if (p && p.side === L.side && L.cargo > 0 && p.stock < 5) { p.stock++; L.cargo--; n = 1; }
     // the men for this point get out; those waiting here get in
-    const stay = [];
-    for (const id of L.riders) { const u = b.units[id]; if (!u.alive) continue; const here = !u.ride || u.ride.to === si || !open(b, L, L.stops[u.ride.to]); if (here && setDown(b, L, u)) men++; else stay.push(id); }
+    const stay = [], land = boat ? s.land : null, bx = land ? land[0] : s.x, by = land ? land[1] : s.y;
+    for (const id of L.riders) { const u = b.units[id]; if (!u.alive) continue; const here = !u.ride || u.ride.to === si || !open(b, L, L.stops[u.ride.to]); if (here && setDown(b, L, u, land)) men++; else stay.push(id); }
     L.riders = stay;
     for (const u of b.units) {
-      if (L.riders.length >= BASKET_MEN) break;
-      if (!u.alive || !u.ride || u.ride.line !== L.id || u.ride.from !== si || u.aboard >= 0 || u.x < 0 || Math.max(Math.abs(u.x - s.x), Math.abs(u.y - s.y)) > 3) continue;
+      if (L.riders.length >= room) break;
+      if (!u.alive || !u.ride || u.ride.line !== L.id || u.ride.from !== si || u.aboard >= 0 || u.x < 0 || Math.max(Math.abs(u.x - bx), Math.abs(u.y - by)) > (boat ? 5 : 3)) continue;
       occupy(b, u, 0); u.aboard = RIDE + L.id; L.riders.push(u.id); L.lifted++; men++;
     }
   }
@@ -295,6 +361,8 @@ export function hitLine(b, L, dmg, by) {
   L.live = false;
   // the hands jump clear and fight on foot; what it carried lies where it stopped, for whoever gets to it
   for (const id of L.crew) { const u = b.units[id]; if (u.alive && u.aboard >= 0 && !setDown(b, L, u)) { u.aboard = -1; } u.crewOf = undefined; }
+  for (const id of L.riders) { const u = b.units[id]; if (u.alive && !setDown(b, L, u)) { u.alive = false; u.hp = 0; u.aboard = -1; u.ride = null; b.events.push({ type: 'death', id, drowned: true }); } }
+  L.riders = [];
   L.crew = [];
   if (L.cargo > 0) addCrate(b, by ? by.side : 1 - L.side, L.x, L.y, Math.min(3, L.cargo));
   L.cargo = 0;
@@ -333,7 +401,23 @@ export function transitTick(b) {
     if (!L.live) continue;
     if (L.riders.length) L.riders = L.riders.filter((id) => b.units[id].alive);
     // a cable car falls with the tower it hangs from
-    if (L.kind !== 'rail' && L.stops.filter((s) => !b.structures[s.st].destroyed).length < 2) {
+    if (L.kind === 'boat') {
+      // a boat works only between landings its side holds: with fewer than two it lies up out of sight
+      const held = L.stops.map((s0, i) => (open(b, L, s0) ? i : -1)).filter((i) => i >= 0);
+      if (held.length < 2) {
+        if (!L.idle) { L.idle = true; for (const id of L.riders) { const u = b.units[id]; const at = L.stops[held[0] ?? 0].land; if (!setDown(b, L, u, at)) { u.aboard = -1; u.ride = null; } } L.riders = []; }
+        continue;
+      }
+      if (L.idle) {
+        // she comes out at the side's own landing nearest home
+        L.idle = false;
+        const s0 = held.includes(L.home) ? L.home : held[0];
+        L.k = L.stops[s0].k; L.x = L.px = L.path[L.k][0]; L.y = L.py = L.path[L.k][1]; L.dir = s0 === L.stops.length - 1 ? -1 : 1; L.wait = STOP.boat;
+        L.cargo = BOAT_LOAD;
+        b.events.push({ type: 'transitOut', line: L.id, side: L.side });
+      }
+    }
+    if (L.kind !== 'rail' && L.kind !== 'boat' && L.stops.filter((s) => !b.structures[s.st].destroyed).length < 2) {
       L.live = false;
       for (const id of L.riders) { const u = b.units[id]; if (!setDown(b, L, u)) { u.aboard = -1; u.ride = null; } }
       L.riders = [];
@@ -341,7 +425,7 @@ export function transitTick(b) {
       continue;
     }
     // a handcar goes nowhere without hands at the pump
-    if (L.kind === 'rail' && L.hp !== undefined) { const hands = railWar(b, L); if (!L.live) continue; if (!L.beasts && !L.crewless && !hands) continue; }
+    if ((L.kind === 'rail' || L.kind === 'boat') && L.hp !== undefined) { const hands = railWar(b, L); if (!L.live) continue; if (!L.beasts && !L.crewless && !hands) continue; }
     if (L.wait > 0) { L.wait--; }
     else {
       // which way: on as it was going unless the line is shut that way
@@ -359,31 +443,43 @@ export function transitTick(b) {
 
 /** a soldier posted to a point a long way off takes the balloon when there is a mast at hand; true when that used his turn */
 export function transitDuty(b, u) {
-  const L = b.transit && b.transit.air[u.side];
-  if (!L || !L.live || u.x < 0 || u.aboard >= 0 || u.def.fly) return false;
+  const T = b.transit;
+  if (!T || u.x < 0 || u.aboard >= 0 || u.def.fly) return false;
   if (u.ride) {
-    const s = L.stops[u.ride.from];
-    if (b.tick > u.ride.until || !open(b, L, s) || !open(b, L, L.stops[u.ride.to]) || nearestEnemyDist(b, u, 8).d <= 8) { u.ride = null; u.noRide = b.tick + 200; return false; }
-    const sx = Math.round(s.x), sy = Math.round(s.y);
-    if (Math.max(Math.abs(u.x - sx), Math.abs(u.y - sy)) <= 2) return true; // waiting at the mast
+    const L = T.lines[u.ride.line], s = L && L.stops[u.ride.from];
+    if (!L || !L.live || L.idle || b.tick > u.ride.until || !open(b, L, s) || !open(b, L, L.stops[u.ride.to]) || nearestEnemyDist(b, u, 8).d <= 8) { u.ride = null; u.noRide = b.tick + 200; return false; }
+    const [sx, sy] = L.kind === 'boat' ? s.land : [Math.round(s.x), Math.round(s.y)];
+    if (Math.max(Math.abs(u.x - sx), Math.abs(u.y - sy)) <= (L.kind === 'boat' ? 4 : 2)) return true; // waiting at the mast or the landing
     const f = field(b, `mast${L.id}:${u.ride.from}`, 300, () => { const p = freeTileNear(b, sx, sy, 1, u.side); return p ? [p[1] * b.W + p[0]] : []; });
-    if (f) { walk(b, u, f, 1, 1); return true; }
+    if (f && f[u.y * b.W + u.x] < 32767) { walk(b, u, f, 1, 1); return true; }
     u.ride = null; u.noRide = b.tick + 200;
     return false;
   }
   if ((b.tick + u.id) % 8 || u.noRide > b.tick || (u.def.size || 1) > 2 || u.def.leader || u.bearing || u.carry || u.down || u.flag) return false;
   const sq = b.squads[u.squad], fr = sq && sq.front;
   if (!fr || fr.point < 0 || sq.state === 'fallback' || sq.state === 'regroup') return false;
-  const to = L.stops.findIndex((s) => s.point === fr.point);
-  if (to < 0 || !open(b, L, L.stops[to])) return false;
-  const P = b.cmd.points[fr.point];
-  if (Math.hypot(P.x - u.x, P.y - u.y) < FAR) return false;
-  let from = -1, bd = MAST_R;
-  L.stops.forEach((s, i) => { if (i === to || !open(b, L, s)) return; const d = Math.hypot(s.x - u.x, s.y - u.y); if (d < bd) { bd = d; from = i; } });
-  if (from < 0 || nearestEnemyDist(b, u, 9).d <= 9) return false;
-  let queue = L.riders.length;
-  for (const v of b.units) if (v.alive && v.ride && v.ride.line === L.id) queue++;
-  if (queue >= BASKET_MEN) return false;
-  u.ride = { line: L.id, from, to, until: b.tick + 140 };
+  const P = b.cmd.points[fr.point], far = Math.hypot(P.x - u.x, P.y - u.y);
+  if (far < FAR) return false;
+  // the best of the side's balloon and boats: a stop near me, and one near where I am going
+  let best = null;
+  const lines = [T.air && T.air[u.side], ...((T.boats && T.boats[u.side]) || [])];
+  for (const L of lines) {
+    if (!L || !L.live || L.idle) continue;
+    const boat = L.kind === 'boat', reach = boat ? DOCK_R : MAST_R;
+    const at = (s) => (boat ? s.land : [s.x, s.y]);
+    let to = -1, td = Infinity;
+    L.stops.forEach((s, i) => { if (!open(b, L, s)) return; const [x, y] = at(s), d = s.point === fr.point ? 0 : Math.hypot(P.x - x, P.y - y); if (d < td) { td = d; to = i; } });
+    if (to < 0 || td + 12 > far) continue;
+    let from = -1, fd = reach;
+    L.stops.forEach((s, i) => { if (i === to || !open(b, L, s)) return; const [x, y] = at(s), d = Math.hypot(x - u.x, y - u.y); if (d < fd) { fd = d; from = i; } });
+    if (from < 0) continue;
+    let queue = L.riders.length;
+    for (const v of b.units) if (v.alive && v.ride && v.ride.line === L.id) queue++;
+    if (queue >= (boat ? BOAT_MEN * 2 : BASKET_MEN)) continue;
+    const score = fd + td;
+    if (!best || score < best.score) best = { L, from, to, score };
+  }
+  if (!best || nearestEnemyDist(b, u, 9).d <= 9) return false;
+  u.ride = { line: best.L.id, from: best.from, to: best.to, until: b.tick + (best.L.kind === 'boat' ? 260 : 140) };
   return true;
 }

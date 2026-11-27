@@ -55,12 +55,15 @@ export function initFronts(b, scn) {
   for (const [src, sp] of list.entries()) {
     const p = addPoint(b, sp.side, sp.role === 'camp' ? 'camp' : sp.role === 'hq' ? 'hq' : 'post', sp.x, sp.y);
     if (!p) continue;
-    Object.assign(p, { src, fixed: true, home: sp.side, role: sp.role || 'post', cap: 0, stock: sp.stock ?? (sp.role === 'camp' ? 7 : 5), name: sp.name || null });
+    Object.assign(p, { src, hub: !!sp.hub, main: !!sp.main, site: sp.site || null, beach: sp.beach ?? (b.mode === 'amphibious' && sp.side === 0), fixed: true, home: sp.side, role: sp.role || 'post', cap: 0, stock: sp.stock ?? (sp.role === 'camp' ? 7 : 5), name: sp.name || null });
     F.points.push(p.id);
     if (sp.role === 'hq' || F.hq[sp.side] < 0) F.hq[sp.side] = p.id;
   }
   if (!F.points.length) { b.fronts = null; return; }
   for (const u of b.units) if (u.def.leader && F.leader[u.side] < 0) F.leader[u.side] = u.id;
+  // the defenders' squads start as the guard of the post they were placed at
+  const bySrc = new Map(F.points.map((id) => [b.cmd.points[id].src, id]));
+  for (const sq of b.squads) { const u = b.units[sq.members[0]]; if (u && u.home !== undefined && bySrc.has(u.home)) sq.front = { kind: 'guard', point: bySrc.get(u.home) }; }
   assignTeams(b);
 }
 
@@ -102,10 +105,13 @@ function assignTeams(b) {
       // artillery and a share of the foot hold; the rest go out
       const wantGuard = own.length && (held < total * share || !foe.length);
       if (wantGuard) {
-        const p = order.slice().sort((a, c) => (load.get(a.id) || 0) - (load.get(c.id) || 0) || (c.id === F.hq[side]) - (a.id === F.hq[side]))[0];
+        const wt = (q) => (q.id === F.hq[side] ? 2 : q.hub ? 1.6 : q.main ? 1.3 : 1); // the headquarters and the landings are held hardest
+        const p = order.slice().sort((a, c) => (load.get(a.id) || 0) / wt(a) - (load.get(c.id) || 0) / wt(c) || (c.id === F.hq[side]) - (a.id === F.hq[side]))[0];
         s.front = { kind: 'guard', point: p.id }; held += s.alive; load.set(p.id, (load.get(p.id) || 0) + s.alive);
       } else if (foe.length) {
-        const p = foe.slice().sort((a, c) => (Math.hypot(a.x - s.cx, a.y - s.cy) + (load.get(a.id) || 0) * 0.6) - (Math.hypot(c.x - s.cx, c.y - s.cy) + (load.get(c.id) || 0) * 0.6))[0];
+        // the enemy's landings and depots come first: take them and his boats are yours
+        const score = (q) => Math.hypot(q.x - s.cx, q.y - s.cy) + (load.get(q.id) || 0) * 0.6 - (q.hub ? 30 : 0);
+        const p = foe.slice().sort((a, c) => score(a) - score(c))[0];
         s.front = { kind: 'assault', point: p.id }; load.set(p.id, (load.get(p.id) || 0) + s.alive);
       } else s.front = { kind: 'hunt', point: -1 }; // every point is ours: find their general
     }
@@ -118,10 +124,14 @@ export function frontsTick(b) {
   if (!F) return;
   if (b.tick % 4 === 0) {
     let turned = false;
-    // a landing force's beaches are nobody's to take until it has men ashore
-    if (b.mode === 'amphibious' && !F.ashore) F.ashore = b.units.some((u) => u.alive && u.side === 0 && u.x >= 0 && u.aboard < 0 && !u.def.fly);
+    // a landing force's beaches are nobody's to take until it has men ashore on that island
+    let ashore = null;
     for (const p of fixedPoints(b)) {
-      if (b.mode === 'amphibious' && p.home === 0 && !F.ashore) continue;
+      if (p.beach && !p.open) {
+        if (!ashore) { ashore = new Set(); for (const u of b.units) if (u.alive && u.side === 0 && u.x >= 0 && u.aboard < 0 && !u.def.fly) ashore.add(b.isle ? b.isle[u.y * b.W + u.x] : 0); }
+        if (!ashore.has(b.isle ? b.isle[p.y * b.W + p.x] : 0)) continue;
+        p.open = true;
+      }
       let mine = 0, theirs = 0;
       for (const u of b.units) {
         if (!u.alive || u.x < 0 || u.aboard >= 0 || u.def.fly || distTo(u, p) > HOLD_R) continue;
@@ -230,7 +240,7 @@ export function stretcherDuty(b, u) {
     b.events.push({ type: 'stretcherUp', id: best.id, medic: u.id });
     return true;
   }
-  const f = field(b, `cas${best.id}:${best.x},${best.y}`, 60, () => [best.y * b.W + best.x]);
+  const f = field(b, `cas${best.id}:${best.x},${best.y}`, 60, () => [best.y * b.W + best.x], 90);
   if (!f || f[u.y * b.W + u.x] >= 32767) return false;
   walk(b, u, f, 1, 1);
   return true;
@@ -260,6 +270,15 @@ export function frontDuty(b, u) {
   if (!p) return false;
   const threat = nearestEnemyDist(b, u, 9).d, d = distTo(u, p);
   if (fr.kind === 'guard') {
+    // shooters man the walls near their post, if it has any
+    if (u.def.style !== 'melee' && !u.def.fly && (u.def.size || 1) === 1) {
+      const wf = wallField(b, p);
+      if (wf) {
+        const here = u.y * b.W + u.x;
+        if (b.level[here] >= 2 && distTo(u, p) <= WALL_R + 2) return threat > (u.def.range || 6) ? true : false; // on the wall: shoot from there
+        if (threat > 4 && wf[here] < 32767) { walk(b, u, wf, 1, 1); return true; }
+      }
+    }
     if (threat <= 9) return false;             // something to fight
     if (d > 5) { const f = toward(b, p); if (f) walk(b, u, f, 1, 3); }
     return true;                                // hold the post
@@ -271,6 +290,22 @@ export function frontDuty(b, u) {
   if (!f) return false;
   walk(b, u, f, 1, 2);
   return true;
+}
+
+/** a walk to the wall-walks round a point, or null when it has none near */
+const WALL_R = 14;
+function wallField(b, p) {
+  b.wallTiles ||= new Map();
+  if (!b.wallTiles.has(p.id)) {
+    const list = [];
+    for (let y = Math.max(0, p.y - WALL_R); y < Math.min(b.H, p.y + WALL_R + 1); y++) for (let x = Math.max(0, p.x - WALL_R); x < Math.min(b.W, p.x + WALL_R + 1); x++) {
+      const i = y * b.W + x;
+      if (b.level[i] >= 2 && !b.blockMove[i] && !b.span[i]) list.push(i);
+    }
+    b.wallTiles.set(p.id, list.length >= 4 ? list : null);
+  }
+  const list = b.wallTiles.get(p.id);
+  return list ? field(b, `wall${p.id}`, 300, () => list) : null;
 }
 
 /** the winner under these rules, or null while the battle goes on */

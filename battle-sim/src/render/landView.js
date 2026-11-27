@@ -5,7 +5,7 @@ import { bakePose } from './rigkit.js';
 import { sculptMaterial } from './sculpt.js';
 import { LIFTED } from '../engine/airship.js';
 import { RIDE, sideFaction } from '../engine/transit.js';
-import { transitLook, buildConsist, buildGondola, buildBalloonFor, trackLook } from './props/transit.js';
+import { transitLook, buildConsist, buildGondola, buildBalloonFor, buildVessel, trackLook } from './props/transit.js';
 import { loadFracture, fractureModel } from './fracture.js';
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
@@ -136,6 +136,7 @@ export class LandView {
     const out = [], seen = new Set();
     const add = (key, label, run) => { if (!seen.has(key)) { seen.add(key); out.push({ label, run }); } };
     for (const u of b.units) add(`u:${u.def.id}`, u.def.name || u.def.id, () => buildUnitModel(u.def));
+    for (const R of b.reserve || []) for (const w of R) for (const d of w.defs) add(`u:${d.id}`, d.name || d.id, () => buildUnitModel(d));
     for (const s of b.structures) {
       const { w, h, def } = structureFootprint(s);
       add(`s:${def.id}:${w}x${h}:${s.style || b.style || ''}`, def.name || def.id, () => buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null, style: s.style || b.style || null, look: s.look || b.look || null }));
@@ -221,27 +222,7 @@ export class LandView {
       this.dynamic.add(m);
       return m;
     });
-    this.crafts = b.crafts.map((c) => {
-      const m = buildCraft(SIDE_COLORS[c.side]);
-      const bar = makeBar(0xd8b04a); bar.position.y = 1.1; setBar(bar, 1, 1.2);
-      m.add(bar); m.userData.bar = bar;
-      // the bow gun and the boat's own crew
-      const gun = new THREE.Group();
-      gun.add(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.55, 8).rotateZ(-Math.PI / 2).translate(0.2, 0, 0), mat(0x2b2b2e, { metalness: 0.8, roughness: 0.4 })));
-      gun.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 6).translate(0, -0.15, 0), mat(0x5a4630)));
-      gun.position.set(0.8, 0.62, 0); m.add(gun); m.userData.gun = gun;
-      m.userData.pips = [-0.28, 0, 0.28].map((z) => {
-        const p = new THREE.Group();
-        p.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), mat(0xd9a77c)));
-        p.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(SIDE_COLORS[c.side])));
-        p.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.26, 8).translate(0, -0.2, 0), mat(0x6b4a2e)));
-        p.position.set(-0.85, 0.62, z); m.add(p);
-        return p;
-      });
-      m.rotation.y = -Math.atan2(c.ty - c.y, c.tx - c.x);
-      this.dynamic.add(m);
-      return m;
-    });
+    this.crafts = b.crafts.map((c) => this.craftModel(c));
     this.airModels = b.airships.map((a) => {
       const m = buildAirship(a.def, SIDE_COLORS[a.side]);
       m.userData.setSide?.(SIDE_COLORS[a.side]);
@@ -261,7 +242,13 @@ export class LandView {
     this.transitMarks = ((b.transit && b.transit.lines) || []).map((L) => {
       const col = SIDE_COLORS[L.side], tm = { L, tops: null, line: null, car: null, fell: false, smoke: 0 };
       const look = transitLook(L.faction || sideFaction(b, L.side));
-      if (L.kind === 'rail') {
+      if (L.kind === 'boat') {
+        // the boat follows the waterway, its corners rounded off
+        const P = L.path, n = P.length;
+        tm.pts = P.map((_, k) => { let x = 0, y = 0; for (let j = -2; j <= 2; j++) { const q = P[Math.max(0, Math.min(n - 1, k + j))]; x += q[0]; y += q[1]; } return [x / 5 + 0.5, y / 5 + 0.5]; });
+        tm.car = buildVessel(look, col, L.vessel || 'riverboat');
+        tm.car.visible = !L.idle;
+      } else if (L.kind === 'rail') {
         // the line the cars follow: the tile path with its corners rounded off
         const P = L.path, n = P.length;
         tm.pts = P.map((_, k) => { let x = 0, y = 0; for (let j = -2; j <= 2; j++) { const q = P[Math.max(0, Math.min(n - 1, k + j))]; x += q[0]; y += q[1]; } return [x / 5 + 0.5, y / 5 + 0.5]; });
@@ -392,6 +379,28 @@ export class LandView {
     });
   }
   /** a fallen soldier comes back at his fort: his body is cleared away and he stands whole again */
+  /** a landing craft: the boat, its bow gun, its crew and a bar for its hull */
+  craftModel(c) {
+    const m = buildCraft(SIDE_COLORS[c.side]);
+    const bar = makeBar(0xd8b04a); bar.position.y = 1.1; setBar(bar, 1, 1.2);
+    m.add(bar); m.userData.bar = bar;
+    // the bow gun and the boat's own crew
+    const gun = new THREE.Group();
+    gun.add(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.55, 8).rotateZ(-Math.PI / 2).translate(0.2, 0, 0), mat(0x2b2b2e, { metalness: 0.8, roughness: 0.4 })));
+    gun.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 6).translate(0, -0.15, 0), mat(0x5a4630)));
+    gun.position.set(0.8, 0.62, 0); m.add(gun); m.userData.gun = gun;
+    m.userData.pips = [-0.28, 0, 0.28].map((z) => {
+      const p = new THREE.Group();
+      p.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), mat(0xd9a77c)));
+      p.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(SIDE_COLORS[c.side])));
+      p.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.26, 8).translate(0, -0.2, 0), mat(0x6b4a2e)));
+      p.position.set(-0.85, 0.62, z); m.add(p);
+      return p;
+    });
+    m.rotation.y = -Math.atan2(c.ty - c.y, c.tx - c.x);
+    this.dynamic.add(m);
+    return m;
+  }
   reviveUnit(id) {
     const old = this.models[id];
     if (old) this.dynamic.remove(old);
@@ -622,7 +631,8 @@ export class LandView {
         out.set(c.position.x + Math.cos(c.rotation.y) * o, c.position.y + (c.userData.deck || 0.58), c.position.z - Math.sin(c.rotation.y) * o);
         return out;
       }
-      const car = tm && tm.car;
+      const car = tm && tm.car, seats = car && car.userData.seats;
+      if (car && seats && seats.length > 1) { const i = Math.max(0, L.riders.indexOf(u.id)); out.copy(seats[1 + (i % (seats.length - 1))]); car.localToWorld(out); return out; }
       if (car) out.set(car.position.x + ((u.id % 3) - 1) * 0.25, car.position.y + 0.1, car.position.z + ((u.id % 2) - 0.5) * 0.4); else out.set(L.px + (L.x - L.px) * alpha, 4, L.py + (L.y - L.py) * alpha);
       return out;
     }
@@ -750,7 +760,7 @@ export class LandView {
         if (tm && tm.cars) { const c = tm.cars[0].position; st.puff(new THREE.Vector3(c.x, c.y + 1, c.z), 0xd8c8a0, 0.3, 0.6); }
         if ((this.trainCry || 0) + 80 < b.tick) { this.trainCry = b.tick; msgs.push({ side: e.side, text: tm && tm.beasts ? 'The pack caravan is under attack' : 'The handcars are under attack' }); }
       } else if (e.type === 'transitDown') {
-        msgs.push({ side: e.side, text: e.kind === 'rail' ? (e.beasts ? 'The pack beasts are slain: their loads lie on the trail' : 'The handcars are wrecked: their stores lie by the track') : e.kind === 'cable' ? 'The cable falls: the car goes with it' : 'The balloon has no mast left to fly to' });
+        msgs.push({ side: e.side, text: e.kind === 'rail' ? (e.beasts ? 'The pack beasts are slain: their loads lie on the trail' : 'The handcars are wrecked: their stores lie by the track') : e.kind === 'cable' ? 'The cable falls: the car goes with it' : e.kind === 'boat' ? 'A supply boat is holed and goes down' : 'The balloon has no mast left to fly to' });
       } else if (e.type === 'duel') {
         // a matched exchange: both fighters play the same blow, facing one another
         const dur = 0.62;
@@ -777,7 +787,12 @@ export class LandView {
         if (e.name === 'charge') st.ring(v, 0.6, 0xffffff, 0.4);
       } else if (e.type === 'reinforce') {
         for (const id of e.ids) this.reviveUnit(id);
-        if (e.ids.length >= 6) msgs.push({ side: e.side, text: `${e.ids.length} return to the fight` });
+        if (e.wave) msgs.push({ side: e.side, text: e.landing ? `Wave ${e.wave}: ${e.ids.length} put out in the landing craft` : `Wave ${e.wave}: ${e.ids.length} march in with fresh stores` });
+        else if (e.ids.length >= 6) msgs.push({ side: e.side, text: `${e.ids.length} return to the fight` });
+      } else if (e.type === 'fell') {
+        if ((this.fellSaid || 0) + 20 < b.tick) { this.fellSaid = b.tick; msgs.push({ side: b.units[e.id].side, text: 'The walkway gives way: those on it fall to their deaths' }); }
+      } else if (e.type === 'transitOut') {
+        msgs.push({ side: e.side, text: 'Holding two landings, they put their own boat on the water' });
       } else if (e.type === 'flagTaken') {
         const u = b.units[e.by]; this.unitPos(u, 1, v);
         st.ring(v.clone().setY(0.05), 1.4, SIDE_COLORS[u.side], 0.9);
@@ -1097,11 +1112,29 @@ export class LandView {
         // the cable drops and the car with it; a balloon with nowhere to go settles where it is
         if (!tm.fell) { tm.fell = true; if (tm.line) tm.line.visible = false; if (L.kind === 'cable') this.tumbling.push({ c: { g: car, k: 3 }, v: new THREE.Vector3(0.3, 0, 0.2), w: new THREE.Vector3(1, 0.5, 2), wait: 0, rest: 0.4 }); }
         if (L.kind === 'balloon') car.position.y = Math.max(this.groundY(Math.round(L.x), Math.round(L.y)), car.position.y - dt * 1.5);
+        if (L.kind === 'boat') { car.position.y -= dt * 0.4 * speed; car.rotation.z += dt * 0.15; if (car.position.y < -2.5) car.visible = false; } // she settles and goes down
         // a wrecked handcar lies off the rails on its side; a dead beast lies where it dropped
         if (L.kind === 'rail') tm.cars.forEach((c, ci) => { const want = (ci % 2 ? -1 : 1) * (tm.beasts ? Math.PI / 2 : 1.25); c.rotation.x += (want - c.rotation.x) * Math.min(1, dt * 4); if (tm.beasts) for (const lg of c.userData.legs) lg.piv.rotation.z = 0.5; });
         continue;
       }
       const moving = L.x !== L.px || L.y !== L.py;
+      if (L.kind === 'boat') {
+        car.visible = !L.idle;
+        if (L.idle) continue;
+        const pts = tm.pts, last = pts.length - 1, q = Math.max(0, Math.min(last, moving ? L.k - L.dir * (1 - alpha) : L.k));
+        const f = Math.floor(q), r = q - f, a = pts[f], c = pts[Math.min(last, f + 1)];
+        const bx = a[0] + (c[0] - a[0]) * r, bz = a[1] + (c[1] - a[1]) * r;
+        car.position.set(bx, this.waveY(bx, bz) + 0.02, bz);
+        const ahead = pts[Math.max(0, Math.min(last, Math.round(q + 2 * L.dir)))], behind = pts[Math.max(0, Math.min(last, Math.round(q - 2 * L.dir)))];
+        if (ahead !== behind) {
+          let d = Math.atan2(-(ahead[1] - behind[1]), ahead[0] - behind[0]) - car.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+          car.rotation.y += d * Math.min(1, dt * 3);
+        }
+        car.rotation.x = Math.sin(t * 1.2 + L.id) * 0.03;
+        if (car.userData.wheel) car.userData.wheel.rotation.z -= moving ? dt * 3 * speed : 0;
+        for (const o of car.userData.sweep || []) o.rotation.z = moving ? Math.sin(t * 3 * speed ** 0.5 + L.id) * 0.4 : 0;
+        continue;
+      }
       if (L.kind === 'rail') {
         // each car rides the curve by itself: its place is so far back along the line, its heading the line's there
         const pts = tm.pts, last = pts.length - 1;
@@ -1177,7 +1210,7 @@ export class LandView {
       }
     }
     b.crafts.forEach((c, i) => {
-      const m = this.crafts[i];
+      const m = this.crafts[i] || (this.crafts[i] = this.craftModel(c));
       if (c.sunk) { m.position.y -= dt * 0.5 * speed; if (m.position.y < -2) m.visible = false; return; }
       const x = c.px + (c.x - c.px) * alpha, y = c.py + (c.y - c.py) * alpha;
       m.position.set(x + 0.5, c.landed ? -0.12 : this.waveY(x, y) - 0.05, y + 0.5);
@@ -1185,6 +1218,7 @@ export class LandView {
       m.userData.pips.forEach((p, k) => { p.visible = k < c.crew; });
       if (c.wrecked && !m.userData.wrecked) { m.userData.wrecked = true; m.traverse((o) => { if (o.isMesh && o.material.color) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.4); } }); }
       m.rotation.z = c.landed ? 0 : Math.sin(t * 1.3 + i) * 0.04;
+      if (!c.landed && (c.x !== c.px || c.y !== c.py)) { let d = -Math.atan2(c.y - c.py, c.x - c.px) - m.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; m.rotation.y += d * Math.min(1, dt * 4); }
       m.userData.ramp.rotation.z = c.landed ? -Math.min(1.4, (m.userData.rampT = (m.userData.rampT || 0) + dt * 2 * speed)) : 0;
       setBar(m.userData.bar, c.hp / c.maxHp);
       m.userData.bar.visible = !c.landed;

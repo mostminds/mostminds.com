@@ -13,11 +13,12 @@ import { initCommand, commandTick, specDuty, fallbackFor, onUnitDeath } from './
 import { initCtf, ctfTick, ctfDuty, ctfDeath, ctfWinner, ctfSpawnTiles } from './ctf.js';
 import { initFronts, frontsTick, frontDuty, frontsWinner, maybeDown } from './fronts.js';
 import { planTransit, initTransit, transitTick, transitDuty } from './transit.js';
+import { decodeMask, islands, splitWaves, spreadDefenders, craftWave, wavesTick, reserveCount } from './waves.js';
 
 const INF = 32767;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-const SQUAD_SIZE = 8;
-const CRAFT_CAPACITY = 6;
+export const SQUAD_SIZE = 8;
+export const CRAFT_CAPACITY = 6;
 
 export function inferRole(def) {
   if (def.role) return def.role;
@@ -92,6 +93,9 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   }
   rebuildGrid(b);
   b.hasRamparts = b.level.some((l) => l > 0);
+  if (scn.roads) b.road = decodeMask(scn.roads, N);
+  if (scn.mode === 'amphibious' || scn.region) b.isle = islands(b);
+  b.reserve = [[], []];
 
   const addUnit = (def, side, x, y) => spawnUnit(b, def, side, x, y);
   const fits = (def, x, y, side) => def.fly ? canStandAir(b, x, y, def.size, -1) : canStand(b, x, y, def.size, -1, side);
@@ -110,9 +114,18 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     }
     const order = { siege: 0, frontline: 1, skirmisher: 2, air: 3, support: 4, artillery: 5 };
     pool.sort((a, c) => (order[a.role] ?? 3) - (order[c.role] ?? 3) || (a.id < c.id ? -1 : 1));
+    // the army comes in waves: the first now, the rest later from its own edge (or by boat)
+    if ((side.waves || 1) > 1 && !scn.ctf) {
+      const waves = splitWaves(pool, side.waves), every = scn.waveEvery || 240;
+      pool.length = 0; pool.push(...waves[0]);
+      for (let w = 1; w < waves.length; w++) if (waves[w].length) { b.reserve[si].push({ at: every * w, defs: waves[w] }); b.sides[si].initial += waves[w].length; }
+    }
 
     if ((side.crafts || []).length) deployPlacedCrafts(b, side.crafts, pool, addUnit, si);
-    if (scn.mode === 'amphibious' && si === 0) {
+    if (scn.mode === 'amphibious' && si === 0 && scn.region) {
+      // the island campaign: the first wave is put ashore on the nearest islands; the goals need the rally points
+      b.firstLanding = pool.slice();
+    } else if (scn.mode === 'amphibious' && si === 0) {
       // fliers cross the water on their own wings; everyone else takes the boats
       const air = pool.filter((d) => d.fly);
       deployByCraft(b, pool.filter((d) => !d.fly), addUnit, si);
@@ -124,6 +137,8 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
           if (fits(def, x, y, si)) { addUnit(def, si, x, y); break; }
         }
       }
+    } else if (!scn.ctf && side.posture === 'defend' && spreadDefenders(b, scn, si, pool, fits, addUnit)) {
+      // the defenders start spread over the places they hold
     } else {
       const open = (x, y) => { const i = y * W + x; return !isWater(b.terrain[i]) && !b.blockMove[i] && b.door[i] < 0; };
       let tiles = scn.ctf ? ctfSpawnTiles(b, scn, si, open, true) : spawnTiles(b, scn.mode, si);
@@ -156,6 +171,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     const at = hq ? [hq.x, hq.y] : mine.length ? [Math.round(mine.reduce((a, u) => a + u.x, 0) / mine.length), Math.round(mine.reduce((a, u) => a + u.y, 0) / mine.length)] : null;
     const near = (q) => q && freeTileNear(b, Math.max(1, Math.min(W - 2, q[0])), Math.max(1, Math.min(H - 2, q[1])), def.size || 1, si);
     const mean = mine.length ? [Math.round(mine.reduce((a, u) => a + u.x, 0) / mine.length), Math.round(mine.reduce((a, u) => a + u.y, 0) / mine.length)] : null;
+    if (b.firstLanding && si === 0) { b.firstLanding.unshift(def); return; } // the island campaign's general comes in the first boats
     const spot = near(at) || near(mean) || (mine[0] && near([mine[0].x, mine[0].y]));
     if (spot) addUnit(def, si, spot[0], spot[1]);
   });
@@ -164,6 +180,16 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   initAirships(b, scn);
   initCommand(b, scn);
   if (scn.mode !== 'naval') initFronts(b, scn);
+  if (b.firstLanding) {
+    // now the islands' rally points are known, the first wave of boats sets out for them
+    const fresh = [];
+    if (!craftWave(b, 0, b.firstLanding, (u) => fresh.push(u))) deployByCraft(b, b.firstLanding, (def, s, x, y) => { const u = spawnUnit(b, def, s, x, y); fresh.push(u); return u; }, 0);
+    const groups = new Map();
+    for (const u of fresh) { const k = `${u.def.id}:${u.aboard >= 0 ? Math.floor(u.aboard / 2) : 'l'}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(u); }
+    for (const list of groups.values()) for (let k = 0; k < list.length; k += SQUAD_SIZE) addSquad(b, list.slice(k, k + SQUAD_SIZE), 'advance');
+    if (b.fronts) { b.fronts.teamsAt = -99; for (const u of fresh) if (u.def.leader && b.fronts.leader[u.side] < 0) b.fronts.leader[u.side] = u.id; }
+    b.firstLanding = null;
+  }
   if (scn.mode !== 'naval') initTransit(b, scn, plan);
   initCtf(b, scn);
   return b;
@@ -242,7 +268,7 @@ function spawnTiles(b, mode, side) {
 }
 
 const CRAFT_GUN = { range: 6, maxHit: 9, reload: 5 };
-function newCraft(b, side, x, y, tx, ty) {
+export function newCraft(b, side, x, y, tx, ty) {
   const craft = {
     id: b.crafts.length, side, x, y, px: x, py: y, tx, ty, hp: 60, maxHp: 60,
     passengers: [], landed: false, sunk: false, speed: 0.55 + b.rng.next() * 0.1, pending: 0,
@@ -300,7 +326,7 @@ function deployByCraft(b, pool, addUnit, side) {
 function buildSquads(b) {
   const groups = new Map();
   for (const u of b.units) {
-    const key = `${u.side}:${u.def.id}:${u.aboard >= 0 ? 'c' + Math.floor(u.aboard / 2) : 'l'}`;
+    const key = `${u.side}:${u.def.id}:${u.aboard >= 0 ? 'c' + Math.floor(u.aboard / 2) : 'l'}:${u.home ?? ''}`; // the defenders' squads stay with the post they started at
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(u);
   }
@@ -377,6 +403,7 @@ export function unitHeight(b, u) {
 
 // Paint every standing structure onto the grid (also used after one is destroyed)
 export function rebuildGrid(b) {
+  b.gridVer = (b.gridVer || 0) + 1;
   const N = b.W * b.H;
   b.blockMove.fill(0); b.blockLos.fill(0); b.cover.fill(0); b.elevated.fill(0);
   b.level.fill(0); b.ladder.fill(0); b.door.fill(-1); b.losH.fill(0); b.sid.fill(0); b.span.fill(0);
@@ -417,7 +444,7 @@ export function damageStructure(b, idx, dmg, from) {
   s.destroyed = true;
   const before = b.level.slice();
   rebuildGrid(b);
-  b.fields.clear();
+  b.gridStale = b.tick;
   b.hasRamparts = b.level.some((l) => l > 0);
   b.events.push({ type: 'structDestroyed', s: idx, side: from ? from.side : -1 });
   const sdef = STRUCTURES[s.type];
@@ -428,11 +455,13 @@ export function damageStructure(b, idx, dmg, from) {
     near(b, Math.round(cx), Math.round(cy), R + 2, (v) => { if (v.alive && v.aboard < 0 && Math.hypot(v.x - cx, v.y - cy) <= R + 1) queueHit(b, { id: -1 }, v, b.rng.int(6, 30), 1, 'ranged', true, { x: cx, y: cy, blast: true }); });
     b.structures.forEach((o, oi) => { if (oi !== idx && !o.destroyed && o.hp && Math.hypot(o.x + o.w / 2 - cx, o.y + o.h / 2 - cy) <= R + 2) damageStructure(b, oi, 120, null); });
   }
-  // anyone standing on it falls
+  // anyone standing on it falls; off a walkway or a bridge that is the end of them
+  const span = sdef.span || s.type === 'stoneBridge' || s.type === 'bridge' || s.type === 'walkway' || s.type === 'viaduct';
   for (const u of b.units) {
-    if (!u.alive || u.aboard >= 0 || u.def.fly) continue;
+    if (!u.alive || u.aboard >= 0 || u.def.fly || u.under) continue;
     const i = u.y * b.W + u.x;
     const drop = before[i] - b.level[i];
+    if (drop > 0 && span && u.x >= s.x && u.y >= s.y && u.x < s.x + s.w && u.y < s.y + s.h) { damage(b, u, u.hp, null, 'fall'); b.events.push({ type: 'fell', id: u.id, s: idx }); continue; }
     if (drop > 0) damage(b, u, drop * 6 + b.rng.int(0, drop * 4), null, 'fall');
     if (u.alive && isWater(b.terrain[i]) && !b.level[i]) { u.alive = false; u.hp = 0; occupy(b, u, 0); b.events.push({ type: 'death', id: u.id, drowned: true }); } // the dock went from under them
   }
@@ -475,34 +504,49 @@ export function losCheck(b, x0, y0, x1, y1, h0, h1) {
 // Weighted distance field toward the sources for movers of `side`.
 // Stepping into a wall, gate or building costs its breach time, so troops go
 // around when that is quicker and break through when it is not.
-function bfs(b, sources, side) {
-  const W = b.W, N = W * b.H;
+function bfs(b, sources, side, maxD = INF) {
+  const W = b.W, H = b.H, N = W * H;
+  // what each tile is to this side, worked out once per change to the map: open, breakable, or neither
+  b.passCache ||= new Map();
+  let pc = b.passCache.get(side);
+  if (!pc || pc.ver !== b.gridVer) {
+    const open = new Uint8Array(N), brk = new Int32Array(N);
+    for (let i = 0; i < N; i++) {
+      if (passable(b, i, side)) open[i] = 1;
+      else if (!(isWater(b.terrain[i]) && !b.level[i])) { const st = breakableFor(b, i, side); if (st) brk[i] = b.sid[i]; }
+    }
+    pc = { ver: b.gridVer, open, brk };
+    b.passCache.set(side, pc);
+  }
+  const { open, brk } = pc, level = b.level, ladder = b.ladder;
   const dist = new Int16Array(N).fill(INF);
   const buckets = [[]];
   for (const s of sources) if (dist[s] === INF) { dist[s] = 0; buckets[0].push(s); }
-  for (let d = 0; d < buckets.length; d++) {
+  const DXS = [1, -1, 0, 0, 1, 1, -1, -1], DYS = [0, 0, 1, -1, 1, -1, 1, -1];
+  for (let d = 0; d < buckets.length && d <= maxD; d++) {
     const list = buckets[d];
     if (!list) continue;
     for (let k = 0; k < list.length; k++) {
       const i = list[k];
       if (dist[i] !== d) continue;
-      const x = i % W, y = (i / W) | 0;
-      const iOpen = passable(b, i, side);
-      const brk = iOpen ? null : breakableFor(b, i, side);
-      for (const [dx, dy] of DIRS) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= b.H) continue;
+      const x = i % W, y = (i - x) / W;
+      const iOpen = open[i] === 1, li = level[i], lad = ladder[i];
+      for (let q = 0; q < 8; q++) {
+        const dx = DXS[q], dy = DYS[q], nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
         const n = ny * W + nx;
-        if (isWater(b.terrain[n]) && !b.level[n]) continue;
-        if (!passable(b, n, side) && !breakableFor(b, n, side)) continue;
+        const nOpen = open[n] === 1;
+        if (!nOpen && !brk[n]) continue;
         let cost;
-        if (iOpen && stepOk(b, n, i)) {
-          if (dx && dy && (!passable(b, y * W + nx, side) || !passable(b, ny * W + x, side))) continue;
+        if (iOpen && (Math.abs(level[n] - li) <= 1 || lad || ladder[n])) {
+          if (dx && dy && (open[y * W + nx] !== 1 || open[ny * W + x] !== 1)) continue;
           cost = 1;
         } else {
-          const s = brk || breakableFor(b, i, side);
-          if (!s || (dx && dy)) continue;
-          cost = breachCost(s);
+          if (dx && dy) continue;
+          const si = brk[i] || (iOpen ? 0 : 0);
+          const st = si ? b.structures[si - 1] : null;
+          if (!st) continue;
+          cost = breachCost(st);
         }
         const nd = d + cost;
         if (nd < dist[n] && nd < INF) { dist[n] = nd; (buckets[nd] ||= []).push(n); }
@@ -511,14 +555,18 @@ function bfs(b, sources, side) {
   }
   return dist;
 }
-export function field(b, key, ttl, sourceFn) {
+/** A walk toward the sources: distances over the map for this side (maxD: search no further than that, for
+ * errands that are always close by). Kept for `ttl` ticks; after the map changes (a wall falls, a work goes up)
+ * each is worked out again once it is a few ticks old. */
+export function field(b, key, ttl, sourceFn, maxD = INF) {
   const side = b.moverSide ?? -1;
   key = `${key}|${side}`;
   const c = b.fields.get(key);
-  if (c && b.tick - c.tick < ttl) return c.dist;
+  if (c && b.tick - c.tick < ttl && !(c.tick <= (b.gridStale ?? -1) && b.tick - c.tick >= 4)) return c.dist;
   const src = sourceFn();
   if (!src.length) return null;
-  const dist = bfs(b, src, side);
+  const dist = bfs(b, src, side, maxD);
+  if (globalThis.__bfsStats) { const k = key.replace(/[0-9,:.|-]+/g, '#'); globalThis.__bfsStats[k] = (globalThis.__bfsStats[k] || 0) + 1; }
   b.fields.set(key, { tick: b.tick, dist });
   return dist;
 }
@@ -568,6 +616,7 @@ export function stepBattle(b) {
   commandTick(b);
   frontsTick(b);
   transitTick(b);
+  wavesTick(b);
   ctfTick(b);
   for (const sq of b.squads) if ((b.tick + sq.id) % 3 === 0) updateSquad(b, sq);
 
@@ -588,7 +637,7 @@ function sideAlive(b, side) {
   for (const u of b.units) if (u.alive && u.side === side) n++;
   // a side made only of ships stays in the fight while it has hulls afloat
   if (!b.sides[side].initial) for (const s of b.ships) if (s.alive && s.side === side) n++;
-  return n + airAlive(b, side); // a crewed airship keeps its side in the fight
+  return n + airAlive(b, side) + reserveCount(b, side); // a crewed airship, or a wave still to come, keeps its side in the fight
 }
 function sideHp(b, side) {
   let n = 0;
@@ -648,8 +697,18 @@ function moveCrafts(b) {
       if (c.landed && c.passengers.length) disembark(b, c);
       continue;
     }
-    const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
-    if (d < 0.01) { c.landed = true; continue; }
+    if (c.wf) {
+      // steer down the water field: the next tile nearer the beach, or the beach itself
+      const ci = Math.round(c.y) * b.W + Math.round(c.x), here = c.wf[ci];
+      if (here > 1 && here < 65535) {
+        let bi = -1, bv = here;
+        for (const [ox, oy] of DIRS) { const nx = Math.round(c.x) + ox, ny = Math.round(c.y) + oy; if (nx < 0 || ny < 0 || nx >= b.W || ny >= b.H) continue; const v = c.wf[ny * b.W + nx]; if (v < bv) { bv = v; bi = ny * b.W + nx; } }
+        if (bi >= 0) { c.wx = bi % b.W; c.wy = (bi / b.W) | 0; }
+      } else { c.wx = c.tx; c.wy = c.ty; }
+    }
+    const gx = c.wf ? c.wx ?? c.tx : c.tx, gy = c.wf ? c.wy ?? c.ty : c.ty;
+    const dx = gx - c.x, dy = gy - c.y, d = Math.hypot(dx, dy);
+    if (d < 0.01) { if (!c.wf || (gx === c.tx && gy === c.ty)) c.landed = true; continue; }
     const step = Math.min(c.speed * (c.crew > 0 ? 1 : 0.5), d); // passengers row badly
     const nx = c.x + (dx / d) * step, ny = c.y + (dy / d) * step;
     const ti = Math.round(ny) * b.W + Math.round(nx);

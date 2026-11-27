@@ -71,8 +71,19 @@ export function buildGround(b, bio, biomeId) {
   const COL = [rgb(bio.grass), rgb(bio.sand), rgb(bio.shallow), srgb(bio.floor).multiplyScalar(1.6), rgb(bio.sand).lerp(srgb(0x8a8478), 0.55)];
   const soil = srgb(G.soil), lush = srgb(G.lush), dry = srgb(G.dry), rock = srgb(G.rock), rock2 = srgb(G.rock2), top = srgb(G.top);
   const hgt = b.height, seed = (b.seed | 0) + W;
+  // a road among buildings is paved
+  if (b.road && !b.paved) {
+    b.paved = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!b.road[y * W + x]) continue;
+      let n = 0;
+      for (let dy = -3; dy <= 3 && n < 2; dy++) for (let dx = -3; dx <= 3; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H && b.sid[yy * W + xx] && b.blockMove[yy * W + xx]) n++; }
+      if (n >= 2) b.paved[y * W + x] = 1;
+    }
+  }
+  const road = srgb(G.soil).lerp(srgb(0xb89a70), 0.45), road2 = srgb(G.rock).lerp(srgb(0x9a9488), 0.6); // dirt tracks, and stone setts in the towns
   // per tile corner: height, base colour, and how much of it is dry land
-  const hc = new Float32Array(V * V), cc = new Float32Array(V * V * 3), land = new Float32Array(V * V), cl = new Float32Array(V * V);
+  const hc = new Float32Array(V * V), cc = new Float32Array(V * V * 3), land = new Float32Array(V * V), cl = new Float32Array(V * V), rd = new Float32Array(V * V);
   for (let y = 0; y <= H; y++) for (let x = 0; x <= W; x++) {
     const k = y * V + x;
     let h = 0, r = 0, g = 0, bl = 0, d = 0, c = 0;
@@ -81,6 +92,7 @@ export function buildGround(b, bio, biomeId) {
       h += (BASE[t] + (hgt ? hgt[i] : 0)) / 4; r += COL[t].r / 4; g += COL[t].g / 4; bl += COL[t].b / 4;
       if (t === GRASS) d += 0.25;
       if (b.cliff && b.cliff[i]) c += 0.25;
+      if (b.road && b.road[i]) rd[k] += 0.25;
     }
     hc[k] = h; cc[k * 3] = r; cc[k * 3 + 1] = g; cc[k * 3 + 2] = bl; land[k] = d; cl[k] = c;
   }
@@ -103,6 +115,7 @@ export function buildGround(b, bio, biomeId) {
     let h = hc[k00] * w00 + hc[k10] * w10 + hc[k01] * w01 + hc[k11] * w11;
     const dryness = land[k00] * w00 + land[k10] * w10 + land[k01] * w01 + land[k11] * w11;
     const cliffy = cl[k00] * w00 + cl[k10] * w10 + cl[k01] * w01 + cl[k11] * w11;
+    const roady = rd[k00] * w00 + rd[k10] * w10 + rd[k01] * w01 + rd[k11] * w11;
     c.setRGB(cc[k00 * 3] * w00 + cc[k10 * 3] * w10 + cc[k01 * 3] * w01 + cc[k11 * 3] * w11,
       cc[k00 * 3 + 1] * w00 + cc[k10 * 3 + 1] * w10 + cc[k01 * 3 + 1] * w01 + cc[k11 * 3 + 1] * w11,
       cc[k00 * 3 + 2] * w00 + cc[k10 * 3 + 2] * w10 + cc[k01 * 3 + 2] * w01 + cc[k11 * 3 + 2] * w11);
@@ -128,6 +141,13 @@ export function buildGround(b, bio, biomeId) {
         h += (n3 - 0.5) * 0.16 * Math.min(1, rk); // broken faces, not smooth ramps
       }
       h += (n2 - 0.5) * 0.1 * dryness + (n3 - 0.5) * 0.035 * dryness;
+      // roads: packed earth in the country, setts in the towns; ruts and stones break them up
+      if (roady > 0.05) {
+        const town = b.paved ? b.paved[yi * W + xi] : 0;
+        tmp.copy(town ? road2 : road).multiplyScalar(0.92 + n3 * 0.16 + (town && ((Math.floor(x * 2) + Math.floor(z * 2)) & 1) ? 0.06 : 0));
+        c.lerp(tmp, Math.min(1, roady * 1.25));
+        h -= 0.03 * roady;
+      }
     }
     const shade = 0.9 + n3 * 0.2;
     pos[k * 3] = x; pos[k * 3 + 1] = h; pos[k * 3 + 2] = z;
@@ -252,7 +272,7 @@ export function buildCover(b, biomeId, heightAt, density = 1) {
   const W = b.W, H = b.H, group = new THREE.Group(), list = COVER[biomeId] || COVER.temperate, seed = (b.seed | 0) * 7 + W;
   const T = b.terrain;
   // which tiles are free ground, beside water, or along a cliff
-  const taken = (i) => b.blockMove[i] && !(b.cliff && b.cliff[i]) || b.level[i] || b.sid[i] || b.door[i] >= 0;
+  const taken = (i) => b.blockMove[i] && !(b.cliff && b.cliff[i]) || b.level[i] || b.sid[i] || b.door[i] >= 0 || (b.road && b.road[i]);
   const nearT = (x, y, test) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < W && ny < H && test(ny * W + nx)) return true; } return false; };
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
   list.forEach(([kind, per100, where, [s0, s1]], li) => {
