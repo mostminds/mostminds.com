@@ -601,7 +601,7 @@ export function realmFactions() {
     const t = { ...TOWN[f.town], ...(f.over || {}) }, army = {}, assault = {};
     for (const [id, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w) (mods.as ? assault : army)[uid(f, id)] = mods.w;
     const { civic, ...build } = t;
-    out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, ...build, civic, look: f.look, army, assault,
+    out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, ...build, civic: [...civic, ...landmarksOf(f.id)], look: f.look, army, assault,
       ships: f.ships.map((s) => uid(f, s[0])), airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
   }
   return out;
@@ -630,3 +630,67 @@ export function realmAirships(make) {
   }
   return out;
 }
+
+// ------------------------------------------------------------------------------------------
+// Landmark buildings: two per realm. They join the game's structure table and each realm's
+// districts once their models are sculpted (LANDMARKS_READY).
+// ------------------------------------------------------------------------------------------
+export const LANDMARKS_READY = false;
+const L = (realm, name, w, h, hp, losHeight, x = {}) => ({ name, w, h, hp, losHeight, realm, ...(x.cover ? {} : { blocksMove: true, blocksLos: true }), ...x });
+export const LANDMARKS = {
+  graal_cathedral: L('graal', 'Gothic cathedral', 4, 6, 2200, 8, { model: 'graal_cathedral', color: 0x8a8a86, heals: 2 }),
+  graal_hovel: L('graal', 'Serf hovel', 2, 2, 160, 2, { model: 'graal_hovel', color: 0x8a8a86 }),
+  aurelia_foundry: L('aurelia', 'Foundry', 4, 3, 900, 5, { model: 'aurelia_foundry', color: 0x8a8a86, cargo: 4 }),
+  aurelia_hammerTemple: L('aurelia', 'Temple of the Hammer-Saint', 4, 5, 1800, 7, { model: 'aurelia_hammerTemple', color: 0x8a8a86, heals: 2 }),
+  aethel_ivoryTower: L('aethel', 'Ivory tower', 3, 3, 1400, 9, { model: 'aethel_ivoryTower', color: 0x8a8a86 }),
+  aethel_waystone: L('aethel', 'Crystal waystone', 1, 1, 300, 4, { model: 'aethel_waystone', color: 0x8a8a86, heals: 1 }),
+  kaelneth_bloodZiggurat: L('kaelneth', 'Sacrificial ziggurat', 5, 5, 2200, 6, { model: 'kaelneth_bloodZiggurat', color: 0x8a8a86 }),
+  kaelneth_spikeTower: L('kaelneth', 'Spiked iron watchtower', 2, 2, 700, 7, { model: 'kaelneth_spikeTower', color: 0x8a8a86 }),
+  verdant_treePalace: L('verdant', 'Tree-palace', 5, 5, 2400, 9, { model: 'verdant_treePalace', color: 0x8a8a86, heals: 1 }),
+  verdant_sapLantern: L('verdant', 'Sap-lantern', 1, 1, 120, 3, { model: 'verdant_sapLantern', color: 0x8a8a86 }),
+  grom_runeGate: L('grom', 'Rune-gate hall', 5, 4, 3000, 6, { model: 'grom_runeGate', color: 0x8a8a86 }),
+  grom_steamWorks: L('grom', 'Steam works', 3, 3, 900, 5, { model: 'grom_steamWorks', color: 0x8a8a86, cargo: 4 }),
+  xibalba_stepPyramid: L('xibalba', 'Stepped ziggurat', 6, 6, 3200, 7, { model: 'xibalba_stepPyramid', color: 0x8a8a86 }),
+  xibalba_sunMirror: L('xibalba', 'Solar mirror', 2, 2, 400, 4, { model: 'xibalba_sunMirror', color: 0x8a8a86 }),
+  velikaya_onionCathedral: L('velikaya', 'Onion-domed cathedral', 4, 5, 1900, 8, { model: 'velikaya_onionCathedral', color: 0x8a8a86, heals: 2 }),
+  velikaya_boyarManor: L('velikaya', 'Boyar manor', 4, 3, 800, 4, { model: 'velikaya_boyarManor', color: 0x8a8a86 }),
+  tianlong_pagoda: L('tianlong', 'Pagoda palace', 4, 4, 2000, 9, { model: 'tianlong_pagoda', color: 0x8a8a86 }),
+  tianlong_skyLantern: L('tianlong', 'Sky-lantern observatory', 2, 2, 500, 6, { model: 'tianlong_skyLantern', color: 0x8a8a86 }),
+  ironbound_basaltMonolith: L('ironbound', 'Spiked monolith', 2, 2, 1200, 7, { model: 'ironbound_basaltMonolith', color: 0x8a8a86 }),
+  ironbound_skullAltar: L('ironbound', 'Skull-paved altar', 3, 3, 600, 2, { model: 'ironbound_skullAltar', color: 0x8a8a86 }),
+  screaming_warpSpire: L('screaming', 'Impossible spire', 3, 3, 1300, 9, { model: 'screaming_warpSpire', color: 0x8a8a86 }),
+  screaming_fungalGarden: L('screaming', 'Festering garden', 3, 3, 300, 2, { model: 'screaming_fungalGarden', color: 0x8a8a86, cover: true }),
+  cloven_herdstone: L('cloven', 'Herdstone', 2, 2, 900, 5, { model: 'cloven_herdstone', color: 0x8a8a86 }),
+  cloven_hideTent: L('cloven', 'Hide tent', 2, 2, 120, 2, { model: 'cloven_hideTent', color: 0x8a8a86 }),
+  fimbul_longhouse: L('fimbul', 'Longhouse', 5, 3, 900, 4, { model: 'fimbul_longhouse', color: 0x8a8a86, heals: 1 }),
+  fimbul_whaleShrine: L('fimbul', 'Whalebone shrine', 2, 2, 300, 4, { model: 'fimbul_whaleShrine', color: 0x8a8a86 }),
+  ashur_forgeZiggurat: L('ashur', 'Forge-ziggurat', 6, 6, 3400, 8, { model: 'ashur_forgeZiggurat', color: 0x8a8a86 }),
+  ashur_blastFurnace: L('ashur', 'Blast furnace', 3, 3, 1000, 6, { model: 'ashur_blastFurnace', color: 0x8a8a86, cargo: 4 }),
+  greenhide_idol: L('greenhide', 'Great idol', 2, 2, 800, 6, { model: 'greenhide_idol', color: 0x8a8a86 }),
+  greenhide_boneTower: L('greenhide', 'Timber-and-bone watchtower', 2, 2, 400, 6, { model: 'greenhide_boneTower', color: 0x8a8a86 }),
+  skar_reactor: L('skar', 'Blightstone reactor', 3, 3, 900, 6, { model: 'skar_reactor', color: 0x8a8a86, volatile: 4 }),
+  skar_scaffoldWarren: L('skar', 'Scaffold warren', 4, 3, 500, 5, { model: 'skar_scaffoldWarren', color: 0x8a8a86 }),
+  crimson_mausoleum: L('crimson', 'Mausoleum', 3, 4, 1400, 5, { model: 'crimson_mausoleum', color: 0x8a8a86 }),
+  crimson_gallows: L('crimson', 'Gallows', 2, 1, 150, 3, { model: 'crimson_gallows', color: 0x8a8a86 }),
+  khemet_pyramid: L('khemet', 'Pyramid', 7, 7, 5000, 9, { model: 'khemet_pyramid', color: 0x8a8a86 }),
+  khemet_sphinxStatue: L('khemet', 'Gold-capped sphinx', 2, 4, 1200, 4, { model: 'khemet_sphinxStatue', color: 0x8a8a86 }),
+  drowned_hullHouse: L('drowned', 'Upturned-hull house', 4, 2, 500, 3, { model: 'drowned_hullHouse', color: 0x8a8a86 }),
+  drowned_lighthouse: L('drowned', 'Lighthouse', 2, 2, 900, 9, { model: 'drowned_lighthouse', color: 0x8a8a86 }),
+  gorge_mammothYurt: L('gorge', 'Mammoth-hide yurt', 4, 4, 700, 4, { model: 'gorge_mammothYurt', color: 0x8a8a86 }),
+  gorge_gorgeAltar: L('gorge', 'Stone-and-skull altar', 3, 3, 800, 3, { model: 'gorge_gorgeAltar', color: 0x8a8a86 }),
+  westmark_canalHouse: L('westmark', 'Canal house', 2, 3, 600, 5, { model: 'westmark_canalHouse', color: 0x8a8a86 }),
+  westmark_exchange: L('westmark', 'Stock exchange', 5, 4, 1800, 5, { model: 'westmark_exchange', color: 0x8a8a86, cargo: 6 }),
+  principalities_villa: L('principalities', 'Marble villa', 4, 4, 1000, 4, { model: 'principalities_villa', color: 0x8a8a86 }),
+  principalities_bellTower: L('principalities', 'Bell tower', 2, 2, 1100, 9, { model: 'principalities_bellTower', color: 0x8a8a86 }),
+  sunkings_baroqueChurch: L('sunkings', 'Baroque church', 4, 6, 2000, 8, { model: 'sunkings_baroqueChurch', color: 0x8a8a86, heals: 2 }),
+  sunkings_aqueduct: L('sunkings', 'Aqueduct', 6, 1, 900, 4, { model: 'sunkings_aqueduct', color: 0x8a8a86 }),
+  caliphate_minaret: L('caliphate', 'Minaret', 2, 2, 900, 9, { model: 'caliphate_minaret', color: 0x8a8a86 }),
+  caliphate_bazaar: L('caliphate', 'Bazaar courtyard', 5, 5, 700, 3, { model: 'caliphate_bazaar', color: 0x8a8a86, cargo: 6 }),
+  shogunate_tenshu: L('shogunate', 'Castle keep', 5, 5, 3400, 9, { model: 'shogunate_tenshu', color: 0x8a8a86 }),
+  shogunate_torii: L('shogunate', 'Torii gate', 3, 1, 250, 4, { model: 'shogunate_torii', color: 0x8a8a86 }),
+  mistisles_megaliths: L('mistisles', 'Megalith ring', 5, 5, 1500, 4, { model: 'mistisles_megaliths', color: 0x8a8a86, heals: 1 }),
+  mistisles_roundHut: L('mistisles', 'Round stone hut', 2, 2, 250, 2, { model: 'mistisles_roundHut', color: 0x8a8a86 }),
+  thousandgods_carvedTemple: L('thousandgods', 'Temple of a thousand statues', 5, 5, 2600, 9, { model: 'thousandgods_carvedTemple', color: 0x8a8a86, heals: 2 }),
+  thousandgods_stepwell: L('thousandgods', 'Stepped water-tank', 4, 4, 600, 1, { model: 'thousandgods_stepwell', color: 0x8a8a86, cover: true }),
+};
+export const landmarksOf = (realm) => (LANDMARKS_READY ? Object.keys(LANDMARKS).filter((k) => LANDMARKS[k].realm === realm) : []);

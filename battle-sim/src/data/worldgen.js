@@ -7,7 +7,7 @@ import { combatLevel } from '../engine/combat.js';
 import { STRUCTURES } from './structures.js';
 import { UNITS } from './units.js';
 import { AIRSHIPS } from './airships.js';
-import { realmFactions } from './realms.js';
+import { realmFactions, LANDMARKS } from './realms.js';
 
 const clampRow = (y, S) => Math.max(3, Math.min(S - 4, y));
 
@@ -312,7 +312,7 @@ function wild(p, R, F, density) {
 
 const LAYOUTS = { streets, warren, necropolis, rings, wild };
 
-const FACTION_OWN = new Set(['scrapHut', 'warDrum', 'brewery', 'crypt', 'boneSpire', 'charnel', 'forge', 'obelisk', 'pitGate', 'yurt', 'totem', 'bonePit', 'crystalSpire', 'monolith', 'stoneRing', 'nest', 'perch', 'hoard']);
+const FACTION_OWN = new Set([...Object.keys(LANDMARKS), 'scrapHut', 'warDrum', 'brewery', 'crypt', 'boneSpire', 'charnel', 'forge', 'obelisk', 'pitGate', 'yurt', 'totem', 'bonePit', 'crystalSpire', 'monolith', 'stoneRing', 'nest', 'perch', 'hoard']);
 // Which civic buildings each faction raises.
 const CIVIC = {
   ...Object.fromEntries(Object.entries(REALM_FACTIONS).map(([k, v]) => [k, v.civic])),
@@ -393,7 +393,7 @@ function civic(p, R, o) {
   if (!t) nearPut('graveyard', R.x + 2, R.y + R.h - 6, {}, 0);
   // the faction's own buildings, scattered through the place
   const own = (CIVIC[defId] || []).filter((c) => FACTION_OWN.has(c));
-  own.forEach((type, i) => { for (let k2 = 0, n = Math.max(1, Math.round(area / (STRUCTURES[type].w > 1 ? 420 : 200))); k2 < Math.min(n, 5); k2++) nearPut(type, R.x + 3 + r.int(0, Math.max(1, R.w - 8)), R.y + 3 + r.int(0, Math.max(1, R.h - 8)), { side: 1 }, 1); void i; });
+  own.forEach((type, i) => { for (let k2 = 0, n = Math.max(1, Math.round(area / (STRUCTURES[type].w > 1 ? 420 : 200))); k2 < Math.min(n, STRUCTURES[type].w >= 5 ? 1 : STRUCTURES[type].w >= 4 ? 2 : 5); k2++) nearPut(type, R.x + 3 + r.int(0, Math.max(1, R.w - 8)), R.y + 3 + r.int(0, Math.max(1, R.h - 8)), { side: 1 }, 1); void i; });
   // warehouses along the waterfront
   if (sea && shoreRow) for (let i = 0, n = siteId === 'harbor' ? 4 : 2; i < n; i++) {
     const y = Math.round(R.y + 4 + ((R.h - 8) * (i + 0.5)) / n);

@@ -1,3 +1,4 @@
+import { LANDMARKS, LANDMARKS_READY } from './realms.js';
 // Placeable map objects. w/h in tiles. Flags drive the engine:
 //  blocksMove: impassable        blocksLos: stops arrows/spells (losHeight: how tall, in levels)
 //  cover: low obstacle, +35% defence vs shots crossing it
@@ -98,5 +99,6 @@ export const STRUCTURES = {
   harpoon:   { name: 'Harpoon gun',   w: 1, h: 1, blocksMove: true, model: 'harpoon', color: 0x6b4a2e, hp: 120,
                weapon: { level: 65, bonus: 75, range: 15, maxHit: 30, speed: 7, splash: 0, antiShip: 1.4, prefersShips: true, antiAir: true, shot: 'bolt' } },
 };
+if (LANDMARKS_READY) Object.assign(STRUCTURES, LANDMARKS); // the realms' landmark buildings (see realms.js)
 for (const [id, d] of Object.entries(STRUCTURES)) d.id = id;
 export const isWeapon = (type) => !!STRUCTURES[type]?.weapon;
