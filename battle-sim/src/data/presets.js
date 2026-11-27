@@ -252,8 +252,8 @@ for (const p of PRESETS) enlarge(p);
 
 // Army sizes retuned by search (tools: many seeded battles per preset) after ranks, trades, supply and
 // the larger maps changed the odds. The factor scales every group on side B; breakout is set by hand.
-const BALANCE = { coralteeth: 1.54, dragons: 1.59, greenmantle: 1.15, emberreach: 1, frostfang: 0.92, highcrag: 1.12, horde: 1.19, ironbay: 0.63,
-  landing: 0.84, saltmarsh: 1.25, saltspire: 1.99, siege: 0.84, sunscar: 0.64, twinpeaks: 1.41, wildwood: 1.19 };
+const BALANCE = { coralteeth: 1.54, dragons: 1.13, greenmantle: 1.02, emberreach: 1, frostfang: 0.74, highcrag: 1, horde: 1.12, ironbay: 0.52,
+  landing: 0.67, saltmarsh: 1.18, saltspire: 1.99, siege: 0.75, sunscar: 0.64, twinpeaks: 1.41, wildwood: 1.19 };
 for (const p of PRESETS) {
   const f = BALANCE[p.id];
   if (f) for (const gr of p.scn.sides[1].groups) gr.count = Math.max(1, Math.round(gr.count * f));
