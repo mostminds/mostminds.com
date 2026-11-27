@@ -9,6 +9,8 @@ import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
 import { structureFootprint } from '../engine/battle.js';
 import { GRASS, DEEP, SHALLOW, SAND, BIOMES } from '../engine/terrain.js';
+import { buildGround, buildCover } from './groundcover.js';
+import { getDetail } from './rigkit.js';
 import { TICK_MS } from '../engine/combat.js';
 
 export const SIDE_COLORS = [0x3d7bd9, 0xd9463d];
@@ -36,50 +38,17 @@ export class LandView {
   dispose() { this.stage.scene.remove(this.root); }
 
   buildTerrain(b) {
-    const key = `${b.mode}:${b.W}:${b.shape}:${b.biome}:${hashTerrain(b.terrain)}`;
+    const key = `${b.mode}:${b.W}:${b.shape}:${b.biome}:${hashTerrain(b.terrain)}:${b.height ? hashRelief(b.height, b.cliff) : 0}`;
     if (this.terrainKey === key) return;
     this.terrainKey = key;
     const bio = BIOMES[b.biome] || BIOMES.temperate;
     if (this.terrain) this.root.remove(this.terrain);
     const g = new THREE.Group();
-    const W = b.W, H = b.H, V = W + 1;
-    const tileAt = (x, y) => b.terrain[Math.max(0, Math.min(H - 1, y)) * W + Math.max(0, Math.min(W - 1, x))];
-    const BASE = [0, -0.05, -0.34, -1.3, -0.1]; // grass, sand, shallow, deep, ford
-    const deepCol = new THREE.Color(bio.floor).multiplyScalar(1.6);
-    const COL = [new THREE.Color().setRGB(...bio.grass, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.sand, THREE.SRGBColorSpace), new THREE.Color().setRGB(...bio.shallow, THREE.SRGBColorSpace), deepCol,
-      new THREE.Color().setRGB(...bio.sand, THREE.SRGBColorSpace).lerp(new THREE.Color(0x8a8478), 0.55)]; // fords are gravel
-    const noise = (x, y) => Math.sin(x * 0.31 + 1.7) * Math.cos(y * 0.27 + 0.4) * 0.5 + Math.sin(x * 0.83 + y * 0.61) * 0.25 + Math.sin(x * 1.9 - y * 1.3) * 0.12;
-    // one height and one blended colour per tile corner: smooth ground instead of flat squares
-    const hc = (this.hCorner = new Float32Array(V * V));
-    const pos = new Float32Array(V * V * 3), col = new Float32Array(V * V * 3);
-    const c = new THREE.Color();
-    for (let y = 0; y <= H; y++) for (let x = 0; x <= W; x++) {
-      const ts = [tileAt(x - 1, y - 1), tileAt(x, y - 1), tileAt(x - 1, y), tileAt(x, y)];
-      let h = 0; c.setRGB(0, 0, 0);
-      for (const t of ts) { h += BASE[t] / 4; c.r += COL[t].r / 4; c.g += COL[t].g / 4; c.b += COL[t].b / 4; }
-      const dry = ts.every((t) => t === GRASS);
-      const n = noise(x, y);
-      if (dry) h += n * 0.09;
-      const shade = 1 + n * 0.14 + ((x * 7 + y * 13) % 5 - 2) * 0.012;
-      const k = y * V + x;
-      hc[k] = h;
-      pos[k * 3] = x; pos[k * 3 + 1] = h; pos[k * 3 + 2] = y;
-      col[k * 3] = c.r * shade; col[k * 3 + 1] = c.g * shade; col[k * 3 + 2] = c.b * (1 + n * 0.05);
-    }
-    const idx = new Uint32Array(W * H * 6);
-    let q = 0;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const a = y * V + x, d = a + V;
-      idx[q++] = a; idx[q++] = d; idx[q++] = a + 1; idx[q++] = a + 1; idx[q++] = d; idx[q++] = d + 1;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.setIndex(new THREE.BufferAttribute(idx, 1));
-    geo.computeVertexNormals();
-    const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
-    ground.receiveShadow = true;
-    g.add(ground);
+    const W = b.W;
+    // the ground follows the battle's hills and cliffs, with soil, meadow and rock painted in (see groundcover.js)
+    const gr = buildGround(b, bio, b.biome);
+    this.hCorner = gr.hCorner; this.heightAt = gr.heightAt;
+    g.add(gr.mesh);
 
     const S = W;
     const wet = b.terrain.some((t) => t === DEEP || t === SHALLOW);
@@ -283,6 +252,10 @@ export class LandView {
       return { cb, pa, pz, line, car };
     });
     this.pointMarks = new Map(); this.crateMarks = new Map(); this.siteMarks = new Map();
+    // grasses, flowers, stones and the rest of what lies underfoot, thicker at higher graphics settings
+    if (this.cover) this.root.remove(this.cover);
+    this.cover = buildCover(b, b.biome, this.heightAt, { low: 0.3, medium: 0.65, high: 1, ultra: 1.4 }[getDetail()] ?? 0.65);
+    this.root.add(this.cover);
     this.makeFlags(b);
     for (const p of b.cmd.points) this.markPoint(p);
     for (const c of b.cmd.crates) this.markCrate(c);
@@ -1090,4 +1063,5 @@ export class LandView {
   }
 }
 
+function hashRelief(h, c) { let v = 0; for (let i = 0; i < h.length; i += 5) v = (v * 31 + Math.round(h[i] * 50) + (c[i] ? 7 : 0)) | 0; return v; }
 function hashTerrain(t) { let h = 0; for (let i = 0; i < t.length; i += 7) h = (h * 31 + t[i]) | 0; return h; }

@@ -2,7 +2,10 @@
 // the same code runs the live 3D view and the batch worker.
 import { createRng } from './rng.js';
 import { attackRoll, defenceRoll, hitChance, maxHit, hitDelay, combatLevel } from './combat.js';
-import { generateTerrain, DEEP, isWater } from './terrain.js';
+import { generateTerrain, generateRelief, DEEP, isWater } from './terrain.js';
+
+// scenery that grows or lies on the land as it finds it: the ground is not levelled for these
+const SCENERY = new Set(['tree', 'pine', 'rock']);
 import { STRUCTURES } from '../data/structures.js';
 import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGunRing } from './support.js';
 import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsAirship } from './airship.js';
@@ -69,6 +72,17 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
     if (wet && !def.overWater) continue; // nothing is built on open water or off the map
     const hp = s.hp ?? def.hp ?? 0; // a scenario may set its own strength (flag forts have lighter gates)
     b.structures.push({ ...s, w, h, hp, maxHp: hp, destroyed: false });
+  }
+  // hills and cliffs: level where anything stands (trees and boulders ride the slopes), none on sea maps
+  {
+    const built = new Uint8Array(N);
+    for (const s of b.structures) {
+      if (SCENERY.has(s.type)) continue;
+      for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) if (x >= 0 && y >= 0 && x < W && y < H) built[y * W + x] = 1;
+    }
+    const rel = generateRelief(b.terrain, W, scn.terrainSeed || 7, scn.relief || { hills: 0.6, cliffs: 0 }, built);
+    b.height = rel.height; b.cliff = rel.cliff;
+    for (const s of b.structures) for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) if (x >= 0 && y >= 0 && x < W && y < H) b.cliff[y * W + x] = 0;
   }
   rebuildGrid(b);
   b.hasRamparts = b.level.some((l) => l > 0);
@@ -335,6 +349,7 @@ export function rebuildGrid(b) {
   const N = b.W * b.H;
   b.blockMove.fill(0); b.blockLos.fill(0); b.cover.fill(0); b.elevated.fill(0);
   b.level.fill(0); b.ladder.fill(0); b.door.fill(-1); b.losH.fill(0); b.sid.fill(0); b.span.fill(0);
+  if (b.cliff) for (let i = 0; i < N; i++) if (b.cliff[i]) b.blockMove[i] = 1; // cliffs cannot be climbed
   b.structures.forEach((s, idx) => {
     const def = STRUCTURES[s.type];
     for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) {

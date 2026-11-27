@@ -167,6 +167,24 @@ Target ids are the keys in `src/data/units.js`, `src/data/naval.js`, and `struct
 - **Under the walkways.** Troops arriving at ground level pass beneath walkways and viaducts; those coming off
   a wall or terrace cross on top.
 
+## The land
+
+- **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights
+  edged by cliffs. Cliffs cannot be climbed: armies go round them or up the slopes left through every cliff
+  line, and a cliff that would cut part of the map off is opened. The ground stays level where anything is
+  built and falls away to the shore. Generated maps have hills and cliffs; presets and hand-built maps get
+  gentle hills only, so their balance is unchanged. (`generateRelief` in `src/engine/terrain.js`; a scenario
+  sets `relief: { hills, cliffs }`.)
+- **Ground.** The ground mesh is twice as fine as the tiles and painted by what is there: lush meadow, dry
+  stretches, worn soil, paler cover on the heights, banded rock on steep ground and cliff faces, and a fine
+  grain over all of it.
+- **What grows on it.** Each land has its own cover, scattered in patches the way it grows: grass tufts, tall
+  grass, flowers in seven colours, bushes, berry bushes, ferns, reeds along the water, lilies on the shallows,
+  mushrooms, pebbles, stones, logs and stumps in temperate country; drifts, ice shards and dead trees in the
+  north; cactus, dry shrubs and bones in the desert; reeds, ferns and dead trees in the swamp; obsidian
+  shards and glowing lava cracks in volcanic land; broad-leaved plants and ferns in the jungle; and boulders
+  along every cliff line. Density follows the graphics setting. (`src/render/groundcover.js`.)
+
 ## Capture the flag
 
 The **Capture the flag** button builds two forts facing each other across open ground, each in its own

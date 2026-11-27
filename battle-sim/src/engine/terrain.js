@@ -122,3 +122,112 @@ export function generateTerrain(shape, size, seed = 7) {
   }
   return t;
 }
+
+// ------------------------------------------------------------------------------------------
+// Relief: rolling hills over the dry land, and flat-topped heights edged with cliffs.
+// Heights are in tiles (a soldier stands about one tall). Ground is kept level where anything is
+// built (`built` marks those tiles) and falls away to nothing at the water's edge. A cliff tile
+// cannot be walked; every cliff line is left with slopes through it, and any cliff that would cut
+// part of the map off is removed.
+//   opts.hills   0..1.5   how high the hills roll (0 = flat)
+//   opts.cliffs  0..1     how much of the high ground breaks into cliffs (0 = none)
+// Returns { height: Float32Array per tile, cliff: Uint8Array per tile }.
+// ------------------------------------------------------------------------------------------
+export function generateRelief(terrain, S, seed = 7, opts = {}, built = null) {
+  const N = S * S, height = new Float32Array(N), cliff = new Uint8Array(N);
+  const hills = opts.hills ?? 0.6, cliffs = opts.cliffs ?? 0;
+  if (hills <= 0) return { height, cliff };
+  // distance (in tiles, capped) from water and from anything built: two sweeps of a chamfer transform
+  const dist = (isSource) => {
+    const d = new Float32Array(N).fill(99);
+    for (let i = 0; i < N; i++) if (isSource(i)) d[i] = 0;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const i = y * S + x; let v = d[i];
+      if (x > 0) v = Math.min(v, d[i - 1] + 1);
+      if (y > 0) { v = Math.min(v, d[i - S] + 1); if (x > 0) v = Math.min(v, d[i - S - 1] + 1.4); if (x < S - 1) v = Math.min(v, d[i - S + 1] + 1.4); }
+      d[i] = v;
+    }
+    for (let y = S - 1; y >= 0; y--) for (let x = S - 1; x >= 0; x--) {
+      const i = y * S + x; let v = d[i];
+      if (x < S - 1) v = Math.min(v, d[i + 1] + 1);
+      if (y < S - 1) { v = Math.min(v, d[i + S] + 1); if (x < S - 1) v = Math.min(v, d[i + S + 1] + 1.4); if (x > 0) v = Math.min(v, d[i + S - 1] + 1.4); }
+      d[i] = v;
+    }
+    return d;
+  };
+  const dWater = dist((i) => terrain[i] !== GRASS);
+  const dBuilt = built ? dist((i) => built[i] === 1) : null;
+  const ss = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const f1 = 3.2 / S * (S / 96) ** 0.5, s2 = seed * 3 + 11;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = y * S + x;
+    if (terrain[i] !== GRASS) continue;
+    // level ground by the shore and around buildings, rising away from both
+    let m = ss(1, 9, dWater[i]);
+    if (dBuilt) m *= ss(3, 16, dBuilt[i]);
+    // keep the map's edges low so armies can form up there
+    m *= ss(0, 14, Math.min(x, y, S - 1 - x, S - 1 - y));
+    if (m <= 0) continue;
+    const u = x * f1, v = y * f1;
+    const roll = fbm(u, v, s2) * 0.75 + fbm(u * 2.6, v * 2.6, s2 + 5) * 0.25;         // 0..1
+    let h = Math.max(0, roll - 0.36) * 2.6 * hills;                                   // broad hills, with flat valleys between
+    h += (noise(x * 0.23, y * 0.23, s2 + 9) - 0.5) * 0.22 * hills;                   // small swells
+    if (cliffs > 0) {
+      // table-lands: a step up whose edge is a cliff, except where it relaxes into a slope
+      const mesa = fbm(u * 1.3 + 40, v * 1.3 + 17, s2 + 21);
+      const edge = 0.63 - cliffs * 0.07;
+      const ramp = noise(x * 0.11 + 5, y * 0.11 + 9, s2 + 33);                         // high = a way up
+      const wide = ramp > 0.56 ? 0.16 : 0.012;
+      h += ss(edge - wide, edge + wide, mesa) * (1.5 + cliffs * 0.5);
+    }
+    height[i] = Math.max(0, h) * m;
+  }
+  if (cliffs > 0) {
+    // a tile is a cliff when the ground across it is too steep to climb
+    const at = (x, y) => height[Math.max(0, Math.min(S - 1, y)) * S + Math.max(0, Math.min(S - 1, x))];
+    for (let y = 1; y < S - 1; y++) for (let x = 1; x < S - 1; x++) {
+      const i = y * S + x;
+      if (terrain[i] !== GRASS || (built && built[i]) || Math.min(x, y, S - 1 - x, S - 1 - y) < 4 || (dBuilt && dBuilt[i] < 4)) continue;
+      let lo = Infinity, hi = -Infinity;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const hh = at(x + dx, y + dy); if (hh < lo) lo = hh; if (hh > hi) hi = hh; }
+      if (hi - lo > 1.05 && height[i] - lo > 0.3 && hi - height[i] > 0.3) cliff[i] = 1;
+    }
+    // no part of the map may be cut off: open any cliff that borders a pocket of ground
+    const comp = new Int32Array(N), stack = [];
+    for (let pass = 0; pass < 24; pass++) {
+      comp.fill(0);
+      let n = 0, best = 0, bestSize = 0;
+      for (let s = 0; s < N; s++) {
+        if (comp[s] || cliff[s]) continue;
+        n++; let size = 0; comp[s] = n; stack.push(s);
+        while (stack.length) {
+          const i = stack.pop(), x = i % S, y = (i / S) | 0; size++;
+          if (x > 0 && !comp[i - 1] && !cliff[i - 1]) { comp[i - 1] = n; stack.push(i - 1); }
+          if (x < S - 1 && !comp[i + 1] && !cliff[i + 1]) { comp[i + 1] = n; stack.push(i + 1); }
+          if (y > 0 && !comp[i - S] && !cliff[i - S]) { comp[i - S] = n; stack.push(i - S); }
+          if (y < S - 1 && !comp[i + S] && !cliff[i + S]) { comp[i + S] = n; stack.push(i + S); }
+        }
+        if (size > bestSize) { bestSize = size; best = n; }
+      }
+      if (n <= 1) break;
+      let opened = 0;
+      for (let i = 0; i < N; i++) {
+        if (!cliff[i]) continue;
+        const x = i % S, y = (i / S) | 0;
+        const c = [x > 0 ? comp[i - 1] : 0, x < S - 1 ? comp[i + 1] : 0, y > 0 ? comp[i - S] : 0, y < S - 1 ? comp[i + S] : 0];
+        if (c.some((k) => k && k !== best)) { cliff[i] = 0; opened++; }
+      }
+      if (!opened) break;
+      if (pass === 23) cliff.fill(0);
+    }
+    // where a cliff was opened the ground is eased so the gap reads as a path
+    for (let k = 0; k < 2; k++) for (let y = 1; y < S - 1; y++) for (let x = 1; x < S - 1; x++) {
+      const i = y * S + x;
+      if (cliff[i] || terrain[i] !== GRASS) continue;
+      let lo = Infinity, hi = -Infinity;
+      for (const j of [i - 1, i + 1, i - S, i + S]) { if (cliff[j]) continue; if (height[j] < lo) lo = height[j]; if (height[j] > hi) hi = height[j]; }
+      if (hi - lo > 1.2) height[i] = (lo + hi) / 2;
+    }
+  }
+  return { height, cliff };
+}

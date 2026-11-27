@@ -466,7 +466,7 @@ function generateCtf({ r, seed, site, defId, attId, D, A, size }) {
   return {
     name: `${r.pick(NAME_A)}${r.pick(NAME_B)}: ${A.adj} and ${D.adj} forts fight for each other's flag`,
     mode: 'field', seed, site: 'ctf', defender: defId, attacker: attId,
-    scn: { size: S, shape: 'plains', biome, terrainSeed, structures: p.out, sides, maxTicks: 3000, ctf: { bases, muster: musterAt, rally: rallyAt, ways: waysIn, toWin: 3, wave: 40, lieFor: 120 } },
+    scn: { size: S, shape: 'plains', biome, terrainSeed, relief: { hills: 0.9, cliffs: 0.6 }, structures: p.out, sides, maxTicks: 3000, ctf: { bases, muster: musterAt, rally: rallyAt, ways: waysIn, toWin: 3, wave: 40, lieFor: 120 } },
   };
 }
 
@@ -684,6 +684,6 @@ export function generateScenario(opts = {}) {
   return {
     name: `${place}: ${A.adj} ${sea ? 'landing' : 'assault'} on a ${D.adj.toLowerCase()} ${D.places[siteId]}`,
     mode: site.mode, seed, site: siteId, defender: defId, attacker: attId,
-    scn: { size: S, shape, biome, terrainSeed, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, style: defId, look },
+    scn: { size: S, shape, biome, terrainSeed, relief: { hills: 1, cliffs: sea ? 0.5 : 1 }, structures: p.out.map((st) => (st.side === 0 ? st : { ...st, style: defId, look })), sides, style: defId, look },
   };
 }
