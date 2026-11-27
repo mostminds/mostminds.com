@@ -275,8 +275,9 @@ function carcass(TAB, segs, bodyName, sk, o = {}) {
   /** a painted (or embossed) line along the hull at th degrees round from the top, on both flanks unless th is 0 or 180 */
   K.stripe = (z0, z1, th, r, make, step = 0.11) => {
     for (const [n, a0, a1] of segs) {
-      const hi = Math.min(z0, a0), lo = Math.max(z1, a1);
-      if (hi - lo < 0.004) continue;
+      if (Math.min(z0, a0) - Math.max(z1, a1) < 0.004) continue;
+      // run a little past each joint: the rounded ends of a piece can show through its neighbour there
+      const hi = Math.min(z0, a0 + 0.03), lo = Math.max(z1, a1 - 0.03);
       const m = Math.max(1, Math.ceil((hi - lo) / step));
       for (let i = 0; i < m; i++) {
         const za = lerp(hi, lo, i / m), zb = lerp(hi, lo, (i + 1) / m), ra = typeof r === 'function' ? r(za) : r, rb = typeof r === 'function' ? r(zb) : r;
@@ -426,11 +427,11 @@ function dunkleosteusDesc(def) {
     suture('body', skin(0.56, sd * 20, 0.02).p, skin(0.14, sd * 22, 0.02).p);
   }
   // worn bone showing along the rims of both shields, and in scuffs across them
-  for (const [n, z, lift] of [['head', HZ + 0.075, 0], ['body', HZ - 0.03, 0.02], ['body', 0.15, 0.02], ['head', 1.07, 0]]) for (let i = 0; i < 14; i++) {
-    const a = skin(z, -150 + i * (300 / 14), lift), b = skin(z, -150 + (i + 1) * (300 / 14), lift);
+  for (const [n, z, lift] of [['head', HZ + 0.075, 0], ['body', HZ - 0.03, 0.02], ['body', 0.15, 0.02], ['head', 1.07, 0]]) for (let i = 0; i < 10; i++) {
+    const a = skin(z, -150 + i * 30, lift), b = skin(z, -150 + (i + 1) * 30, lift);
     prims[n].push(S.capsule(a.p, b.p, 0.02).color(mix(bone, boneDk, rnd(i, 17) * 0.6)).pbr(0.6).tint(0.3, 20).paint(0.008, 0.004));
   }
-  for (let i = 0; i < 46; i++) { const z = 1.05 - rnd(i, 13) * 0.9, th = (rnd(i, 14) - 0.5) * 260, n = z > HZ ? 'head' : 'body', q = skin(z, th, n === 'body' ? 0.02 : 0); prims[n].push(S.ellipsoid(0.012 + rnd(i, 15) * 0.02, 0.02, 0.012 + rnd(i, 16) * 0.03).at(q.p[0], q.p[1], q.p[2]).color(mix(bone, olive, rnd(i, 18) * 0.5)).pbr(0.6).paint(0.008, 0)); }
+  for (let i = 0; i < 32; i++) { const z = 1.05 - rnd(i, 13) * 0.9, th = (rnd(i, 14) - 0.5) * 260, n = z > HZ ? 'head' : 'body', q = skin(z, th, n === 'body' ? 0.02 : 0); prims[n].push(S.ellipsoid(0.012 + rnd(i, 15) * 0.02, 0.02, 0.012 + rnd(i, 16) * 0.03).at(q.p[0], q.p[1], q.p[2]).color(mix(bone, olive, rnd(i, 18) * 0.5)).pbr(0.6).paint(0.008, 0)); }
   // pits and scars of old fights in the bone
   for (let i = 0; i < 16; i++) { const z = 1.0 - rnd(i, 3) * 0.82, th = (rnd(i, 4) - 0.5) * 200, n = z > HZ ? 'head' : 'body', q = skin(z, th, n === 'body' ? 0.02 : 0); prims[n].push(S.sphere(0.008 + rnd(i, 5) * 0.012).at(q.p[0], q.p[1], q.p[2]).cut(0.005).color(boneDk)); }
   // pale underside
@@ -469,8 +470,8 @@ function dunkleosteusDesc(def) {
   const pec = (sd) => [fin({ span: 0.3, chord: 0.2, tip: 0.3, sweep: 0.55, thick: 0.11, peak: 0.25, root: 0.7 }).shade(flipShade(hide, belly, 0x20241e, 0.3, sd)).pbr(wet)];
   prims.body.push(...S.mirrorX([flesh(S.ellipsoid(0.05, 0.035, 0.09).at(0.27, CY - 0.17, 0.08).blend(0.04), 'core')]));
 
-  const nodes = K.nodes({ detail: { default: 0.72, head: 0.84, body: 0.72 } });
-  nodes.push(JW.node(jawHard, 13, 0.84));
+  const nodes = K.nodes({ detail: { default: 0.68, head: 0.8, body: 0.68 } });
+  nodes.push(JW.node(jawHard, 13, 0.8));
   nodes.push(finNode(K, 'finL', 'body', [0.27, CY - 0.18, 0.1], [-20, -12, -122], pec(1)), finNode(K, 'finR', 'body', [-0.27, CY - 0.18, 0.1], [-20, 12, 122], pec(-1)));
   return { kind: 'dunkleosteus', nodes };
 }
@@ -728,7 +729,7 @@ function shonisaurusDesc(def) {
   hard.body.push(fin({ span: 0.17, chord: 0.26, tip: 0.2, sweep: 0.95, thick: 0.1, pw: 0.9, curve: 1.6 }).shade(fcol(0.17)).pbr(wet).at(0, at(0.0).y + at(0.0).h - 0.03, 0.02));
   const lobe = (sp, chord, ang, down) => fin({ span: sp, chord, tip: 0.12, sweep: 0.5, thick: 0.1, pw: 0.85, rows: 10, curve: 1.7 }).shade(fcol(sp)).pbr(wet).rot(0, 0, down ? 180 : 0).rot(ang, 0, 0).at(0, at(-1.05).y, -1.04);
   hard.tail3.push(lobe(0.36, 0.17, -30, false), lobe(0.42, 0.18, 32, true));
-  prims.tail3.push(sk(S.capsule([0, at(-1.05).y + 0.05, -1.07], [0, at(-1.05).y - 0.06, -1.07], 0.028, 0.03).blend(0.03), 'core'));
+  prims.tail3.push(sk(S.capsule([0, at(-1.05).y + 0.04, -1.07], [0, at(-1.05).y - 0.05, -1.07], 0.02, 0.022).blend(0.03), 'core'));
   const scythe = (sd, sp) => [fin({ span: sp, chord: sp * 0.25, peak: 0.18, root: 0.8, tip: 0.2, pw: 0.9, sweep: 0.62, curve: 1.8, thick: 0.13, rows: 10 }).shade(flipShade(back, white, 0x1c0e0a, sp, sd)).pbr(wet)];
   const nodes = K.nodes({ detail: { default: 0.66, body: 0.7 }, minRes: { tail3: 34 } });
   nodes.push(JW.node(jawHard, 6, 0.9));
@@ -1040,8 +1041,8 @@ function orthocerasDesc(def) {
   // bands of chestnut and tan, leaning one way and then the other so that they read as chevrons from above
   let z = ZM + 0.05, i = 0;
   while (z < ZA - 0.04) {
-    const r = rAt(z), wide = i % 2 === 0, bw = (wide ? 0.07 : 0.045) * (0.4 + 0.6 * r / RM), lean = (i % 4 < 2 ? 1 : -1) * 11;
-    shell.push(S.cyl(r + 0.05, bw).rot(90, 0, 0).rot(lean, 0, 0).at(0, AY, z).color(wide ? chest : tone(tan, 0, 0.1, 0.02)).pbr(0.3).paint(0.008, 0));
+    const r = rAt(z), wide = i % 2 === 0, bw = (wide ? 0.07 : 0.055) * (0.4 + 0.6 * r / RM), lean = (i % 4 < 2 ? 1 : -1) * 11;
+    shell.push(S.cyl(r + 0.05, bw).rot(90, 0, 0).rot(lean, 0, 0).at(0, AY, z).color(wide ? chest : mix(tone(tan, 0, 0.12, -0.04), chest, 0.2)).pbr(0.3).paint(0.008, 0));
     z += (wide ? 0.115 : 0.1) * (0.4 + 0.6 * r / RM); i++;
   }
   shell.push(
