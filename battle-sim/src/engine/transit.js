@@ -13,7 +13,7 @@
 // levelled for them; the vehicles are set running once the rally points exist (initTransit).
 import { STRUCTURES } from '../data/structures.js';
 import { isWater, FORD } from './terrain.js';
-import { field, walk, nearestEnemyDist, freeTileNear, occupy, structureFootprint } from './battle.js';
+import { field, walk, near, attack, damage, spawnUnit, addSquad, nearestEnemyDist, freeTileNear, occupy, structureFootprint } from './battle.js';
 import { addCrate } from './command.js';
 import { plannedPoints } from './fronts.js';
 
@@ -23,6 +23,24 @@ const STEP = { rail: 1, cable: 0.7, balloon: 0.8 }; // tiles a tick
 const TRAIN_LOAD = 8, CAR_LOAD = 3, BASKET_LOAD = 3, BASKET_MEN = 6;
 const FAR = 26;            // a soldier posted this far from his point looks for a balloon
 const MAST_R = 10;         // and will walk this far to a mast
+
+const CAR_HP = 220, BEAST_HP = 150; // a handcar's frame; a pack beast
+
+// Peoples who keep no engines: their stores come up the trail on the backs of beasts.
+export const SAVAGE = new Set(['beasts', 'dragons', 'cloven', 'fimbul', 'gorge', 'verdant', 'screaming', 'xibalba', 'greenhide', 'mistisles', 'elemental']);
+/** whose army a side is: as the scenario says, else the realm most of its soldiers belong to, else what they are */
+export function sideFaction(b, side) {
+  if (b.sides[side].faction) return b.sides[side].faction;
+  const tally = new Map();
+  for (const u of b.units) {
+    if (u.side !== side || u.crewOf !== undefined) continue;
+    const id = u.def.id || '';
+    const f = u.def.realm || (/goblin|hobgob|wolfRider/i.test(id) ? 'goblin' : /skelet|zombie|ghoul|wraith|lich|necro/i.test(id) ? 'undead' : /imp|demon|hell|fiend/i.test(id) ? 'infernal' : /dragon|wyvern|drake|wyrm|kobold/i.test(id) ? 'dragons'
+      : /elemental|golem|sprite/i.test(id) ? 'elemental' : /wolf|bear|boar|beast|spider|bat|centaur|minotaur|cyclops|troll|ogre/i.test(id) ? 'beasts' : 'kingdom');
+    tally.set(f, (tally.get(f) || 0) + 1);
+  }
+  return [...tally].sort((a, c) => c[1] - a[1])[0]?.[0] || (side === 1 && b.style) || 'kingdom';
+}
 
 const plans = new WeakMap();
 
@@ -114,7 +132,7 @@ export function planTransit(b, scn, SCENERY) {
       let j = i + 1;
       while (j < path.length - 1 && path[j + 1][0] - path[j][0] === dx && path[j + 1][1] - path[j][1] === dy && j - i < 39) j++;
       const x0 = Math.min(path[i][0], path[j][0]), y0 = Math.min(path[i][1], path[j][1]), len = j - i + 1, k = `${x0},${y0},${dx ? 0 : 1},${len}`;
-      if (!laid.has(k)) { laid.add(k); plan.extra.push({ type: 'rail', x: x0, y: y0, rot: dx ? 0 : 1, len }); }
+      if (!laid.has(k)) { laid.add(k); plan.extra.push({ type: 'rail', x: x0, y: y0, rot: dx ? 0 : 1, len, line: side }); }
       i = j;
     }
     for (const [x, y] of path) { plan.taken.add(y * W + x); free[y * W + x] = Math.min(free[y * W + x] || 1, 1); solid[y * W + x] = 2; }
@@ -193,7 +211,23 @@ export function initTransit(b, scn, plan) {
   const pointOf = (pi) => { const p = b.cmd.points.find((q) => q.fixed && q.src === pi); return p ? p.id : -1; };
   for (const r of plan.rails) {
     const stops = r.stations.map((s) => ({ x: s.x, y: s.y, k: s.k, st: -1, point: s.pi < 0 ? -1 : pointOf(s.pi), depot: s.pi < 0 }));
-    makeLine(b, 'rail', r.side, stops, r.path).cargo = TRAIN_LOAD;
+    const L = makeLine(b, 'rail', r.side, stops, r.path);
+    L.cargo = TRAIN_LOAD; L.crew = [];
+    L.faction = sideFaction(b, r.side);
+    L.beasts = SAVAGE.has(L.faction);
+    if (L.beasts) L.cars = L.faction === 'fimbul' ? 2 : 3;
+    else {
+      // two handcars, two hands to each: the least of the army's foot work the pump
+      L.cars = 2;
+      let def = null;
+      for (const u of b.units) { const d = u.def; if (u.side !== r.side || d.fly || d.leader || (d.size || 1) > 1 || d.role === 'siege') continue; if (!def || d.hp < def.hp) def = d; }
+      if (def) {
+        const men = [];
+        for (let i = 0; i < 4; i++) { const u = spawnUnit(b, def, r.side, -1, -1); u.x = u.px = L.x; u.y = u.py = L.y; u.aboard = RIDE + L.id; u.crewOf = L.id; men.push(u); L.crew.push(u.id); }
+        addSquad(b, men, 'hold');
+      } else L.crewless = true;
+    }
+    L.hp = L.maxHp = L.cars * (L.beasts ? BEAST_HP : CAR_HP);
   }
   for (const side of [0, 1]) {
     const list = plan.masts.filter((m) => m.side === side).map((m) => ({ x: m.x + (m.type === 'balloonMast' ? 1 : 1.5), y: m.y + (m.type === 'balloonMast' ? 1 : 1.5), st: structAt(m.type, m.x, m.y), point: pointOf(m.pi) }))
@@ -252,6 +286,44 @@ function call(b, L, si) {
   b.events.push({ type: 'transit', line: L.id, kind: L.kind, side: L.side, stop: si, stores: n, men, point: s.point });
 }
 
+/** a blow to a train or a caravan: its frame, or the beasts that carry it */
+export function hitLine(b, L, dmg, by) {
+  if (!L.live || L.hp === undefined || dmg <= 0) return;
+  L.hp -= dmg;
+  b.events.push({ type: 'transitHit', line: L.id, side: L.side, hp: Math.max(0, L.hp), dmg });
+  if (L.hp > 0) return;
+  L.live = false;
+  // the hands jump clear and fight on foot; what it carried lies where it stopped, for whoever gets to it
+  for (const id of L.crew) { const u = b.units[id]; if (u.alive && u.aboard >= 0 && !setDown(b, L, u)) { u.aboard = -1; } u.crewOf = undefined; }
+  L.crew = [];
+  if (L.cargo > 0) addCrate(b, by ? by.side : 1 - L.side, L.x, L.y, Math.min(3, L.cargo));
+  L.cargo = 0;
+  b.events.push({ type: 'transitDown', line: L.id, kind: L.kind, side: L.side, beasts: !!L.beasts, by: by ? by.id : -1 });
+}
+
+/** the train's own troubles: its crew ride with it, and anyone hostile within reach has a go at it */
+function railWar(b, L) {
+  const X = Math.max(0, Math.min(b.W - 1, Math.round(L.x))), Y = Math.max(0, Math.min(b.H - 1, Math.round(L.y)));
+  for (const id of L.crew) { const u = b.units[id]; if (u.alive) { u.x = u.px = X; u.y = u.py = Y; } }
+  const hands = L.crew.filter((id) => b.units[id].alive);
+  // with the army gone the hands give themselves up
+  if (hands.length && b.tick % 20 === 0 && !b.units.some((u) => u.alive && u.side === L.side && u.crewOf === undefined)) {
+    for (const id of hands) damage(b, b.units[id], b.units[id].hp, null, 'melee');
+    return 0;
+  }
+  near(b, X, Y, 10, (u) => {
+    if (!L.live || !u.alive || u.side === L.side || u.aboard >= 0 || u.x < 0 || u.cd > 0 || u.down || u.flag) return;
+    const d = Math.hypot(u.x - L.x, u.y - L.y), melee = u.def.style === 'melee', reach = melee ? 2.3 : Math.min(u.def.range || 1, 9);
+    if (d > reach) return;
+    if (!melee && nearestEnemyDist(b, u, Math.ceil(reach)).d <= reach && !hands.length) return; // soldiers to shoot at come first
+    const man = hands.map((id) => b.units[id]).find((m) => m.alive);
+    if (man) { if (melee) attack(b, u, man); return; } // shooters pick the crew off by their own lights
+    hitLine(b, L, b.rng.int(1, Math.max(4, u.def.max || 8)), u);
+    u.cd = u.def.speed; u.lastAttack = b.tick;
+  });
+  return hands.length;
+}
+
 /** once a tick: every vehicle moves on, or stands at its stop */
 export function transitTick(b) {
   const T = b.transit;
@@ -268,6 +340,8 @@ export function transitTick(b) {
       b.events.push({ type: 'transitDown', line: L.id, kind: L.kind, side: L.side });
       continue;
     }
+    // a handcar goes nowhere without hands at the pump
+    if (L.kind === 'rail' && L.hp !== undefined) { const hands = railWar(b, L); if (!L.live) continue; if (!L.beasts && !L.crewless && !hands) continue; }
     if (L.wait > 0) { L.wait--; }
     else {
       // which way: on as it was going unless the line is shut that way

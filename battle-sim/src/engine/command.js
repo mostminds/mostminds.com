@@ -11,6 +11,7 @@ import { DEEP } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { near, field, walk, walkable, nearestEnemyDist, freeTileNear, rebuildGrid, damageStructure, squadUnits } from './battle.js';
 import { addGun } from './support.js';
+import { hitLine } from './transit.js';
 
 export const RANKS = ['Recruit', 'Veteran', 'Sergeant', 'Captain'];
 export const SPECS = { line: 'line', medic: 'medic', engineer: 'engineer', vanguard: 'vanguard', marksman: 'marksman', commander: 'commander' };
@@ -468,7 +469,10 @@ function vanguardDuty(b, u) {
     for (const c of C.crates) { if (c.side === u.side) continue; const d = Math.hypot(c.x - u.x, c.y - u.y); if (d < bd) { bd = d; tgt = { crate: c, x: c.x, y: c.y, w: 1, h: 1, key: `cr${c.id}` }; } }
     for (const p of C.points) { if (p.side === u.side || p.stock <= 0) continue; const d = Math.hypot(p.x - u.x, p.y - u.y); if (d < bd) { bd = d; tgt = { point: p, x: p.x, y: p.y, w: 1, h: 1, key: `pt${p.id}` }; } }
     b.structures.forEach((st, idx) => { if (st.destroyed || !(st.supplies > 0) || st.side === u.side) return; const d = Math.hypot(st.x - u.x, st.y - u.y); if (d < bd) { bd = d; tgt = { car: st, idx, x: st.x, y: st.y, w: st.w, h: st.h, key: `car${idx}` }; } });
+    // the enemy's train or pack caravan is fair game too
+    if (b.transit) for (const L of b.transit.lines) { if (L.kind !== 'rail' || !L.live || L.side === u.side || L.hp === undefined) continue; const d = Math.hypot(L.x - u.x, L.y - u.y); if (d < bd) { bd = d; const x = Math.round(L.x), y = Math.round(L.y); tgt = { line: L, x, y, w: 1, h: 1, key: `tr${L.id}:${x >> 2},${y >> 2}` }; } }
     if (!tgt) return false;
+    if (tgt.line && gapTo(u, tgt.x, tgt.y) <= 2) { if (u.cd > 0) return true; u.cd = u.def.speed; u.lastAttack = b.tick; tgt.line.cargo = Math.max(0, tgt.line.cargo - 2); hitLine(b, tgt.line, 40, u); b.events.push({ type: 'raid', by: u.id, side: u.side, what: tgt.line.beasts ? 'pack caravan' : 'handcar' }); return true; }
     if (gapTo(u, tgt.x, tgt.y, tgt.w, tgt.h) <= 1) {
       if (u.cd > 0) return true;
       u.cd = u.def.speed; u.lastAttack = b.tick;

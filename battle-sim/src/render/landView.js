@@ -4,7 +4,8 @@ import { animateCreature, buildUnitModel, animateUnit, buildStructure, buildCraf
 import { bakePose } from './rigkit.js';
 import { sculptMaterial } from './sculpt.js';
 import { LIFTED } from '../engine/airship.js';
-import { RIDE } from '../engine/transit.js';
+import { RIDE, sideFaction } from '../engine/transit.js';
+import { transitLook, buildConsist, buildGondola, buildBalloonFor, trackLook } from './props/transit.js';
 import { loadFracture, fractureModel } from './fracture.js';
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
@@ -98,7 +99,8 @@ export class LandView {
   makeStruct(s) {
     {
       const { w, h, def } = structureFootprint(s);
-      const m = buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null, style: s.style || this.b.style || null, look: s.look || this.b.look || null });
+      // a railway laid for a line of supply is drawn as one curving track with the line (see load)
+      const m = s.type === 'rail' && s.line !== undefined ? new THREE.Group() : buildStructure(def, w, h, { x: s.x, y: s.y, side: s.side ?? s.owner ?? null, style: s.style || this.b.style || null, look: s.look || this.b.look || null });
       // weapons sitting on a bastion or deck are raised to its top
       const onTop = def.stretch2 ? 0 : this.podium[Math.min(this.b.H - 1, s.y + (h >> 1)) * this.b.W + Math.min(this.b.W - 1, s.x + (w >> 1))];
       const base = def.level ? (def.model === 'stairs' && onTop ? onTop * LEVEL_H : 0) : onTop ? onTop * LEVEL_H : Math.max(0, this.groundY(s.x + (w >> 1), s.y + (h >> 1)));
@@ -258,8 +260,17 @@ export class LandView {
     this.cableMarks = [];
     this.transitMarks = ((b.transit && b.transit.lines) || []).map((L) => {
       const col = SIDE_COLORS[L.side], tm = { L, tops: null, line: null, car: null, fell: false, smoke: 0 };
+      const look = transitLook(L.faction || sideFaction(b, L.side));
       if (L.kind === 'rail') {
-        tm.car = buildTrain(col);
+        // the line the cars follow: the tile path with its corners rounded off
+        const P = L.path, n = P.length;
+        tm.pts = P.map((_, k) => { let x = 0, y = 0; for (let j = -2; j <= 2; j++) { const q = P[Math.max(0, Math.min(n - 1, k + j))]; x += q[0]; y += q[1]; } return [x / 5 + 0.5, y / 5 + 0.5]; });
+        this.layTrack(tm.pts, trackLook(look));
+        tm.cars = buildConsist(look, col);
+        tm.beasts = look.savage;
+        for (const c of tm.cars) this.dynamic.add(c);
+        // offsets of each car's middle behind the head of the train, in tiles
+        let off = 0; tm.offs = tm.cars.map((c) => { const o = off + c.userData.len / 2; off += c.userData.len + 0.25; return o; }); tm.total = off;
         for (const s of L.stops) {
           if (s.depot) continue;
           // the halt stands beside the track, on the side the rally point is
@@ -276,10 +287,10 @@ export class LandView {
         if (L.kind === 'cable') {
           tm.line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(tm.tops), new THREE.LineBasicMaterial({ color: 0x2a2620 }));
           this.dynamic.add(tm.line);
-          tm.car = buildCableCar(col);
-        } else tm.car = buildBalloon(col);
+          tm.car = buildGondola(look, col);
+        } else tm.car = buildBalloonFor(look, col);
       }
-      this.dynamic.add(tm.car);
+      if (tm.car) this.dynamic.add(tm.car);
       return tm;
     });
     this.pointMarks = new Map(); this.crateMarks = new Map(); this.siteMarks = new Map();
@@ -405,6 +416,38 @@ export class LandView {
     g.position.set(p.x + 0.5, y, p.y + 0.5);
     this.dynamic.add(g);
     this.pointMarks.set(p.id, { g, stores, pennant, ring, base: geo.attributes.position.array.slice(), fixed: true });
+  }
+  /** one curving line of track along these points: ballast, sleepers and two rails, or for a pack trail a beaten path with marker stakes */
+  layTrack(pts, T) {
+    const seen = new Set(), segs = [];
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[k], c = pts[k + 1], key = `${Math.round((a[0] + c[0]) * 2)},${Math.round((a[1] + c[1]) * 2)}`;
+      const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (len < 0.02 || seen.has(key)) continue;
+      seen.add(key);
+      const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+      segs.push({ mx, mz, len, ang: Math.atan2(-(c[1] - a[1]), c[0] - a[0]), y: Math.max(0, this.groundY(Math.floor(mx), Math.floor(mz))) });
+    }
+    if (!segs.length) return;
+    const dummy = new THREE.Object3D();
+    const strip = (geo, material, per, place) => {
+      const im = new THREE.InstancedMesh(geo, material, segs.length * per);
+      let n = 0;
+      for (const [i, s] of segs.entries()) for (let j = 0; j < per; j++) if (place(dummy, s, j, i) !== false) { dummy.updateMatrix(); im.setMatrixAt(n++, dummy.matrix); }
+      im.count = n; im.receiveShadow = true; im.instanceMatrix.needsUpdate = true;
+      this.dynamic.add(im);
+    };
+    const along = (o, s, y, side = 0, fwd = 0, sx = 1) => { o.position.set(s.mx + Math.cos(s.ang) * fwd - Math.sin(s.ang) * side * -1 * 0 + Math.sin(s.ang) * side, s.y + y, s.mz - Math.sin(s.ang) * fwd + Math.cos(s.ang) * side); o.rotation.set(0, s.ang, 0); o.scale.set(sx, 1, 1); };
+    strip(new THREE.BoxGeometry(1, 0.05, T.trail ? 1.1 : 0.95), mat(T.bed, { roughness: 1 }), 1, (o, s) => along(o, s, 0.03, 0, 0, s.len + 0.12));
+    if (T.trail) {
+      // marker stakes with a scrap of hide, now on one side and now on the other
+      strip(new THREE.CylinderGeometry(0.04, 0.05, 0.9, 5).translate(0, 0.45, 0), mat(0x5a4026), 1, (o, s, j, i) => (i % 5 === 2 ? along(o, s, 0, i % 10 === 2 ? 0.75 : -0.75) : false));
+      strip(new THREE.BoxGeometry(0.3, 0.2, 0.03).translate(0.15, 0.8, 0), mat(T.stake), 1, (o, s, j, i) => (i % 5 === 2 ? along(o, s, 0, i % 10 === 2 ? 0.75 : -0.75) : false));
+      return;
+    }
+    strip(new THREE.BoxGeometry(0.16, 0.06, 0.8), mat(T.sleeper), 2, (o, s, j) => along(o, s, 0.07, 0, (j - 0.5) * s.len * 0.5));
+    const iron = T.glow ? new THREE.MeshStandardMaterial({ color: T.rail, emissive: T.glow, emissiveIntensity: 0.35, metalness: 0.6, roughness: 0.45 }) : mat(T.rail, { metalness: 0.6, roughness: 0.45 });
+    strip(new THREE.BoxGeometry(1, 0.07, 0.06), iron, 2, (o, s, j) => along(o, s, 0.13, j ? 0.26 : -0.26, 0, s.len + 0.06));
   }
   /** what a faction's stretchers are made of: its own cloth on poles of its own kind */
   stretcherFor(side) {
@@ -571,7 +614,18 @@ export class LandView {
 
   unitPos(u, alpha, out) {
     const s = u.def.size / 2;
-    if (u.aboard >= RIDE) { const L = this.b.transit.lines[u.aboard - RIDE]; out.set(L.px + (L.x - L.px) * alpha, 4, L.py + (L.y - L.py) * alpha); return out; }
+    if (u.aboard >= RIDE) {
+      const L = this.b.transit.lines[u.aboard - RIDE], tm = this.transitMarks && this.transitMarks[L.id], k = L.crew ? L.crew.indexOf(u.id) : -1;
+      if (k >= 0 && tm && tm.cars && tm.cars[k >> 1]) {
+        // a hand at the pump: one at each end of the beam, facing the other
+        const c = tm.cars[k >> 1], o = k % 2 ? -0.62 : 0.62;
+        out.set(c.position.x + Math.cos(c.rotation.y) * o, c.position.y + (c.userData.deck || 0.58), c.position.z - Math.sin(c.rotation.y) * o);
+        return out;
+      }
+      const car = tm && tm.car;
+      if (car) out.set(car.position.x + ((u.id % 3) - 1) * 0.25, car.position.y + 0.1, car.position.z + ((u.id % 2) - 0.5) * 0.4); else out.set(L.px + (L.x - L.px) * alpha, 4, L.py + (L.y - L.py) * alpha);
+      return out;
+    }
     if (u.aboard >= LIFTED) {
       const a = this.b.airships[u.aboard - LIFTED], k = Math.max(0, a.cargo.indexOf(u.id));
       this.airPos(a, alpha, out);
@@ -691,8 +745,12 @@ export class LandView {
       } else if (e.type === 'transit') {
         if (e.kind === 'balloon' && e.men) msgs.push({ side: e.side, text: `A balloon ${e.stop && !e.stores ? 'sets down' : 'takes up'} ${e.men} at the mast` });
         else if (e.stores && (this.transitSaid || 0) + 40 < b.tick) { this.transitSaid = b.tick; msgs.push({ side: e.side, text: e.kind === 'rail' ? 'The supply train unloads at the halt' : e.kind === 'cable' ? 'The cable car sets stores down in the district' : 'A balloon brings stores to the outpost' }); }
+      } else if (e.type === 'transitHit') {
+        const tm = this.transitMarks[e.line];
+        if (tm && tm.cars) { const c = tm.cars[0].position; st.puff(new THREE.Vector3(c.x, c.y + 1, c.z), 0xd8c8a0, 0.3, 0.6); }
+        if ((this.trainCry || 0) + 80 < b.tick) { this.trainCry = b.tick; msgs.push({ side: e.side, text: tm && tm.beasts ? 'The pack caravan is under attack' : 'The handcars are under attack' }); }
       } else if (e.type === 'transitDown') {
-        msgs.push({ side: e.side, text: e.kind === 'cable' ? 'The cable falls: the car goes with it' : 'The balloon has no mast left to fly to' });
+        msgs.push({ side: e.side, text: e.kind === 'rail' ? (e.beasts ? 'The pack beasts are slain: their loads lie on the trail' : 'The handcars are wrecked: their stores lie by the track') : e.kind === 'cable' ? 'The cable falls: the car goes with it' : 'The balloon has no mast left to fly to' });
       } else if (e.type === 'duel') {
         // a matched exchange: both fighters play the same blow, facing one another
         const dur = 0.62;
@@ -1039,19 +1097,44 @@ export class LandView {
         // the cable drops and the car with it; a balloon with nowhere to go settles where it is
         if (!tm.fell) { tm.fell = true; if (tm.line) tm.line.visible = false; if (L.kind === 'cable') this.tumbling.push({ c: { g: car, k: 3 }, v: new THREE.Vector3(0.3, 0, 0.2), w: new THREE.Vector3(1, 0.5, 2), wait: 0, rest: 0.4 }); }
         if (L.kind === 'balloon') car.position.y = Math.max(this.groundY(Math.round(L.x), Math.round(L.y)), car.position.y - dt * 1.5);
+        // a wrecked handcar lies off the rails on its side; a dead beast lies where it dropped
+        if (L.kind === 'rail') tm.cars.forEach((c, ci) => { const want = (ci % 2 ? -1 : 1) * (tm.beasts ? Math.PI / 2 : 1.25); c.rotation.x += (want - c.rotation.x) * Math.min(1, dt * 4); if (tm.beasts) for (const lg of c.userData.legs) lg.piv.rotation.z = 0.5; });
         continue;
       }
       const moving = L.x !== L.px || L.y !== L.py;
       if (L.kind === 'rail') {
-        car.position.set(x + 0.5, Math.max(0, this.groundY(Math.round(x), Math.round(z))) + 0.08, z + 0.5);
-        if (moving) {
-          // the engine leads; it swings round the bends over a few frames
-          const want = Math.atan2(-(L.y - L.py), L.x - L.px);
-          let d = want - car.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
-          car.rotation.y += d * Math.min(1, dt * 6);
-          tm.smoke -= dt;
-          if (tm.smoke <= 0) { tm.smoke = 0.22; const sp = car.userData.stack.clone().applyMatrix4(car.matrixWorld); this.stage.puff(sp, 0xd8d4cc, 0.35, 1.3); }
-        }
+        // each car rides the curve by itself: its place is so far back along the line, its heading the line's there
+        const pts = tm.pts, last = pts.length - 1;
+        const at = (q, out) => { // a point at (fractional) index q, carried on straight past either end
+          if (q <= 0) { out[0] = pts[0][0] + (pts[0][0] - pts[1][0]) * -q; out[1] = pts[0][1] + (pts[0][1] - pts[1][1]) * -q; return out; }
+          if (q >= last) { out[0] = pts[last][0] + (pts[last][0] - pts[last - 1][0]) * (q - last); out[1] = pts[last][1] + (pts[last][1] - pts[last - 1][1]) * (q - last); return out; }
+          const f = Math.floor(q), r = q - f; out[0] = pts[f][0] + (pts[f + 1][0] - pts[f][0]) * r; out[1] = pts[f][1] + (pts[f + 1][1] - pts[f][1]) * r; return out;
+        };
+        const sHead = (moving ? L.k - L.dir * (1 - alpha) : L.k) + (tm.beasts ? 0 : 0);
+        const A = [0, 0], B = [0, 0], C = [0, 0];
+        tm.cars.forEach((c, ci) => {
+          // an engine keeps the outward end of its train and runs tender-first on the way home; beasts turn about and walk
+          const q = tm.beasts ? sHead - L.dir * (tm.offs[ci] - tm.total / 2) : sHead + tm.total / 2 - tm.offs[ci];
+          at(q, A); at(q + 0.7, B); at(q - 0.7, C);
+          const gy = Math.max(0, this.groundY(Math.max(0, Math.min(b.W - 1, Math.floor(A[0]))), Math.max(0, Math.min(b.H - 1, Math.floor(A[1])))));
+          c.position.set(A[0], gy + (tm.beasts ? 0.03 : 0.1), A[1]);
+          let want = Math.atan2(-(B[1] - C[1]), B[0] - C[0]);
+          if (tm.beasts && L.dir < 0) want += Math.PI;
+          let d = want - c.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+          c.rotation.y += tm.beasts ? d * Math.min(1, dt * 5) : d;
+          // the beasts fall one by one as the caravan is cut down
+          const dead = tm.beasts && ci >= Math.ceil(L.hp / (L.maxHp / tm.cars.length));
+          if (tm.beasts && dead) { c.rotation.x += (Math.PI / 2 - c.rotation.x) * Math.min(1, dt * 4); for (const lg of c.userData.legs) lg.piv.rotation.z = 0.5; return; }
+          if (c.userData.beam) c.userData.beam.rotation.z = moving ? Math.sin(t * 6 * speed ** 0.5 + c.userData.phase) * 0.32 : 0.12;
+          if (tm.beasts) {
+            const sw = moving ? 0.5 : 0;
+            for (const lg of c.userData.legs) lg.piv.rotation.z = Math.sin(t * 7 * speed ** 0.5 + lg.ph + ci) * sw;
+            c.userData.body.position.y = moving ? Math.abs(Math.sin(t * 7 * speed ** 0.5 + ci)) * 0.04 : 0;
+          } else if (moving && c.userData.stack) {
+            tm.smoke -= dt;
+            if (tm.smoke <= 0) { tm.smoke = 0.22; c.updateMatrixWorld(); this.stage.puff(c.userData.stack.clone().applyMatrix4(c.matrixWorld), c.userData.smoke ?? 0xd8d4cc, 0.35, 1.3); }
+          }
+        });
       } else {
         const pt = L.path[L.k], pp = L.path[Math.max(0, Math.min(L.path.length - 1, L.k - (moving ? L.dir : 0)))];
         // height along the leg: a cable sags, a balloon climbs away from the mast and comes down on the next
