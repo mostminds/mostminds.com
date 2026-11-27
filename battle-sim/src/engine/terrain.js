@@ -198,7 +198,7 @@ export function generateTerrain(shape, size, seed = 7) {
 //   opts.cliffs  0..1     how much of the high ground breaks into cliffs (0 = none)
 // Returns { height: Float32Array per tile, cliff: Uint8Array per tile }.
 // ------------------------------------------------------------------------------------------
-export function generateRelief(terrain, S, seed = 7, opts = {}, built = null) {
+export function generateRelief(terrain, S, seed = 7, opts = {}, built = null, track = null) {
   const N = S * S, height = new Float32Array(N), cliff = new Uint8Array(N);
   const hills = opts.hills ?? 0.6, cliffs = opts.cliffs ?? 0;
   if (hills <= 0) return { height, cliff };
@@ -222,6 +222,7 @@ export function generateRelief(terrain, S, seed = 7, opts = {}, built = null) {
   };
   const dWater = dist((i) => terrain[i] !== GRASS);
   const dBuilt = built ? dist((i) => built[i] === 1) : null;
+  const dTrack = track ? dist((i) => track[i] === 1) : null; // a railway runs in a cutting: level on the line, banks close by
   const ss = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
   const f1 = 3.2 / S * (S / 96) ** 0.5, s2 = seed * 3 + 11;
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
@@ -230,6 +231,7 @@ export function generateRelief(terrain, S, seed = 7, opts = {}, built = null) {
     // level ground by the shore and around buildings, rising away from both
     let m = ss(1, 9, dWater[i]);
     if (dBuilt) m *= ss(3, 16, dBuilt[i]);
+    if (dTrack) m *= ss(1, 7, dTrack[i]);
     // keep the map's edges low so armies can form up there
     m *= ss(0, 14, Math.min(x, y, S - 1 - x, S - 1 - y));
     if (m <= 0) continue;
@@ -252,7 +254,7 @@ export function generateRelief(terrain, S, seed = 7, opts = {}, built = null) {
     const at = (x, y) => height[Math.max(0, Math.min(S - 1, y)) * S + Math.max(0, Math.min(S - 1, x))];
     for (let y = 1; y < S - 1; y++) for (let x = 1; x < S - 1; x++) {
       const i = y * S + x;
-      if (terrain[i] !== GRASS || (built && built[i]) || Math.min(x, y, S - 1 - x, S - 1 - y) < 4 || (dBuilt && dBuilt[i] < 4)) continue;
+      if (terrain[i] !== GRASS || (built && built[i]) || Math.min(x, y, S - 1 - x, S - 1 - y) < 4 || (dBuilt && dBuilt[i] < 4) || (dTrack && dTrack[i] < 3)) continue;
       let lo = Infinity, hi = -Infinity;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const hh = at(x + dx, y + dy); if (hh < lo) lo = hh; if (hh > hi) hi = hh; }
       if (hi - lo > 1.05 && height[i] - lo > 0.3 && hi - height[i] > 0.3) cliff[i] = 1;

@@ -374,8 +374,8 @@ function civic(p, R, o) {
     for (let k2 = 0; k2 < 2; k2++) p.out.push({ type: 'railCar', x: S - 7 - k2 * 4, y: vy, rot: 0, side: 1 });
     p.road(vx, vy, S - vx, 1);
     // cable car from the square up to the palace terrace
-    const lo = nearPut('cableTower', cx + plaza + 2, my + plaza + 2, { side: 1, cable: 1 }, 1);
-    if (lo && !p.put('cableTower', hx + 1, hy + hh - 3, { side: 1, cable: 1 }, 0)) p.out[p.out.length - 1].cable = undefined;
+    const lo = nearPut('cableTower', cx + plaza + 2, my + plaza + 2, { side: 1, cable: 1, stop: 0 }, 1);
+    if (lo && !p.put('cableTower', hx + 1, hy + hh - 3, { side: 1, cable: 1, stop: 50 }, 0)) p.out[p.out.length - 1].cable = undefined;
     else if (lo) { const a = p.out.length - 2, c = p.out.length - 1; [p.out[a], p.out[c]] = [p.out[c], p.out[a]]; } // the upper tower is the delivery end
   }
 
@@ -737,6 +737,19 @@ export function generateScenario(opts = {}) {
     }
   }
 
+  // the cable car: a tower in every district of the place, strung into one line that calls at each
+  {
+    const [nx, ny] = { village: [1, 2], castle: [1, 3], city: [2, 3], coast: [1, 3], harbor: [2, 3], island: [1, 2] }[siteId] || [0, 0];
+    let stop = 1;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const dx0 = Math.round(town.x + (town.w * (i + 0.5)) / nx), dy0 = Math.round(town.y + (town.h * (j + 0.5)) / ny);
+      let done = false;
+      for (let rad = 0; rad <= 8 && !done; rad++) for (let dy = -rad; dy <= rad && !done; dy++) for (let dx = -rad; dx <= rad && !done; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+        if (p.put('cableTower', dx0 + dx, dy0 + dy, { side: 1, cable: 1, stop: stop }, 1)) { done = true; stop++; }
+      }
+    }
+  }
   // works that serve the army: a mooring tower and hangar for airships, workshops, a supply line
   const big = siteId === 'castle' || siteId === 'city' || siteId === 'harbor' || siteId === 'island';
   const around = { x: Math.max(2, town.x - 4), y: Math.max(2, town.y - 4), w: Math.min(S - town.x, town.w + 8), h: Math.min(S - town.y, town.h + 8) };
@@ -759,8 +772,7 @@ export function generateScenario(opts = {}) {
       p.road(x0, y, x1 - x0, 1);
     };
     const ry = clampRow(town.y + town.h + 3, S), ay = clampRow(cy + (ry > cy ? -9 : 9), S);
-    if (!levelled) track(Math.min(S - 14, town.x + town.w + 1), S - 2, ry, 1); // a city on levels has its own viaduct
-    track(2, Math.round(S * 0.2), ay, 0);
+    void track; void ry; void ay; void levelled; // the railway is laid by the engine now, from each army's edge past every one of its rally points
   } else {
     // piers run out from the shore in front of the settlement
     const shoreAt = (y) => { for (let x = 2; x < S - 2; x++) if (p.land(x, y) && p.land(x + 1, y)) return x; return -1; };

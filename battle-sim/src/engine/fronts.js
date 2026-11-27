@@ -45,14 +45,17 @@ function defaultPoints(b, scn) {
   return out;
 }
 
+/** the rally points this battle will be fought over, as the scenario names them or as the map suggests */
+export function plannedPoints(b, scn) { return scn.points && scn.points.length ? scn.points : defaultPoints(b, scn); }
+
 export function initFronts(b, scn) {
   if (scn.ctf || scn.fronts === false || !b.cmd || !b.units.length) return;
-  const list = (scn.points && scn.points.length ? scn.points : defaultPoints(b, scn));
+  const list = plannedPoints(b, scn);
   const F = (b.fronts = { points: [], hq: [-1, -1], leader: [-1, -1], down: [], teamsAt: 0, lost: [false, false] });
-  for (const sp of list) {
+  for (const [src, sp] of list.entries()) {
     const p = addPoint(b, sp.side, sp.role === 'camp' ? 'camp' : sp.role === 'hq' ? 'hq' : 'post', sp.x, sp.y);
     if (!p) continue;
-    Object.assign(p, { fixed: true, home: sp.side, role: sp.role || 'post', cap: 0, stock: sp.stock ?? (sp.role === 'camp' ? 7 : 5), name: sp.name || null });
+    Object.assign(p, { src, fixed: true, home: sp.side, role: sp.role || 'post', cap: 0, stock: sp.stock ?? (sp.role === 'camp' ? 7 : 5), name: sp.name || null });
     F.points.push(p.id);
     if (sp.role === 'hq' || F.hq[sp.side] < 0) F.hq[sp.side] = p.id;
   }

@@ -261,7 +261,7 @@ for (const p of PRESETS) {
 // A supply line for each army: track running in from its own map edge with two loaded wagons on it.
 // Field armies both get one; in landings only the defenders do (the attackers' stores come by sea).
 for (const p of PRESETS) {
-  if (p.mode === 'naval') continue;
+  if (p.mode === 'naval' || p.scn.fronts !== false) continue; // battles over rally points have a railway that calls at each (engine/transit.js)
   const scn = p.scn, S = scn.size;
   const clear = (x0, x1, y) => !scn.structures.some((st) => st.y >= y - 1 && st.y <= y + 1 && st.x < x1 + 3 && st.x + 8 > x0);
   const line = (side) => {

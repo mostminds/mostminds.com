@@ -413,6 +413,53 @@ export function buildAircraft(kind, sideColor, style) {
   else { const rotor = new THREE.Group(); rotor.add(slab(1.5, 0.03, 0.1, 0x333333)); rotor.position.y = 0.4; g.add(rotor); g.userData.rotor = rotor; }
   return g;
 }
+/** a hot-air balloon: a gored envelope in the side's colour over a wicker basket (origin at the basket floor) */
+export function buildBalloon(sideColor) {
+  const g = new THREE.Group(), pale = new THREE.Color(sideColor).lerp(new THREE.Color(0xf2e6c8), 0.55).getHex();
+  const env = new THREE.Group();
+  for (let i = 0; i < 12; i++) {
+    const gore = new THREE.Mesh(new THREE.SphereGeometry(1.7, 5, 12, (i / 12) * Math.PI * 2, Math.PI / 6, 0, Math.PI * 0.86), mat(i % 2 ? sideColor : pale, { roughness: 0.9, side: THREE.DoubleSide }));
+    gore.castShadow = true; env.add(gore);
+  }
+  env.scale.set(1, 1.18, 1); env.position.y = 4.1; g.add(env);
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.42, 0.7, 12, 1, true), mat(sideColor, { side: THREE.DoubleSide, roughness: 0.9 })); skirt.position.y = 2.25; g.add(skirt);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.05, 6, 24).rotateX(Math.PI / 2), mat(0x4a3a26)); band.position.y = 4.1; g.add(band);
+  for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) { const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.5, 4), mat(0x2a2620)); rope.position.set(x * 0.95, 1.2, z * 0.95); g.add(rope); }
+  g.add(slab(1.0, 0.5, 1.0, 0x8a6a3a, 0, 0.25, 0), slab(1.06, 0.07, 1.06, 0x5a4226, 0, 0.52, 0));
+  const fire = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 6), new THREE.MeshBasicMaterial({ color: 0xffa030 })); fire.position.y = 1.75; g.add(fire);
+  for (const z of [-0.56, 0.56]) g.add(slab(0.22, 0.3, 0.16, 0xb8a888, 0.2, 0.2, z)); // sandbags over the side
+  g.userData.fire = fire;
+  return g;
+}
+/** the supply train: a small tank engine and two goods wagons, in line along +x with the engine leading (origin mid-train, on the rails) */
+export function buildTrain(sideColor) {
+  const g = new THREE.Group(), iron = mat(0x2e2e34, { metalness: 0.6, roughness: 0.5 }), body = mat(new THREE.Color(sideColor).multiplyScalar(0.6).getHex(), { roughness: 0.6 });
+  const loco = new THREE.Group();
+  const add = (m, x, y, z) => { m.position.set(x, y, z); m.castShadow = true; loco.add(m); return m; };
+  add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.16, 0.8), iron), 0, 0.42, 0);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 1.5, 14).rotateZ(Math.PI / 2), body), 0.35, 0.86, 0);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.1, 14).rotateZ(Math.PI / 2), mat(0xc8a040, { metalness: 0.8, roughness: 0.35 })), 1.12, 0.86, 0);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.95, 0.84), body), -0.75, 0.98, 0);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.07, 0.96), iron), -0.75, 1.49, 0);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.5, 10), iron), 0.8, 1.42, 0);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.1, 0.12, 10), iron), 0.8, 1.72, 0);
+  add(new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), mat(0xc8a040, { metalness: 0.8, roughness: 0.35 })), 0.2, 1.26, 0);
+  for (const x of [-0.75, 0, 0.75]) for (const z of [-0.3, 0.3]) add(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.08, 14).rotateX(Math.PI / 2), iron), x, 0.28, z);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.9).translate(0, 0, 0), iron), 1.3, 0.3, 0);
+  loco.position.x = 3.6; g.add(loco);
+  for (const x of [0.2, -3.2]) { const car = buildStructure(STRUCTURES.railCar, 3, 1, null); car.position.x = x; g.add(car); }
+  g.userData.stack = new THREE.Vector3(4.4, 1.9, 0);
+  return g;
+}
+/** a wayside halt: a plank platform beside the track with a lamp and a name-board in the side's colour */
+export function buildHalt(sideColor) {
+  const g = new THREE.Group();
+  g.add(slab(3.2, 0.3, 0.9, 0x8a6a42, 0, 0.15, 0), slab(3.2, 0.06, 0.1, 0x4a3a26, 0, 0.33, -0.4));
+  g.add(slab(0.08, 1.5, 0.08, 0x3a3026, -1.2, 1.05, 0.3), slab(0.9, 0.34, 0.06, sideColor, -1.2, 1.7, 0.3));
+  g.add(slab(0.07, 1.7, 0.07, 0x2e2e34, 1.3, 1.15, 0.3), slab(0.2, 0.24, 0.2, 0xffd890, 1.3, 2.05, 0.3));
+  g.add(slab(0.55, 0.4, 0.55, 0xa07a4a, 0.4, 0.5, 0.1), slab(0.4, 0.3, 0.4, 0xa07a4a, 0.42, 0.85, 0.1));
+  return g;
+}
 export function buildCableCar(sideColor) {
   const sm = REG.CIVIC.cableCar && guarded('cableCar', () => REG.CIVIC.cableCar(sideColor));
   if (sm) return sm;
@@ -574,6 +621,19 @@ export function buildStructure(def, w, h, place = null) {
       g.add(mesh(box(ax ? n : 0.9, 0.05, ax ? 0.9 : n), tmat('stone', lift(0x6f6a60)), 0, 0.025, 0)); // ballast
       for (let i = 0; i < n * 2; i++) { const t = -n / 2 + (i + 0.5) / 2; g.add(mesh(box(ax ? 0.16 : 0.8, 0.06, ax ? 0.8 : 0.16), dark, ax ? t : 0, 0.07, ax ? 0 : t)); }
       for (const o of [-0.26, 0.26]) g.add(mesh(box(ax ? n : 0.06, 0.07, ax ? 0.06 : n), iron, ax ? 0 : o, 0.13, ax ? o : 0));
+      break;
+    }
+    case 'balloonMast': { // a timber mooring mast: four legs, a landing stage, a winch post and a wind-sock
+      const post = (x, z, hh) => g.add(mesh(box(0.14, hh, 0.14), dark, x, hh / 2, z));
+      for (const x of [-0.7, 0.7]) for (const z of [-0.7, 0.7]) post(x, z, 3.2);
+      g.add(mesh(box(1.9, 0.12, 1.9), tmat('wood', lift(0x9a7a4e)), 0, 3.2, 0));
+      for (const [x, z, l, d] of [[0, -0.92, 1.9, 0.06], [0, 0.92, 1.9, 0.06], [-0.92, 0, 0.06, 1.9]]) g.add(mesh(box(l, 0.06, d), dark, x, 3.75, z));
+      for (const y of [1.1, 2.2]) { g.add(mesh(box(1.5, 0.08, 0.08), dark, 0, y, -0.7), mesh(box(1.5, 0.08, 0.08), dark, 0, y, 0.7), mesh(box(0.08, 0.08, 1.5), dark, -0.7, y, 0), mesh(box(0.08, 0.08, 1.5), dark, 0.7, y, 0)); }
+      for (let i = 0; i < 7; i++) g.add(mesh(box(0.5, 0.05, 0.1), dark, 0.98, 0.4 + i * 0.44, 0)); // the ladder
+      g.add(mesh(box(0.1, 1.8, 0.1), dark, -0.6, 4.1, -0.6));
+      g.add(mesh(box(0.7, 0.22, 0.04), mat(place && place.side === 0 ? 0x4a7fd8 : place && place.side === 1 ? 0xd84a4a : 0xd8c8a0, { side: THREE.DoubleSide }), -0.22, 4.85, -0.6));
+      g.add(mesh(box(0.4, 0.34, 0.4), tmat('wood', lift(0xa07a4a)), 0.5, 3.43, 0.5));
+      g.userData.tall = 3.3;
       break;
     }
     case 'railCar': { // an open goods wagon loaded with stores

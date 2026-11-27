@@ -74,6 +74,7 @@ export const STRUCTURES = {
   stoneBridge: { name: 'Stone bridge',    w: 4, h: 2, stretch: true, level: 1, ladder: true, overWater: true, hp: 900, model: 'stoneBridge', color: 0x8f8a80 },
   viaduct:     { name: 'Rail viaduct',    w: 4, h: 1, stretch: true, level: 2, ladder: true, span: true, hp: 700, model: 'viaduct', color: 0x8a857c },
   cableTower:  { name: 'Cable car tower', w: 2, h: 2, blocksMove: true, blocksLos: true, losHeight: 5, hp: 600, cable: true, model: 'cableTower', color: 0x7a6248 },
+  balloonMast:   { name: 'Balloon mast',   w: 2, h: 2, blocksMove: true, hp: 500, balloon: true, model: 'balloonMast', color: 0x7a6248 },
   railCar:       { name: 'Supply wagon',   w: 3, h: 1, blocksMove: true, cover: true, hp: 400, cargo: 8, model: 'railCar', color: 0x6b4a2e },
   rail:          { name: 'Rail track',     w: 4, h: 1, stretch: true, model: 'rail', color: 0x5a5148 },
   castleWall:  { name: 'Castle wall',  w: 4, h: 1, stretch: true, level: 2, hp: 1400, model: 'castleWall', color: 0x9a958b },

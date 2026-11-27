@@ -12,6 +12,7 @@ import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsA
 import { initCommand, commandTick, specDuty, fallbackFor, onUnitDeath } from './command.js';
 import { initCtf, ctfTick, ctfDuty, ctfDeath, ctfWinner, ctfSpawnTiles } from './ctf.js';
 import { initFronts, frontsTick, frontDuty, frontsWinner, maybeDown } from './fronts.js';
+import { planTransit, initTransit, transitTick, transitDuty } from './transit.js';
 
 const INF = 32767;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -64,10 +65,13 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   b.getDef = getDef;
 
   // Structures
-  for (const s of scn.structures || []) {
+  // the railway and the balloon masts are planned first: nothing grows where they stand
+  const plan = planTransit(b, scn, SCENERY);
+  for (const s of plan ? [...(scn.structures || []), ...plan.extra] : scn.structures || []) {
     const def = STRUCTURES[s.type];
     if (!def) continue;
     const { w, h } = structureFootprint(s);
+    if (plan && SCENERY.has(s.type) && plan.taken.has(s.y * W + s.x)) continue;
     let wet = false;
     for (let y = s.y; y < s.y + h; y++) for (let x = s.x; x < s.x + w; x++) if (x < 0 || y < 0 || x >= W || y >= H || b.terrain[y * W + x] === DEEP) wet = true;
     if (wet && !def.overWater) continue; // nothing is built on open water or off the map
@@ -76,12 +80,13 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   }
   // hills and cliffs: level where anything stands (trees and boulders ride the slopes), none on sea maps
   {
-    const built = new Uint8Array(N);
+    const built = new Uint8Array(N), track = plan && plan.rails.length ? new Uint8Array(N) : null;
     for (const s of b.structures) {
       if (SCENERY.has(s.type)) continue;
+      if (track && s.type === 'rail') { for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) track[y * W + x] = 1; continue; }
       for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) if (x >= 0 && y >= 0 && x < W && y < H) built[y * W + x] = 1;
     }
-    const rel = generateRelief(b.terrain, W, scn.terrainSeed || 7, scn.relief || { hills: 0.6, cliffs: 0 }, built);
+    const rel = generateRelief(b.terrain, W, scn.terrainSeed || 7, scn.relief || { hills: 0.6, cliffs: 0 }, built, track);
     b.height = rel.height; b.cliff = rel.cliff;
     for (const s of b.structures) for (let y = s.y; y < s.y + s.h; y++) for (let x = s.x; x < s.x + s.w; x++) if (x >= 0 && y >= 0 && x < W && y < H) b.cliff[y * W + x] = 0;
   }
@@ -159,6 +164,7 @@ export function createBattle(scn, roster, seed = 1, shipDefs = {}) {
   initAirships(b, scn);
   initCommand(b, scn);
   if (scn.mode !== 'naval') initFronts(b, scn);
+  if (scn.mode !== 'naval') initTransit(b, scn, plan);
   initCtf(b, scn);
   return b;
 }
@@ -561,6 +567,7 @@ export function stepBattle(b) {
   airTick(b);
   commandTick(b);
   frontsTick(b);
+  transitTick(b);
   ctfTick(b);
   for (const sq of b.squads) if ((b.tick + sq.id) % 3 === 0) updateSquad(b, sq);
 
@@ -936,6 +943,7 @@ function unitTick(b, u) {
   const mend = ability(u, 'repair') || (u.spec === 'engineer' ? { amount: 22 } : null);
   if (mend && repairDuty(b, u, mend)) return;
   if (b.ctf && ctfDuty(b, u)) return; // capture the flag: carriers, raiders and the home guard
+  if (b.transit && transitDuty(b, u)) return; // a long way from his post, with a balloon mast at hand
   if (b.fronts && frontDuty(b, u)) return; // fixed rally points: the teams that hold and take them, the general, the stretcher-bearers
 
   const sq = b.squads[u.squad];

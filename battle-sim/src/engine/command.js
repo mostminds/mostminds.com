@@ -105,9 +105,7 @@ export function initCommand(b, scn) {
   // arrows, bolts and sling stones run out and must be drawn from a stocked point
   for (const u of b.units) if (u.def.style === 'ranged' && !u.def.fly) u.ammo = AMMO;
   // cable cars: towers that share a cable number are joined; the car carries stores to the upper end
-  const ends = new Map();
-  b.structures.forEach((st, idx) => { if (STRUCTURES[st.type].cable && st.cable !== undefined) { if (!ends.has(st.cable)) ends.set(st.cable, []); ends.get(st.cable).push(idx); } });
-  b.cmd.cables = [...ends.values()].filter((e) => e.length === 2).map(([a, c]) => ({ a, c, side: b.structures[a].side ?? 1, next: 40, live: true }));
+  b.cmd.cables = []; // (they run to a timetable now: see transit.js)
   // what there is to unload
   for (const c of b.crafts) c.supplies = 3;
   for (const s of b.ships) s.supplies = s.def.supplies ?? 6;

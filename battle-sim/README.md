@@ -286,6 +286,24 @@ a ring marking the ground that must be held). Rules are in `src/engine/fronts.js
   point if there is none; after a while there he returns to the fight at half strength. Left too long, he
   dies. Healers still heal in the field as before.
 
+### Trains, cable cars and balloons
+
+Supply runs to a timetable on three kinds of line (`src/engine/transit.js`):
+
+- **Railway.** Each army's track comes in from its own edge of the map and passes a halt at every one of
+  its rally points. The train loads at the depot on the map edge and sets stores down at each halt it calls
+  at. It will not run on to a halt whose rally point the enemy holds. A landing force has no railway.
+- **Cable car.** A generated town has a cable tower in each district, strung into one line. The car calls
+  at every tower in turn and sets a crate down at each. Knock a tower down and the car turns back there;
+  with fewer than two towers standing the cable falls.
+- **Balloons.** A mooring mast stands at each rally point (a zeppelin tower already there serves). Each
+  side's balloon flies the round of its masts, carrying stores from headquarters to the outposts and lifting
+  up to six soldiers at a time who are posted to a point far from where they stand. It passes over a mast
+  that has fallen or whose point has changed hands.
+
+The track and masts are laid when the battle is built, so they follow whatever rally points the map has.
+Set `fronts: false` or `transit: false` on a scenario to do without them.
+
 ### More country
 
 - **Map shapes.** Besides plains, river, lake, coast, harbour, island, strait and archipelago: two rivers, marsh

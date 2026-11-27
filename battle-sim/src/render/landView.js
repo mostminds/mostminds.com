@@ -1,9 +1,10 @@
 // Renders a land/amphibious battle state produced by engine/battle.js.
 import * as THREE from 'three';
-import { animateCreature, buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, buildCableCar, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
+import { animateCreature, buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, buildCableCar, buildBalloon, buildTrain, buildHalt, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
 import { bakePose } from './rigkit.js';
 import { sculptMaterial } from './sculpt.js';
 import { LIFTED } from '../engine/airship.js';
+import { RIDE } from '../engine/transit.js';
 import { loadFracture, fractureModel } from './fracture.js';
 import { makeBar, setBar } from './stage.js';
 import { STRUCTURES } from '../data/structures.js';
@@ -253,15 +254,33 @@ export class LandView {
       return { m, bar, crew, ladder, mark, side: a.side, dmg: 0, downAt: undefined, smoke: 0 };
     });
     this.falling = [];
-    // cable cars: a cable between each pair of towers and a gondola running along it
-    this.cableMarks = (b.cmd.cables || []).map((cb) => {
-      const A = b.structures[cb.a], Z = b.structures[cb.c], ma = this.structModels[cb.a], mz = this.structModels[cb.c];
-      const top = (m) => (m.userData.cableAt ? m.userData.cableAt[1] : (m.userData.tall || 4) - 0.2);
-      const pa = new THREE.Vector3(A.x + A.w / 2, ma.position.y + top(ma), A.y + A.h / 2), pz = new THREE.Vector3(Z.x + Z.w / 2, mz.position.y + top(mz), Z.y + Z.h / 2);
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pa, pz]), new THREE.LineBasicMaterial({ color: 0x2a2620 }));
-      const car = buildCableCar(SIDE_COLORS[cb.side]);
-      this.dynamic.add(line, car);
-      return { cb, pa, pz, line, car };
+    // trains, cable cars and balloons: each line's vehicle, and what it runs on
+    this.cableMarks = [];
+    this.transitMarks = ((b.transit && b.transit.lines) || []).map((L) => {
+      const col = SIDE_COLORS[L.side], tm = { L, tops: null, line: null, car: null, fell: false, smoke: 0 };
+      if (L.kind === 'rail') {
+        tm.car = buildTrain(col);
+        for (const s of L.stops) {
+          if (s.depot) continue;
+          // the halt stands beside the track, on the side the rally point is
+          const k = s.k, a = L.path[Math.max(0, k - 1)], z = L.path[k], dx = z[0] - a[0], dy = z[1] - a[1];
+          const p = s.point >= 0 ? b.cmd.points[s.point] : null, sgn = p && (dx ? p.y < s.y : p.x < s.x) ? -1 : 1;
+          const h = buildHalt(col);
+          h.position.set(s.x + 0.5 + (dx ? -dx * 1.5 : sgn * 1.1), Math.max(0, this.groundY(s.x, s.y)), s.y + 0.5 + (dx ? sgn * 1.1 : -dy * 1.5));
+          h.rotation.y = dx ? (sgn > 0 ? 0 : Math.PI) : (sgn > 0 ? -Math.PI / 2 : Math.PI / 2);
+          this.dynamic.add(h);
+        }
+      } else {
+        const top = (m) => (L.kind === 'balloon' ? (m.userData.tall || 3.3) + 0.25 : m.userData.cableAt ? m.userData.cableAt[1] : (m.userData.tall || 4) - 0.2);
+        tm.tops = L.stops.map((s) => { const m = this.structModels[s.st]; return new THREE.Vector3(s.x, m.position.y + top(m), s.y); });
+        if (L.kind === 'cable') {
+          tm.line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(tm.tops), new THREE.LineBasicMaterial({ color: 0x2a2620 }));
+          this.dynamic.add(tm.line);
+          tm.car = buildCableCar(col);
+        } else tm.car = buildBalloon(col);
+      }
+      this.dynamic.add(tm.car);
+      return tm;
     });
     this.pointMarks = new Map(); this.crateMarks = new Map(); this.siteMarks = new Map();
     // grasses, flowers, stones and the rest of what lies underfoot, thicker at higher graphics settings
@@ -552,6 +571,7 @@ export class LandView {
 
   unitPos(u, alpha, out) {
     const s = u.def.size / 2;
+    if (u.aboard >= RIDE) { const L = this.b.transit.lines[u.aboard - RIDE]; out.set(L.px + (L.x - L.px) * alpha, 4, L.py + (L.y - L.py) * alpha); return out; }
     if (u.aboard >= LIFTED) {
       const a = this.b.airships[u.aboard - LIFTED], k = Math.max(0, a.cargo.indexOf(u.id));
       this.airPos(a, alpha, out);
@@ -668,8 +688,11 @@ export class LandView {
         st.ring(v.clone().setY(0.05), e.r, 0x9a6aff, 0.8);
         for (let k = 0; k < 7; k++) st.puff(v.clone().add(new THREE.Vector3((Math.random() - 0.5) * e.r, Math.random() * 2, (Math.random() - 0.5) * e.r)), [0x9a6aff, 0x6aff9a, 0xffb040][k % 3], 0.8, 1.4);
         msgs.push({ side: 0, text: "An alchemist's laboratory goes up" });
-      } else if (e.type === 'cable') {
-        if (b.tick % 3 === 0) msgs.push({ side: b.cmd.cables.find((c) => c.a === e.a)?.side ?? 1, text: 'The cable car brings stores to the upper town' });
+      } else if (e.type === 'transit') {
+        if (e.kind === 'balloon' && e.men) msgs.push({ side: e.side, text: `A balloon ${e.stop && !e.stores ? 'sets down' : 'takes up'} ${e.men} at the mast` });
+        else if (e.stores && (this.transitSaid || 0) + 40 < b.tick) { this.transitSaid = b.tick; msgs.push({ side: e.side, text: e.kind === 'rail' ? 'The supply train unloads at the halt' : e.kind === 'cable' ? 'The cable car sets stores down in the district' : 'A balloon brings stores to the outpost' }); }
+      } else if (e.type === 'transitDown') {
+        msgs.push({ side: e.side, text: e.kind === 'cable' ? 'The cable falls: the car goes with it' : 'The balloon has no mast left to fly to' });
       } else if (e.type === 'duel') {
         // a matched exchange: both fighters play the same blow, facing one another
         const dur = 0.62;
@@ -1010,10 +1033,37 @@ export class LandView {
       if (dead >= 0.5) this.layBody(u, m);
     });
     this.updateAir(alpha, t, dt, speed);
-    for (const cm of this.cableMarks || []) {
-      // the car shuttles while both towers stand; when one falls the cable drops and the car with it
-      if (cm.cb.live) { const ph = ((t * speed * 0.09 + cm.cb.a * 0.3) % 2); const k = ph < 1 ? ph : 2 - ph; cm.car.position.lerpVectors(cm.pa, cm.pz, k * k * (3 - 2 * k)); cm.car.position.y -= Math.sin(k * Math.PI) * 0.35; cm.car.rotation.y = Math.atan2(cm.pa.x - cm.pz.x, cm.pa.z - cm.pz.z) + Math.PI / 2; }
-      else if (cm.line.visible) { cm.line.visible = false; this.tumbling.push({ c: { g: cm.car, k: 3 }, v: new THREE.Vector3(0.3, 0, 0.2), w: new THREE.Vector3(1, 0.5, 2), wait: 0, rest: 0.4 }); }
+    for (const tm of this.transitMarks || []) {
+      const L = tm.L, x = L.px + (L.x - L.px) * alpha, z = L.py + (L.y - L.py) * alpha, car = tm.car;
+      if (!L.live) {
+        // the cable drops and the car with it; a balloon with nowhere to go settles where it is
+        if (!tm.fell) { tm.fell = true; if (tm.line) tm.line.visible = false; if (L.kind === 'cable') this.tumbling.push({ c: { g: car, k: 3 }, v: new THREE.Vector3(0.3, 0, 0.2), w: new THREE.Vector3(1, 0.5, 2), wait: 0, rest: 0.4 }); }
+        if (L.kind === 'balloon') car.position.y = Math.max(this.groundY(Math.round(L.x), Math.round(L.y)), car.position.y - dt * 1.5);
+        continue;
+      }
+      const moving = L.x !== L.px || L.y !== L.py;
+      if (L.kind === 'rail') {
+        car.position.set(x + 0.5, Math.max(0, this.groundY(Math.round(x), Math.round(z))) + 0.08, z + 0.5);
+        if (moving) {
+          // the engine leads; it swings round the bends over a few frames
+          const want = Math.atan2(-(L.y - L.py), L.x - L.px);
+          let d = want - car.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+          car.rotation.y += d * Math.min(1, dt * 6);
+          tm.smoke -= dt;
+          if (tm.smoke <= 0) { tm.smoke = 0.22; const sp = car.userData.stack.clone().applyMatrix4(car.matrixWorld); this.stage.puff(sp, 0xd8d4cc, 0.35, 1.3); }
+        }
+      } else {
+        const pt = L.path[L.k], pp = L.path[Math.max(0, Math.min(L.path.length - 1, L.k - (moving ? L.dir : 0)))];
+        // height along the leg: a cable sags, a balloon climbs away from the mast and comes down on the next
+        const at = (q) => { const a = tm.tops[q[2]], c = tm.tops[q[2] + 1], f = q[3]; return a.y + (c.y - a.y) * f + (L.kind === 'cable' ? -Math.sin(f * Math.PI) * 0.35 : Math.sin(f * Math.PI) ** 0.6 * 7); };
+        const y = at(pp) + (at(pt) - at(pp)) * alpha;
+        if (L.kind === 'cable') { car.position.set(x, y, z); if (moving) car.rotation.y = Math.atan2(L.px - L.x, L.py - L.y) + Math.PI / 2; }
+        else {
+          car.position.set(x + Math.sin(t * 0.7 + L.id) * 0.12, y + Math.sin(t * 1.1 + L.id * 2) * 0.1, z);
+          car.rotation.y += dt * 0.08; car.rotation.z = Math.sin(t * 0.6 + L.id) * 0.03;
+          if (car.userData.fire) car.userData.fire.scale.setScalar(moving ? 0.8 + Math.sin(t * 11) * 0.3 : 0.4);
+        }
+      }
     }
     // masonry in the air
     if (this.tumbling.length) {
