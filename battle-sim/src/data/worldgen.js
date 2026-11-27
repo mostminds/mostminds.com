@@ -406,6 +406,11 @@ function civic(p, R, o) {
 // ---------- armies ----------
 // Stronger units cost more than their level alone suggests, so price rises faster than level.
 const priceOf = (id) => Math.pow(combatLevel(UNITS[id]), 1.45) * (UNITS[id].fly ? 1.15 : 1);
+/** An army of `points` for a faction, for balance trials: { unit, count } groups. */
+export function musterFor(factionId, points, seed = 1, cost = null) {
+  const F = FACTIONS[factionId];
+  return muster(F.army, points / (cost ?? F.cost ?? 1), rng32(seed * 2654435761));
+}
 function muster(weights, points, rng) {
   const groups = [];
   let total = 0;
@@ -592,8 +597,9 @@ export function generateScenario(opts = {}) {
 
   // armies
   const scale = (S / site.size) ** 1.3;
-  const garrison = muster(D.army, site.points * scale, r);
-  const host = muster({ ...A.army, ...A.assault }, site.points * scale * site.edge, r);
+  // `cost` corrects a faction whose troops fight above or below their price (found by tools-side trials)
+  const garrison = muster(D.army, (site.points * scale) / (D.cost || 1), r);
+  const host = muster({ ...A.army, ...A.assault }, (site.points * scale * site.edge) / (A.cost || 1), r);
   const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
   const sides = [
     { name: `${A.adj} ${sea ? 'landing' : 'host'}`, posture: 'attack', groups: host, placed: [] },
