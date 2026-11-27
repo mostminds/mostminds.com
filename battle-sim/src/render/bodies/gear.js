@@ -55,7 +55,18 @@ function tone(hex, dh = 0, ds = 0, dl = 0) {
   _c.setHSL(((_hsl.h + dh) % 1 + 1) % 1, clamp(_hsl.s + ds), clamp(_hsl.l + dl), THREE.SRGBColorSpace);
   return _c.getHex();
 }
+/** a second colour that sets off `hex`: cream-gold beside deep colours, a deep red beside yellows, a dark shade beside pale ones */
+function contrast(hex) {
+  _c.set(hex).getHSL(_hsl, THREE.SRGBColorSpace);
+  const { h, s, l } = _hsl;
+  if (l > 0.62) return tone(hex, 0, 0.12, -0.36);
+  if (s < 0.14) return l < 0.3 ? 0xb9b2a2 : 0x7a2620;
+  if (h > 0.08 && h < 0.2) return 0x8a2620;
+  return 0xe2c65a;
+}
 function mix(a, b, t) { return _c.set(a).lerp(_c2.set(b), t).getHex(); }
+const MUZZLE = 1.42;
+let asked = null;   // the descriptor headCover() was last asked about (humanoid.js asks just before it builds the body)
 const GOLD = 0xd9a93e, BRASS = 0xb98a3a, LEATHER = 0x5a3a22, DARK_LEATHER = 0x3a2618, LINEN = 0xd8ccb0, BONE = 0xe2d8ba, RUST = 0x7a4a2a;
 
 // ---------- materials: the same call works on sculpt prims and hard pieces ----------
@@ -253,6 +264,20 @@ function kit(ctx) {
   /** recolour the hidden rod that stands in for a thin limb on the far level, so it shows cloth, not skin */
   G.core = (name, color) => { const n = ctx.nodes[name]; if (!n) return; for (const h of n.hard) if (h.geo && h.geo.type === 'CylinderGeometry' && h.geo.parameters.radialSegments === 6 && h.maxLod === 99) h.color(color); };
   G.cores = (base, color) => { G.core(base + 'L', color); G.core(base + 'R', color); };
+  // second colour, ornament colour, options shared by the wardrobe outfits
+  G.c2 = o.cloth2 ?? contrast(G.cloth); G.trim = o.trim ?? GOLD; G.bare = !!o.bare; G.variant = o.variant;
+  G.Lk = (0.08 + 0.98 * (P.headLen / 1.12)) / 1.06;                    // how tall the skull is next to a human's: hats are squashed to fit
+  G.helmAsked = !!o.helm && !(asked && !asked.helm && Object.keys(o).every((key) => key === 'helm' || o[key] === asked[key]));   // false when the helm flag only came from headCover()
+  /** how far the face reaches forward at mouth height, in head radii (about 1.1 on a man; a muzzle reaches much further) */
+  let reach = null;
+  G.faceReach = () => {
+    if (reach != null) return reach;
+    reach = 1;
+    try { const f = G.field('head'), R = P.headR; for (const y of [-0.25, -0.5]) { const q = trace(f, [0, R * y, R * 4], [0, 0, -1], R * 5); if (q) reach = Math.max(reach, q[2] / R); } } catch (err) { reach = 1; }
+    return reach;
+  };
+  /** a closed helm would not fit over this head: outfits fall back to an open bowl */
+  G.muzzled = () => G.faceReach() > MUZZLE;
   return G;
 }
 
@@ -399,9 +424,10 @@ function cape(G, o) {
   };
   const base = o.color, trim = o.trim, dark = tone(base, 0, 0.02, -0.08), light = tone(base, 0, 0, 0.04);
   const us = [0, 0.04, 0.047], vs = [];
-  for (let i = 1; i < 16; i++) us.push(0.047 + (0.906 * i) / 16);
+  const nu = o.nu ?? 16, nv = o.nv ?? 13;
+  for (let i = 1; i < nu; i++) us.push(0.047 + (0.906 * i) / nu);
   us.push(0.953, 0.96, 1);
-  for (let i = 0; i <= 13; i++) vs.push((i / 13) * 0.925);
+  for (let i = 0; i <= nv; i++) vs.push((i / nv) * 0.925);
   vs.push(0.932, 1);
   const cu = us.length, cv = vs.length;
   const shade = (x, y, z, nx, ny, nz, i) => {
@@ -409,11 +435,12 @@ function cape(G, o) {
     if (trim != null && (ci < 2 || ci >= cu - 2 || ri >= cv - 2)) return trim;
     if (o.band != null && (ri === cv - 4 || ri === cv - 5)) return o.band;
     const f = foldAt(1 - 2 * us[ci]);
+    if (o.pattern) { const pc = o.pattern(us[ci], vs[ri], f); if (pc != null) return pc; }
     return f > 0.35 ? dark : f < -0.45 ? light : null;
   };
   G.add('torso', [], [
     cloth(H.geo(surfaceGeo(us, vs, fn)), base).shade(shade).near(),
-    cloth(H.geo(surfaceGeo(4, 3, fn)), base).far(),
+    cloth(H.geo(surfaceGeo(4, 3, fn)), o.farColor ?? base).far(),
   ]);
 }
 
@@ -719,7 +746,7 @@ function robe(G, c, o = {}) {
   G.add('torso', [torsoLayer(G, m, { raise: 0.003 }), ...torsoShells(G, (x) => m(x).bump(0.003, 17, 'fur'), { grow: 0.01 })]);
   const r = P.rFore, F = P.fore;
   G.lr('arm', sleeve(G, m, { grow: 1.05, bump: [0.003, 22, 'fur'] }));
-  const fore = [m(S.sphere(r * 1.25)).blend(0.01), m(S.cone(r * (o.bell ?? 2.0), r * 1.25, F * 0.92, 0.012).at(0, -F * 0.47, 0)).blend(0.02).bump(0.003, 24, 'fur')];
+  const fore = o.fore === false ? [] : [m(S.sphere(r * 1.25)).blend(0.01), m(S.cone(r * (o.bell ?? 2.0), r * 1.25, F * 0.92, 0.012).at(0, -F * 0.47, 0)).blend(0.02).bump(0.003, 24, 'fur')];
   if (o.cuff != null) fore.push(fin(G.band(-F * 0.9, 0.018, r * 4), o.cuff, o.cuffRough ?? 0.5, o.cuffMetal ?? 0.7).paint(0.003, 0.002));
   G.lr('fore', fore);
   G.cores('arm', c); G.cores('fore', c); G.cores('leg', under); G.cores('shin', under);
@@ -729,8 +756,8 @@ function robe(G, c, o = {}) {
   if (!G.riding) {
     // cloth round the legs, so a striding leg that pushes through the bell reads as the robe swinging
     G.lr('leg', [cloth(S.capsule([0, 0, 0], [0, -P.thigh, 0], P.rThigh * 1.3, P.rCalf * 1.75), under).blend(0.02)]);
-    G.lr('shin', [
-      cloth(S.box(0.3, P.footH + 0.06, 0.6, 0.004).at(0, -P.shin - P.footH + (P.footH + 0.06) / 2 - 0.012, 0.05), tone(under, 0, 0, -0.05)).paint(0.004, 0.002),   // slippers
+    if (!o.barefoot) G.lr('shin', [
+      cloth(S.box(0.3, P.footH + 0.06, 0.6, 0.004).at(0, -P.shin - P.footH + (P.footH + 0.06) / 2 - 0.012, 0.05), o.shoe ?? tone(under, 0, 0, -0.05)).paint(0.004, 0.002),   // slippers
       cloth(S.cone(P.rCalf * 2.1, P.rCalf * 1.7, P.shin * 0.86, 0.01).at(0, -P.shin * 0.43, 0), under).blend(0.02),
     ]);
   }
@@ -817,6 +844,8 @@ function knife(G, y) {
 //  Outfits
 // =====================================================================================
 const OUTFITS = {};
+/** outfits that bring headgear covering the scalp (true, or a test of the descriptor): see headCover() */
+const HEADGEAR = {};
 
 // ---- Kingdom: militia. Quilted jack, hose, a cowl pushed back off the head ----
 OUTFITS.peasant = (G) => {
@@ -1753,6 +1782,8 @@ OUTFITS.feathers = (G) => {
   G.add('shinL', [gold(G.band(-P.shin * 0.55, 0.014, P.rCalf * 3), g).paint(0.003, 0.004)]);
 };
 
+//@@WARDROBE@@
+
 OUTFITS.none = () => {};
 
 // ---- anything else: dress by the descriptor's flags ----
@@ -1776,6 +1807,8 @@ function fallback(G) {
 
 /** headgear an outfit brings although the descriptor has no helm / hood flag: the body leaves scalp hair off under it */
 export function headCover(def, o) {
+  asked = o;
+  if (HEADGEAR[o.outfit]) { const hg = HEADGEAR[o.outfit]; return !o.bare && (typeof hg === 'function' ? !!hg(o) : true); }
   return o.outfit === 'lancer' || o.outfit === 'skyKnight';
 }
 

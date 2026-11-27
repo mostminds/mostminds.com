@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import { S, H as HP, rgb, noise3, fbm3, buildPartGeometry, sculptMaterial } from '../sculpt.js';
 import { getDetail, setLod } from '../rigkit.js';
+import { fleetKind, buildFleet, FLEET_DEVICES } from './fleets.js';
 
 const DEG = Math.PI / 180, TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -602,10 +603,10 @@ const TIERS = [
   { lite: true, far: true, eco: 2.6, step: 2.6, q: 0.45, fig: 0.3 },
 ];
 /** everything the builders need, derived from the class numbers; the stock ids add their own character */
-function styleFor(def, tier = 0) {
+function styleFor(def, tier = 0, over = null) {
   const T = TIERS[tier];
-  const L = def.len, B = def.beam, per = Math.max(0, def.cannons?.perSide | 0), masts = Math.max(1, def.sails | 0 || 1);
-  const kind = KINDS.includes(def.id) ? def.id
+  const L = def.len, B = def.beam, per = Math.max(0, def.cannons?.perSide | 0), masts = over ? Math.max(0, def.sails | 0) : Math.max(1, def.sails | 0 || 1);
+  const kind = over ? over.base : KINDS.includes(def.id) ? def.id
     : per === 0 && L < 2.9 ? 'raft' : L < 4 ? 'skiff' : L < 4.8 ? 'sloop' : L < 5.7 ? 'cutter' : L < 7 ? 'brigantine' : L < 8.1 ? 'frigate' : per >= 9 || L >= 9.3 ? 'manowar' : 'galleon';
   const hullC = hex(def.color ?? 0x6b4a2e), sailC = hex(def.sail ?? 0xe8e2d0);
   const lum = hullC[0] * 0.3 + hullC[1] * 0.6 + hullC[2] * 0.1;
@@ -661,6 +662,7 @@ function styleFor(def, tier = 0) {
       walesC = [1, 2, 7]; portsC = [3, 5]; spread = [0.19, 0.8]; st.chequer = true;
       C.accent = OCHRE; C.upper = hex(0x1c2c50); C.top = hex(0x121216); C.bottom = hex(0x4f3a2c); C.inner = hex(0x8c2e22); C.wale = hex(0x101014);
   }
+  if (over && over.pre) { const v = { portRows, walesC, portsC, spread }; over.pre(st, o, C, v); ({ portRows, walesC, portsC, spread } = v); }   // fleets.js: a design of its own on this base
   st.stern = {
     sloop: { tiers: [[0.06, 0.36, 2]], trim: C.accent, frame: WHITE, pilaster: C.upper, lanterns: 0, quarterPieces: [0.0, 0.5] },
     cutter: { trim: WHITE, quarterPieces: [0.0, 0.42] },
@@ -676,9 +678,11 @@ function styleFor(def, tier = 0) {
     galleon: { type: 'ram', len: 1.0, tip: 0.1, e: 1.25, rails: 2, railY: 0.5, drop: 0.3, bow: -0.03, platform: true, railCol: C.upper, size: 1.25, railS: 0.9 },
     manowar: { type: 'drake', len: 0.72, tip: 0.36, rails: 2, railY: 0.62, drop: 0.3, platform: true, size: 1.15, trail: 0.6 },
   }[kind];
+  if (over && over.mid) over.mid(st, o, C);
   o.step *= T.step; o.coarse = T.far;
   st.chW = { brigantine: 0.1, frigate: 0.13, galleon: 0.16, manowar: 0.16 }[kind] || 0;
   st.rig = rigPlan(st);
+  if (over && over.rig) over.rig(st.rig, st);
   st.transomCol = (y) => (y > o.fb + o.sheerA + 0.03 ? C.upper : C.hull);
   o.topF = o.segs[o.segs.length - 1].lift + o.segs[o.segs.length - 1].bul;
   o.topA = o.segs[0].lift + o.segs[0].bul;
@@ -717,6 +721,7 @@ function styleFor(def, tier = 0) {
     return { col: () => (kind === 'sloop' ? C.upper : j < portRows[0] ? C.hull : C.top), proud: 0, vary: 0.06 };
   };
   if (kind === 'skiff') { st.rowC = (j) => ({ col: () => (j === st.nC - 1 ? C.accent : C.hull), proud: 0 }); }
+  if (over && over.post) over.post(st, o, C);
   return st;
 }
 
@@ -1676,6 +1681,7 @@ function drawFlags(fp, flags, sideHex) {
   };
   for (const f of flags) {
     if (f.kind === 'device') { sailDevice(fp, f, side, pale); continue; }
+    if (f.kind === 'panel') { fp.shade(null).ink(side, f.ro ?? 0.9, f.me ?? 0, 0.08).grid(f.nu, f.nv, (i, j, out) => { const q = f.P(i / f.nu, j / f.nv); out[0] = q[0]; out[1] = q[1]; out[2] = q[2]; }, (i, j) => (f.col ? f.col(i / f.nu, j / f.nv, side, pale, dk) : side), !!f.flip); continue; }   // fleets.js: any patch of cloth or paint in the side colour
     const len = f.len, hg = f.hgt, ph = f.seed * 1.7, pen = f.kind === 'pennant', D = DEVICE[f.kind] || DEVICE.flag;
     const waves = pen ? 1.3 + len * 0.9 : 1.6;
     const P = (u, v) => {
@@ -1710,6 +1716,7 @@ const DEVICES = {
   cross: () => [{ pts: densify(crossPts(0.44)) }],
   sun: () => [{ pts: starPts(12, 1.08, 0.7) }, { pts: ringPts(22, 0.46), pale: true }],
   star: () => [{ pts: densify(starPts(8, 1.12, 0.5)) }, { pts: ringPts(14, 0.22), pale: true }],
+  ...FLEET_DEVICES({ ringPts, starPts, crossPts, densify }),
 };
 /** f: { shape, on(x, y, puff) -> point on the cloth, N: the way the sail bellies, r } */
 function sailDevice(fp, f, side, pale) {
@@ -1721,7 +1728,8 @@ function sailDevice(fp, f, side, pale) {
       // one skin just in front of the cloth and one just behind, so the device shows from both sides
       const off = (0.011 + li * 0.004) * e;
       fp.shade(null).ink(col, 0.92, 0, 0.1);
-      fp.grid(n, m, (i, j, out) => { const q = L.pts[i % n], k = (j / m) * f.r, s = f.on(q[0] * k, q[1] * k, e > 0 ? 1 : 0); out[0] = s[0] + f.N[0] * off; out[1] = s[1]; out[2] = s[2] + f.N[2] * off; },
+      const cx = L.at ? L.at[0] * f.r : 0, cy = L.at ? L.at[1] * f.r : 0;
+      fp.grid(n, m, (i, j, out) => { const q = L.pts[i % n], k = (j / m) * f.r, s = f.on(cx + q[0] * k, cy + q[1] * k, e > 0 ? 1 : 0); out[0] = s[0] + f.N[0] * off; out[1] = s[1]; out[2] = s[2] + f.N[2] * off; },
         (i, j) => { const q = L.pts[i % n]; return mul(col, (e > 0 ? 1 : 0.88) * (0.9 + 0.16 * noise3(q[0] * 2.2 * j, q[1] * 2.2 * j, 4.4 + li))); }, e > 0 ? frontFlip : !frontFlip);
     }
   });
@@ -1742,7 +1750,8 @@ function rigPlan(st) {
     galleon: [{ s: 0.85, hf: 0.86, rake: -1, type: 'square', parts: 2, sq: 2 }, { s: 0.54, hf: 1, rake: 1, type: 'square', parts: 2, sq: 2 }, { s: 0.27, hf: 0.74, rake: 3, type: 'lateen', parts: 1 }],
     manowar: [sq3(0.84, 0.92, 1), sq3(0.5, 1, 2), { s: 0.22, hf: 0.82, rake: 3, type: 'mizzen', parts: 3, sq: 2 }],
   }[k];
-  if (stock.length === n) R.masts = stock;
+  if (n === 0) R.masts = [];
+  else if (stock.length === n) R.masts = stock;
   else if (n === 1) R.masts = small ? [stock[stock.length - 1]] : [sq3(0.56, 1, 2)];
   else {
     R.masts = [];
@@ -1754,6 +1763,7 @@ function rigPlan(st) {
   R.sprit = { sloop: { len: 0.27 * L, steeve: 11 }, cutter: { len: 0.3 * L, steeve: 7 }, brigantine: { len: 0.2 * L, steeve: 17, jib: 0.14 * L }, frigate: { len: 0.19 * L, steeve: 21, jib: 0.15 * L, striker: true },
     galleon: { len: 0.27 * L, steeve: 29, spritsail: true, inboard: 0.12 * L }, manowar: { len: 0.19 * L, steeve: 23, jib: 0.15 * L, striker: true } }[k];
   R.jibs = { sloop: 2, cutter: 2, brigantine: 2, frigate: 3, galleon: 0, manowar: 3 }[k] || 0;
+  if (n === 0) { R.jibs = 0; R.sprit = null; }
   R.tops = { frigate: 'flat', manowar: 'railed', galleon: 'basket', brigantine: 'flat' }[k];
   return R;
 }
@@ -1927,7 +1937,7 @@ function rig(p, H, st) {
         const below = k === 0 ? null : plan[k - 1];
         const drop = k === 0 ? y - ry - (yb + clear) : y - below[0] - ry - 0.07;
         const wHead = len * 0.9, wFoot = k === 0 ? len * 0.92 : below[1] * 0.9, wears = !!st.device && (mi === devMast || (mi === 0 && Ms.length > 2 && Ms[devMast].type === 'square')) && k === (plan.length > 1 ? 1 : 0);   // a three-master shows it on the fore topsail too, to ships ahead
-        const sl = squareSail(p, { c: [c[0], y - ry - 0.012, 0], beta, wHead, wFoot, drop, belly: 0.17 * drop + 0.045 * wHead, col: sailC, seed: mi * 10 + k, reefs: k === 0 ? [0.2] : k === 1 ? [0.14, 0.28] : [], stripe: C.sailStripe, roach: k === 0 ? 0.1 : 0.06, fine: wears });
+        const sl = (st.sqSail || squareSail)(p, { mi, k, c: [c[0], y - ry - 0.012, 0], beta, wHead, wFoot, drop, belly: 0.17 * drop + 0.045 * wHead, col: sailC, seed: mi * 10 + k, reefs: k === 0 ? [0.2] : k === 1 ? [0.14, 0.28] : [], stripe: C.sailStripe, roach: k === 0 ? 0.1 : 0.06, fine: wears });
         if (wears) device(sl, 0.34, 0.53);
         // robands: the lashings that bend the head of the sail to its yard
         p.ink(mul(HEMP, 0.8), 0.95);
@@ -1950,7 +1960,7 @@ function rig(p, H, st) {
       p.shade(grainX(0.12)).ink(yardC, 0.72).bar(g0, bEnd, r0 * 0.5, r0 * 0.38, 8, 3); p.bar(th, gEnd, r0 * 0.44, r0 * 0.28, 8, 3);
       p.shade(null).ink(IRON, 0.5, 0.8);
       if (!far) for (const q of [g0, th]) p.T(q[0] + 0.02, q[1], 0).cyl(M.rad(q[1]) + 0.012, M.rad(q[1]) + 0.012, 0.045, 10, 0);
-      const gs = gaffSail(p, { tack: add3(g0, [-0.02, 0.05, 0]), clew: add3(g0, db, Lb * 0.95), throat: add3(th, [-0.02, -0.04, 0]), peak: add3(th, dg, Lg * 0.95), belly: 0.11 * Lb + 0.05, col: sailC, seed: 40 + mi, reefs: [0.16, 0.3], uc: 0.4, vc: 0.56, fine: wearsG });
+      const gs = (st.gaffSail || gaffSail)(p, { tack: add3(g0, [-0.02, 0.05, 0]), clew: add3(g0, db, Lb * 0.95), throat: add3(th, [-0.02, -0.04, 0]), peak: add3(th, dg, Lg * 0.95), belly: 0.11 * Lb + 0.05, col: sailC, seed: 40 + mi, reefs: [0.16, 0.3], uc: 0.4, vc: 0.56, fine: wearsG });
       if (wearsG) device(gs, 0.27);
       // mast hoops up the luff
       p.ink(mul(sparC, 0.7), 0.8);
@@ -1984,7 +1994,7 @@ function rig(p, H, st) {
       const yc = [c[0], yH2, -(M.rad(yH2) + 0.03)], a = add3(yc, dY, -lenY * 0.46), b = add3(yc, dY, lenY * 0.54);
       p.shade(grainX(0.12)).ink(yardC, 0.72).bar(yc, a, r0 * 0.5, r0 * 0.34, 8, 1); p.bar(yc, b, r0 * 0.5, r0 * 0.26, 8, 1);
       const clew = [Math.max(H.x(0, yb) + 0.25, M.xb - lenY * 0.62), yb + 0.72, -0.34];
-      triSail(p, { tack: add3(a, [0, -0.02, 0]), head: add3(b, [0, -0.03, 0]), clew, belly: 0.1 * lenY, col: sailC, seed: 65 });
+      (st.triSail || triSail)(p, { tack: add3(a, [0, -0.02, 0]), head: add3(b, [0, -0.03, 0]), clew, belly: 0.1 * lenY, col: sailC, seed: 65 });
       rope(p, clew, [H.x(0, yb) + 0.1, H.railY(0) - 0.05, -0.1], 0.007, HEMP, 0.02, 3); rope(p, a, [a[0] + 0.1, yb + 0.1, 0.25], 0.007, HEMP, 0, 3);
       rope(p, yc, M.at(top - 0.04), 0.007, HEMP, 0, 3); rope(p, b, M.at(top - 0.02), 0.005, HEMP, 0, 3);
       flags.push({ kind: 'vane', at: add3(b, [0, 0.03, 0]), mast: 9 });
@@ -2316,24 +2326,33 @@ function stage(p, name, fn) {
   if (T) T[name] = (T[name] || 0) + p.tris - t0;
   return r;
 }
-function buildSailingShip(def, st, p) {
-  const H = makeHull(st.hull);
+function buildSailingShip(def, st, p, sk = null) {   // sk (fleets.js only): stages to leave out
+  const H = st.H = makeHull(st.hull);
   bothSides(p, (side) => {
     stage(p, 'shell', () => shell(p, H, st, side));
     stage(p, 'bulwarks', () => H.segs.forEach((g) => { bulwarkInside(p, H, st, g); if (g.bul > 0.03) railCap(p, H, st, g); }));
   });
-  stage(p, 'decks', () => H.segs.forEach((g, gi) => deckPlanks(p, H, st, g, gi)));
+  if (!(sk && sk.decks)) stage(p, 'decks', () => H.segs.forEach((g, gi) => deckPlanks(p, H, st, g, gi)));
   stage(p, 'bulkheads', () => { for (let k = 0; k < H.segs.length - 1; k++) bulkhead(p, H, st, k); });
-  stage(p, 'stern', () => { transom(p, H, st); sternWorks(p, H, st); });
-  stage(p, 'backbone', () => backbone(p, H, st));
-  stage(p, 'head', () => headWorks(p, H, st));
-  bothSides(p, () => { stage(p, 'guns', () => gunPorts(p, H, st)); stage(p, 'sideWorks', () => sideWorks(p, H, st)); });
-  stage(p, 'fitOut', () => fitOut(p, H, st));
+  stage(p, 'stern', () => { if (!(sk && sk.transom)) transom(p, H, st); if (!(sk && sk.stern)) sternWorks(p, H, st); });
+  if (!(sk && sk.backbone)) stage(p, 'backbone', () => backbone(p, H, st));
+  if (!(sk && sk.head)) stage(p, 'head', () => headWorks(p, H, st));
+  bothSides(p, () => { stage(p, 'guns', () => gunPorts(p, H, st)); if (!(sk && sk.sideWorks)) stage(p, 'sideWorks', () => sideWorks(p, H, st)); });
+  if (!(sk && sk.fitOut)) stage(p, 'fitOut', () => fitOut(p, H, st));
   // where the muzzles of the starboard broadside are, for whoever wants to put the smoke there
   st.muzzles = st.ports.map((port) => { const { lo, hi } = portGeom(H, st, port), s = port.s, yc = (lo(s) + hi(s)) / 2, n = H.nh(s, yc), o = H.pt(s, yc); return [o[0] + n[0] * st.gunOut, yc - (hi(s) - lo(s)) * 0.06, o[2] + n[1] * st.gunOut]; });
-  if (st.kind === 'skiff') for (let i = 0; i < st.per; i++) { const ss = st.per === 1 ? 0.44 : lerp(0.26, 0.76, i / (st.per - 1)), q = H.pt(ss, H.railY(ss) + st.capH, -H.o.thick / 2); st.muzzles.push([q[0], q[1] + 0.19, q[2] + 0.2]); }
+  if (st.kind === 'skiff' && !sk) for (let i = 0; i < st.per; i++) { const ss = st.per === 1 ? 0.44 : lerp(0.26, 0.76, i / (st.per - 1)), q = H.pt(ss, H.railY(ss) + st.capH, -H.o.thick / 2); st.muzzles.push([q[0], q[1] + 0.19, q[2] + 0.2]); }
+  if (sk && sk.rig) return [];
   return stage(p, 'rig', () => rig(p, H, st));
 }
+
+// everything fleets.js builds its own designs from (it cannot import this module back: it is handed the kit instead)
+const KIT = { THREE, Pen, X, frame, aim, clamp, lerp, smooth, mul, mix, add3, sub3, lerp3, cross, norm3, dist3, hash1, hash2, vary, hex, DEG, TAU, noise3, fbm3, S, HP,
+  PAL: { TAR, HEMP, IRON, GILT, BRASS, DECK, SPAR, OAK, PITCH, GLASS, WHITE, OCHRE, RED, LAMP },
+  grainX, grainY, mottle, makeHull, bothSides, MIRROR, strake, sweep, sweepHard, sweepCap, shell, bulwarkInside, railCap, deckPlanks, transom, backbone, balustrade, ladder, door, windowLight, bulkhead,
+  gunBarrel, gunCarriage, portGeom, gunPorts, lantern, scroll, boss, sternWorks, headWorks, sculpted, hatch, capstan, shipWheel, barrel, crate, coil, bitts, skylight, deckhouse, anchor, swivelGun,
+  squareSail, gaffSail, triSail, clothTone, rope, block, yard, fightingTop, logTimber, lashing, styleFor, buildSailingShip, stage, rig, fitOut, sideWorks, WIND,
+  get far() { return far; }, get lite() { return lite; }, get eco() { return eco; } };
 
 const built = new Map(), flagGeo = new Map();
 function buildMain(def, tier) {
@@ -2344,10 +2363,19 @@ function buildMain(def, tier) {
   const geo = p.toGeometry();
   return { geo, flags, st, muzzles: st.muzzles || [], top: geo.boundingBox.max.y };
 }
+/** one of the designs of fleets.js (def.kind): the same tiers, the same two geometries */
+function buildFleetMain(def, tier) {
+  const T = TIERS[tier], p = new Pen();
+  eco = T.eco; lite = T.lite; far = T.far; p.q = T.q; ropeK = clamp(0.45 + def.len * 0.075, 0.6, 1.15);
+  let r;
+  try { r = buildFleet(KIT, def, tier, p); } finally { eco = 1; lite = false; far = false; }
+  const geo = p.toGeometry();
+  return { geo, flags: r.flags || [], muzzles: r.muzzles || [], top: r.top ?? geo.boundingBox.max.y };
+}
 /** one tier of a class, built on first use and shared by every ship of that class */
 function tierOf(def, key, tier) {
   const k = `${key}|${tier}`;
-  if (!built.has(k)) built.set(k, buildMain(def, tier));
+  if (!built.has(k)) built.set(k, fleetKind(def) ? buildFleetMain(def, tier) : buildMain(def, tier));
   return built.get(k);
 }
 function flagsOf(key, flags, sideHex) {
@@ -2369,7 +2397,8 @@ const LOD_PLAN = { low: [1, 1, 1, 2, 2, 2], ultra: [0, 0, 0, 1, 2, 2] }, LOD_DEF
  * hangs on the ship is lifted clear of the mastheads the first time she is drawn).
  */
 export function ship(def, sideColorHex = 0x3d7bd9) {
-  const key = [def.id, def.len, def.beam, def.sails, def.cannons?.perSide, def.color, def.sail].join('|');
+  const fk = fleetKind(def);
+  const key = (fk ? [fk, def.id, def.len, def.beam, def.sails, def.cannons?.perSide, def.color, def.sail, def.sail2, def.trim, def.emblem, def.ghost, def.oars] : [def.id, def.len, def.beam, def.sails, def.cannons?.perSide, def.color, def.sail]).join('|');
   const plan = LOD_PLAN[getDetail()] || LOD_DEFAULT, base = tierOf(def, key, plan[0]);
   const g = new THREE.Group(), mat = sculptMaterial();
   const hull = new THREE.Mesh(base.geo, mat);
