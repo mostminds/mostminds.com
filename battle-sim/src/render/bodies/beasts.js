@@ -1,7 +1,8 @@
 // Beasts and mounts: the dire wolf, the giant spider, the vampire bat and the three mounted units.
 //
-//   bodies.quadruped(def, o)  dire wolf                                   kind 'beast.quad'    attack 'bite'
-//   bodies.rider(def, o)      lancer (horse), wolf rider, griffon rider   kind 'beast.rider'   attack / hold from the rider's weapon
+//   bodies.quadruped(def, o)  dire wolf, or o.kind (below)                kind 'beast.quad'    attack 'bite'
+//   bodies.rider(def, o)      lancer (horse), wolf rider, griffon rider,  kind 'beast.rider'   attack / hold from the rider's weapon
+//                             or another o.mountType (below)
 //   bodies.spider(def, o)     giant spider                                kind 'beast.spider'  attack 'bite'
 //   bodies.bat(def, o)        vampire bat                                 kind 'beast.bat'     attack 'bite'
 //
@@ -21,6 +22,13 @@
 //   abdomen, palps   spider: the abdomen and the two pedipalps. Its eight `legs` / `shins` are ordered
 //               L1 R1 R2 L2 L3 R3 R4 L4, so alternate entries form the two gait groups; each leg reaches out along
 //               its own local X, so lifting is a rotation about local Z and sweeping one about local Y.
+// The other animals live in beastkit.js (a parametric four-legged animal, handed this file's helpers once):
+//   quadruped kinds  horse bear lion tiger leopard boar stag hound fox bull rat rhino mammoth elephant (no / unknown kind = wolf);
+//                    options armor, stone, collar, glow, tails, howdah, sabre, trim, rot (rot also on the wolf)
+//   rider mounts     pegasus hippogriff halfgriffon longma bear boar stag lion raptor bull rhino clockHorse, and on a horse
+//                    barding / bones / rot. Mounts grow with the rider (an ogre gets a bigger beast than a man).
+// More rig keys: trunk (elephant), tails (a fox's fan of tails; `tail` stays one chain of at most four).
+// More plain values: strike ('bite' | 'pounce' | 'gore' | 'rear' | 'stomp': how it attacks), girth (how high it lies when dead).
 // Plain values on the description that the animators read from the rig: gait ('wolf' | 'horse' | 'griffon'),
 // mount, hold, feathered (griffon wings), hingeX/Y/Z (the axis the bat's hand folds about).
 // Fliers (griffon, bat) are built with their wings spread; the animators fold them on the ground and blend
@@ -30,6 +38,7 @@ import { S, H, rgb, noise3, distanceField, buildPartGeometry } from '../sculpt.j
 import { DETAIL, getDetail } from '../rigkit.js';
 import { proportions } from './anatomy.js';
 import { humanoid, poseCarried } from './humanoid.js';
+import { makeKit } from './beastkit.js';
 
 const DEG = Math.PI / 180;
 const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
@@ -285,7 +294,8 @@ function wolfPalette(base, war) {
  */
 function buildWolf(def, base, opt = {}) {
   const war = !!opt.war;
-  const C = wolfPalette(base, war);
+  const C = wolfPalette(opt.rot ? mix(tone(base, 0, -0.2, -0.03), 0x58604a, 0.32) : base, war);
+  if (opt.rot) { C.eye = { iris: 0xdff2d8, rim: 0x8aa890, white: 0x30382e, glow: 0.8 }; C.belly = mix(C.belly, 0x6a7058, 0.5); C.pale = mix(C.pale, 0x7a8068, 0.4); C.tongue = 0x6a5a6a; }
   const rnd = rng(hashStr((def?.id || 'wolf') + (war ? ':war' : '')));
   const K = opt.keys || { body: 'torso', neck: 'neck', head: 'head', jaw: 'jaw' };
   const D = opt.detail ?? 1;
@@ -329,6 +339,7 @@ function buildWolf(def, base, opt = {}) {
     p.push(lay(0.085, 0.11, 0.09).at(0, 0.41, 0.35).color(C.pale).pbr(0.93).tint(0.16, 26).paint(0.045));
     p.push(...S.mirrorX([lay(0.03, 0.09, 0.09).rot(20, 0, 0).at(0.14, 0.47, -0.27).color(C.flank).pbr(0.93).tint(0.16, 26).paint(0.04)]));
     const df = distanceField(p);
+    if (opt.rot) KIT.rotify(rng(hashStr('rot')), p, torso.hard, df, { top: 0.66, bot: 0.32, z0: -0.44, z1: 0.4 }, 0.9);
     // the mane: three ragged rows of clumps over the withers, thinning to a ridge along the spine
     for (let i = 0; i < 12; i++) {
       const f = i / 11, z = 0.3 - i * 0.058 + (rnd() - 0.5) * 0.01;
@@ -629,7 +640,9 @@ const WOLF_FEET = [-0.14, 0.05, -0.172, 0.056];
 const feet = (f, s) => ({ footFy: f[0] * s, footFz: f[1] * s, footBy: f[2] * s, footBz: f[3] * s, footS: s });
 
 function quadruped(def, o = {}) {
-  const w = buildWolf(def, o.fur ?? o.mount ?? 0x5b5b5b, { detail: 0.83 });
+  const k = KIT.quad(def, o);
+  if (k) return k;
+  const w = buildWolf(def, o.fur ?? o.mount ?? 0x5b5b5b, { detail: 0.83, rot: !!o.rot });
   return { kind: 'beast.quad', attack: 'bite', gait: 'wolf', ...feet(WOLF_FEET, 1.12), nodes: finish(w.nodes, 1.12) };
 }
 
@@ -813,19 +826,21 @@ function gridLines(n, edges = [], sym = false) {
   return [...out].sort((a, b) => a - b);
 }
 
-function buildHorse(def, o) {
+function buildHorse(def, o, opt = {}) {
   const C = horsePalette(tone(o.mount ?? 0x6b4a2e, 0.005, 0.1, 0.02));
+  if (opt.palette) opt.palette(C);
   const rnd = rng(hashStr((def?.id || 'horse') + ':horse'));
-  const coatC = (col) => (q) => q.color(col).tint(0.16, 11).bump(0.0022, 22, 'fur').pbr(0.76);   // a short coat: matte, with a faint grain along each form
+  const coatC = opt.skin || ((col) => (q) => q.color(col).tint(0.16, 11).bump(0.0022, 22, 'fur').pbr(0.76));   // a short coat: matte, with a faint grain along each form
   const coat = coatC(C.coat), dark = coatC(C.point);
-  const hair = (q, col = C.mane) => q.color(col).tint(0.25, 30).bump(0.006, 28, 'fur').pbr(0.72);
+  const hair = opt.hair || ((q, col = C.mane) => q.color(col).tint(0.25, 30).bump(0.006, 28, 'fur').pbr(0.72));
+  const HK_ = opt.keys || { body: 'body', neck: 'mneck', head: 'mhead' };
   const nodes = [];
   nodes.push(node('root', null, [0, 0, 0]));
   const BO = [0, 0.68, 0];
   const NB = [0, 0.78, 0.33], PJ = [0, 1.19, 0.515], headPitch = 58;
 
   // ---------------- torso ----------------
-  const torso = node('torso', 'root', BO, { rig: 'body', detail: 0.66, bake: { rough: 0.74 } }); nodes.push(torso);
+  const torso = node('torso', 'root', BO, { rig: HK_.body, detail: 0.66, bake: opt.skin ? undefined : { rough: 0.74 } }); nodes.push(torso);
   {
     const p = torso.prims;
     p.push(coat(lay(0.18, 0.192, 0.3).at(0, 0.662, 0.0)));                                         // barrel
@@ -858,7 +873,7 @@ function buildHorse(def, o) {
   }
 
   // ---------------- neck: arched, with a mane falling to both sides ----------------
-  const neck = node('neck', 'torso', NB, { rig: 'mneck', detail: 0.74, bake: { rough: 0.74 } }); nodes.push(neck);
+  const neck = node('neck', 'torso', NB, { rig: HK_.neck, detail: 0.74, bake: opt.skin ? undefined : { rough: 0.74 } }); nodes.push(neck);
   const NC = [[0, 0.77, 0.36], [0, 0.915, 0.452], [0, 1.055, 0.502], [0, 1.165, 0.512]];        // centres up the neck
   const crest = curve([[0, 0.87, 0.2], [0, 0.995, 0.33], [0, 1.13, 0.412], [0, 1.228, 0.462], [0, 1.275, 0.51]], 20);
   {
@@ -882,8 +897,8 @@ function buildHorse(def, o) {
   }
 
   // ---------------- head ----------------
-  const hd = horseHead(C, rnd, o);
-  const head = node('head', 'neck', [0, 0, 0], { rig: 'mhead', pos: sub3(PJ, NB), rot: [headPitch, 0, 0], detail: 1.2 });
+  const hd = horseHead(C, rnd, o, opt);
+  const head = node('head', 'neck', [0, 0, 0], { rig: HK_.head, pos: sub3(PJ, NB), rot: [headPitch, 0, 0], detail: 1.2 });
   head.prims = hd.p; head.hard = hd.hard; nodes.push(head);
 
   // ---------------- legs ----------------
@@ -977,11 +992,11 @@ function buildHorse(def, o) {
 }
 
 /** horse head in its own frame: the poll at the origin, the face running along +Z, the jaw on the -Y side */
-function horseHead(C, rnd, o) {
+function horseHead(C, rnd, o, opt = {}) {
   const p = [], hard = [];
-  const coatC = (col) => (q) => q.color(col).tint(0.12, 18).bump(0.0016, 30, 'fur').pbr(0.72);
+  const coatC = opt.skin || ((col) => (q) => q.color(col).tint(0.12, 18).bump(0.0016, 30, 'fur').pbr(0.72));
   const coat = coatC(C.coat), mz = coatC(C.muzzle);
-  const hair = (q) => q.color(C.mane).tint(0.25, 30).bump(0.005, 50, 'fur').pbr(0.7);
+  const hair = opt.hair || ((q) => q.color(C.mane).tint(0.25, 30).bump(0.005, 50, 'fur').pbr(0.7));
   const cloth = o.cloth ?? 0x2f5aa8, steel = o.armor ?? 0x9aa3ad, gold = BRASS;
   p.push(coat(lay(0.064, 0.062, 0.078).at(0, 0, 0.035)));                                                    // cranium
   p.push(coat(S.sphere(0.058).at(0, -0.01, -0.01).blend(0.03)));                                              // hides the neck joint
@@ -1007,7 +1022,7 @@ function horseHead(C, rnd, o) {
     S.sphere(er * 0.94).at(ex, ey, ez).color(C.eye).pbr(0.15).blend(0),
   ]));
   hard.push(...H.mirrorX([
-    eye(er, { iris: 0x4a2a14, rim: 0x1a0d06, white: 0x1a0f0a, pupilSize: 1.6, irisSize: 1.5 }).rot(0, 78, 0).at(ex, ey, ez).lod(1),
+    eye(er, { iris: 0x4a2a14, rim: 0x1a0d06, white: 0x1a0f0a, pupilSize: 1.6, irisSize: 1.5, ...(opt.eye || {}) }).rot(0, 78, 0).at(ex, ey, ez).lod(1),
     H.sphere(0.0035, 8).at(ex + 0.0135, ey + 0.006, ez + 0.006).color(0xffffff).glow(0.6).pbr(0.1).lod(0),                 // a catch-light
   ]));
   // ears
@@ -1019,6 +1034,7 @@ function horseHead(C, rnd, o) {
   ].map((q) => q.rot(-62, 14, -16).at(0.04, 0.045, -0.012));
   p.push(...ear, ...mirrorAll(ear));
 
+  if (!opt.bare) {
   // ---- chamfron: a steel plate down the face, flanged round the eyes, with a boss and a short spike ----
   const st = (q) => q.color(steel).pbr(0.34, 1).tint(0.08, 30);
   p.push(st(bone([0, 0.03, 0.0], [0, 0.012, 0.29], 0.052, 0.034)).paint(0.003, 0.0075));
@@ -1038,11 +1054,13 @@ function horseHead(C, rnd, o) {
     H.tube([[0.052, -0.05, 0.283], [0.066, -0.075, 0.17], [0.068, -0.1, 0.06], [0.064, -0.085, -0.02]], 0.005, 10, 5).color(cloth).pbr(0.8).near(),            // rein, back to the throat
   ]));
   hard.push(H.cyl(0.0045, 0.0045, 0.1, 8).rot(0, 0, 90).at(0, -0.05, 0.285).color(IRON).pbr(0.4, 1).lod(1));                                            // the bit
+  }
   // ---- forelock and a plume in the lancer's colour ----
   for (let i = 0; i < 4; i++) {
     const x = (i - 1.5) * 0.02, L = 0.07 + rnd() * 0.025;
     p.push(hair(bone([x * 0.6, 0.07, -0.02], [x * 1.6, 0.082, 0.01 + L], 0.017, 0.004).blend(0.01)));
   }
+  if (opt.bare) return { p, hard };
   const plumeCols = [tone(cloth, 0, 0, -0.14), cloth, tone(cloth, 0, -0.1, 0.2), tone(cloth, 0, 0, -0.2)];
   for (let i = 0; i < 7; i++) {
     const a = (i - 3) * 0.2, L = 0.2 - Math.abs(i - 3) * 0.022 + rnd() * 0.015;
@@ -1053,7 +1071,7 @@ function horseHead(C, rnd, o) {
 }
 
 /** saddle, saddle cloth, breast strap, crupper, stirrups and the body's share of the reins */
-function horseTack(hs, R, seatA, o) {
+function horseTack(hs, R, seatA, o, sT = 1) {
   const cloth = o.cloth ?? 0x2f5aa8, gold = 0xd8b23a, clothDark = tone(cloth, 0, 0, -0.1);
   const torso = hs.nodes.find((n) => n.name === 'torso'), neck = hs.nodes.find((n) => n.name === 'neck');
   const df = distanceField(torso.prims);
@@ -1087,7 +1105,7 @@ function horseTack(hs, R, seatA, o) {
   h.push(...rivets([[0.07, 0.932, 0.15], [0, 0.965, 0.15], [-0.07, 0.932, 0.15]], 5, 0.006), ...rivets([[0.09, 0.94, -0.152], [0, 0.975, -0.155], [-0.09, 0.94, -0.152]], 6, 0.006));
   // ---- stirrups ----
   for (const side of [1, -1]) {
-    const ft = riderToMount(R, seatA, 1, R.foot(side)), top = [side * 0.176, 0.83, 0.05], eye0 = [ft[0], ft[1] + 0.085, ft[2] - 0.005];
+    const ft = riderToMount(R, seatA, sT, R.foot(side)), top = [side * 0.176, 0.83, 0.05], eye0 = [ft[0], ft[1] + 0.085, ft[2] - 0.005];
     p.push(...strap([top, lerp3(top, eye0, 0.5), eye0], 0.008, LEATHER, { n: 4 }));
     h.push(ringAt([ft[0], ft[1] + 0.036, ft[2]], [0, 0.1, 1], 0.045, 0.0075, IRON).near());
     h.push(H.box(0.085, 0.01, 0.045, 0.003).at(ft[0], ft[1] - 0.006, ft[2]).color(IRON).pbr(0.45, 1).near());
@@ -1226,7 +1244,7 @@ function griffonWing(C, rnd) {
   return { S: Sh, W, arm, tip };
 }
 
-function buildGriffon(def, o) {
+function buildGriffon(def, o, opt = {}) {
   const C = griffonPalette(o.mount ?? 0xc8a050);
   const rnd = rng(hashStr((def?.id || 'griffon') + ':griffon'));
   const furC = (col, amp = 0.0085, f = 18) => (q) => q.color(col).tint(0.26, 14).bump(amp, f, 'fur').pbr(0.86);   // a lion's short coat: a grain you can see, combed along each form
@@ -1371,7 +1389,8 @@ function buildGriffon(def, o) {
       bl.paw.hard.push(spike([t[0] + dx * 0.02, 0.03, t[2] + dz * 0.024], [dx * 0.8, -0.5, dz], 0.026, 0.009, C.talon, [0, -1, 0], 0.45).lod(1));
     }
   }
-  for (const [nm, part, side, js, det] of [['FL', fl, 1, [SH, EL, WR], 1], ['FR', fl, -1, [SH, EL, WR], 1], ['BL', bl, 1, [HP, ST, HK], 1], ['BR', bl, -1, [HP, ST, HK], 1]]) {
+  const FQ = opt.fore ? opt.fore(C) : { part: fl, js: [SH, EL, WR] }, BQ = opt.hind ? opt.hind(C) : { part: bl, js: [HP, ST, HK] };
+  for (const [nm, part, side, js, det] of [['FL', FQ.part, 1, FQ.js, 1], ['FR', FQ.part, -1, FQ.js, 1], ['BL', BQ.part, 1, BQ.js, 1], ['BR', BQ.part, -1, BQ.js, 1]]) {
     const cp = (list) => (side > 0 ? flat(list).map((q) => q.clone()) : mirrorAll(list));
     const m = (v) => (side > 0 ? v : mirX(v));
     const up = node(`leg${nm}`, 'torso', m(js[0]), { rig: 'legs', detail: 0.72 * det, minRes: 16 });
@@ -1384,7 +1403,7 @@ function buildGriffon(def, o) {
   }
 
   // ---------------- wings ----------------
-  for (const side of [1, -1]) {
+  for (const side of opt.wingless ? [] : [1, -1]) {
     const wg = griffonWing(C, rng(hashStr('griffon-wing')));
     const nm = side > 0 ? 'L' : 'R';
     const cp = (list) => (side > 0 ? flat(list) : mirrorAll(list));
@@ -1397,7 +1416,8 @@ function buildGriffon(def, o) {
   // ---------------- tail: a lion's, with a dark tuft ----------------
   const TL = [[0, 0.68, -0.475], [0, 0.6, -0.6], [0, 0.5, -0.72], [0, 0.465, -0.865], [0, 0.54, -0.975]];
   const tr = [0.043, 0.035, 0.029, 0.025, 0.023];
-  for (let i = 0; i < 4; i++) {
+  if (opt.tail) opt.tail(nodes, C);
+  for (let i = 0; i < (opt.tail ? 0 : 4); i++) {
     const n = node(`tail${i}`, i === 0 ? 'torso' : `tail${i - 1}`, TL[i], { rig: 'tail', detail: 0.9, minRes: 24 });
     nodes.push(n);
     const a = TL[i], b = TL[i + 1];
@@ -1410,7 +1430,7 @@ function buildGriffon(def, o) {
       for (let j = 0; j < 7; j++) { const ang = (j / 7) * Math.PI * 2, out = [Math.cos(ang), Math.sin(ang) * t[2], -Math.sin(ang) * t[1]]; n.hard.push(lock(add3(b, add3(mul3(t, 0.055), mul3(out, 0.022))), norm3(add3(t, mul3(out, 0.22))), 0.1 + rnd() * 0.03, 0.026, 0.018, C.tuft, mix(C.tuft, C.chest, 0.5), mul3(out, -1), 0.14).lod(1)); }
     }
   }
-  return { nodes, C, rnd, BO, NB, HJ, headPitch };
+  return { nodes, C, rnd, BO, NB, HJ, headPitch, FQ, BQ };
 }
 
 /** eagle head and lower beak in the head's frame: skull joint at the origin, beak along +Z */
@@ -1515,7 +1535,7 @@ function griffonRider(def, o) {
 function rider(def, o = {}) {
   if (o.mountType === 'wolf') return wolfRider(def, o);
   if (o.mountType === 'griffon') return griffonRider(def, o);
-  return lancer(def, o);
+  return KIT.mount(def, o) || lancer(def, o);
 }
 
 // =====================================================================================
@@ -2088,6 +2108,37 @@ const GAITS = {
     beat: 7.6, tail: [0.55, 0.3, 0.1, -0.25], clear: 0.2, clearAtk: 0.14,
   },
 };
+{
+  const W = GAITS.wolf, Hs = GAITS.horse, Gr = GAITS.griffon, PI = Math.PI;
+  const hoofFly = { front: [-0.75, 1.6, 0.5], hind: [0.75, -0.35, 0.6], grab: [-0.45, -1.2, -0.3] };
+  Object.assign(GAITS, {
+    cat: { ...W, rate: 9.6, bob: 0.028, pitch: 0.06, spine: 0.05, front: { ...W.front, A: 0.56 }, hind: { ...W.hind, A: 0.58 } },
+    hound: { ...W, rate: 11.5, pitch: 0.085, spine: 0.04 },
+    fox: { ...W, rate: 12, bob: 0.03, pitch: 0.06, front: { ...W.front, A: 0.55 }, hind: { ...W.hind, A: 0.56 } },
+    rat: { ...W, rate: 16, off: [0, PI, PI, 0], bob: 0.012, pitch: 0.02, spine: 0.06, front: { ...W.front, A: 0.42 }, hind: { ...W.hind, A: 0.42 }, tail: [0.12, 0.1, 0.08, 0.06] },
+    bear: {
+      rate: 7.2, off: [0, 0.9, PI + 0.3, PI + 1.2], bob: 0.04, pitch: 0.05, spine: 0.065, clear: 0.2, clearAtk: 0.14,
+      front: { A: 0.42, lift: [-0.15, -0.8, 0.9], ext: [0, 0.1, 0.3], reach: [0, 0.08, -0.4] }, hind: { A: 0.42, lift: [-0.18, 0.7, -0.65], ext: [0.05, -0.22, 0.45], reach: [0, 0.15, -0.1] }, tail: [0.1, 0, 0, 0],
+    },
+    deer: { ...Hs, rate: 10.8, bob: 0.04, pitch: 0.055, tail: [0.6, 0, 0, 0] },
+    bull: { ...Hs, rate: 8.4, bob: 0.03, pitch: 0.04, spine: 0.02, front: { ...Hs.front, A: 0.4 }, hind: { ...Hs.hind, A: 0.4 }, clear: 0.12, clearAtk: 0.1 },
+    boar: { ...Hs, rate: 12, off: [0, PI, PI, 0], bob: 0.02, pitch: 0.03, front: { ...Hs.front, A: 0.44 }, hind: { ...Hs.hind, A: 0.44 }, clear: 0.12, clearAtk: 0.1 },
+    rhino: {
+      rate: 7, off: [0, PI, PI, 0], bob: 0.016, pitch: 0.016, spine: 0.02, clear: 0.08, clearAtk: 0.06,
+      front: { A: 0.34, lift: [-0.1, 0.6, 0.2], ext: [0, 0, 0.12], reach: [0, 0, -0.1] }, hind: { A: 0.34, lift: [-0.06, 0.55, 0.12], ext: [0, 0, 0.12], reach: [0, 0, -0.08] }, tail: [0.3, 0.1, 0, 0],
+    },
+    heavy: {
+      rate: 5, off: [0, PI, PI * 1.5, PI * 0.5], bob: 0.012, pitch: 0.012, spine: 0.025,
+      front: { A: 0.3, lift: [-0.08, 0.5, 0.15], ext: [0, 0, 0.1], reach: [0, 0, -0.1] }, hind: { A: 0.3, lift: [-0.05, 0.45, 0.1], ext: [0, 0, 0.1], reach: [0, 0, -0.08] }, tail: [0.2, 0.1, 0.05, 0],
+    },
+    raptor: {
+      rate: 9.5, off: [0, PI], bob: 0.045, pitch: 0.03, spine: 0.035, clear: 0.2, clearAtk: 0.16, tail: [0.1, 0.06, 0.03, 0.02],
+      front: { A: 0.6, lift: [-0.22, 0.85, -0.8], ext: [0.05, -0.28, 0.55], reach: [0, 0.2, -0.1] }, hind: { A: 0.6, lift: [-0.22, 0.85, -0.8], ext: [0.05, -0.28, 0.55], reach: [0, 0.2, -0.1] },
+    },
+    pegasus: { ...Hs, beat: 7.2, fly: hoofFly },
+    hippogriff: { ...Gr, hind: Hs.hind, girth: 1.5, tail: undefined, fly: { front: [0.8, -1.95, 1.1], hind: hoofFly.hind, grab: [-1.5, 1.6, -1.35] } },
+  });
+}
 const _cu = { t: 0, moving: false, atk: -1, dead: 0, phase: 0, flying: false };
 
 function poseLegs(rig, c, base, G, k, g) {
@@ -2166,7 +2217,8 @@ function beastMotion(rig, inner, c, base, mounted) {
     // legs gathered up: talons under the breast, hind legs trailing
     for (let i = 0; i < L.length; i++) {
       const d = Math.sin(t * 2.1 + i * 1.3 + ph) * 0.05;
-      if (i < 2) { R(L[i], 0.8 + d); R(Sn[i], -1.95 - d); R(Pw[i], 1.1); } else { R(L[i], 0.95 + d); R(Sn[i], 0.3 + d); R(Pw[i], 0.75); }
+      if (G.fly) { const q = i < 2 ? G.fly.front : G.fly.hind; R(L[i], q[0] + d); R(Sn[i], q[1] - d); R(Pw[i], q[2]); }
+      else if (i < 2) { R(L[i], 0.8 + d); R(Sn[i], -1.95 - d); R(Pw[i], 1.1); } else { R(L[i], 0.95 + d); R(Sn[i], 0.3 + d); R(Pw[i], 0.75); }
     }
     nx = 0.34 + idle * 0.03; hx = -0.26; hy = idle2 * 0.1; jw = 0.03; tailLift = 1.1;
     py = Math.cos(beat) * 0.045; pitch = -0.07;
@@ -2185,24 +2237,51 @@ function beastMotion(rig, inner, c, base, mounted) {
     if (fly) {
       // stooping: the talons swing forward to strike
       const grab = keys(a, [[0, 0], [0.35, 0.3], [0.55, 1], [0.75, 0.8], [1, 0]]);
-      for (let i = 0; i < 2 && i < L.length; i++) { R(L[i], 0.8 - grab * 1.5); R(Sn[i], -1.95 + grab * 1.6); R(Pw[i], 1.1 - grab * 1.35); }
+      const F0 = G.fly ? G.fly.front : [0.8, -1.95, 1.1], Fg = G.fly ? G.fly.grab : [-1.5, 1.6, -1.35];
+      for (let i = 0; i < 2 && i < L.length; i++) { R(L[i], F0[0] + grab * Fg[0]); R(Sn[i], F0[1] + grab * Fg[1]); R(Pw[i], F0[2] + grab * Fg[2]); }
       pitch += -0.12 * grab;
     } else {
       py = keys(a, [[0, 0], [0.3, -0.035], [0.46, 0.07], [0.6, 0.01], [1, 0]]) * m;
       pitch = keys(a, [[0, 0], [0.3, 0.07], [0.45, -0.16], [0.6, 0.04], [1, 0]]) * m * m;
       const crouch = Math.max(0, -spring) * m, leap = Math.max(0, spring) * m;
+      const fs = !rig.strike || G.front.lift[1] < 0 ? 1 : -1, bs = !rig.strike || G.hind.lift[1] > 0 ? 1 : -1;          // which way each knee folds (1 = as the wolf's)
       for (let i = 0; i < L.length; i++) {
-        if (i < 2) { R(L[i], crouch * 0.25 - leap * 0.62); R(Sn[i], -crouch * 0.5 + leap * 0.1); R(Pw[i], crouch * 0.3 + leap * 0.5); }
-        else { R(L[i], -crouch * 0.3 + leap * 0.5); R(Sn[i], crouch * 0.55 - leap * 0.25); R(Pw[i], -crouch * 0.35 + leap * 0.5); }
+        if (i < 2) { R(L[i], crouch * 0.25 - leap * 0.62); R(Sn[i], (-crouch * 0.5 + leap * 0.1) * fs); R(Pw[i], crouch * 0.3 + leap * 0.5); }
+        else { R(L[i], -crouch * 0.3 + leap * 0.5); R(Sn[i], (crouch * 0.55 - leap * 0.25) * bs); R(Pw[i], -crouch * 0.35 + leap * 0.5); }
+      }
+      const sk = rig.strike;
+      if (sk === 'pounce') {
+        // cats: gather, then a long flat spring with the forepaws thrown out to rake
+        pz = (spring > 0 ? spring * 0.4 : spring * 0.1) * m; pitch *= 1.5;
+        for (let i = 0; i < 2 && i < L.length; i++) { R(L[i], crouch * 0.3 - leap * (0.95 + i * 0.25)); R(Sn[i], -crouch * 0.6 - leap * 0.3); R(Pw[i], crouch * 0.3 + leap * 1.0); }
+      } else if (sk === 'gore') {
+        // horned beasts: the head goes down, the charge carries through, and the horns are thrown up
+        nx += keys(a, [[0, 0], [0.3, 0.5], [0.5, -0.5], [0.7, -0.3], [1, 0]]) * m; hx += keys(a, [[0, 0], [0.3, 0.35], [0.5, -0.5], [0.72, -0.2], [1, 0]]) * m; jw = 0.05;
+        pz = keys(a, [[0, 0], [0.3, -0.08], [0.5, 0.34], [0.75, 0.2], [1, 0]]) * m; pitch = keys(a, [[0, 0], [0.3, 0.07], [0.5, -0.1], [0.7, 0], [1, 0]]) * m;
+      } else if ((sk === 'rear' || sk === 'stomp') && !mounted) {
+        // rearing: up on the hind legs, forefeet flailing, then down with all its weight
+        const up = keys(a, [[0, 0], [0.34, 1], [0.5, 1], [0.64, 0], [1, 0]]), big = sk === 'stomp' ? 0.3 : rig.gait === 'bear' ? 1.25 : 1;
+        pitch = -0.55 * up * big; pz = keys(a, [[0, 0], [0.5, 0.03], [0.64, 0.2], [1, 0]]);
+        nx += (sk === 'stomp' ? -0.3 : 0.25 * big) * up; hx += 0.3 * up * (sk === 'stomp' ? 0 : big); jw = Math.max(jw, 0.7 * up);
+        for (let i = 0; i < L.length; i++) {
+          if (i < 2) { const fl = Math.sin(a * 24 + i * 2.6) * 0.22 * up; R(L[i], (-0.55 + fl) * up * (sk === 'stomp' ? 0.9 : 1)); R(Sn[i], -0.95 * up * fs * (sk === 'stomp' ? 0.6 : 1) - fl * fs); R(Pw[i], 0.5 * up); }
+          else { R(L[i], 0.5 * up * big); R(Sn[i], 0.12 * up * bs); R(Pw[i], -0.1 * up); }
+        }
       }
     }
   }
+  // an elephant's trunk and a fox spirit's fan of tails
+  if (rig.trunk) {
+    const up = a >= 0 ? keys(a, [[0, 0], [0.34, 1], [0.5, 1], [0.64, -0.25], [1, 0]]) : 0;
+    rig.trunk.forEach((seg, i) => R(seg, Math.sin(t * 1.1 + ph - i * 0.5) * 0.05 + k * Math.sin(g - i * 0.6) * 0.07 - up * (0.42 + i * 0.07) + (fly ? 0 : 0), Math.sin(t * 0.8 + ph * 1.3 - i * 0.45) * 0.07 * (1 - Math.abs(up))));
+  }
+  if (rig.tails) rig.tails.forEach((seg, i) => { const ch = Math.floor(i / 3), j = i % 3; R(seg, Math.sin(t * 1.6 + ph + ch * 0.9 - j * 0.7) * 0.09 + (a >= 0 ? -0.12 * Math.sin(Math.PI * a) : 0), Math.sin(t * 1.25 + ph + ch * 1.7 - j * 0.6) * 0.1); });
   // a ridden beast carries its head a little low and to the left when the lance comes down, out of the weapon's way
   const clear = mounted ? (c.moving || fly || a >= 0 ? (G.clear || 0.17) : 0) + (a >= 0 ? Math.sin(Math.PI * Math.min(1, a * 1.25)) * (G.clearAtk || 0.12) : 0) : 0;
   R(neck, nx + clear * 0.5, hy * 0.4 + clear); R(head, hx, hy * 0.6 - clear * 0.5, hy * 0.15); R(jaw, jw);
   R(body, 0, k * Math.sin(g) * G.spine, 0);
   const tl = G.tail || [0.5, 0.25, 0.12, 0.05];
-  T.forEach((seg, i) => R(seg, tailLift * tl[i] + Math.sin(t * 1.3 + ph - i * 0.6) * 0.04 + k * Math.sin(g - i * 0.8) * 0.1, Math.sin(t * (k || fly ? 5 : 2.2) + ph - i * 0.7) * (0.1 + 0.05 * i) * (fly ? 0.5 : 1)));
+  T.forEach((seg, i) => R(seg, tailLift * (tl[i] || 0) + Math.sin(t * 1.3 + ph - i * 0.6) * 0.04 + k * Math.sin(g - i * 0.8) * 0.1, Math.sin(t * (k || fly ? 5 : 2.2) + ph - i * 0.7) * (0.1 + 0.05 * i) * (fly ? 0.5 : 1)));
 
   const dead = base.die(inner, c, true);
   const deadF = dead ? Math.min(1, c.dead * 2) : 0;
@@ -2211,7 +2290,7 @@ function beastMotion(rig, inner, c, base, mounted) {
   if (dead) {
     const f = deadF;
     inner.rotation.x = 0;
-    inner.position.y += f * 0.115 * s * (G.girth || 1);                         // lies on its flank instead of half in the ground
+    inner.position.y += f * 0.115 * s * (rig.girth || G.girth || 1);                         // lies on its flank instead of half in the ground
     R(neck, 0.25 * f, 0, -0.3 * f); R(head, 0.2 * f, 0, -0.35 * f); R(jaw, 0.55 * f);
     for (let i = 0; i < L.length; i++) {
       const up = i % 2 === 1;                                                   // the legs of the upper side sag across the body
@@ -2284,5 +2363,9 @@ function riderAnim(rig, inner, c, base) {
 }
 
 // =====================================================================================
+const KIT = makeKit({
+  node, finish, bone, lay, tone, mix, spike, lock, eye, feather, surfHit, gradAt, strap, rivets, ringAt, drape, gridLines, rng, hashStr, mirrorAll, orient, flat, feet,
+  makeRider, seatRider, riderToMount, buildHorse, horseTack, buildGriffon, griffonWing, griffonTack, proportions, curve, MOUNT_KEYS,
+});
 export const bodies = { quadruped, rider, spider, bat };
 export const animators = { 'beast.quad': quadAnim, 'beast.rider': riderAnim, 'beast.spider': spiderAnim, 'beast.bat': batAnim };

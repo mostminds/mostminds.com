@@ -1,6 +1,10 @@
-// Faction buildings: six looks for every existing building, and eighteen buildings of the factions' own.
+// Faction buildings: thirty-three looks for every existing building, and eighteen buildings of the factions' own.
 //
 //   restyle(model, style, key)              -> the building re-dressed for a faction ('kingdom' returns it unchanged)
+//       the six monster styles    goblin undead infernal beasts elemental dragons
+//       the twenty-seven realms   graal aurelia aethel kaelneth verdant grom xibalba velikaya tianlong ironbound screaming
+//                                 cloven fimbul ashur greenhide skar crimson khemet drowned gorge westmark principalities
+//                                 sunkings caliphate shogunate mistisles thousandgods
 //   structures[def.model](def, w, h, place) -> Object3D centred on its footprint, resting on y = 0
 //       goblin     scrapHut warDrum brewery        undead   crypt boneSpire charnel
 //       infernal   forge obelisk pitGate           beasts   yurt totem bonePit
@@ -974,9 +978,20 @@ function classify(r, g, b, rough, metal, glow) {
 const sw = (...hex) => hex.map((h) => rgb(h));
 const tri1 = (v) => Math.abs(v - Math.floor(v) - 0.5) * 2;   // triangle wave 0..1: folds a surface into flat facets
 /**
- * The six looks. pal[class] = [swatches, patch frequency, contrast, floor, ceiling]; trim = stone that stands lighter
+ * The looks. pal[class] = [swatches, patch frequency, contrast, floor, ceiling]; trim = stone that stands lighter
  * than the rest (copings, quoins, bands); fx(...) touches up a vertex after the remap; disp(...) moves it; drop(...)
  * tears triangles out of a roof.
+ *
+ * The realm styles (added to this table further down) may also carry:
+ *   pal.roof    the palette of everything found to be roof tile, whatever colour it was
+ *   joint       [r, g, b, strength]: mortar colour for the joints of stone (brick reads as brick by its pale joints)
+ *   roof        { main, cap }: how the roofs are re-covered. main = the roofs of halls and houses, cap = the cones on
+ *               turrets; each is { kind: 'keep' | 'gables' | 'drape' | 'hip' | 'flat' | 'dome' | 'step' | 'hull' |
+ *               'shikhara' | 'cap', ... } (see ROOFS); left out or 'keep', the old roof stays and is re-coloured
+ *   by          { humble | grand | plain | <model id>: overrides }: the style as it applies to one kind of building
+ *               (pal and roof merge key by key): cottages thatched while keeps stay slated, and so on
+ * and their fx and disp find more on the context k: k.roof (the vertex is roof tile), k.rel (its brightness within its
+ * material: low in joints), k.nx / k.nz (its normal); disp also k.cls, k.vnx, k.vny, k.vnz.
  */
 const STYLES = {
   goblin: {
@@ -1123,7 +1138,8 @@ function partsOf(model) {
 }
 /**
  * restyle(model, style, key) -> the building in a faction's look: palette remapped by material, shape pushed about by
- * a smooth seeded field, the faction's ornaments added. `key` names the source geometry (model id first, then size,
+ * a smooth seeded field, its roofs re-covered where the style has roofs of its own, the faction's ornaments added.
+ * `key` names the source geometry (model id first, then size,
  * colour and detail); results are cached per key and style and every call returns a new object sharing that geometry.
  * 'kingdom' and unknown styles return the model itself, as does scenery that picks its own variant when placed.
  */
@@ -1257,9 +1273,8 @@ function buildRestyle(parts, st0, style, key) {
     jobs.push(c);
     if (mode === 2) cutv = cutv || new Uint8Array(n);
   }
-  if (globalThis.__roofDebug) globalThis.__roofDebug.push(id + ' ' + roof?.clusters.map((c) => `[${c.type} ok=${c.ok} mode=${c.mode} kind=${c.spec && c.spec.kind} tris=${c.tris} cells=${c.cells} fill=${c.fill.toFixed(2)} x=${c.x0.toFixed(2)}..${c.x1.toFixed(2)} z=${c.z0.toFixed(2)}..${c.z1.toFixed(2)} y=${c.eY.toFixed(2)}..${c.rY.toFixed(2)} ax=${c.ax} rl=${c.rl.toFixed(2)} gable=${c.gable} over=${(c.over ?? -1).toFixed(2)}]`).join(' '));
   if (cutv) { // everything that stands on a roof being replaced comes off with it, unless it towers over it (a turret, a spire, a flagpole)
-    const cut = jobs.filter((c) => c.mode === 2), col = new Map();
+    const cut = jobs.filter((c) => c.mode === 2).sort((a, b) => (a.type === 'cap' ? 0 : 1) - (b.type === 'cap' ? 0 : 1)), col = new Map(), lifted = new Map();
     for (const c of cut) { const gx = c.gable && !c.ax ? 0.6 : 0.006, gz = c.gable && c.ax ? 0.6 : 0.006; c.q = [Math.max(bb.x0 - 0.01, c.x0 - gx), Math.min(bb.x1 + 0.01, c.x1 + gx), Math.max(bb.z0 - 0.01, c.z0 - gz), Math.min(bb.z1 + 0.01, c.z1 + gz)]; }
     const regionOf = (x, z) => { for (const c of cut) if (c.type === 'cap' ? (x - c.cx) * (x - c.cx) + (z - c.cz) * (z - c.cz) < (c.r + 0.006) * (c.r + 0.006) : x > c.q[0] && x < c.q[1] && z > c.q[2] && z < c.q[3]) return c; return null; };
     const seen = (x, y, z, st) => { const c = regionOf(x, z); if (!c) return; const key = cellKey(x, z); let t = col.get(key); if (!t) col.set(key, t = { top: y, stone: false }); else if (y > t.top) t.top = y; if (st && y > c.cutY + 0.05 && y <= c.rY) t.stone = true; };
@@ -1269,14 +1284,17 @@ function buildRestyle(parts, st0, style, key) {
     for (let i = 0; i < n; i++) {
       const o = i * 3, y = P[o + 1];
       if (pinned[i]) continue;
+      if (vr[i] && roof.clusters[vr[i] - 1].mode === 2) { cutv[i] = vr[i]; continue; }   // the old tiles themselves
       const c = regionOf(P[o], P[o + 2]);
       if (!c || y <= c.cutY + 0.004) continue;
-      const t = col.get(cellKey(P[o], P[o + 2]));
-      if (t.top <= c.rY + 0.75 || vr[i] === c.i + 1) cutv[i] = c.i + 1;
-      else if (y > c.rY + 0.05) { if (!t.stone) lift[i] = c.i + 1; }   // it stood on the ridge: it will ride on the new roof
-      else if (!((cls[i] === C_STONE && !vr[i]) || cls[i] === C_DARK)) cutv[i] = c.i + 1;   // only masonry is left standing through the roof
+      const key = cellKey(P[o], P[o + 2]), t = col.get(key);
+      if (t.top <= c.rY + 0.75) cutv[i] = c.i + 1;
+      else if (t.stone) continue;   // a tower or a chimney stack runs up through the roof here: all of it stays
+      else if (y > c.rY + 0.05) { lift[i] = c.i + 1; let q = lifted.get(c.i); if (!q) lifted.set(c.i, q = new Set()); q.add(key); }   // it stood on the ridge: it will ride on the new roof
+      else cutv[i] = c.i + 1;
     }
-    liftAt = (x, y, z) => { const c = regionOf(x, z); if (!c || c.top === undefined || y <= c.rY + 0.05) return 0; const t = col.get(cellKey(x, z)); return t && t.stone ? 0 : c.top - c.rY; };
+    for (const [ci, q] of lifted) if (q.size > 20) { roof.clusters[ci].noLift = true; for (let i = 0; i < n; i++) if (lift[i] === ci + 1) lift[i] = 0; }   // too big to be a pole or a vane: it stays where it was
+    liftAt = (x, y, z) => { const c = regionOf(x, z); if (!c || c.noLift || c.top === undefined || y <= c.rY + 0.05) return 0; const t = col.get(cellKey(x, z)); return t && t.stone ? 0 : c.top - c.rY; };
   }
   // ---- triangles left out: torn roofs (decided where they lay before anything moved), roofs being replaced ----
   // Large dark linings under roofs are left out too: with only a corner here and there they cannot follow the tiles.
@@ -1342,7 +1360,6 @@ function buildRestyle(parts, st0, style, key) {
     try { const sv = survey(P, n, bb2, k, walkDist, walkCells, id, seed, alive, rg ? rg.P : null); sv.roofs = jobs; sv.id = id; sv.st = st; ORNAMENTS[style](og, sv, k); } catch (err) { console.warn('[factions] ornaments failed for', key, style, err); og = null; }
     if (og && !og.n) og = null;
   }
-  if (globalThis.__ornDebug) globalThis.__ornDebug.push([id, style, og ? og.I.length / 3 : 0, rg ? rg.I.length / 3 : 0]);
   const geo = new THREE.BufferGeometry(), ex = [rg, og].filter(Boolean), on = ex.reduce((s, g) => s + g.n, 0), oi = ex.reduce((s, g) => s + g.I.length, 0);
   const cat = (a, f) => { if (!on) return a; const r = new Float32Array((n + on) * 3); r.set(a); let q = n * 3; for (const g of ex) { r.set(g[f], q); q += g.n * 3; } return r; };
   let idx = I2;
@@ -1426,6 +1443,7 @@ function survey(P, n, bb, k, walkDist, walkCells, id, seed, alive = null, extra 
   // the door side: +Z, or the long +X face of a turned piece
   if (!slim && !walky) { const dir = k.ax ? 1 : 0, c = dir ? k.cz : k.cx, hw = dir ? k.hz : k.hx; for (const e of [-1, 1]) { const s = spot(dir, c + e * Math.min(hw * 0.62, 1.25), 1.1, 0.9); if (s) { s.e = e; sv.door.push(s); } } }
   sv.add = (g, est, fn) => { if (g.I.length / 3 + est * Math.max(1, qual() * qual()) <= cap) fn(); };
+  sv.cap = cap;
   sv.at = (g, a, fn, lift = 0) => g.in(M(a.x, a.y + lift, a.z, 0, a.yaw, 0), fn);
   return sv;
 }
@@ -1554,7 +1572,7 @@ const ORNAMENTS = {
 // =====================================================================================================
 const R_CELL = 0.2;
 const cellKey = (x, z) => (Math.floor(x / R_CELL) + 2048) * 4096 + Math.floor(z / R_CELL) + 2048;
-const HUMBLE = new Set(['house', 'hut', 'inn', 'stall', 'tent', 'dockhouse', 'alchemist', 'marketHall', 'tower', 'barracks', 'crates', 'cableTower']);
+const HUMBLE = new Set(['house', 'hut', 'inn', 'stall', 'tent', 'dockhouse', 'alchemist', 'marketHall', 'tower', 'barracks', 'crates']);
 const GRAND = new Set(['keep', 'palace', 'temple', 'bank', 'shrine', 'statue', 'pillar', 'fountain']);
 const byCache = new Map();
 /** a style as it applies to one building: st.by = { humble | grand | plain | <model id>: overrides } (pal and roof merge key by key) */
@@ -1922,9 +1940,7 @@ function domeOn(g, R, o, seed = 1) {
   return top + (o.finial ? 0.4 * (o.finS || clamp(R * 0.9, 0.35, 1.3)) : 0);
 }
 // dome and roof colourings: (angle, t 0..1 up the dome, x, y, z, seed) -> rgb
-const domeRibs = (base, rib, n = 8, w = 0.09) => (a, t, x, y, z) => (tri1((a / TAU) * n) < w * 2 ? rib : mul(base, 0.85 + 0.25 * noise3(x * 5, y * 5, z * 5) - 0.1 * tri1(t * 9)));
 const domeSpiral = (c1, c2, n = 6, tw = 1.6) => (a, t, x, y, z) => mul(tri1((a / TAU) * n + t * tw) > 0.5 ? c1 : c2, 0.86 + 0.22 * noise3(x * 6, y * 6, z * 6));
-const domeScales = (c1, c2, f = 7) => (a, t, x, y, z) => { const d = cells3(x * f, y * f, z * f); return mul(d > 0.42 ? c2 : c1, 0.75 + 0.5 * smooth(0.05, 0.45, d)); };
 const domeBands = (c1, c2, n = 5, w = 0.25) => (a, t, x, y, z) => mul(tri1(t * n) < w ? c2 : c1, 0.88 + 0.2 * noise3(x * 7, y * 7, z * 7));
 const domeTiles = (pal, f = 9) => (a, t, x, y, z) => mul(pal[Math.floor(hash1(Math.round((a / TAU) * f * 4 * (1.1 - t)), Math.round(t * f * 2)) * pal.length) % pal.length], 0.82 + 0.3 * tri1(t * f * 2));
 const ROOFS = {
@@ -2366,9 +2382,17 @@ function bellFrame(g, s, wall, bellCol = BRASS) {
 }
 /** top: a fungus shelf cluster or toadstools in sickly colours */
 function fungi(g, s, cap, seed = 0, glow = 0.6) { for (const [x, z, h, r] of [[0, 0, 0.34, 0.2], [0.16, 0.05, 0.2, 0.12], [-0.12, 0.1, 0.15, 0.1]]) g.in(M(x * s, 0, z * s, 0, seed * 40 + x * 200, 0), () => mushroom(g, h * s, r * s, cap, seed + x * 9, glow)); }
-/** the driver: st = { ridge, apex, corner, face, door } each [triangle estimate, fn(a, i)] run in the anchor's frame */
+/** sv.add, but the building's ornament budget is a hard limit: a piece that turns out to overrun it is taken off again */
+function capped(g, sv, est, fn) {
+  sv.add(g, est, () => {
+    const n0 = g.n, i0 = g.I.length;
+    fn();
+    if (g.I.length / 3 > sv.cap) { g.n = n0; g.P.length = g.N.length = g.C.length = g.A.length = n0 * 3; g.K.length = n0; g.I.length = i0; }
+  });
+}
+/** the driver: o = { ridge, apex, corner (parapets), eave (roof corners), face, door } each [triangle estimate, fn(a, i)] run in the anchor's frame */
 function dress(g, sv, o) {
-  const run = (list, e) => { if (e) list.forEach((a, i) => sv.add(g, e[0], () => sv.at(g, a, () => e[1](a, i)))); };
+  const run = (list, e) => { if (e) list.forEach((a, i) => capped(g, sv, e[0], () => sv.at(g, a, () => e[1](a, i)))); };
   run(sv.ridge, o.ridge);
   if (sv.apex && !sv.ridge.length) run([{ ...sv.apex, yaw: 0 }], o.apex || o.ridge);
   if (sv.walky || sv.slim) run([...sv.corners, ...sv.edges], o.corner); else run(sv.corners, o.eave);
@@ -2466,7 +2490,7 @@ Object.assign(STYLES, {
     glow: [1.0, 0.5, 0.06], window: 0.9,
     pal: palOf({ stone: [0x5e4a32, 0x52402a, 0x6a543a, 0x4a3a26], plaster: [0x8e7852, 0x826c48, 0x9a845c], timber: [0x4a3826, 0x3e2e20, 0x56422c], roof: [0x3f7a2e, 0x4f8a38, 0x2f6a26, 0x5a9440], moss: [0x4a7a30, 0x3c6a28, 0x5a8a38], gold: [0xe0962a, 0xd08622], iron: [0x3a2e22, 0x30261c], other: [0x6a8a3a, 0xe0962a, 0x8a5a3a] }),
     roof: { main: { kind: 'drape', thick: 0.26, lump: 0.85, lumpF: 2.6, over: 0.24, drop: 0.14, smooth: 2, skirt: 0.24, surf: K_LEAF, rough: 0.85, col: leafCol(sw(0x2f6a26, 0x3a7a2c, 0x24581e, 0x4a8a34, 0x1e4c1a), 2, rgb(0xe8c84a)), on: (g, c, env, topAt) => { const rnd = rng(env.seed % 991 + c.i), n = clamp(Math.round(c.w * c.d * 16), 30, 170), lp = sw(0x2f6a26, 0x3a7a2c, 0x4a8a34, 0x5a9a3c, 0x24581e); g.surf(K_LEAF, 0.8); for (let i = 0; i < n; i++) { const x = lerp(c.x0 - 0.15, c.x1 + 0.15, rnd()), z = lerp(c.z0 - 0.15, c.z1 + 0.15, rnd()), y = topAt(x, z), s = 0.1 + 0.12 * rnd(); if (y < c.eY + 0.02) continue; g.in(M(x, y - 0.02, z, (rnd() - 0.5) * 70, rnd() * 360, (rnd() - 0.5) * 70), () => g.poly([[0, 0, -s], [s * 0.6, s * 0.35, 0], [0, s * 0.1, s], [-s * 0.6, s * 0.35, 0]], 0, 1, 0, mul(lp[i % 5], 0.8 + 0.5 * rnd()))); } } },
-      cap: { kind: 'cap', shape: 'bulb', rk: 1.25, hk: 1.0, drum: 0, kind2: 0, rough: 0.85, col: (a, t, x, y, z) => leafCol(sw(0x2f6a26, 0x3a7a2c, 0x24581e, 0x4a8a34), 4)(x, y, z, 0, 0.5 + 0.5 * t), finial: null } },
+      cap: { kind: 'cap', shape: 'bulb', rk: 1.25, hk: 1.0, drum: 0, rough: 0.85, col: (a, t, x, y, z) => leafCol(sw(0x2f6a26, 0x3a7a2c, 0x24581e, 0x4a8a34), 4)(x, y, z, 0, 0.5 + 0.5 * t), finial: null } },
     disp: shapeOf({ bulge: 0.07, wob: 0.07 }),
     fx(cls, x, y, z, ny, c, a, k) { // bark: furrowed up and down, mossed wherever it faces the sky
       if (cls === C_STONE || cls === C_TIMBER || cls === C_PLASTER) { const f = 0.72 + 0.5 * noise3(x * 8 + k.s1, y * 0.7, z * 8 + k.s2); c[0] *= f; c[1] *= f; c[2] *= f; }
@@ -2480,7 +2504,7 @@ Object.assign(STYLES, {
     disp: shapeOf({ squat: 0.13, batter: 0.05 }),
     fx(cls, x, y, z, ny, c, a, k) {
       if (cls === C_TIMBER || k.roof) { a[0] = 0.45; a[1] = 0.65; }   // doors, beams and roofs are bronze
-      if (cls === C_STONE && !k.roof) { // a bronze band of knotwork round the waist of every wall
+      if (cls === C_STONE && !k.roof && ny < 0.4) { // a bronze band of knotwork round the waist of every wall
         const hf = y / k.H, band = smooth(0.4, 0.415, hf) * smooth(0.5, 0.485, hf);
         if (band > 0) { const u = (x + z) * 2.2, kn = tri1(u) > Math.abs(hf - 0.45) * 22 ? 1 : 0.55; tintTo(c, mul([0.6, 0.38, 0.14], kn), band); a[0] = lerp(a[0], 0.45, band); a[1] = lerp(a[1], 0.7, band); }
       }
@@ -2615,7 +2639,7 @@ Object.assign(STYLES, {
       cap: { kind: 'cap', shape: 'cone', hk: 0.9, rk: 0.8, drum: 0.5, drumCol: rgb(0xe2c488), col: rgb(0xe8b830), metal: 0.9, rough: 0.3, seg: 4 } },
     disp: shapeOf({ batter: 0.07 }),
     fx(cls, x, y, z, ny, c, a, k) { // a band of picture-writing in blue and gold, a painted dado
-      if (cls === C_STONE && !k.roof) {
+      if (cls === C_STONE && !k.roof && ny < 0.4) {
         const hf = y / k.H, band = smooth(0.6, 0.615, hf) * smooth(0.72, 0.705, hf);
         if (band > 0) { const u = Math.floor((x + z) * 7), h = hash1(u, Math.floor(hf * 40)); tintTo(c, h < 0.4 ? [0.1, 0.2, 0.55] : h < 0.6 ? [0.8, 0.6, 0.1] : h < 0.7 ? [0.6, 0.15, 0.08] : [0.9, 0.82, 0.6], band * 0.9); }
         const d = smooth(0.34, 0.3, y) * smooth(0.22, 0.26, y); tintTo(c, [0.1, 0.2, 0.55], d * 0.8);
@@ -2675,7 +2699,7 @@ Object.assign(STYLES, {
       cap: { kind: 'cap', shape: 'point', rk: 0.92, drum: 0.5, hk: 1, drumCol: rgb(0xdfc292), col: domeBands(TURQ[1], rgb(0xe2b23a), 4, 0.14), finial: 'ball', finS: 0.45 } },
     by: { humble: { roof: { main: { kind: 'flat', f: 0.42, wall: { stone: 0xd6b684, st: { chip: 0.05 } }, merlon: 'none', rim: 0.14, edge: rgb(0xdfc292), floor: rgb(0xb89a6a), on: (g, A, B, y) => { g.in(M(A * 0.3, y, -B * 0.25), () => domeOn(g, Math.min(A, B) * 0.34, { shape: 'hemi', drum: 0.2, drumCol: rgb(0xdfc292), col: rgb(0xeadfc4), kind: K_PLASTER, rough: 0.9 })); return 0.5; } } } } },
     fx(cls, x, y, z, ny, c, a, k) { // a frieze of glazed tile under the eaves
-      if (cls === C_STONE && !k.roof) { const hf = y / k.H, band = smooth(0.6, 0.612, hf) * smooth(0.68, 0.668, hf); if (band > 0) { tintTo(c, (Math.floor((x + z) * 6) + Math.floor(hf * 60)) % 2 ? [0.08, 0.5, 0.5] : [0.9, 0.86, 0.74], band * 0.9); a[0] = lerp(a[0], 0.4, band); } }
+      if (cls === C_STONE && !k.roof && ny < 0.4) { const hf = y / k.H, band = smooth(0.6, 0.612, hf) * smooth(0.68, 0.668, hf); if (band > 0) { tintTo(c, (Math.floor((x + z) * 6) + Math.floor(hf * 60)) % 2 ? [0.08, 0.5, 0.5] : [0.9, 0.86, 0.74], band * 0.9); a[0] = lerp(a[0], 0.4, band); } }
     },
   },
   shogunate: {
@@ -2715,7 +2739,7 @@ const facing = (a) => [[0, 1], [1, 0], [0, -1], [-1, 0]][a.dir ?? 0];
 function atDoor(g, sv, est, out, fn) {
   if (sv.door.length < 2) return;
   const [a, b] = sv.door, d = facing(a);
-  sv.add(g, est, () => g.in(M((a.x + b.x) / 2 + d[0] * out, 0, (a.z + b.z) / 2 + d[1] * out, 0, a.yaw, 0), () => fn(Math.hypot(a.x - b.x, a.z - b.z))));
+  capped(g, sv, est, () => g.in(M((a.x + b.x) / 2 + d[0] * out, 0, (a.z + b.z) / 2 + d[1] * out, 0, a.yaw, 0), () => fn(Math.hypot(a.x - b.x, a.z - b.z))));
 }
 const onGround = (g, a, out, fn) => g.in(M(0, -a.y, out), fn);
 Object.assign(ORNAMENTS, {
@@ -2749,15 +2773,15 @@ Object.assign(ORNAMENTS, {
   },
   kaelneth(g, sv) {
     const sc = sv.sc, ob = (x, y, z) => mul([0.06, 0.05, 0.08], 0.6 + 0.9 * noise3(x * 5, y * 5, z * 5)), red = rgb(0x7a0e18), fs = sv.faces;
-    const shards = (s, n) => { for (let i = 0; i < n; i++) g.in(M(0, 0, 0, i ? 26 : 6, i * (360 / Math.max(1, n - 1)), 0), () => thorn(g, (i ? 0.55 : 1) * s, (i ? 0.06 : 0.085) * s, ob, { rough: 0.25, metal: 0.5 })); };
+    const shards = (s, n, lean = 26) => { for (let i = 0; i < n; i++) g.in(M(0, 0, 0, i ? lean : 6, [0, 0, 70, -70][i], 0), () => thorn(g, (i ? 0.55 : 1) * s, (i ? 0.06 : 0.085) * s, ob, { rough: 0.25, metal: 0.5 })); };
     dress(g, sv, {
       ridge: [400, () => g.in(M(0, -0.12, -0.06), () => shards(0.9 * sc, 4))],
-      corner: [400, () => g.in(M(0, -0.1, 0), () => shards(0.85 * sc, 4))],
+      corner: [400, () => g.in(M(0, -0.1, 0), () => shards(0.8 * sc, 4, 9))],
       eave: [300, () => g.in(M(0, -0.12, 0, 20, 0, 0), () => thorn(g, 0.6 * sc, 0.06 * sc, ob, { rough: 0.25, metal: 0.5 }))],
       face: [460, (a, i) => g.in(M(0, 0.32 * sc, 0.02), () => hanging(g, 0.44 * sc, Math.min(1.05 * sc, a.y), red, [0.03, 0.03, 0.04], { point: true, device: [0.03, 0.03, 0.04] }))],
       door: [320, () => bracketLamp(g, 1.1 * sc, [1.0, 0.08, 0.05], { shape: 'cage' })],
     });
-    fs.forEach((a, i) => { const b = fs[i + 1]; if (b && b.dir === a.dir && Math.hypot(a.x - b.x, a.z - b.z) < 4.2) sv.add(g, 2400, () => { const d = facing(a), pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([lerp(a.x, b.x, t) + d[0] * 0.07, lerp(a.y, b.y, t) + 0.36 * sc - 0.38 * Math.sin(t * Math.PI), lerp(a.z, b.z, t) + d[1] * 0.07]); } chain(g, pts, 0.07 * sc, [0.04, 0.04, 0.05]); }); });
+    fs.forEach((a, i) => { const b = fs[i + 1]; if (b && b.dir === a.dir && Math.hypot(a.x - b.x, a.z - b.z) < 4.2) capped(g, sv, 2400, () => { const d = facing(a), pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([lerp(a.x, b.x, t) + d[0] * 0.07, lerp(a.y, b.y, t) + 0.36 * sc - 0.38 * Math.sin(t * Math.PI), lerp(a.z, b.z, t) + d[1] * 0.07]); } chain(g, pts, 0.07 * sc, [0.04, 0.04, 0.05]); }); });
   },
   verdant(g, sv) {
     const sc = sv.sc, amber = [1.0, 0.42, 0.04], bark = (x, y, z) => mul([0.3, 0.22, 0.13], 0.7 + 0.6 * noise3(x * 9, y * 2, z * 9));
@@ -2789,14 +2813,13 @@ Object.assign(ORNAMENTS, {
     });
   },
   velikaya(g, sv) {
-    const sc = sv.sc, hum = HUMBLE.has(sv.id);
+    const sc = sv.sc;
     dress(g, sv, {
       ridge: [560, (a, i) => g.in(M(0, -0.25 * sc, -0.04), () => crossedBeams(g, 0.62 * sc, rgb(0xa83a2a), { head: rgb(0xe6b430) }))],
       corner: [520, (a, i) => pinnacle(g, 0.85 * sc, 'onion', { col: domeSpiral(ONION[i % 4][0], ONION[i % 4][1], 5, 1.4), finial: 'ball', shaft: 0.3, shaftCol: [0.9, 0.88, 0.82], finS: 0.32, r: 0.1, capK: 1.35, sides: 10 })],
       face: [420, (a, i) => { const c1 = [rgb(0x2a5ab0), rgb(0xb8342a), rgb(0x2a8a5a)][(i + a.dir) % 3]; g.in(M(0, -0.22 * sc, 0), () => archFrame(g, 0.36 * sc, 0.6 * sc, 'ogee', c1, { kind: K_WOOD, fill: [1.0, 0.72, 0.3], fillGlow: 0.6, t: 0.04, stripe: rgb(0xeee8d8) })); }],
       door: [300, () => bracketLamp(g, 1.0 * sc, [1.0, 0.62, 0.22])],
     });
-    void hum;
   },
   tianlong(g, sv) {
     const sc = sv.sc, red = rgb(0x9a2418), lan = [1.0, 0.16, 0.06];
@@ -2840,7 +2863,7 @@ Object.assign(ORNAMENTS, {
   fimbul(g, sv) {
     const sc = sv.sc, paints = [rgb(0x8a2a22), rgb(0x2a4a7a), rgb(0xc8a44a), rgb(0x2e5a3a)];
     dress(g, sv, {
-      ridge: [560, () => g.in(M(0, -0.3 * sc, -0.02), () => crossedBeams(g, 1.15 * sc, rgb(0x4e3828), { head: rgb(0x8a6a44) }))],
+      ridge: [560, () => g.in(M(0, -0.3 * sc, -0.02), () => crossedBeams(g, 0.85 * sc, rgb(0x4e3828), { head: rgb(0x8a6a44) }))],
       corner: [330, () => g.in(M(0, -0.15, 0, 10, 0, 0), () => horn(g, [[0, 0, -0.03], [0, 0.25 * sc, 0.1 * sc], [0, 0.6 * sc, 0.12 * sc], [0, 0.95 * sc, 0.0]], 0.06 * sc, mul(BONE, 1.0), BONE_OLD, { rings: 20, flat: [1, 0.6] }))],
       face: [820, (a, i) => { for (const e of [-1, 1]) g.in(M(e * 0.3 * sc, 0, 0.04, 0, 0, e * 8), () => roundShield(g, 0.24 * sc, rgb(0x6a5236), paints[(i * 2 + (e > 0 ? 1 : 0) + a.dir) % 4], i + e + 3)); }],
       door: [380, (a) => onGround(g, a, 0.14, () => rib(g, [0, 0, 0], [a.e * -0.55 * sc, 1.7 * sc, 0.02], [a.e * 0.22 * sc, 0.25 * sc, 0], 0.06 * sc, a.e + 3))],
@@ -2901,7 +2924,7 @@ Object.assign(ORNAMENTS, {
       face: [520, (a, i) => { seaCrust(g, 1.3 * sc, i * 3 + a.dir); if (i % 2 === 0) g.in(M(0.25 * sc, 0.3 * sc, 0), () => bracketLamp(g, 0.95 * sc, gh, { shape: 'cage', frame: [0.25, 0.14, 0.08], glow: 0.95 })); }],
       door: [300, () => bracketLamp(g, 1.1 * sc, gh, { shape: 'cage', frame: [0.25, 0.14, 0.08], glow: 0.95 })],
     });
-    fs.forEach((a, i) => { const b = fs[i + 1]; if (b && b.dir === a.dir && Math.hypot(a.x - b.x, a.z - b.z) < 4.2) sv.add(g, 2400, () => { const d = facing(a), pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([lerp(a.x, b.x, t) + d[0] * 0.07, lerp(a.y, b.y, t) + 0.2 * sc - 0.45 * Math.sin(t * Math.PI), lerp(a.z, b.z, t) + d[1] * 0.07]); } chain(g, pts, 0.07 * sc, mul(RUST, 0.6), 0.5); }); });
+    fs.forEach((a, i) => { const b = fs[i + 1]; if (b && b.dir === a.dir && Math.hypot(a.x - b.x, a.z - b.z) < 4.2) capped(g, sv, 2400, () => { const d = facing(a), pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([lerp(a.x, b.x, t) + d[0] * 0.07, lerp(a.y, b.y, t) + 0.2 * sc - 0.45 * Math.sin(t * Math.PI), lerp(a.z, b.z, t) + d[1] * 0.07]); } chain(g, pts, 0.07 * sc, mul(RUST, 0.6), 0.5); }); });
   },
   gorge(g, sv) {
     const sc = sv.sc, tusk = (s, e = 1) => horn(g, [[0, -0.2, 0], [e * 0.1 * s, 0.3 * s, 0.1 * s], [e * 0.3 * s, 0.75 * s, 0.22 * s], [e * 0.34 * s, 1.2 * s, 0.14 * s], [e * 0.2 * s, 1.5 * s, -0.04 * s]], 0.1 * s, mul(BONE, 1.05), rgb(0x8a7a5a), { rings: 26, nu: nq(10) });

@@ -430,6 +430,7 @@ export function buildDropPod(style, sideColor) {
 const WEAPONS = new Set(['sword', 'longsword', 'greatsword', 'dagger', 'claws', 'spear', 'lance', 'halberd', 'axe', 'greataxe', 'club', 'warhammer', 'staff', 'longbow', 'sling', 'crossbow']);
 const WEAPON_ALT = { pike: 'spear', javelin: 'spear', trident: 'spear', glaive: 'halberd', naginata: 'halberd', katana: 'longsword', rapier: 'sword', cutlass: 'sword', scimitar: 'sword', khopesh: 'sword',
   cleaver: 'axe', maul: 'warhammer', flail: 'club', handgun: 'crossbow', blunderbuss: 'crossbow', repeater: 'crossbow', axeGun: 'crossbow', chakram: 'sling', blowpipe: 'sling', bow: 'longbow' };
+import { hasWeapon } from './bodies/weapons.js'; // a weapon the weapons module can build is never swapped for a stand-in
 let weaponKnown = null; // set by the weapons module when it knows more kinds
 export function knownWeapons(fn) { weaponKnown = fn; }
 function standIn(def) {
@@ -437,7 +438,7 @@ function standIn(def) {
   if (!o) return def;
   if (o.alt && o.body !== 'aircraft' && !REG.BODIES[o.body]) o = o.alt;
   const w = o.weapon;
-  if (w && !WEAPONS.has(w) && !(weaponKnown && weaponKnown(w))) o = { ...o, weapon: WEAPON_ALT[w] || 'sword' };
+  if (w && !WEAPONS.has(w) && !hasWeapon(w) && !(weaponKnown && weaponKnown(w))) o = { ...o, weapon: WEAPON_ALT[w] || 'sword' };
   if (o.rider && typeof o.rider === 'object') o = { ...o, rider: undefined };
   return o === def.model ? def : { ...def, model: o };
 }
