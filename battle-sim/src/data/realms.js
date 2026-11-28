@@ -865,7 +865,7 @@ export const REALMS = [
       ['bowman', 'Bedouin Bowman', 'longbow', m.h('silkRobe', 'bow', { cloth: 0xc8a070 }), { w: 0.14 }],
       ['vizier', 'Sorcerer-Vizier', 'battlemage', m.h('brocade', 'staff', { cloth: 0x6a2a9a }), { w: 0.06 }],
       ['stallion', 'Desert Stallion Rider', 'wolfRider', m.r('silkRobe', 'horse', 'spear', 0xd8d0c0), { k: 1.6, w: 0.1 }],
-      ['elephant', 'Tower War-Elephant', 'boneColossus', m.q('elephant', 0x8a8078, 2.4, { howdah: true }), { k: 1.2, w: 0.04 }],
+      ['elephant', 'Tower War-Elephant', 'boneColossus', m.q('elephant', 0x8a8078, 2.4, { howdah: true }), { k: 0.75, w: 0.04 }],
       ['carpet', 'Flying-Carpet Archer', 'gyrocopter', m.b('carpet', { color: 0x2a8a9a, trim: 0xd8b03a, rider: m.h('silkRobe', 'longbow') }), { w: 0.05 }],
       ['djinn', 'Bound Djinn', 'infernalLord', m.b('djinn', { skin: 0x3a8ac8, glow: 0x9ad8ff, scale: 1.8 }), { k: 0.8, w: 0.03, as: true }],
       ['efreet', 'Bound Efreet', 'fireElemental', m.e(0xff7a2a, { scale: 1.6 }), { k: 1.2, w: 0.05 }],
@@ -915,7 +915,7 @@ const COST = { aethel: 0.8, ashur: 0.92, aurelia: 0.8, caliphate: 0.89, cloven: 
   greenhide: 0.63, grom: 0.75, ironbound: 0.82, kaelneth: 0.8, khemet: 0.94, mistisles: 0.56, principalities: 0.63, screaming: 0.71, shogunate: 0.69,
   skar: 0.75, sunkings: 0.63, thousandgods: 1, tianlong: 1, velikaya: 0.87, verdant: 0.75, westmark: 0.84, xibalba: 0.52,
   kharnak: 0.6, morbus: 0.85, velvet: 0.75, malvash: 0.8, ashhorde: 0.63, balor: 0.55, kurgan: 0.85, hearthmoot: 0.52, baobab: 0.85, nagavar: 0.73,
-  pearlfleet: 0.77, glimmer: 1.1, khanate: 0.55, emerald: 0.8, deeproot: 0.38, goldsands: 1.2, labyrinth: 1.3 };
+  pearlfleet: 0.77, glimmer: 1.1, khanate: 0.55, emerald: 0.8, deeproot: 0.44, goldsands: 0.9, labyrinth: 1.2 };
 
 /** Worldgen factions: how each realm builds and what it musters. */
 export function realmFactions() {
