@@ -913,12 +913,12 @@ export function realmUnits(BASE) {
 }
 
 // Price correction per realm, from trials at equal points against the Kingdom on open ground
-// (twenty battles a step): below 1 the realm's troops fought under their price, so it musters more.
-const COST = { aethel: 0.71, ashur: 0.82, aurelia: 0.8, caliphate: 0.89, cloven: 0.76, crimson: 0.78, drowned: 0.97, fimbul: 0.70, gorge: 0.71, graal: 0.71,
-  greenhide: 0.80, grom: 0.95, ironbound: 0.82, kaelneth: 0.8, khemet: 0.94, mistisles: 0.71, principalities: 0.63, screaming: 0.71, shogunate: 0.55,
-  skar: 0.50, sunkings: 0.63, thousandgods: 1.34, tianlong: 1, velikaya: 0.72, verdant: 0.75, westmark: 0.84, xibalba: 0.52,
-  kharnak: 0.60, morbus: 0.85, velvet: 0.67, malvash: 0.8, ashhorde: 0.63, balor: 0.55, kurgan: 0.85, hearthmoot: 0.52, baobab: 0.76, nagavar: 0.73,
-  pearlfleet: 0.77, glimmer: 0.98, khanate: 0.50, emerald: 0.82, deeproot: 0.44, goldsands: 0.9, labyrinth: 1.2 };
+// (forty battles a step, then a closer search between the two nearest prices): below 1 the realm's troops fought under their price, so it musters more.
+const COST = { aethel: 0.73, ashur: 0.82, aurelia: 0.80, caliphate: 0.94, cloven: 0.76, crimson: 0.78, drowned: 0.97, fimbul: 0.71, gorge: 0.66, graal: 0.81,
+  greenhide: 0.73, grom: 0.95, ironbound: 0.82, kaelneth: 0.80, khemet: 0.94, mistisles: 0.71, principalities: 0.58, screaming: 0.64, shogunate: 0.58,
+  skar: 0.50, sunkings: 0.64, thousandgods: 1.34, tianlong: 1.00, velikaya: 0.75, verdant: 0.70, westmark: 0.81, xibalba: 0.49,
+  kharnak: 0.60, morbus: 0.87, velvet: 0.67, malvash: 0.80, ashhorde: 0.61, balor: 0.54, kurgan: 0.76, hearthmoot: 0.50, baobab: 0.76, nagavar: 0.73,
+  pearlfleet: 0.80, glimmer: 0.97, khanate: 0.47, emerald: 0.82, deeproot: 0.42, goldsands: 0.91, labyrinth: 1.28 };
 
 /** lays a realm's own design (src/data/fleets) over a working hull: name, looks, arts and what they need */
 function designed(out, id, f, D) {
