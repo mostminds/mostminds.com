@@ -963,6 +963,7 @@ export class LandView {
       } else if (e.type === 'airFire') {
         const a = b.airships[e.air], am = this.airModels[e.air].m, fx = this.fx;
         if (!fx.act(am, 'fire', 0.7)) fx.rock(am, 0.03);
+        this.crews.pulse?.(am, 'fire');
         w.set(e.x1 + 0.5, e.h1 ?? 0.3, e.y1 + 0.5);
         const high = (e.h1 ?? 0) > 1.5, dur = (e.delay * TICK_MS) / 1000 / this.speed;
         for (let i = 0; i < e.guns; i++) {
@@ -1017,7 +1018,7 @@ export class LandView {
       } else if (e.type === 'airBoard') {
         // boarders swing across on lines between the gondolas; those cut down fall to the ground
         const a = b.airships[e.air], o = b.airships[e.other], ma = this.airModels[e.air].m, mo = this.airModels[e.other].m, fx = this.fx;
-        fx.act(ma, 'board', 1.2);
+        fx.act(ma, 'board', 1.2); this.crews.pulse?.(ma, 'board'); this.crews.pulse?.(mo, 'board');
         const Da = fx.dims(ma, a), Do = fx.dims(mo, o);
         let lost = e.lost || 0;
         const n = 1 + Math.floor(Math.random() * 3);

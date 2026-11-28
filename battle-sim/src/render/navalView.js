@@ -230,6 +230,7 @@ export class NavalView {
           for (let k = 1; k < 3; k++) if (shipMuzzle(gm, e.x1, e.y1, n0 + k, p)) fx.muzzle(p, dir, 0.75);
         }
         if (gun && sm && !fx.act(sm, 'fire', 0.7)) fx.rock(sm, e.kind === 'heavy' ? 0.03 : 0.015);
+        if (gm) this.crews.pulse?.(gm, 'fire');
         if (e.kind === 'torpedo') { // it runs along the surface trailing foam
           from.y = 0.1; to.y = e.hit ? 0.3 : 0.05;
           fx.shot('torpedo', from, to, dur, { ...opt, arc: 0, onLand: (p, f) => { if (f.hit) { fx.splash(p, 2); fx.explode(p, 0.7, { debris: 8, dcol: 0x6a4a30 }); } } });
@@ -304,7 +305,7 @@ export class NavalView {
         if (b.tick % 3 === 0) msgs.push({ side: b.ents[e.id].side, text: `${b.ents[e.id].def.name} beats to windward` });
       } else if (e.type === 'boarding') {
         const a = b.ents[e.a], c = b.ents[e.c], ma = this.models[e.a], mc = this.models[e.c];
-        if (ma && mc) fx.boarding(e.a, ma, e.c, mc, a, c, this.speed || 1);
+        if (ma && mc) { fx.boarding(e.a, ma, e.c, mc, a, c, this.speed || 1); this.crews.pulse?.(ma, 'board'); this.crews.pulse?.(mc, 'board'); }
       } else if (e.type === 'captured') {
         const x = b.ents[e.id], m = this.models[e.id];
         msgs.push({ side: e.by, text: `${x.def.name} ${x.fort ? 'stormed and taken' : 'boarded and captured'}` });
@@ -474,6 +475,7 @@ export class NavalView {
     const fx = this.fx, p = new THREE.Vector3((x.x + t.x) / 2, 0.6, (x.y + t.y) / 2);
     if (mx) { const D = fx.dims(mx, x); toWorld(mx, D.bow[0], D.deckY * 0.6, D.bow[2], p); }
     const d = new THREE.Vector3(t.x - x.x, 0, t.y - x.y).normalize(), s = Math.min(1.8, 0.7 + dmg / 60);
+    if (mx) this.crews.pulse?.(mx, 'brace'); if (mt) this.crews.pulse?.(mt, 'brace');
     if (mx && !fx.act(mx, 'ram', 0.9)) fx.rock(mx, 0.02, -0.12 * s, 0.05);
     else if (mx) fx.rock(mx, 0.02, -0.08 * s);
     if (mt) { if (!fx.act(mt, 'hit', 0.7)) fx.rock(mt, 0.2 * s, 0.02, 0.08); else fx.rock(mt, 0.14 * s); }
@@ -633,6 +635,7 @@ export class NavalView {
         if (!bm || !m) break;
         const dress = JSON.stringify(by.def.dress || '') + ' ' + (by.def.note || '');
         fx.grapple(e.by, e.id, bm, m, /\bmaw|jaw/i.test(dress));
+        this.crews.pulse?.(bm, 'board'); this.crews.pulse?.(m, 'board');
         break;
       }
       default: break;
