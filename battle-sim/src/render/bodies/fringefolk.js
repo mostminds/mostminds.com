@@ -1139,12 +1139,17 @@ function mechOwl(def, o = {}) {
 }
 
 /** on the ground: wings swept back along the flanks, the hand folded under; they mantle open as it strikes */
-function foldWings(rig, c, base, f) {
+const _ewf = new THREE.Euler(0, 0, 0, 'YXZ');
+function foldWings(rig, c, base) {
   if (c.flying || c.dead > 0) return;
-  const { R } = base, W = rig.wings || [], WT = rig.wingtips || [], t = c.t, ph = c.phase || 0;
-  const fx = num(rig.foldX, 0.1), fy = num(rig.foldY, 1.45), fz = num(rig.foldZ, -0.15), ty = num(rig.tipY, 0.5);
+  const W = rig.wings || [], WT = rig.wingtips || [], t = c.t, ph = c.phase || 0;
+  const roll = num(rig.foldRoll, -1.25), fy = num(rig.foldY, 1.42), fz = num(rig.foldZ, 0.05), ty = num(rig.tipY, 2.5);
   const open = c.atk >= 0 ? Math.sin(Math.PI * c.atk) : 0, br = Math.sin(t * 1.4 + ph) * 0.03;
-  W.forEach((w, i) => { const sg = i ? -1 : 1; R(w, fx * (1 - open), sg * lerp(fy, 0.7, open), sg * (lerp(fz, 0.35, open) + br)); R(WT[i], 0, sg * lerp(ty, 0.3, open), -sg * br); });
+  W.forEach((w, i) => {
+    const sg = i ? -1 : 1;
+    w.quaternion.setFromEuler(_ewf.set(lerp(roll, -0.3, open), sg * lerp(fy, 0.6, open), sg * (lerp(fz, 0.4, open) + br)));
+    if (WT[i]) WT[i].quaternion.setFromEuler(_ewf.set(0, sg * lerp(ty, 0.4, open), 0));
+  });
 }
 /** the great-bird animator, with the short clockwork wings folded tight to the flanks on the ground */
 function owlAnim(rig, inner, c, base) {
