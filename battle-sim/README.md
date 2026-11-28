@@ -279,6 +279,52 @@ fittings on deck (mortars, a flight deck with parked fliers, flak mounts, a bow 
 command banner, a bow ramp, a bronze ram). Tethers, fire barrels, depth charges, chain shot, flak bursts and
 squadrons in the air all show in the battle.
 
+### Every realm's own fleet and sky
+
+Each realm sails seven ships of its own design, one for each role: a ship of the line plus the six
+supporting roles above, with their own names, looks and arts (`src/data/fleets/`; hover a ship in the army
+list to read what it does). The arts include:
+
+- **Gunnery:** shot that punches through one hull into the next, beams, turrets that bear all round,
+  fire, plague, overcharged broadsides that sometimes burst a gun, and a wedge that grows stronger with
+  each friend beside her.
+- **Ramming:** drills, prow blades that take no harm, grapnels and maws that lock both ships for a
+  boarding fight, rudder-fouling rams, and hulls towed by harnessed sea-beasts.
+- **Hulls:** low hulls that enemy guns overshoot, hulls hard to board, oars, wind-runners, magic wards,
+  and hulls that hover over the shoals.
+- **Hunters:** harpoon lines with powder kegs, wounds that will not close, beasts scared off, held fast or
+  frozen, poison, lures, sludge, swarming skiffs, beasts turned on their own side, and crews that haul a
+  beast alongside to hack at it.
+- **Siege:** incendiary shells, rocket salvoes, fort-breakers, terror, briars, acid, stunning blasts,
+  quick or colossal guns, anchor-claws, and fire-ships that run at the biggest enemy and burst.
+- **Sky:** sky guns with nets, snipers or poison, and interceptor screens; squadrons of the realm's own
+  fliers (griffons, pegasi, gyros, carpets, kites, bats, dragons...).
+- **Supply:** auras of wards, fog, mending, fresh hands, faster reloads, dispelling, a lulling song that
+  slows the enemy, wind, boarding fury, the slain rising to crew the fleet, and hulks that explode as
+  they sink.
+- **Landing:** craft that pass through reefs, slip in unseen, charge the walls or strike the garrison
+  the moment they beach.
+
+In the sky, realms that build airships fly their own:
+
+- iron sky-dreadnoughts, comet-galleons and lantern-pagodas;
+- rat-hide gunships whose gasbags burst into fireballs;
+- sail-and-rune-ring skycutters, crystal spires, lamp-borne dhows and ornithopter arks.
+
+Realms that will not build them send a great beast into the same slot instead: griffons, wyverns,
+sky-serpents, giant bats and flies, rocs, vultures, a winged sphinx, a manticore, crows that bring fog,
+dragons and more, ridden by their crews. Sky arts include:
+
+- iron bulwarks and fog round the airship;
+- volatile gasbags;
+- breath of fire, acid, frost, plague, warp, light or sound;
+- shrieks that unnerve crews and fliers;
+- regeneration and a petrifying gaze;
+- rocket racks and blinding flares, and gyroscopes or wizards that steady the guns;
+- dives, and talons that pluck soldiers from the ranks;
+- swarms of carpets or harpies;
+- beasts that fight on alone when their riders fall (`src/data/fleets/sky.js`).
+
 ## The land
 
 - **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights
