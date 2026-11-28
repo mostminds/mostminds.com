@@ -18,6 +18,15 @@
 //            lanterns, astrolabe spin-up, bells swing             board portal flare, crane gangway swing
 //   hit      bells clang, cages swing, turrets jolt
 // Anchors: model.userData.anchors gets mortar / harpoon / launch / aura points where a part makes one.
+//
+// Finishing (./deckKit.js, ./deckHi.js): each part is its own mesh. Its shapes are first drawn plain; the first time
+// it is seen near (or in idle time) every plain shape gets a finished twin for levels 0-1 (chamfered, grained timber
+// with cut plank seams, coursed stone, mottled metal...) and the living and dead things are swapped for sculpted
+// or hand-built ones (trees, nests, skulls, totems, gargoyles, pustules, standing stones) and real ground-unit
+// figures baked small (prisoners, the hanged and fallen, the drummer). far(K, fn) marks shapes that only stand in
+// far away; hiAdd(K, () => geos3, ...) adds such finished work. Damage: model.userData.partDamage gets one
+// fn(level, { side, fire }) per part (1 scorched and chipped; 2 smashed / toppled / burnt; 3 wrecked, embers when
+// burning) and model.userData.breakParts its still mesh and moving pieces.
 import * as THREE from 'three';
 import { Kit, G, C, shade, blend, clamp, lerp, EMPTY_GEO } from './kit.js';
 import { styleOf, emblem as rsEmblem, finial as rsFinial, lantern as rsLantern, banner as rsBanner } from './realmStyle.js';
@@ -2215,7 +2224,6 @@ function runPart(name, P, c) {
     mesh = entryMesh(e, c.m); mesh.name = `deck:${name}`;
     c.addMoving(mesh);
   }
-  if (globalThis.__deckStat) globalThis.__deckStat(name, mesh, movers);
   const box = new THREE.Box3();
   if (mesh) { const g = mesh.userData.lodGeos.find((x) => x.attributes.position?.count); if (g) { if (!g.boundingBox) g.computeBoundingBox(); box.copy(g.boundingBox); } }
   for (const o of movers) box.expandByObject(o);

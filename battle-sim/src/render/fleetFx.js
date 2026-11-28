@@ -17,7 +17,36 @@ const R = Math.random, rnd = (a = 1) => (R() - 0.5) * 2 * a, lerp = (a, c, k) =>
 const UP = new THREE.Vector3(0, 1, 0), XA = new THREE.Vector3(1, 0, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _col = new THREE.Color();
-const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+const ZERO = new THREE.Matrix4().makeScale(0, 0, 0), _m2 = new THREE.Matrix4();
+const PLUNGE = new Set(['mortar', 'shell', 'bomb', 'rocket', 'boulder', 'skull', 'pot', 'acid', 'stone', 'deck']);
+const PIECES = 40; // cut-away model parts alive at once (masts, yards, bags...)
+
+// a plain hull with no setDamage of her own darkens and chars as she is hit: each material swapped for a darker copy, made once
+const DARK = [1, 0.8, 0.6, 0.42], darkCache = new WeakMap();
+function darkOf(mm, lv) {
+  if (!lv || !mm || !mm.color || mm.isShaderMaterial || mm.isMeshBasicMaterial || mm.isPointsMaterial || mm.transparent && mm.opacity < 0.9) return mm;
+  let arr = darkCache.get(mm);
+  if (!arr) { arr = [mm]; darkCache.set(mm, arr); }
+  if (!arr[lv]) {
+    const c = mm.clone();
+    c.onBeforeCompile = mm.onBeforeCompile; c.customProgramCacheKey = mm.customProgramCacheKey;
+    c.color.multiplyScalar(DARK[lv]); if (c.roughness !== undefined) c.roughness = Math.min(1, c.roughness + 0.08 * lv);
+    arr[lv] = c;
+  }
+  return arr[lv];
+}
+function scorchModel(m, lv) {
+  const ud = m.userData, skip = new Set([ud.bar, ud.ring, ud.crew, ud.mark, ud.ladder].filter(Boolean));
+  const walk = (o) => {
+    if (skip.has(o) || o.userData.fxFlag || o.isSprite || o.isPoints || o.isLine) return;
+    if (o.isMesh && !o.isInstancedMesh && o.material) {
+      const base = o.userData._mat0 || (o.userData._mat0 = o.material);
+      o.material = Array.isArray(base) ? base.map((mm) => darkOf(mm, lv)) : darkOf(base, lv);
+    }
+    for (const c of o.children) walk(c);
+  };
+  walk(m);
+}
 const hexR = (h) => ((h >> 16) & 255) / 255, hexG = (h) => ((h >> 8) & 255) / 255, hexB = (h) => (h & 255) / 255;
 
 /** a point given in a model's own space, in the world (no matrix update needed) */
@@ -192,6 +221,15 @@ const DISC_FS = `uniform float uTime; varying vec2 vU; varying vec3 vCol; void m
 const SLICK_FS = `uniform float uTime; varying vec2 vU; varying vec3 vCol; void main() { vec2 p = vU - 0.5; float ang = atan(p.y, p.x); float d = length(p) * 2.0 * (1.0 + 0.12 * sin(ang * 4.0 + uTime * 0.3) + 0.06 * sin(ang * 11.0));
   if (d > 1.0) discard; float sheen = 0.5 + 0.5 * sin(d * 18.0 - uTime * 1.2 + ang * 2.0);
   vec3 c = mix(vCol, vec3(0.35, 0.2 + 0.25 * sheen, 0.45 * sheen), 0.35 * sheen * (1.0 - d)); gl_FragColor = vec4(c, smoothstep(1.0, 0.7, d) * 0.85); }`;
+// a ragged stain (blood in the water, a scorched crash site): its colour, soft at the edge
+const STAIN_FS = `varying vec2 vU; varying vec3 vCol; void main() { vec2 p = vU - 0.5; float ang = atan(p.y, p.x);
+  float d = length(p) * 2.0 * (1.0 + 0.16 * sin(ang * 5.0 + vCol.g * 9.0) + 0.08 * sin(ang * 13.0)); if (d > 1.0) discard;
+  gl_FragColor = vec4(vCol, smoothstep(1.0, 0.45, d) * 0.8); }`;
+// a whirlpool where a hull went down: foam arms spiralling into a dark eye (vCol.r fades it)
+const SWIRL_FS = `uniform float uTime; varying vec2 vU; varying vec3 vCol; void main() { vec2 p = vU - 0.5; float d = length(p) * 2.0; if (d > 1.0) discard;
+  float a = atan(p.y, p.x), s = sin(a * 3.0 + log(d + 0.03) * 7.0 + uTime * 5.0) * 0.5 + 0.5;
+  float foam = smoothstep(0.55, 1.0, s) * smoothstep(1.0, 0.55, d) * smoothstep(0.05, 0.3, d), eye = smoothstep(0.32, 0.0, d);
+  vec3 c = mix(vec3(0.9, 0.95, 1.0), vec3(0.02, 0.06, 0.09), eye); gl_FragColor = vec4(c, (foam * 0.75 + eye * 0.65) * vCol.r); }`;
 
 function figureGeos() {
   const put = (g, x, y, z, rx = 0, ry = 0, rz = 0) => { g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); return g.index ? g.toNonIndexed() : g; };
@@ -237,7 +275,18 @@ export class FleetFx {
     this.bubbles = new Pool(sc, new THREE.SphereGeometry(1, 28, 18), sh(BUBBLE_VS, BUBBLE_FS, THREE.AdditiveBlending), 50);
     const disc = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
     this.discs = new Pool(sc, disc, sh(DISC_VS, DISC_FS, THREE.AdditiveBlending), 50);
-    this.slicks = new Pool(sc, disc, sh(DISC_VS, SLICK_FS, THREE.NormalBlending), 24);
+    this.slicks = new Pool(sc, disc, sh(DISC_VS, SLICK_FS, THREE.NormalBlending), 48);
+    // damage and wrecks: scorch marks on hulls, stains, whirlpools, and the flotsam a wreck leaves
+    this.scorch = new Pool(sc, new THREE.SphereGeometry(1, 10, 6), std({ color: 0xffffff, roughness: 1 }), 240);
+    this.stains = new Pool(sc, disc, sh(DISC_VS, STAIN_FS, THREE.NormalBlending), 40);
+    this.whirls = new Pool(sc, disc, sh(DISC_VS, SWIRL_FS, THREE.NormalBlending), 12);
+    for (const p of [this.stains, this.whirls, this.slicks]) p.mesh.renderOrder = 2;
+    this.flot = [
+      { pool: new Pool(sc, box, std({ roughness: 0.9 }), 220), kind: 'plank' },
+      { pool: new Pool(sc, new THREE.CylinderGeometry(0.5, 0.5, 1, 10), std({ roughness: 0.8 }), 70), kind: 'barrel' },
+      { pool: new Pool(sc, new THREE.CylinderGeometry(0.5, 0.5, 1, 6), std({ roughness: 0.9 }), 70), kind: 'spar' },
+    ];
+    for (const f of this.flot) f.st = [];
     const ice = new THREE.CircleGeometry(1, 18); const ip = ice.attributes.position;
     for (let i = 1; i < ip.count; i++) { const f = 0.8 + ((i * 37) % 11) / 30; ip.setX(i, ip.getX(i) * f); ip.setY(i, ip.getY(i) * f); }
     ice.rotateX(-Math.PI / 2);
@@ -245,7 +294,7 @@ export class FleetFx {
     const [fb, fh] = figureGeos();
     this.figBody = new Pool(sc, fb, std({ roughness: 0.8, flatShading: true }), 150);
     this.figHead = new Pool(sc, fh, std({ roughness: 0.55, metalness: 0.25, vertexColors: true, flatShading: true }), 150);
-    this.pools = [this.debris, this.balls, this.strands, this.links, this.planks, this.glows, this.rings, this.bubbles, this.discs, this.slicks, this.ices, this.figBody, this.figHead];
+    this.pools = [this.debris, this.balls, this.strands, this.links, this.planks, this.glows, this.rings, this.bubbles, this.discs, this.slicks, this.ices, this.figBody, this.figHead, this.scorch, this.stains, this.whirls, ...this.flot.map((f) => f.pool)];
     this.flagGeo = new THREE.PlaneGeometry(0.8, 0.5, 8, 2).translate(0.4, 0, 0);
     this.staffGeo = new THREE.CylinderGeometry(0.018, 0.022, 0.8, 5).translate(0, 0.4, 0);
     this.reset();
@@ -258,10 +307,15 @@ export class FleetFx {
     this.rigs = new Map(); this.links2 = new Map(); this.flags = []; this.ropes = new Map();
     for (const f of this.oldFlags || []) f.parent?.remove(f);
     this.oldFlags = [];
+    for (const p of this.pieces || []) p.obj.removeFromParent();
+    this.pieces = []; this.burners = []; this.lastL = []; this.hurt = new Set();
+    for (const f of this.flot) f.st.length = 0;
   }
   dispose() {
     for (const k in this.ps) { this.scene.remove(this.ps[k].obj); this.ps[k].geo.dispose(); }
     for (const p of this.pools) { this.scene.remove(p.mesh); p.mesh.dispose(); }
+    for (const p of this.pieces) p.obj.removeFromParent();
+    this.pieces = [];
   }
 
   // ------------------------------------------------ basics
@@ -568,6 +622,7 @@ export class FleetFx {
   stepFig(f, dt) {
     f.t += dt;
     if (f.t < 0) { this.figBody.hide(f.i); this.figHead.hide(f.i); return false; }
+    if (f.style === 'thrown') return this.stepCastaway(f, dt);
     const A = toWorld(f.mA, f.pa.x, f.pa.y, f.pa.z, _a), B = toWorld(f.mB, f.pb.x, f.pb.y, f.pb.z, _b);
     let yawTo = null;
     if (f.mode === 'go') {
@@ -702,6 +757,7 @@ export class FleetFx {
     // boarders
     for (let k = this.figs.length - 1; k >= 0; k--) { const f = this.figs[k]; if (this.stepFig(f, dt)) { this.endFig(f); this.figs.splice(k, 1); } }
     if (this.flags.length) this.stepFlags(dt);
+    this.stepWrecks(dt);
     // ropes nobody laid this frame go slack and are taken in
     for (const [key, r] of this.ropes) if (this.time - r.seen > 0.25) this.dropRope(key);
     // point sizes follow the camera
@@ -709,6 +765,480 @@ export class FleetFx {
     const sc = h / (2 * Math.tan((cam.fov * Math.PI) / 360));
     for (const k in this.ps) { this.ps[k].mat.uniforms.uScale.value = sc; this.ps[k].update(dt, this.wind.x, this.wind.z); }
     for (const p of this.pools) p.flush();
+  }
+
+  // ================================================ damage, wounds and wrecks
+  // A hull's damage lives on model.userData._dm = { lv, side, fire, wounds[] }. The views call damage() every frame with
+  // her hp fraction (nothing happens unless the level changes; it calls the model's setDamage(level, { side, fire }), or
+  // darkens a plain hull), wound() where a shot strikes, tear() when her rigging goes, and when she dies breakUp() and then
+  // sinkPose() each frame (beastDeath()/beastPose() for sea beasts, airWreck()/airFall() for airships and sky-beasts).
+  // Everything thrown is pooled: scorch marks, flotsam (planks, barrels, spars), stains, whirlpools; cut-away model parts
+  // (breakParts) are capped at PIECES and share their geometry with the model they came from.
+
+  dm(m) { return m.userData._dm || (m.userData._dm = { lv: 0, side: 1, fire: false, wounds: [], list: 0, settle: 0, plain: typeof m.userData.setDamage !== 'function', hitAt: -99 }); }
+  /** which beam of m faces the world point (x, z): 1 her +z side, -1 her -z side */
+  beamOf(m, x, z) { _p.set(x - m.position.x, 0, z - m.position.z).applyQuaternion(_q2.copy(m.quaternion).invert()); return _p.z >= 0 ? 1 : -1; }
+  /** a damage level from an hp fraction: above 0.75 none, 0.45 scarred, 0.2 heavily hit, below that wrecked; mending needs a margin */
+  static level(frac, cur = 0) {
+    let lv = frac > 0.75 ? 0 : frac > 0.45 ? 1 : frac > 0.2 ? 2 : 3;
+    if (lv < cur && frac < [0.75, 0.45, 0.2][cur - 1] + 0.07) lv = cur;
+    return lv;
+  }
+  /** drive m's damage look from her hp fraction (force: set that level outright); flesh never gets the scorched fallback */
+  damage(m, frac, { fire = false, force = -1, flesh = false } = {}) {
+    const d = this.dm(m), lv = force >= 0 ? force : FleetFx.level(frac, d.lv), f = !!fire;
+    if (lv === d.lv && f === d.fire) return lv;
+    d.lv = lv; d.fire = f;
+    const fn = m.userData.setDamage;
+    if (typeof fn === 'function') { try { fn.call(m.userData, lv, { side: d.side, fire: f }); } catch (err) { console.warn('[fleetFx] setDamage', err); d.plain = true; } }
+    if (d.plain && !flesh) scorchModel(m, lv);
+    return lv;
+  }
+  /** where a shot from the world point (x, z) strikes m, in her own space: her side facing it, or her deck for plunging fire */
+  impactPoint(m, D, x, z, kind = 'cannon', air = false) {
+    const side = this.beamOf(m, x, z), p = new THREE.Vector3(), n = new THREE.Vector3(0, 0, side);
+    if (PLUNGE.has(kind) && !air) { this.deckPoint(D, p); p.y += 0.04; n.set(0, 1, 0); return { p, n, side, deck: true }; }
+    // along her length toward the shooter, scattered; the beam narrows toward bow and stern
+    const u = Math.max(-0.8, Math.min(0.8, (_p.x / (Math.abs(_p.x) + Math.abs(_p.z) + 1e-3)) * 0.7 + rnd(0.45)));
+    const half = D.hz * Math.sqrt(Math.max(0.2, 1 - Math.abs(u) ** 3));
+    if (air && R() < 0.45 && m.userData.anchors?.envelope) {
+      // into the gas-bag: a rent in the envelope
+      const e = m.userData.anchors.envelope, b = D.box;
+      p.set(u * Math.max(D.hx, b.max.x * 0.7), e[1] + rnd(0.25), side * Math.max(D.hz, Math.min(b.max.z, -b.min.z)) * 0.9);
+      return { p, n, side, bag: true };
+    }
+    const y = kind === 'chain' ? D.deckY + R() * Math.max(0.3, D.top - D.deckY) * 0.6 : kind === 'torpedo' ? 0.03 : air ? D.deckY * (0.2 + R() * 0.5) : Math.max(0.08, D.deckY * (0.25 + R() * 0.65));
+    p.set(u * D.hx, y, side * half * (kind === 'chain' ? 0.15 : 0.98));
+    return { p, n, side, aloft: kind === 'chain' };
+  }
+  /**
+   * a shot strikes m at hit (from impactPoint): splinters burst out of the hole, a puff of smoke, she heels away from it and
+   * shudders; s scales it (heavy shot 1.5, a ram 2.5). The hole stays as a scorch mark that rides with her and smokes as she worsens.
+   */
+  wound(m, hit, s = 1, { lasting = true, flesh = false, col = 0x7a5a38 } = {}) {
+    const d = this.dm(m), w = toWorld(m, hit.p.x, hit.p.y, hit.p.z, _a), nw = _d.copy(hit.n).applyQuaternion(m.quaternion);
+    d.side = hit.side; d.hitAt = this.time;
+    if (flesh) {
+      this.emit(P.SPRAY, w.x, w.y, w.z, Math.round(8 * s), nw.x, 0.6, nw.z, 2.5, 0.8, 0xc84a3a, 0x7a1a14);
+      this.emit(P.MIST, w.x, w.y, w.z, 2, nw.x, 0.3, nw.z, 0.4, 0.6, 0xb03a2a, 0x6a1a14);
+    } else if (hit.bag) {
+      // gas and shreds of fabric out of the rent
+      this.emit(P.MIST, w.x, w.y, w.z, Math.round(3 * s), nw.x, 0.3, nw.z, 0.9, 0.8, 0xe8e4dc, 0xc8c4bc);
+      this.splinters(w, _c.set(nw.x, 0.2, nw.z), Math.round(5 * s), 0.6, 0xd8d0bc);
+      this.emit(P.SPARK, w.x, w.y, w.z, 3, nw.x, 0.3, nw.z, 2);
+    } else {
+      this.splinters(w, _c.set(nw.x * 0.9, 0.35 + nw.y, nw.z * 0.9), Math.round(7 * s), 0.75 * Math.sqrt(s), col);
+      if (s > 1.2) this.splinters(w, _c, Math.round(3 * s), 1.1, 0x3a2a1a);
+      this.emit(P.SPARK, w.x, w.y, w.z, Math.round(4 * s), nw.x, 0.5, nw.z, 2.5);
+      this.emit(P.SMOKE, w.x, w.y, w.z, Math.round(2 + s), nw.x, 0.5, nw.z, 0.8, 0.7 * s);
+      this.emit(P.BLACK, w.x + nw.x * 0.1, w.y + 0.1, w.z + nw.z * 0.1, 1, nw.x, 1, nw.z, 0.6, 0.6 * s);
+      if (s >= 1.4) this.emit(P.FLASH, w.x, w.y, w.z, 1, 0, 0, 0, 0, 0.6 * s, 0xffe0a0, 0xff8030);
+    }
+    if (lasting && !flesh && !hit.aloft) {
+      if (d.wounds.length >= 7) { const o = d.wounds.shift(); this.scorch.release(o.sc); }
+      const sc = this.scorch.alloc(this.scorchOwner || (this.scorchOwner = { steal: (pool, i) => { for (const hm of this.hurt) for (const x of hm.userData._dm?.wounds || []) if (x.sc === i) x.sc = -1; } }));
+      this.scorch.tint(sc, hit.bag ? 0x2a2420 : 0x140e0a, 0.8 + R() * 0.4);
+      d.wounds.push({ p: hit.p.clone().addScaledVector(hit.n, 0.01), n: hit.n.clone(), s: Math.min(2.4, s) * (0.8 + R() * 0.4), sc, rot: R() * 6.283 });
+      this.hurt.add(m);
+    }
+    // she heels away from the blow and shudders
+    const acted = this.act(m, 'hit', 0.5);
+    this.rock(m, -hit.side * Math.min(0.14, (acted ? 0.018 : 0.028) * s), rnd(0.012 * s), 0.012 * s);
+  }
+  /** her rigging is shot away: a yard (or a hanging mast) comes down, or sails tear and flap loose */
+  tear(m, D, side = this.dm(m).side) {
+    const bp = (m.userData.breakParts || []).filter((p) => p && p.mesh && !p.mesh.userData._gone && p.mesh.visible);
+    const pick = bp.find((p) => p.kind === 'spar' || p.kind === 'yard' || p.kind === 'sail') || (this.dm(m).lv >= 2 ? bp.find((p) => p.kind === 'mast') : null);
+    const p = toWorld(m, rnd(D.hx * 0.3), D.deckY + Math.max(0.4, D.top - D.deckY) * 0.65, 0, new THREE.Vector3());
+    if (pick) this.throwPart(m, pick, side, false, 0.6);
+    // canvas and cordage
+    this.splinters(p, _c.set(0, 0.3, 0), 10, 1.1, 0xe8e0cc); this.splinters(p, UP, 6, 0.8, 0x6a4a2e);
+    for (let k = 0; k < 3; k++) this.after(k * 0.25, () => this.emit(P.GLYPH, p.x + rnd(0.6), p.y + rnd(0.4), p.z + rnd(0.6), 1, side * 0.2, -0.3, 0, 0.6, 1.6, 0xf0ead8, 0xc8c0a8, G.gust));
+    this.rock(m, -side * 0.04, 0.02);
+    return !!pick;
+  }
+  /** cut a piece (a mast, a yard, a bag, a gun) out of a model and throw it: it tumbles, falls, floats and drifts or lies where it lands */
+  detach(obj, v, w, { drag = 0.2, grav = 9.8, burn = 0, float = 45, axis = 1 } = {}) {
+    if (!obj || obj.userData._gone) return null;
+    for (let o = obj; o; o = o.parent) if (!o.visible) return null;
+    obj.updateWorldMatrix(true, true);
+    const root = new THREE.Group();
+    obj.matrixWorld.decompose(root.position, root.quaternion, root.scale);
+    _m.copy(obj.matrixWorld).invert();
+    let n = 0;
+    obj.traverseVisible((c) => {
+      if (!c.isMesh || c.isInstancedMesh || !c.geometry?.attributes?.position || n >= 40 || c.userData.fxFlag) return;
+      const k = new THREE.Mesh(c.geometry, c.material); k.castShadow = true;
+      _m2.multiplyMatrices(_m, c.matrixWorld); _m2.decompose(k.position, k.quaternion, k.scale);
+      root.add(k); n++;
+    });
+    if (!n) return null;
+    obj.visible = false; obj.userData._gone = true;
+    this.scene.add(root);
+    if (this.pieces.length >= PIECES) { const o = this.pieces.shift(); o.obj.removeFromParent(); }
+    const pc = { obj: root, v: v.clone(), w: w.clone(), drag, grav, burn, float, axis, t: 0, mode: 'fly', tq: null, acc: {}, ph: R() * 6 };
+    this.pieces.push(pc);
+    return pc;
+  }
+  /** throw one of m's breakParts off toward her side: big pieces topple about their foot, small ones fly */
+  throwPart(m, bp, side, burn = false, kick = 1) {
+    const o = bp.mesh; if (!o || o.userData._gone) return null;
+    const out = _b.set(rnd(0.4), 0, side || 1).applyQuaternion(m.quaternion).normalize();
+    const big = bp.kind === 'mast' || bp.kind === 'bag' || bp.kind === 'spar' && bp.mesh.children.length > 3;
+    const v = new THREE.Vector3(out.x * (big ? 1.2 : 2.6) * kick, big ? 0.5 : (2 + R() * 2) * kick, out.z * (big ? 1.2 : 2.6) * kick);
+    const w = new THREE.Vector3().crossVectors(UP, out).multiplyScalar(big ? 1.1 + R() * 0.7 : 2 + R() * 3);
+    if (!big) w.add(_c.set(rnd(3), rnd(3), rnd(3)));
+    const soft = bp.kind === 'bag';
+    const pc = this.detach(o, v, w, { drag: soft ? 1.4 : 0.2, grav: soft ? 2.5 : 9.8, burn: burn ? 14 : 0, axis: soft ? 0 : 1 });
+    if (pc) { const p = pc.obj.position; this.splinters(p, UP, 6, 0.8); this.emit(P.SMOKE, p.x, p.y, p.z, 2, 0, 1, 0, 0.5, 0.8); }
+    return pc;
+  }
+  stepPiece(pc, dt) {
+    pc.t += dt;
+    const o = pc.obj, pos = o.position, fy = this.floor(pos.x, pos.z), nk = this.near(pos);
+    if (pc.mode === 'fly') {
+      pc.v.y -= pc.grav * dt; pc.v.multiplyScalar(Math.max(0, 1 - pc.drag * dt));
+      pos.addScaledVector(pc.v, dt);
+      const wl = pc.w.length();
+      if (wl > 1e-4) { _q.setFromAxisAngle(_c.copy(pc.w).multiplyScalar(1 / wl), wl * dt); o.quaternion.premultiply(_q); }
+      if (pc.burn) { for (let n = this.rate(pc.acc, 'f', 16 * nk, dt); n > 0; n--) this.emit(P.FIRE, pos.x, pos.y, pos.z, 1, 0, 1, 0, 0.5, 1.2); if (this.rate(pc.acc, 's', 6 * nk, dt)) this.emit(P.BLACK, pos.x, pos.y + 0.3, pos.z, 1, 0, 1, 0, 0.4, 1); }
+      else if (this.rate(pc.acc, 's', 3 * nk, dt)) this.emit(P.SMOKE, pos.x, pos.y, pos.z, 1, 0, 0.3, 0, 0.2, 0.5);
+      if (pos.y < fy + 0.05) {
+        const wet = this.water(pos.x, pos.z);
+        pc.mode = wet ? 'float' : 'rest'; pc.t = 0; pos.y = fy;
+        if (wet) this.splash(pos, 1.1); else { this.dust(pos, 1.3); this.splinters(pos, UP, 6, 0.8); }
+        // it comes to lie along its long axis
+        const ax = _c.set(0, 0, 0).setComponent(pc.axis, 1).applyQuaternion(o.quaternion).normalize();
+        _d.set(ax.x, 0, ax.z); if (_d.lengthSq() < 1e-4) _d.set(1, 0, 0); _d.normalize();
+        pc.tq = new THREE.Quaternion().setFromUnitVectors(ax, _d).multiply(o.quaternion);
+        if (pc.burn && !wet) this.burner(null, pos.clone(), 10 + R() * 10, 40, 0.8);
+      }
+      return false;
+    }
+    if (pc.tq) o.quaternion.slerp(pc.tq, Math.min(1, dt * 2.5));
+    if (pc.mode === 'float') {
+      const sink = pc.t > pc.float ? (pc.t - pc.float) * 0.2 : 0;
+      pos.y = fy - 0.12 - sink + Math.sin(this.time * 1.5 + pc.ph) * 0.05;
+      pos.x += this.wind.x * dt * 0.12; pos.z += this.wind.z * dt * 0.12;
+      if (pc.burn && pc.t < pc.burn) { if (this.rate(pc.acc, 'f', 6 * nk, dt)) this.emit(P.FIRE, pos.x, pos.y + 0.1, pos.z, 1, 0, 1, 0, 0.4, 0.9); if (this.rate(pc.acc, 's', 3 * nk, dt)) this.emit(P.BLACK, pos.x, pos.y + 0.4, pos.z, 1, 0, 1, 0, 0.4, 0.8); }
+      return sink > 2.5;
+    }
+    return false; // on dry ground it stays where it lies
+  }
+  /** a lasting fire (and then smoke) at a world point, or at a point in m's own space so it rides with her */
+  burner(m, p, fire = 10, smoke = 30, s = 1) {
+    if (this.burners.length >= 64) this.burners.shift();
+    this.burners.push({ m, p: p.clone(), fire, smoke: Math.max(fire, smoke), s, t: 0 });
+  }
+  /** planks, barrels and spars burst from p: they fall and float a long while, drifting (or lie where they land) */
+  flotsam(p, n, s = 1, { burnt = false, up = 1, spread = 1, life = 50 } = {}) {
+    for (let k = 0; k < n; k++) {
+      const r = R(), F = this.flot[r < 0.62 ? 0 : r < 0.82 ? 1 : 2], i = F.pool.alloc(F.st);
+      const d = F.st[i] || (F.st[i] = { p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(0, 0, 0, 'YXZ'), w: new THREE.Vector3(), sx: 0, sy: 0, sz: 0, t: 0, life: 0, on: false, mode: 0, still: 0 });
+      const a = R() * 6.283, sp = (0.8 + R() * 3.2) * spread;
+      d.p.set(p.x + rnd(0.5 * s), p.y + R() * 0.3, p.z + rnd(0.5 * s)); d.v.set(Math.cos(a) * sp, (1.8 + R() * 4) * up, Math.sin(a) * sp);
+      d.r.set(R() * 6, R() * 6, R() * 6); d.w.set(rnd(8), rnd(8), rnd(8));
+      if (F.kind === 'plank') { d.sx = (0.4 + R() * 0.7) * s; d.sy = 0.045 * s; d.sz = (0.1 + R() * 0.08) * s; }
+      else if (F.kind === 'barrel') { d.sx = d.sz = 0.22 * s; d.sy = 0.3 * s; }
+      else { d.sx = d.sz = (0.05 + R() * 0.04) * s; d.sy = (0.8 + R() * 1.4) * s; }
+      d.t = 0; d.life = life * (0.7 + R() * 0.6); d.on = true; d.mode = 0; d.still = 0;
+      const base = F.kind === 'barrel' ? 0x6a4a2c : F.kind === 'spar' ? 0x5a4028 : [0x7a5a38, 0x8a6a44, 0x6a4a30][k % 3];
+      F.pool.tint(i, burnt && R() < 0.55 ? 0x241a12 : base, 0.75 + R() * 0.4);
+    }
+  }
+  stepFlot(dt) {
+    for (const F of this.flot) {
+      const pool = F.pool, st = F.st, plank = F.kind === 'plank';
+      for (let i = 0; i < pool.n; i++) {
+        const d = st[i];
+        if (!d || !d.on || !pool.used[i]) continue;
+        if (d.mode === 2 && d.still) continue; // lying on dry ground: nothing to move
+        d.t += dt;
+        const fy = this.floor(d.p.x, d.p.z);
+        if (d.mode === 0) {
+          d.v.y -= 9.8 * dt; d.p.addScaledVector(d.v, dt); d.r.x += d.w.x * dt; d.r.y += d.w.y * dt; d.r.z += d.w.z * dt;
+          if (d.p.y < fy) {
+            d.mode = this.water(d.p.x, d.p.z) ? 1 : 2; d.p.y = fy + (d.mode === 2 ? d.sy * 0.4 : 0);
+            if (d.mode === 1 && R() < 0.4) this.emit(P.SPRAY, d.p.x, fy, d.p.z, 2, 0, 1, 0, 1.4, 0.6);
+            d.r.x = plank ? rnd(0.12) : 0; d.r.z = plank ? rnd(0.12) : Math.PI / 2; d.w.y = rnd(0.3);
+            if (d.mode === 2) { d.still = 1; if (R() < 0.3) this.emit(P.DUST, d.p.x, fy + 0.1, d.p.z, 1, 0, 1, 0, 0.3, 0.6); }
+          }
+        } else {
+          if (d.t > d.life) { d.on = false; pool.release(i); continue; }
+          const sink = Math.max(0, d.t - d.life + 5) * 0.06;
+          d.p.y = fy - 0.06 - sink + Math.sin(this.time * 1.8 + i * 1.3) * 0.035;
+          d.p.x += this.wind.x * dt * 0.12; d.p.z += this.wind.z * dt * 0.12; d.r.y += d.w.y * dt;
+        }
+        _e.set(d.r.x, d.r.y, d.r.z); _q.setFromEuler(_e);
+        pool.put(i, d.p, _q, d.sx, d.sy, d.sz);
+      }
+    }
+  }
+  /** her people go over the side: figures thrown from her deck that swim a while (or lie where they fall) */
+  castaways(m, D, n, color, { up = 1 } = {}) {
+    for (let k = 0; k < n; k++) {
+      if (this.figs.length >= this.figBody.n - 4) return;
+      this.deckPoint(D, _c); const p = toWorld(m, _c.x, _c.y + 0.1, _c.z, new THREE.Vector3());
+      const out = _d.set(_c.x * 0.2, 0, _c.z ? Math.sign(_c.z) : rnd(1)).applyQuaternion(m.quaternion).normalize(), sp = 1.4 + R() * 2.4;
+      const f = { style: 'thrown', mode: 'fall', p, v: new THREE.Vector3(out.x * sp, (1.8 + R() * 2.5) * up, out.z * sp), yaw: R() * 6.283, pitch: 0, roll: 0, t: -R() * 1.2, i: this.figBody.alloc(), life: 9 + R() * 8, mA: m, mB: m, foe: null };
+      this.figBody.tint(f.i, color); this.figs.push(f);
+    }
+  }
+  stepCastaway(f, dt) {
+    const fy = this.floor(f.p.x, f.p.z);
+    if (f.mode === 'fall') {
+      f.v.y -= 9.8 * dt; f.p.addScaledVector(f.v, dt); f.pitch += dt * 4.5; f.roll += dt * 2;
+      if (f.p.y < fy) { f.wet = this.water(f.p.x, f.p.z); if (f.wet) this.splash(f.p, 0.4); else this.dust(f.p, 0.35); f.mode = f.wet ? 'swim' : 'lie'; f.t = 0; f.pitch = f.wet ? -0.3 : -Math.PI / 2; f.roll = 0; }
+    } else if (f.mode === 'swim') {
+      const sink = Math.max(0, f.t - f.life) * 0.45;
+      f.p.y = fy - 0.4 - sink + Math.sin(this.time * 2.6 + f.i) * 0.04;
+      f.yaw += Math.sin(this.time * 0.7 + f.i) * dt * 0.8;
+      f.p.x += this.wind.x * dt * 0.1 + Math.sin(f.yaw) * dt * 0.18; f.p.z += this.wind.z * dt * 0.1 + Math.cos(f.yaw) * dt * 0.18;
+      f.roll = Math.sin(this.time * 5 + f.i) * 0.3;
+      if (sink > 1.2) return true;
+    } else { if (f.t > f.life + 16) return true; f.p.y = fy + 0.04; }
+    _e.set(f.pitch, f.yaw, f.roll); _q.setFromEuler(_e);
+    this.figBody.put(f.i, f.p, _q, 1); this.figHead.put(f.i, f.p, _q, 1);
+    return false;
+  }
+  /** a disc that lingers on the water or the ground (slick, stain, whirlpool): grows over grow s, fades out at the end of its life */
+  lasting(pool, p, s, col, life, grow = 3, spin = 0) {
+    if (this.lastL.length >= 100) this.endLasting(this.lastL.shift());
+    const L = { pool, i: -1, p: p.clone(), s, col, life, grow, t: 0, spin, steal() { L.i = -1; } };
+    L.i = pool.alloc(L); pool.tint(L.i, col);
+    this.lastL.push(L);
+    return L;
+  }
+  endLasting(L) { if (L.i >= 0) L.pool.release(L.i); L.i = -1; }
+  /** a dead hull settles, lists hard, goes down by the head (or the stern) and under, in a whirl of foam; true once she is gone */
+  breakUp(m, e, { boom = false, color = 0xcccccc, burning = false } = {}) {
+    const D = this.dims(m, e), d = this.dm(m), side = d.side;
+    this.damage(m, 0, { force: 3, fire: boom || burning });
+    const len = Math.max(2, e?.def?.len || D.hx * 2), s = Math.min(1.6, 0.6 + len * 0.08);
+    const W = m.userData._wk = { t: 0, side, bow: R() < 0.6 ? 1 : -1, depth: D.top * m.scale.y + 1.4, fire: boom || burning, s, len, whirl: false, gone: false, acc: {} };
+    const mid = toWorld(m, 0, D.deckY, 0, new THREE.Vector3()), fy = this.floor(mid.x, mid.z);
+    // the death blow: timbers part, she lurches
+    this.splinters(mid, UP, Math.round(14 * s), 1.1); this.splash(_a.set(mid.x, fy, mid.z), 1.4 * s);
+    this.emit(P.BLACK, mid.x, mid.y + 0.5, mid.z, 8, 0, 1, 0, 1, 1.4 * s);
+    this.rock(m, -side * 0.2, 0.05, 0.1);
+    if (boom) this.after(0.25 + R() * 0.4, () => {
+      // her powder goes up
+      const p = toWorld(m, rnd(D.hx * 0.4), D.deckY + 0.3, 0, new THREE.Vector3());
+      this.explode(p, 1.6 * s, { debris: 20 }); this.emit(P.FIREBALL, p.x, p.y + 0.5, p.z, Math.round(12 * s), 0, 1, 0, 3 * s, 1.6 * s);
+      this.ring(_a.set(p.x, fy + 0.06, p.z), null, 0.5, 6 * s, 0xffffff, 1.1);
+      this.flotsam(p, Math.round(10 * s), s, { burnt: true, up: 1.6, spread: 1.8 });
+      this.rock(m, side * 0.25, 0.08, 0.2);
+      for (let k = 0; k < 3; k++) this.burner(m, _c.set(rnd(D.hx * 0.7), D.deckY, rnd(D.hz * 0.5)), 12, 16, 1.1);
+    });
+    // her masts and loose gear go by the board one after another, toppling toward the beam she lists to
+    const parts = (m.userData.breakParts || []).filter((p) => p && p.mesh);
+    const rank = (p) => ({ mast: 0, spar: 1, yard: 1, sail: 1, bag: 2 }[p.kind] ?? 3);
+    parts.sort((a, c) => rank(a) - rank(c));
+    let thrown = 0;
+    for (const bp of parts) {
+      if (thrown >= 6) break;
+      if (rank(bp) === 3 && R() < 0.5) continue;
+      const k = thrown++;
+      this.after(0.35 + k * 0.4 + R() * 0.3, () => this.throwPart(m, bp, W.side, W.fire && R() < 0.5));
+    }
+    // flotsam, her people, and a slick that spreads and lingers
+    this.flotsam(mid, Math.round(Math.min(26, 8 + len * 2)), Math.min(1.3, s), { burnt: W.fire, spread: 0.9 });
+    if (!e?.def?.beast) this.castaways(m, D, Math.max(2, Math.min(7, Math.round((e?.def?.crew || 20) / 9))), color);
+    this.lasting(this.slicks, _a.set(mid.x, fy + 0.03, mid.z), len * 0.75, 0x1a1810, 80, 9, 0.02);
+    return W;
+  }
+  sinkPose(m, dt) {
+    const W = m.userData._wk;
+    if (!W) return false;
+    W.t += dt;
+    const k = W.t, p = m.position, fy = this.floor(p.x, p.z);
+    const list = W.side * Math.min(0.85, 0.06 + k * 0.1);
+    const pitch = -W.bow * Math.min(0.62, k * 0.02 + k * k * 0.0045);
+    const down = k < 2 ? k * 0.12 : 0.24 + Math.min(1, (k - 2) / 11) ** 1.6 * (W.depth - 0.24);
+    m.rotation.x += list; m.rotation.z += pitch; p.y -= down;
+    const nk = this.near(p), r = W.len * 0.4;
+    // air bursting out of her: bubbles and foam all round; steam where the fire meets the sea
+    for (let n = this.rate(W.acc, 'b', (5 + k) * nk, dt); n > 0; n--) { const a = R() * 6.283, rr = R() * r; this.emit(P.SPRAY, p.x + Math.cos(a) * rr, fy + 0.02, p.z + Math.sin(a) * rr, 1, 0, 1, 0, 0.7 + R(), 0.55); }
+    if (this.rate(W.acc, 'r', 1.4, dt)) this.ring(_a.set(p.x + rnd(r * 0.5), fy + 0.04, p.z + rnd(r * 0.5)), null, 0.1, 0.5 + R() * 0.8, 0xe8f4f8, 1);
+    if (W.fire && k < 9) {
+      if (this.rate(W.acc, 'st', 5 * nk, dt)) this.emit(P.MIST, p.x + rnd(r), fy + 0.2, p.z + rnd(r), 1, 0, 1, 0, 0.6, 1);
+      const D = m.userData._fx;
+      if (D && down < W.depth * 0.6) for (let n = this.rate(W.acc, 'fi', 14 * nk, dt); n > 0; n--) { const q = toWorld(m, rnd(D.hx * 0.8), D.deckY, rnd(D.hz * 0.6), _a); if (q.y > fy) this.emit(P.FIRE, q.x, q.y, q.z, 1, 0, 1, 0, 0.7, 1.2); }
+    }
+    if (!W.whirl && down > W.depth * 0.45) { W.whirl = true; this.lasting(this.whirls, _a.set(p.x, fy + 0.05, p.z), Math.max(1.6, W.len * 0.55), 0xffffff, 10, 1.5); this.emit(P.SPRAY, p.x, fy, p.z, 20, 0, 1, 0, 3.5, 1.2); }
+    if (W.whirl && !W.gone && this.rate(W.acc, 'cv', 2, dt)) this.ring(_a.set(p.x, fy + 0.05, p.z), null, W.len * 0.7, 0.2, 0xffffff, 1.2);
+    if (down >= W.depth) {
+      if (!W.gone) { W.gone = true; this.emit(P.SPRAY, p.x, fy, p.z, 28, 0, 1, 0, 5, 1.4); this.emit(P.MIST, p.x, fy + 0.5, p.z, 6, 0, 1, 0, 0.8, 1.6); this.flotsam(_a.set(p.x, fy + 0.2, p.z), 6, 1, { up: 0.8, spread: 0.6 }); }
+      return true;
+    }
+    return false;
+  }
+  /** a sea beast is killed: a cloud of blood, a last thrash */
+  beastDeath(m, e) {
+    const W = m.userData._wk = { t: 0, beast: true, dir: R() < 0.5 ? 1 : -1, acc: {}, r: e?.radius || 1.5, cloud: false };
+    const p = m.position, fy = this.floor(p.x, p.z);
+    this.emit(P.SPRAY, p.x, fy + 0.05, p.z, 22, 0, 1, 0, 3.5, 1.2, 0xd86a5a, 0x8a2a20);
+    this.emit(P.MIST, p.x, fy + 0.3, p.z, 6, 0, 0.5, 0, 0.6, 1.4, 0xb03020, 0x6a1a14);
+    this.lasting(this.stains, _a.set(p.x, fy + 0.04, p.z), W.r * 1.6, 0x6a0c0a, 45, 5);
+    this.splash(p, 2);
+    return W;
+  }
+  /** each frame: the death throes, the roll belly-up, the drift, and at last she goes down in a cloud of blood; true once gone */
+  beastPose(m, dt) {
+    const W = m.userData._wk;
+    if (!W) return false;
+    W.t += dt;
+    const k = W.t, thr = Math.max(0, 1 - k / 1.6);
+    m.rotation.z += Math.sin(k * 13) * 0.3 * thr;
+    const r = Math.min(1, Math.max(0, (k - 0.6) / 2.6)), e2 = r * r * (3 - 2 * r);
+    m.rotation.x = e2 * Math.PI * 0.92 * W.dir + Math.sin(k * 0.8) * 0.04;
+    const sink = k > 10 ? (k - 10) * 0.2 : 0;
+    m.position.y += -0.25 * e2 - sink + Math.sin(k * 0.9) * 0.05;
+    const p = m.position, fy = this.floor(p.x, p.z), nk = this.near(p);
+    if (thr > 0 && this.rate(W.acc, 'th', 16 * nk, dt)) this.emit(P.SPRAY, p.x + rnd(W.r), fy + 0.05, p.z + rnd(W.r), 2, 0, 1, 0, 3, 1);
+    if (k < 10 && this.rate(W.acc, 'bl', 1.5, dt)) this.emit(P.MIST, p.x + rnd(W.r), fy + 0.1, p.z + rnd(W.r), 1, 0, 0.3, 0, 0.3, 1.3, 0xa82a20, 0x6a1a14);
+    if (sink > 0) {
+      if (this.rate(W.acc, 'bb', 6 * nk, dt)) this.emit(P.SPRAY, p.x + rnd(W.r * 0.6), fy + 0.02, p.z + rnd(W.r * 0.6), 1, 0, 1, 0, 0.8, 0.5, 0xf0e0e0, 0xc89090);
+      if (!W.cloud) { W.cloud = true; this.lasting(this.stains, _a.set(p.x, fy + 0.04, p.z), W.r * 2.4, 0x5a0a08, 30, 6); this.ring(_a, null, W.r * 1.5, 0.3, 0xffffff, 1.4); }
+    }
+    return sink > 3;
+  }
+  /**
+   * an airship or sky-beast is brought down: wrecked (and for a ship, burning, the bag collapsing), her loose parts torn off to
+   * fall on their own, her hands thrown out. Then airFall() each frame drops her, tumbling, to the ground or the water.
+   */
+  airWreck(m, a, { beast = false, color = 0xcccccc } = {}) {
+    const D = this.dims(m, a), sc = m.scale.y;
+    this.damage(m, 0, { force: 3, fire: !beast, flesh: beast });
+    const fwd = _d.set(1, 0, 0).applyQuaternion(m.quaternion);
+    const W = m.userData._wk = {
+      t: 0, air: true, beast, v: new THREE.Vector3(fwd.x * 1.8, beast ? 0.3 : 0.6, fwd.z * 1.8), spin: rnd(0.5), roll: R() < 0.5 ? -1 : 1, p: m.position.clone(),
+      yaw: m.rotation.y, rollA: 0, pitch: 0, landed: false, wet: false, acc: {}, rest: Math.max(0.2, -D.box.min.y * sc), s: Math.min(1.6, 0.6 + (a?.radius || 2) * 0.2), lt: 0,
+    };
+    const p = m.position;
+    if (beast) {
+      this.emit(P.SPRAY, p.x, p.y, p.z, 18, 0, 0.4, 0, 3, 1.1, 0xc84a3a, 0x7a1a14);
+      this.emit(P.MIST, p.x, p.y, p.z, 5, 0, 0.3, 0, 0.6, 1.4, 0xa82a20, 0x5a1410);
+      this.splinters(p, UP, 10, 0.9, 0x4a3a30);
+      // its riders fall away
+      for (const bp of (m.userData.breakParts || []).filter((q) => q && q.mesh && /rider|saddle|howdah/.test(q.kind)).slice(0, 4)) this.after(0.2 + R() * 0.5, () => this.throwPart(m, bp, R() < 0.5 ? -1 : 1, false, 0.6));
+    } else {
+      this.explode(p.clone(), 1.3 * W.s, { debris: 14 });
+      // shallowest parts first, so a bag and the frame it hangs from go as one
+      const depth = (o) => { let n = 0; for (let q = o; q && q !== m; q = q.parent) n++; return n; };
+      const parts = (m.userData.breakParts || []).filter((q) => q && q.mesh && q.kind !== 'plate').sort((x, y) => depth(x.mesh) - depth(y.mesh));
+      let n = 0;
+      for (const bp of parts) {
+        if (n >= 6) break;
+        const k = n++;
+        this.after(0.15 + k * 0.3 + R() * 0.3, () => this.throwPart(m, bp, R() < 0.5 ? -1 : 1, bp.kind === 'bag' || bp.kind === 'spar' || R() < 0.4, 0.8));
+      }
+      this.castaways(m, D, 2 + Math.floor(R() * 3), color, { up: 0.4 });
+    }
+    return W;
+  }
+  /** each frame: she falls, nose down and rolling, trailing smoke and fire, and crashes; ground(x, z) is the ground height there */
+  airFall(m, dt) {
+    const W = m.userData._wk;
+    if (!W) return;
+    W.t += dt;
+    const p = W.p, nk = this.near(p);
+    if (!W.landed) {
+      W.v.y -= (W.beast ? 7.5 : 4.5) * dt; W.v.x *= 1 - 0.2 * dt; W.v.z *= 1 - 0.2 * dt;
+      p.addScaledVector(W.v, dt);
+      const k = W.t;
+      W.pitch = -Math.min(W.beast ? 1.15 : 0.5, k * (W.beast ? 0.6 : 0.22));
+      W.rollA = W.roll * Math.min(W.beast ? 2.2 : 0.75, k * (W.beast ? 1.3 : 0.28));
+      W.yaw += W.spin * dt;
+      if (W.beast) { if (this.rate(W.acc, 'b', 10 * nk, dt)) this.emit(P.SPRAY, p.x, p.y, p.z, 1, 0, -0.3, 0, 0.6, 0.7, 0xc84a3a, 0x7a1a14); if (this.rate(W.acc, 'f', 3 * nk, dt)) this.emit(P.CHIP, p.x, p.y, p.z, 1, 0, 0.5, 0, 1, 1, 0x3a3028, 0x3a3028); }
+      else {
+        const e = m.userData.anchors?.envelope || [0, (this.dims(m).top || 2) * 0.7, 0], q = toWorld(m, e[0] + rnd(0.6), e[1], e[2], _a);
+        for (let n = this.rate(W.acc, 'f', 26 * nk, dt); n > 0; n--) this.emit(P.FIRE, q.x + rnd(0.5 * W.s), q.y, q.z + rnd(0.5 * W.s), 1, 0, 1, 0, 0.8, 1.4 * W.s);
+        if (this.rate(W.acc, 's', 9 * nk, dt)) this.emit(P.BLACK, q.x, q.y + 0.4, q.z, 1, 0, 1, 0, 0.6, 1.5 * W.s);
+        if (this.rate(W.acc, 'e', 6 * nk, dt)) this.emit(P.EMBER, q.x, q.y, q.z, 1, 0, 1, 0, 1.5);
+      }
+      const fy = this.floor(p.x, p.z);
+      if (p.y - W.rest * 0.5 <= fy) this.crash(m, W, fy);
+    } else {
+      // she settles where she fell: a bounce, then still
+      W.lt += dt;
+      const u = Math.min(1, W.lt / 0.7), bounce = Math.sin(u * Math.PI) * 0.25 * (1 - u);
+      W.pitch += (W.restPitch - W.pitch) * Math.min(1, dt * 5); W.rollA += (W.restRoll - W.rollA) * Math.min(1, dt * 5);
+      const fy = this.floor(p.x, p.z);
+      p.y = W.wet ? fy - W.rest * (0.35 + 0.4 * Math.min(1, W.lt / 25)) + Math.sin(this.time * 1.2) * 0.04 : fy + W.restY + bounce;
+      if (W.wet && W.lt < 30 && this.rate(W.acc, 's', 2 * nk, dt)) this.emit(P.MIST, p.x + rnd(1), fy + 0.2, p.z + rnd(1), 1, 0, 1, 0, 0.4, 1);
+    }
+    m.position.copy(p);
+    m.rotation.set(W.rollA, W.yaw, W.pitch);
+  }
+  crash(m, W, fy) {
+    W.landed = true; W.lt = 0;
+    const p = W.p, wet = W.wet = this.water(p.x, p.z), s = W.s;
+    _a.set(p.x, fy + 0.2, p.z);
+    if (W.beast) {
+      W.restRoll = W.roll * 1.35; W.restPitch = -0.08; W.restY = Math.max(0.12, W.rest * 0.25);
+      if (wet) { this.splash(_a, 2.4); this.lasting(this.stains, _a.setY(fy + 0.04), 2.2 * s, 0x6a0c0a, 40, 4); }
+      else {
+        this.dust(_a, 3 * s); this.emit(P.DUST, p.x, fy + 0.3, p.z, Math.round(14 * s), 0, 0.5, 0, 2.2, 1.6 * s); this.ring(_a.setY(fy + 0.06), null, 0.4, 3.4 * s, 0xc8b898, 0.9);
+        this.lasting(this.stains, _a.setY(fy + 0.04), 1.6 * s, 0x4a0c0a, 1e9, 2);
+      }
+      return;
+    }
+    W.restRoll = W.roll * 0.42; W.restPitch = -0.1; W.restY = W.rest * 0.35;
+    this.explode(_a.clone(), 1.5 * s, { debris: 18, dcol: 0x3a2a1a });
+    if (wet) {
+      this.splash(_a, 3 * s); this.emit(P.MIST, p.x, fy + 0.5, p.z, 10, 0, 1, 0, 1, 2);
+      this.lasting(this.slicks, _a.setY(fy + 0.03), 3 * s, 0x1a1810, 80, 8, 0.02);
+      this.flotsam(_a.setY(fy + 0.3), 12, 1, { burnt: true, spread: 1.2 });
+    } else {
+      this.dust(_a, 3 * s); this.emit(P.DUST, p.x, fy + 0.3, p.z, Math.round(16 * s), 0, 0.4, 0, 2.5, 1.8 * s);
+      this.ring(_a.setY(fy + 0.06), null, 0.5, 5 * s, 0xffc080, 0.8); this.ring(_a, null, 0.4, 3.5 * s, 0xb8a888, 1.2);
+      this.flotsam(_a.setY(fy + 0.5), 16, 1, { burnt: true, spread: 1.6, up: 1.2 });
+      this.lasting(this.stains, _a.setY(fy + 0.04), 2.8 * s, 0x16120e, 1e9, 1.5);
+      for (let k = 0; k < 4; k++) this.burner(null, _b.set(p.x + rnd(1.8 * s), fy + 0.15, p.z + rnd(1.2 * s)), 18 + R() * 14, 80, 1.1);
+    }
+  }
+  stepWrecks(dt) {
+    // wounds: their scorch marks ride with the hull, smoke as she worsens, burn while she burns
+    for (const m of this.hurt) {
+      const d = m.userData._dm;
+      if (!d || !m.parent || !m.visible) { if (d) { for (const w of d.wounds) this.scorch.release(w.sc); d.wounds.length = 0; } this.hurt.delete(m); continue; }
+      const nk = this.near(m.position), lv = d.lv, sc = m.scale.x;
+      for (const w of d.wounds) {
+        const p = toWorld(m, w.p.x, w.p.y, w.p.z, _a);
+        if (w.sc >= 0) { _q.setFromUnitVectors(_b.set(0, 0, 1), w.n); _q.premultiply(m.quaternion); _q.multiply(_q2.setFromAxisAngle(_b, w.rot)); this.scorch.put(w.sc, p, _q, 0.2 * w.s * sc, 0.16 * w.s * sc, 0.045 * sc); }
+        if (p.y < this.floor(p.x, p.z) - 0.05 || nk < 0.2 && lv < 2) continue;
+        const nw = _b.copy(w.n).applyQuaternion(m.quaternion);
+        if (lv >= 1 && this.rate(w, 'sm', (lv >= 2 ? 3.5 : 0.8) * nk * Math.min(1.5, w.s), dt)) this.emit(lv >= 2 ? P.BLACK : P.SMOKE, p.x + nw.x * 0.1, p.y + 0.05, p.z + nw.z * 0.1, 1, nw.x * 0.3, 1, nw.z * 0.3, 0.5, lv >= 2 ? 0.75 : 0.5);
+        if (d.fire || lv >= 3) {
+          for (let n = this.rate(w, 'fi', (d.fire ? 9 : 3) * nk, dt); n > 0; n--) this.emit(P.FIRE, p.x, p.y + 0.05, p.z, 1, nw.x * 0.2, 1, nw.z * 0.2, 0.5, 0.75);
+          if (this.rate(w, 'em', 1.5 * nk, dt)) this.emit(P.EMBER, p.x, p.y, p.z, 1, 0, 1, 0, 1);
+        }
+      }
+    }
+    // lasting fires and smoke
+    for (let k = this.burners.length - 1; k >= 0; k--) {
+      const B = this.burners[k]; B.t += 1 * dt;
+      if (B.t > B.smoke || (B.m && (!B.m.visible || !B.m.parent))) { this.burners.splice(k, 1); continue; }
+      const p = B.m ? toWorld(B.m, B.p.x, B.p.y, B.p.z, _a) : B.p, nk = this.near(p), f = B.t < B.fire ? 1 - (B.t / B.fire) * 0.6 : 0;
+      if (p.y < this.floor(p.x, p.z) - 0.1) continue;
+      if (f) {
+        for (let n = this.rate(B, 'f', 14 * B.s * f * nk, dt); n > 0; n--) this.emit(P.FIRE, p.x + rnd(0.3 * B.s), p.y, p.z + rnd(0.3 * B.s), 1, 0, 1, 0, 0.7, 1.1 * B.s);
+        if (this.rate(B, 'e', 3 * nk, dt)) this.emit(P.EMBER, p.x, p.y + 0.3, p.z, 1, 0, 1, 0, 1.2);
+      }
+      if (this.rate(B, 's', (f ? 3.5 : 1.6 * (1 - B.t / B.smoke)) * B.s * nk, dt)) this.emit(f ? P.BLACK : P.SMOKE, p.x, p.y + 0.4, p.z, 1, 0, 1, 0, 0.5, 1.1 * B.s);
+    }
+    for (let k = this.pieces.length - 1; k >= 0; k--) if (this.stepPiece(this.pieces[k], dt)) { this.pieces[k].obj.removeFromParent(); this.pieces.splice(k, 1); }
+    this.stepFlot(dt);
+    // slicks, stains and whirlpools
+    for (let k = this.lastL.length - 1; k >= 0; k--) {
+      const L = this.lastL[k]; L.t += dt;
+      if (L.i < 0 || L.t > L.life) { this.endLasting(L); this.lastL.splice(k, 1); continue; }
+      const grow = Math.min(1, L.t / L.grow), fade = L.t > L.life * 0.8 ? (L.life - L.t) / (L.life * 0.2) : 1;
+      _q.setFromAxisAngle(UP, L.spin * L.t + L.p.x);
+      if (L.pool === this.whirls) { this.whirls.tint(L.i, 0xffffff, Math.min(1, L.t * 1.5) * fade); this.whirls.put(L.i, L.p, _q, L.s * (0.6 + 0.4 * grow), 1, L.s * (0.6 + 0.4 * grow)); }
+      else { const r = L.s * Math.sqrt(grow) * (0.4 + 0.6 * fade); L.pool.put(L.i, L.p, _q, Math.max(0.01, r), 1, Math.max(0.01, r * 0.85)); }
+    }
   }
 
   // ================================================ the lasting states of hulls at sea
@@ -746,7 +1276,18 @@ export class FleetFx {
       if (e.dot && e.dot.until > tick && !e.dot.grip) {
         const by = b.ents[e.dot.by], ba = by?.def?.arts || {};
         const kind = ba.poison || ba.acid || ba.skyPoison || e.dot.poison ? 'poison' : by && !by.ship && !by.fort && !by.air ? 'water' : 'fire';
-        if (!r.fire) r.fire = [0, 1, 2].map(() => this.deckPoint(D, new THREE.Vector3()));
+        // a fire takes hold where she was hit and spreads along her deck, a new seat of fire every second or so
+        if (!r.fire) {
+          const wd = m.userData._dm?.wounds, last = wd && wd.length ? wd[wd.length - 1].p : null;
+          r.fire = [last ? new THREE.Vector3(last.x, D.deckY, last.z * 0.6) : this.deckPoint(D, new THREE.Vector3())]; r.spread = 0;
+        }
+        if (kind === 'fire' && r.fire.length < 8 && (r.spread += dt * speed) > 1.2) {
+          r.spread = 0;
+          const src = r.fire[Math.floor(R() * r.fire.length)], q = src.clone();
+          q.x = Math.max(-D.hx * 0.9, Math.min(D.hx * 0.9, q.x + rnd(D.hx * 0.35))); q.z = Math.max(-D.hz * 0.7, Math.min(D.hz * 0.7, q.z + rnd(D.hz * 0.4))); q.y = D.deckY;
+          r.fire.push(q);
+          const w = toWorld(m, q.x, q.y, q.z, _a); this.emit(P.FLASH, w.x, w.y, w.z, 1, 0, 0, 0, 0, 0.7, 0xffc060, 0xff6010);
+        }
         for (const lp of r.fire) {
           const w = toWorld(m, lp.x, lp.y, lp.z, _a);
           if (kind === 'fire') {

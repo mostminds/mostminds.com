@@ -20,7 +20,8 @@
 //
 // And squadrons: three small fliers flying together, each with its rider (see fliers.js for the styles).
 import * as THREE from 'three';
-import { Kit, G, C, shade, taper, EMPTY_GEO } from './parts/kit.js';
+import { Kit, G, C, shade, taper, EMPTY_GEO, sculptKit, lazyMap } from './parts/kit.js';
+import { noise3 } from './sculpt.js';
 import { emblem, finial, lantern, banner, motif } from './parts/realmStyle.js';
 import { sculptMaterial } from './sculpt.js';
 import { REALMS } from '../data/realms.js';
@@ -48,11 +49,20 @@ function flavorOf(id) {
 /** a piece: one merged sculpt mesh from fn(K), added to parent and to the ship's detail table */
 class Dress {
   constructor(m, key, st, fl, side) { this.m = m; this.key = key; this.st = st; this.fl = fl; this.side = side; this.lods = []; this.glows = []; }
-  piece(parent, name, fn) {
-    const K = new Kit();
-    fn(K);
-    if (K.empty) return null;
-    const mesh = K.mesh(sculptMaterial(), `dress|${this.key}|${name}`);
+  /**
+   * fn(K) draws the piece with kit primitives; they are re-cut as ONE sculpt (parts/kit.js sculptKit: spheres, boxes,
+   * barrels, rings and tubes become blended sculpt prims with baked occlusion, the ground units' pipeline; outlines,
+   * lathes and cloth ride along as hard pieces), meshed lazily per detail level and cached by the design's key.
+   * o.res: sculpt cells per unit at level 0 (default 60). o.kit: keep it a plain merged kit (lines, glass).
+   */
+  piece(parent, name, fn, o = {}) {
+    const probe = new Kit();
+    fn(probe);
+    if (probe.empty) return null;
+    const key = `dress|${this.key}|${name}`;
+    const K = o.kit ? probe : new Kit().add(sculptKit(key, fn, { res: o.res ?? 60, min: 9, k: o.k ?? 0.009 }), 0xffffff);
+    const mesh = K.mesh(sculptMaterial(), o.kit ? key : `${key}|S`);
+    mesh.userData.piece = name;
     parent.add(mesh);
     this.lods.push({ mesh, geos: mesh.userData.lodGeos });
     return mesh;
@@ -446,6 +456,136 @@ function build(m, def, sideColor, deckY, realm, keep) {
   const base = { bow: [L * 0.5, y, 0], stern: [-L * 0.5, y, 0], deckL: [0, y, -B * 0.42], deckR: [0, y, B * 0.42] };
   for (const [k, v] of Object.entries({ ...base, ...anchors })) if (!an[k] || anchors[k]) an[k] = v;
   ud.roleDress = { g, lods: D.lods, acts: Object.keys(fns), fns };
+  wireDamage(m, D, g, def, L, B, y);
+}
+
+// ------------------------------------------------------------------ damage
+// userData.setDamage(level 0..3, { side: -1 | 1, fire }) for a plain role ship. Her own hull's setDamage (props/ships.js
+// or a design's) is called first when she has one; when she has none this adds what the hull would show: sculpted shot
+// holes with splintered lips and scorch (1), ragged breaches showing ribs and a list (2), more breaches low on the
+// hull, a heavy list and embers glowing in the holes (3), every overlay found on her real side by raycasting and
+// mirrored onto the beam that was hit. Her fittings char (2+) and are knocked askew (2) or wrecked (3); they are listed
+// in userData.breakParts (kind 'plate' / 'spar' / 'mast') for the effects code to throw. Idempotent; prebuilt and lazy.
+const CHAR = new WeakMap();
+/** a charred copy of a geometry: colours darkened in blotches, roughened */
+function charred(g) {
+  if (!g || g === EMPTY_GEO || !g.attributes || !g.attributes.color) return g;
+  let c = CHAR.get(g);
+  if (c) return c;
+  c = g.clone();
+  const P = c.attributes.position, col = c.attributes.color, pbr = c.attributes.aPbr;
+  const C2 = new Float32Array(col.array.length);
+  for (let i = 0; i < col.count; i++) {
+    const n = noise3(P.getX(i) * 3.1 + 7, P.getY(i) * 3.1, P.getZ(i) * 3.1), k = n > 0.45 ? 0.16 + (1 - n) * 0.25 : 0.55 + n * 0.3;
+    C2[i * 3] = col.getX(i) * k; C2[i * 3 + 1] = col.getY(i) * k * 0.92; C2[i * 3 + 2] = col.getZ(i) * k * 0.85;
+  }
+  c.setAttribute('color', new THREE.BufferAttribute(C2, 3));
+  if (pbr) { const R = new Float32Array(pbr.array); for (let i = 0; i < pbr.count; i++) { R[i * 3] = Math.max(R[i * 3], 0.92); R[i * 3 + 1] *= 0.5; } c.setAttribute('aPbr', new THREE.BufferAttribute(R, 3)); }
+  CHAR.set(g, c);
+  return c;
+}
+// the damage pieces, drawn with the kit and re-cut as sculpts (shared by every ship), each facing +z
+const HOLE = (K) => {
+  for (let i = 0; i < 3; i++) K.add(G.sph(0.16, 12, 8), 0x1c1612, Math.cos(i * 2.1) * 0.05, Math.sin(i * 2.1) * 0.04, -0.012, { sx: 1.1 - i * 0.15, sy: 0.8 + i * 0.1, sz: 0.05, r: 0.95 }); // the scorch
+  K.add(G.cyl(0.075, 0.06, 0.06, 12), 0x060504, 0, 0, -0.015, { rx: PI / 2, r: 1 });          // the hole
+  for (let i = 0; i < 7; i++) { const a = (i / 7) * PI * 2 + Math.sin(i * 7.3) * 0.4, l = 0.035 + ((i * 37) % 10) * 0.004; K.add(G.box(l, 0.014, 0.012), i % 3 ? 0xb89a6a : 0x6a4a2c, Math.cos(a) * (0.075 + l * 0.4), Math.sin(a) * (0.075 + l * 0.4), 0.004, { rz: a, ry: -0.2, r: 0.9 }); }
+};
+const BREACH = (K) => {
+  K.add(G.sph(0.5, 14, 10), 0x1c1612, 0, 0, -0.03, { sx: 1.25, sy: 0.85, sz: 0.04, r: 0.95 });   // charred planking round it
+  K.add(G.sph(0.34, 12, 8), 0x050403, 0, 0, -0.02, { sx: 1.25, sy: 0.8, sz: 0.05, r: 1 });        // the dark inside
+  for (const x of [-0.24, 0.03, 0.29]) K.add(G.box(0.06, 0.6, 0.05), 0x4a3220, x, 0, -0.02, { rz: x * 0.3, r: 0.85 }); // ribs
+  for (let i = 0; i < 14; i++) { const a = (i / 14) * PI * 2, r0 = 0.36 + ((i * 53) % 7) * 0.015, l = 0.05 + ((i * 29) % 9) * 0.008; K.add(G.box(l, 0.03, 0.016), i % 2 ? 0xb89a6a : 0x5a3a22, Math.cos(a) * r0 * 1.22, Math.sin(a) * r0 * 0.82, 0.0, { rz: a, ry: -0.2, r: 0.9 }); }
+};
+const EMBERS = (K) => { for (let i = 0; i < 5; i++) K.add(G.sph(0.035 + (i % 3) * 0.012, 6, 5), i % 2 ? 0xc83a10 : 0xe86a1a, (i - 2) * 0.07, Math.sin(i * 2.1) * 0.05, 0.0, { g: 1.1, r: 0.5 }); };
+const _ray = new THREE.Raycaster(), _o = new THREE.Vector3(), _dv = new THREE.Vector3(), _nq = new THREE.Quaternion(), _ne = new THREE.Euler(), _Z = new THREE.Vector3(0, 0, 1);
+/** where shot lands on her +z side: [{ p, n }] in her own space, found by raycasting her hull at (x, y) */
+function hullSpots(m, g, pts) {
+  const meshes = [];
+  m.traverse((o) => { if (o.isMesh && o.visible !== false && o.geometry?.attributes?.position?.count) { let q = o; while (q && q !== g) q = q.parent; if (!q) meshes.push(o); } });
+  m.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(m.matrixWorld).invert(), nm = new THREE.Matrix3();
+  const out = [];
+  for (const [x, y] of pts) {
+    _o.set(x, y, 50).applyMatrix4(m.matrixWorld);
+    _dv.set(0, 0, -1).transformDirection(m.matrixWorld);
+    _ray.set(_o, _dv); _ray.far = 100;
+    const h = _ray.intersectObjects(meshes, false)[0];
+    if (!h || !h.face) continue;
+    const p = h.point.clone().applyMatrix4(inv);
+    nm.getNormalMatrix(h.object.matrixWorld);
+    const n = h.face.normal.clone().applyMatrix3(nm).normalize().transformDirection(inv);
+    if (n.z < 0.2) n.set(0, 0, 1);
+    out.push({ p, n });
+  }
+  return out;
+}
+function wireDamage(m, D, g, def, L, B, y) {
+  const ud = m.userData;
+  const prev = ud.roleDamage;
+  if (prev) { for (const o of prev.overlays) if (o) o.removeFromParent(); }
+  // her hull's own damage (kept from before we first dressed her)
+  if (!prev) ud.hullDamage = typeof ud.setDamage === 'function' ? ud.setDamage : null;
+  const hullSet = ud.hullDamage;
+  const lod = () => ud.lod;
+  const kids = prev ? prev.kids.filter((k) => k !== prev.g).concat(g) : m.children.slice();
+  const state = { g, overlays: [null, null, null, null, null], kids, level: -1, tag: '' };
+  ud.roleDamage = state;
+  // pieces of her fittings that can be thrown when she breaks up
+  const bp = (ud.breakParts ||= []).filter((b) => !(prev && b.role));
+  ud.breakParts = bp;
+  for (const c of g.children) if (c.isGroup && c.children.length) bp.push({ mesh: c, at: c.position.toArray(), kind: c.position.y > y + 0.6 ? 'spar' : 'plate', role: true });
+  const rnd = (i) => { const v = Math.sin(i * 91.7 + L * 13.1) * 43758.5; return v - Math.floor(v); };
+  let spots = null;
+  const overlay = (k) => {
+    if (state.overlays[k]) return state.overlays[k];
+    spots ||= hullSpots(m, g, [...Array(12)].map((_, i) => [(rnd(i) - 0.5) * L * 0.72, y * (i < 6 ? 0.55 + rnd(i + 30) * 0.3 : 0.2 + rnd(i + 30) * 0.25)]));
+    const K = new Kit();
+    const put = (fn, key, sp, s) => {
+      _nq.setFromUnitVectors(_Z, sp.n); _ne.setFromQuaternion(_nq);
+      K.add(sculptKit(key, fn, { res: 70, min: 8, k: 0.01 }), 0xffffff, sp.p.x, sp.p.y, sp.p.z, { rx: _ne.x, ry: _ne.y, rz: _ne.z + rnd(sp.p.x) * 3, s });
+    };
+    const sz = Math.max(0.6, B * 0.28);
+    if (k === 1) spots.slice(0, 4).forEach((sp) => put(HOLE, 'dmgHole', sp, sz * 0.8));
+    if (k === 2) spots.slice(6, 8).forEach((sp) => put(BREACH, 'dmgBreach', sp, sz * 0.62));
+    if (k === 3) { spots.slice(8, 11).forEach((sp) => put(BREACH, 'dmgBreach', sp, sz * 0.72)); spots.slice(4, 6).forEach((sp) => put(HOLE, 'dmgHole', sp, sz * 0.8)); }
+    if (k === 4) spots.slice(4, 10).forEach((sp) => put(EMBERS, 'dmgEmbers', sp, sz * 0.7));
+    if (K.empty) return null;
+    const mesh = K.mesh(sculptMaterial(), `dmg|${def.id}|${L}|${B}|${k}|${spots.length}`);
+    mesh.userData.lodLevel = () => lod()?.level || 0;
+    const og = new THREE.Group(); og.userData.noCrew = true; og.add(mesh); m.add(og);
+    lod()?.meshes.push({ mesh, geos: mesh.userData.lodGeos });
+    state.overlays[k] = og;
+    return og;
+  };
+  // knocked-about fittings: a fixed tilt per group, by level
+  const knock = g.children.filter((c) => c.isGroup).map((c, i) => ({ c, rx: c.rotation.x, rz: c.rotation.z, y: c.position.y, a: (rnd(i + 5) - 0.5) * 0.5, b: (rnd(i + 9) - 0.5) * 0.4 }));
+  const pristine = D.lods.map((e) => ({ e, geos: e.geos }));
+  ud.setDamage = (level, info = {}) => {
+    level = Math.max(0, Math.min(3, level | 0));
+    const side = info.side === -1 ? -1 : 1, fire = !!info.fire && level >= 2;
+    const tag = `${level}|${level ? side : 0}|${fire ? 1 : 0}`;
+    if (tag === state.tag) return;
+    state.tag = tag;
+    if (hullSet) { try { hullSet(level, info); } catch (err) { console.warn('[fleetDress] hull setDamage', err); } }
+    else {
+      for (let k = 1; k <= 3; k++) { const o = level >= k ? overlay(k) : state.overlays[k]; if (o) { o.visible = level >= k; o.scale.z = side; } }
+      const e = fire ? overlay(4) : state.overlays[4];
+      if (e) { e.visible = fire; e.scale.z = side; }
+      const list = (level >= 3 ? 0.11 : level >= 2 ? 0.045 : 0) * side;
+      for (const c of state.kids) if (c.parent === m) c.rotation.x = (c.userData.list0 ??= c.rotation.x) + list;
+    }
+    // her fittings: charred from level 2, knocked askew, wrecked at 3
+    for (const { e, geos } of pristine) {
+      const want = level >= 2 ? (e.charGeos ||= lazyMap(geos, charred)) : geos;
+      if (e.geos === want) continue;
+      e.geos = want; e.mesh.userData.lodGeos = want;
+      const lv = lod()?.level || 0; e.mesh.geometry = want[Math.min(lv, want.length - 1)];
+    }
+    const k = level >= 3 ? 1 : level >= 2 ? 0.4 : 0;
+    for (const q of knock) { q.c.rotation.x = q.rx + q.a * k; q.c.rotation.z = q.rz + q.b * k; q.c.position.y = q.y - (level >= 3 ? 0.06 : 0); }
+    state.level = level;
+  };
+  if (prev && prev.level > 0) { const t = prev.tag.split('|'); ud.setDamage(+t[0], { side: +t[1] || 1, fire: t[2] === '1' }); }
 }
 
 // ------------------------------------------------------------------ fliers and squadrons

@@ -158,11 +158,11 @@ function boxGeo(W, H, D, cls, q, seed) {
     if (cls === 'wood') { for (let a = 0; a < 3; a++) if (seams[a].length && near(p[a], seams[a]) < gw * 0.5) gr = 1; }
     else if (cls === 'stone' && course) {
       if (near(y, seams[1]) < gw * 0.5) gr = 1;
-      else { const ci = Math.floor((y + half[1]) / course); for (const a of [0, 2]) if (jointsBy[a] && near(p[a], jointsBy[a][ci % 2]) < gw * 0.5) gr = 1; }
+      else { const ci = Math.max(0, Math.floor((y + half[1]) / course)); for (const a of [0, 2]) if (jointsBy[a] && near(p[a], jointsBy[a][ci % 2]) < gw * 0.5) gr = 1; }
     }
     if (gr) { const d = cls === 'stone' ? 0.01 : 0.005; pos.setXYZ(i, x - nr.getX(i) * d, y - nr.getY(i) * d, z - nr.getZ(i) * d); }
     let blockK = 1;
-    if (cls === 'stone' && course) { const ci = Math.floor((y + half[1]) / course); blockK = 0.92 + 0.16 * hashI(ci * 7 + Math.floor((x + z) / 0.3), seed); }
+    if (cls === 'stone' && course) { const ci = Math.max(0, Math.floor((y + half[1]) / course)); blockK = 0.92 + 0.16 * hashI(ci * 7 + Math.floor((x + z) / 0.3), seed); }
     const f = finish(cls, x, y, z, ax, E[i], gr, seed);
     C[i * 3] = f[0] * blockK; C[i * 3 + 1] = f[1] * blockK; C[i * 3 + 2] = f[2] * blockK;
   }
@@ -465,7 +465,6 @@ export function finishEntry(e) {
   if (e.done) return;
   e.done = true; PENDING.delete(e);
   refineKit(e.kit);
-  if (globalThis.__deckDebug) globalThis.__deckDebug('entry', e.kit);
   const fin = mergeLevels(e.kit.items);
   if (e.post) e.post(fin);
   for (let i = 0; i < fin.length; i++) e.geos[i] = fin[i];
@@ -616,15 +615,15 @@ export function figureGeo(unitId, pose, hgt) {
   try {
     if (!unitApi) throw new Error('no unit api');
     const { UNITS, prepareDef, buildUnitModel, animateUnit } = unitApi;
-    const def = UNITS[unitId] || UNITS.militia;
+    const d0 = UNITS[unitId] || UNITS.militia, def = { ...d0, model: { ...(d0.model || { body: 'humanoid' }), weapon: null, shield: null } }; // empty-handed
     const was = getDetail();
     let m;
     try { setDetail('low'); m = buildUnitModel(prepareDef(def)); } finally { setDetail(was); }
     if (pose === 'stand') animateUnit(m, 0.4, false, -1, 0, 0, false);
     else if (pose === 'attack') animateUnit(m, 0.4, false, 0.45, 0, 0, false);
-    else if (pose === 'kneel') animateUnit(m, 0.4, false, -1, 0.42, 0, false, { death: { style: 'kneel', seed: 7 } });
-    else animateUnit(m, 0.4, false, -1, 1, 0, false, { death: { style: pose === 'deadFront' ? 'front' : 'back', seed: 3 } });
-    const h0 = m.userData.rig?.height || 1.2, k = hgt / h0;
+    else if (pose === 'kneel') animateUnit(m, 0.4, false, -1, 0.3, 0, false, { death: { style: 'kneel', seed: 7 } });
+    else animateUnit(m, 0.4, false, -1, 0.5, 0, false, { death: { style: pose === 'deadFront' ? 'front' : 'back', seed: 3 } });
+    const h0 = pose === 'stand' || pose === 'attack' ? m.userData.rig?.height || 1.1 : 1.07, k = hgt / h0;
     m.rotation.y = PI / 2; m.scale.setScalar(k); m.position.set(0, 0, 0); m.updateMatrixWorld(true);
     const wrap = new THREE.Group(); wrap.add(m); wrap.updateMatrixWorld(true);
     const lv = [1, 2, 2].map((l) => { const g = bakePoseIn(m, wrap, l); return g; });
@@ -771,18 +770,17 @@ export function attachDamage(info) {
       let geos = pristine;
       if (level === 1) geos = pristine.map((g, i) => (i < 3 ? charGeo(g, 1, false, 3) : g));
       else if (level >= 2) {
-        const side = inf.side ? -inf.side : 1;
-        const vk = `${key}|${level}|${side}|${fire ? 1 : 0}`;
-        geos = WRECK.get(vk);
-        if (!geos) {
-          refineKit(kit);
-          const w = wreckKit(kit, level, info.wreck || 'smash', { seed: hashI(key.length, level) * 99 | 0, side, fire, deckAt: info.deckAt });
-          const lv = mergeLevels(w.items, [0, 1, 2]);
-          geos = lv.map((g, i) => (i < 3 ? charGeo(g, level, fire, 5) : charGeo(pristine[i], Math.min(level, 2), false, 5)));
-          WRECK.set(vk, geos);
+        // the wreck's shape is kept per design and level (not per side or fire: those only change the burning);
+        // a part not yet finished is wrecked as its plain shapes (it is not being looked at close up)
+        const vk = `${key}|${level}|${kit.__refined ? 1 : 0}`;
+        let lv = WRECK.get(vk);
+        if (!lv) {
+          const w = wreckKit(kit, level, info.wreck || 'smash', { seed: hashI(key.length, level) * 99 | 0, side: 1, fire: true, deckAt: info.deckAt });
+          lv = mergeLevels(w.items, [0, 1, 2]);
+          WRECK.set(vk, lv);
           if (WRECK.size > 400) WRECK.delete(WRECK.keys().next().value);
         }
-      }
+        geos = lv.map((g, i) => (i < 3 ? charGeo(g, level, fire, 5) : charGeo(pristine[i], Math.min(level, 2), false, 5)));
       swapLod(model, mesh, geos);
     }
     for (const mv of movers) swapLod(model, mv.m, level === 0 ? mv.geos : mv.geos.map((g, i) => charGeo(g, Math.min(level, 3), fire && level >= 2, 7 + i)));

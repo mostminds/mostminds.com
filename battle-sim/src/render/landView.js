@@ -311,7 +311,7 @@ export class LandView {
     for (const i of this.pendingStages || []) this.structStage(i);
     this.pendingStages = [];
     this.deathAt = new Map();
-    this.shipSunkAt = new Map();
+    this.shipSunkAt = new Map(); this.shipFrom = [];
     this.timers = [];
     this.lastTickTime = performance.now();
   }
@@ -691,8 +691,8 @@ export class LandView {
           if (e.style === 'melee') continue;
           const st = b.structures[e.struct]; w.set(st.x + st.w / 2, 1, st.y + st.h / 2);
         } else if (e.craft !== undefined) { const c = b.crafts[e.craft]; w.set(c.x + 0.5, 0.3, c.y + 0.5); }
-        else if (e.ship !== undefined) { const sh = b.ships[e.ship]; w.set(sh.x, 0.8, sh.y); }
-        else if (e.air !== undefined) this.airPos(b.airships[e.air], 1, w);
+        else if (e.ship !== undefined) { const sh = b.ships[e.ship]; w.set(sh.x, 0.8, sh.y); this.shipFrom[e.ship] = { x: v.x, z: v.z }; }
+        else if (e.air !== undefined) { this.airPos(b.airships[e.air], 1, w); this.airModels[e.air].from = { x: v.x, z: v.z }; }
         else { this.unitPos(b.units[e.to], 1, w); w.y += 0.5; }
         st.projectile(v.clone(), w.clone(), e.proj, (e.delay * TICK_MS) / 1000 / this.speed, e.proj === 'arrow' || e.proj === 'ranged' ? 0.8 : 0.2);
       } else if (e.type === 'gunFire') {
@@ -703,6 +703,7 @@ export class LandView {
         w.set(e.x1, e.h1 ?? 0.3, e.y1);
         st.puff(v.clone().add(new THREE.Vector3(Math.cos(g.aim) * mz[0] * gs, 0, Math.sin(g.aim) * mz[0] * gs)), 0xeeeeee, g.w > 1 ? 0.45 : 0.3, 0.9);
         st.projectile(v.clone(), w.clone(), e.shot, (e.delay * TICK_MS) / 1000 / this.speed, e.shot === 'shell' ? 2.4 : 0.4);
+        b.ships.forEach((sh, si) => { if (Math.hypot(sh.x - e.x1, sh.y - e.y1) < sh.radius + 1.5) this.shipFrom[si] = { x: g.cx, z: g.cy, kind: e.shot }; });
         if (e.shot !== 'bolt') this.later(e.delay, () => { st.puff(w.clone(), 0x8a7a6a, 0.4, 0.8); st.ring(w.clone().setY(0.05), b.guns[e.gun].wpn.splash || 0.4, 0xffb060, 0.5); });
       } else if (e.type === 'shipFire') {
         const sh = b.ships[e.ship];
@@ -717,12 +718,20 @@ export class LandView {
         this.later(e.delay, () => st.puff(target, 0x8a7a6a, 0.5, 0.8));
       } else if (e.type === 'shipHit') {
         const sh = b.ships[e.ship]; st.splat(v.set(sh.x, 2.4, sh.y), e.dmg);
+        const m = this.shipModels[e.ship], fx = this.fx;
+        if (m && e.dmg > 0) {
+          // it strikes her on the beam facing whoever fired it, and the hole stays
+          const f = this.shipFrom[e.ship] || { x: sh.x + Math.random() * 6 - 3, z: sh.y + 6 }, kind = f.kind === 'shell' ? 'mortar' : 'cannon';
+          fx.wound(m, fx.impactPoint(m, fx.dims(m, sh), f.x, f.z, kind), Math.min(2, 0.6 + e.dmg / 25), { flesh: !!sh.def.beast });
+        }
       } else if (e.type === 'gunHit') {
         const g = b.guns[e.gun]; st.splat(v.set(g.cx, 1.6, g.cy), e.dmg);
         this.structStage(g.si);
       } else if (e.type === 'shipSunk') {
-        const sh = b.ships[e.ship]; this.shipSunkAt.set(e.ship, this.time);
+        const sh = b.ships[e.ship], m = this.shipModels[e.ship]; this.shipSunkAt.set(e.ship, this.time);
         st.ring(v.set(sh.x, 0, sh.y), 2, 0xffffff, 1.2);
+        if (m && !m.userData.beast) this.fx.breakUp(m, sh, { boom: sh.def.role === 'siege' || !!sh.def.mortar, color: SIDE_COLORS[sh.side] });
+        else if (m) this.fx.beastDeath(m, sh);
         msgs.push({ side: sh.side, text: `${sh.def.name} goes down` });
       } else if (e.type === 'gunCaptured') {
         const g = b.guns[e.gun];
@@ -964,6 +973,7 @@ export class LandView {
         const a = b.airships[e.air], am = this.airModels[e.air].m, fx = this.fx;
         if (!fx.act(am, 'fire', 0.7)) fx.rock(am, 0.03);
         this.crews.pulse?.(am, 'fire');
+        b.airships.forEach((o, oi) => { if (oi !== e.air && Math.hypot(o.x - e.x1, o.y - e.y1) < 2.5) this.airModels[oi].from = { x: a.x, z: a.y }; });
         w.set(e.x1 + 0.5, e.h1 ?? 0.3, e.y1 + 0.5);
         const high = (e.h1 ?? 0) > 1.5, dur = (e.delay * TICK_MS) / 1000 / this.speed;
         for (let i = 0; i < e.guns; i++) {
@@ -1000,9 +1010,9 @@ export class LandView {
         if (e.dmg > 0) {
           const a = b.airships[e.air], am = this.airModels[e.air].m, fx = this.fx;
           this.airPos(a, 1, v); v.x += (Math.random() - 0.5) * 3; st.splat(v.clone(), e.dmg);
-          fx.emit(P.SMOKE, v.x, v.y, v.z, 3, 0, 0.5, 0, 0.6, 0.8); fx.emit(P.SPARK, v.x, v.y, v.z, 6, 0, 0.3, 0, 2.5);
-          fx.splinters(v.clone(), new THREE.Vector3(0, 0.3, 0), Math.min(10, 2 + Math.round(e.dmg / 8)), 0.9);
-          if (!fx.act(am, 'hit', 0.5)) fx.rock(am, Math.min(0.06, 0.01 + e.dmg * 0.001));
+          // the shot lands on the side facing whoever fired it: gondola timbers, a rent in the bag, or a beast's flesh
+          const f = this.airModels[e.air].from || { x: a.x + (Math.random() - 0.5) * 8, z: a.y + (Math.random() < 0.5 ? -6 : 6) };
+          fx.wound(am, fx.impactPoint(am, fx.dims(am, a), f.x, f.z, 'cannon', true), Math.min(1.8, 0.6 + e.dmg / 25), { flesh: isSkyBeast(a, am) });
         }
       } else if (e.type === 'airCaptured') {
         const a = b.airships[e.air], am = this.airModels[e.air].m;
@@ -1039,11 +1049,10 @@ export class LandView {
       } else if (e.type === 'airRefit') {
         msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} runs for a mooring tower` });
       } else if (e.type === 'airDown') {
-        const a = b.airships[e.air];
-        this.airModels[e.air].downAt = this.time;
-        this.airPos(a, 1, v);
-        this.fx.explode(v.clone(), 1.4, { debris: 14 });
-        for (let k = 0; k < 6; k++) st.puff(v.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 2, (Math.random() - 0.5) * 2)), k % 2 ? 0xff8a30 : 0x3a3632, 1.1, 1.8);
+        const a = b.airships[e.air], am = this.airModels[e.air];
+        am.downAt = this.time;
+        // wrecked where she is: burning, the bag giving way, parts and hands torn off; updateAir drops her
+        if (!am.m.userData._wk) this.fx.airWreck(am.m, a, { beast: isSkyBeast(a, am.m), color: SIDE_COLORS[a.side] });
         msgs.push({ side: 1 - a.side, text: `${a.def.name} is shot down!` });
       } else if (e.type === 'flank') {
         msgs.push({ side: e.side, text: `${e.name} squad swings wide to flank` });
@@ -1094,9 +1103,21 @@ export class LandView {
       if (!sh.alive && sunk === undefined) { m.visible = false; return; }
       const x = sh.px + (sh.x - sh.px) * alpha, y = sh.py + (sh.y - sh.py) * alpha;
       let dh = sh.heading - sh.ph; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      if (m.rotation.order !== 'YXZ') m.rotation.order = 'YXZ'; // a jolt rolls her about her own keel
       m.position.set(x, this.waveY(x, y) - 0.1, y);
       m.rotation.y = -(sh.ph + dh * alpha);
       m.rotation.z = Math.sin(t * 1.1 + i) * 0.04;
+      m.rotation.x = 0;
+      if (sunk === undefined) {
+        // her damage by level; she lists toward the beam that took it and settles as she takes water
+        const fx = this.fx, d = fx.dm(m);
+        fx.damage(m, sh.hp / Math.max(1, sh.maxHp), { flesh: !!sh.def.beast });
+        const lv = d.lv, tl = m.userData.list !== undefined ? 0 : (lv >= 3 ? 0.13 : lv >= 2 ? 0.06 : 0) * d.side, ts = (lv >= 3 ? 0.22 : lv >= 2 ? 0.1 : lv ? 0.03 : 0);
+        const k = Math.min(1, dt * speed * 0.7);
+        d.list += (tl - d.list) * k; d.settle += (ts - d.settle) * k;
+        m.rotation.x += d.list; m.position.y -= d.settle;
+        fx.pose(m);
+      }
       if (m.userData.beast && sunk === undefined) animateCreature(m.userData.beast, t, i * 1.3);
       if (m.userData.lod) {
         const ratio = this.stage.camera.position.distanceTo(m.position) / 1.5;
@@ -1104,10 +1125,11 @@ export class LandView {
         setLod(m, lv);
       }
       if (sunk !== undefined) {
-        const k = (t - sunk) * speed;
-        m.position.y -= k * 0.7; m.rotation.x = Math.min(0.6, k * 0.3);
+        // she breaks up and goes down (a beast rolls over and sinks in its blood)
         m.userData.bar.visible = false; m.userData.ring.visible = false;
-        if (k > 3) m.visible = false;
+        const fx = this.fx;
+        if (!m.userData._wk) { if (m.userData.beast) fx.beastDeath(m, sh); else fx.breakUp(m, sh, { color: SIDE_COLORS[sh.side] }); }
+        if (m.userData._wk.beast ? fx.beastPose(m, dt * speed) : fx.sinkPose(m, dt * speed)) m.visible = false;
       } else setBar(m.userData.bar, sh.hp / sh.maxHp);
     });
     if (this.water) {
@@ -1386,25 +1408,25 @@ export class LandView {
       const x = a.px + (a.x - a.px) * alpha, y = a.py + (a.y - a.py) * alpha;
       let dh = a.heading - a.ph; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
       const ground = Math.max(0, this.groundY(Math.round(x), Math.round(y)));
-      let alt = a.def.altitude + Math.sin(t * 0.9 + i * 2) * 0.12;
+      const lv0 = m.userData._dm?.lv || 0; // badly hit she cannot hold her height
+      let alt = a.def.altitude + Math.sin(t * 0.9 + i * 2) * 0.12 - (lv0 >= 3 ? 0.9 : lv0 >= 2 ? 0.45 : 0);
       if (a.mode === 'rescue' || a.mode === 'ferry' || a.ladder > 0) alt -= 0.8;
       am.alt = am.alt === undefined ? alt : am.alt + (alt - am.alt) * Math.min(1, dt * 1.5);
       if (m.rotation.order !== 'YXZ') m.rotation.order = 'YXZ'; // a jolt rolls her about her own length
-      m.rotation.set(0, -(a.ph + dh * alpha), Math.sin(t * 0.7 + i) * 0.015);
-      const level = !a.alive ? 3 : a.hp > a.maxHp * 0.66 ? 0 : a.hp > a.maxHp * 0.33 ? 1 : 2;
-      if (level !== am.dmg) { am.dmg = level; m.userData.setDamage?.(level); }
       if (am.side !== a.side) { am.side = a.side; m.userData.setSide?.(SIDE_COLORS[a.side]); am.mark.material.color.set(SIDE_COLORS[a.side]); }
+      const beast = isSkyBeast(a, m);
       if (am.downAt !== undefined) {
-        // she comes down burning and lies where she fell
-        const k = Math.min(1, ((t - am.downAt) * speed) / 3);
-        m.position.set(x, ground + 0.9 + (am.alt - 0.9) * (1 - k * k), y);
-        m.rotation.z = k * 0.35; m.rotation.x = k * 0.12;
+        // she falls, tumbling and burning (a beast limp, its wings trailing), crashes, and lies where she fell
         am.bar.visible = am.crew.visible = am.ladder.visible = false; am.mark.visible = false;
-        if (k < 1 && Math.random() < 0.5) this.stage.puff(v.set(x + (Math.random() - 0.5) * 4, m.position.y + 1.5, y + (Math.random() - 0.5) * 2).clone(), Math.random() < 0.5 ? 0xff8030 : 0x2e2a28, 0.7, 1.4);
-        else if (k >= 1 && Math.random() < 0.04) this.stage.puff(v.set(x + (Math.random() - 0.5) * 4, ground + 1.2, y + (Math.random() - 0.5) * 2).clone(), 0x2e2a28, 0.6, 2);
+        if (!m.userData._wk) fx.airWreck(m, a, { beast, color: SIDE_COLORS[a.side] });
+        fx.airFall(m, dt * speed);
+        if (m.userData.skyAnim) animateSky(m, beast ? am.downAt : t);
         return;
       }
-      m.position.set(x, ground * 0.3 + am.alt, y);
+      // her damage by level: the model shows it; she trails smoke and fire and sinks lower, a beast bleeds and labours
+      const level = fx.damage(m, a.hp / Math.max(1, a.maxHp), { fire: !!(a.dot && a.dot.until > b.tick), flesh: beast });
+      m.rotation.set(0, -(a.ph + dh * alpha), Math.sin(t * 0.7 + i) * 0.015 - (beast && level >= 2 ? 0.07 * (level - 1) : 0));
+      m.position.set(x, ground * 0.3 + am.alt - (beast && level >= 2 ? 0.12 * Math.abs(Math.sin(t * 1.7 + i)) : 0), y);
       // a stoop on its mark: down, nose first, and up again
       if (am.dive) { const u = (fx.time - am.dive.t0) / am.dive.dur; if (u >= 1) am.dive = null; else { m.position.y -= 2.2 * Math.sin(u * Math.PI); m.rotation.z -= 0.45 * Math.sin(u * Math.PI * 2); } }
       fx.pose(m);
@@ -1415,10 +1437,20 @@ export class LandView {
       const down = a.ladder > 0 || ((a.mode === 'rescue' || a.mode === 'ferry') && Math.hypot((a.pick || a.drop || a).x - a.x, (a.pick || a.drop || a).y - a.y) < 3);
       am.ladder.visible = down; if (down) am.ladder.scale.y = Math.max(0.5, m.position.y - ground - 0.2) / AIR_SCALE;
       if (m.userData.lod) { const ratio = this.stage.camera.position.distanceTo(m.position) / 2.5; let lv = 0; while (lv < 5 && ratio > [14, 30, 60, 110, 200][lv]) lv++; setLod(m, lv); }
-      // the worse the damage, the more she smokes
-      if (level && (am.smoke += dt) > (level === 1 ? 0.5 : 0.18)) {
-        am.smoke = 0;
-        this.stage.puff(v.set(x + (Math.random() - 0.5) * a.radius, m.position.y + 1.5 + Math.random() * 1.5, y + (Math.random() - 0.5) * 1.5).clone(), level === 2 && Math.random() < 0.35 ? 0xff7a28 : 0x35312e, 0.45, 1.5);
+      // the worse the damage, the more she smokes: from the bag of a ship, blood dripping from a beast, whose wingbeat slows
+      if (level) {
+        const nk = fx.near(m.position), D = fx.dims(m, a);
+        if (beast) {
+          const A = m.userData.anim, slow = level >= 3 ? 0.62 : level >= 2 ? 0.78 : 1;
+          if (A && A.speed !== undefined) { A.speed0 ??= A.speed; A.speed = A.speed0 * slow; }
+          if (A && A.tk !== undefined) { A.tk0 ??= A.tk; A.tk = A.tk0 * slow; }
+          if (level >= 2 && fx.rate(am, 'bl', (level >= 3 ? 10 : 5) * nk, dt)) { toWorld(m, (Math.random() - 0.5) * D.hx, D.deckY * 0.4, (Math.random() - 0.5) * D.hz, v); fx.emit(P.SPRAY, v.x, v.y, v.z, 1, 0, -0.5, 0, 0.5, 0.45, 0xc0302a, 0x6a1410); }
+        } else {
+          const env = m.userData.anchors?.envelope;
+          toWorld(m, (Math.random() - 0.5) * D.hx * 1.2, env ? env[1] : D.top * 0.7, (Math.random() - 0.5) * D.hz, v);
+          if (fx.rate(am, 'sm', (level >= 2 ? 6 : 1.4) * nk, dt)) fx.emit(level >= 2 ? P.BLACK : P.SMOKE, v.x, v.y, v.z, 1, 0, 1, 0, 0.5, level >= 2 ? 1.1 : 0.7);
+          if (level >= 2 && fx.rate(am, 'fl', (level >= 3 ? 14 : 5) * nk, dt)) fx.emit(P.FIRE, v.x, v.y, v.z, 1, 0, 1, 0, 0.6, 1.1);
+        }
       }
       // grapnel lines thrown across to the ship she has grappled, hauled taut
       const o = a.grapple >= 0 ? b.airships[a.grapple] : null;
@@ -1492,5 +1524,8 @@ const LAND_SCENERY = {
 };
 function hashRelief(h, c) { let v = 0; for (let i = 0; i < h.length; i += 5) v = (v * 31 + Math.round(h[i] * 50) + (c[i] ? 7 : 0)) | 0; return v; }
 function hashTerrain(t) { let h = 0; for (let i = 0; i < t.length; i += 7) h = (h * 31 + t[i]) | 0; return h; }
+
+/** a great flying beast rather than an airship */
+function isSkyBeast(a, m) { return !!(a.def.beast || a.def.sky?.kind === 'beast' || m?.userData.beast || m?.userData.anim?.rigMode); }
 
 const AIR_SCALE = 1.5; // airships are drawn half again as big as their footprint so their crews show

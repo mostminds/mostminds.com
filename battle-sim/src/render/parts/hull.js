@@ -1,7 +1,7 @@
 // Hull forms, rigs and drives for a designed ship (see ../shipParts.js for the context `c` every builder gets).
 // Detail tiers (Kit.detail): 1 = rivets, lashings, rigging lines, seams; 2 = mid-distance trim; the rest always.
 import * as THREE from 'three';
-import { Kit, G, C, shade, blend, clamp, lerp, hash, loftL, taper, clothPanel, boatHull, noise3 } from './kit.js';
+import { Kit, G, C, shade, blend, clamp, lerp, hash, loftL, taper, clothPanel, boatHull, noise3, sculptL, sculptKit, SB, S, H } from './kit.js';
 import { sculptMaterial } from '../sculpt.js';
 import { motif, finial, emblemOn } from './realmStyle.js';
 
@@ -51,6 +51,24 @@ function floatHull(c, z, l, w, h, y0, o = {}) {
   return { x0, top: (u) => y0 + top(u), deckY: (u) => y0 + top(u) - h * 0.1, halfW };
 }
 
+/** a paddle-wheel housing at unit radius (face toward +z at z = 0.5): sculpted, shared per hull and realm colouring */
+function housingGeo(c) {
+  const st = c.st, hullC = c.hullC;
+  const plank = (() => { const k = new THREE.Color(hullC), d = [k.r * 0.7, k.g * 0.7, k.b * 0.7]; return (x, y, z, nx, ny, nz, rgb) => (Math.abs(rgb[0] - k.r) + Math.abs(rgb[1] - k.g) < 0.08 && Math.abs(Math.sin(x * 14)) < 0.12 ? d : null); })();
+  return sculptL(`housing|${hullC}|${st.metal}|${st.carve}`, () => {
+    const B = new SB();
+    B.p(S.cyl(1, 0.06, 0.02).rot(90, 0, 0).at(0, 0, 0.5).color(hullC).pbr(0.75));
+    B.p(S.torus(1, 0.055).rot(90, 0, 0).at(0, 0, 0.53).color(st.metal).pbr(0.35, 0.85).blend(0.015));
+    B.p(S.torus(0.34, 0.04).rot(90, 0, 0).at(0, 0, 0.53).color(st.metal).pbr(0.35, 0.85).blend(0.015));
+    for (let i = 1; i < 6; i++) { const a = (i / 6) * Math.PI; B.p(S.capsule([Math.cos(a) * 0.36, Math.sin(a) * 0.36, 0.54], [Math.cos(a) * 0.95, Math.sin(a) * 0.95, 0.54], 0.035, 0.025).color(st.carve).pbr(0.5, st.carve === st.metal ? 0.85 : 0).blend(0.02)); }
+    B.p(S.cyl(0.3, 0.07, 0.02).rot(90, 0, 0).at(0, 0, 0.55).color(shade(hullC, 0.85)).blend(0.02));
+    B.p(S.box(2.6, 1.3, 1.6).at(0, -0.65, 0.3).cut(0.004));
+    B.h(H.geo(new THREE.CylinderGeometry(1, 1, 1, 40, 1, true, -Math.PI / 2, Math.PI)).color(hullC).pbr(0.75).rot(-90, 0, 0).shade((x, y, z) => (Math.abs(Math.sin(Math.atan2(y, x) * 24)) < 0.1 ? shade(hullC, 0.7) : null)));
+    for (let i = 0; i <= 8; i++) { const a = (i / 8) * Math.PI; B.h(H.sphere(0.022, 8).color(C.iron).pbr(0.4, 0.85).at(Math.cos(a) * 0.98, Math.sin(a) * 0.98, 0.58).lod(1)); }
+    return B.part();
+  }, { res: 34, min: 8, paint: plank });
+}
+
 /** crossbeams from the main hull's side out to a float at z; arched if arch */
 function crossBeams(c, xs, z, yIn, yOut, r, arch = 0) {
   const K = c.kit;
@@ -65,7 +83,10 @@ function crossBeams(c, xs, z, yIn, yOut, r, arch = 0) {
 
 /** a paddle wheel turning about z, built at the origin */
 function wheel(r, w, n, col, hubCol, trim) {
-  const K = new Kit();
+  const key = `wheel${f2(r)},${f2(w)},${n},${col},${hubCol},${trim}`;
+  return new Kit().add(sculptKit(key, (K) => drawWheel(K, r, w, n, col, hubCol, trim), { res: clamp(44 / r, 20, 60), min: 8, k: 0.01 }), 0xffffff).mesh(undefined, `${key}K`);
+}
+function drawWheel(K, r, w, n, col, hubCol, trim) {
   K.add(G.cyl(r * 0.16, r * 0.16, w * 1.2, 12), hubCol, 0, 0, 0, { rx: PI / 2, m: 0.55, r: 0.4 });
   for (const s of [-1, 1]) {
     K.add(G.tor(r * 0.92, r * 0.045, 5, 28), hubCol, 0, 0, s * w * 0.45, { m: 0.5, r: 0.45 });
@@ -78,7 +99,6 @@ function wheel(r, w, n, col, hubCol, trim) {
     for (const s of [-1, 1]) K.bar([0, 0, s * w * 0.45], [Math.cos(a) * r * 0.92, Math.sin(a) * r * 0.92, s * w * 0.45], r * 0.024, hubCol, { m: 0.5 });
     K.detail(1, () => { for (const s of [-1, 1]) K.add(G.sph(r * 0.025, 4, 3), trim, Math.cos(a) * r * 0.92, Math.sin(a) * r * 0.92, s * w * 0.48, { m: 0.6 }); });
   }
-  return K.mesh(undefined, `wheel${f2(r)},${f2(w)},${n},${col},${hubCol},${trim}`);
 }
 
 /** an oar or sweep pointing along +z from its thole: a tapered loom and a shaped blade */
@@ -243,14 +263,9 @@ export const HULL_PARTS = {
       const z = s * (c.hw(x) + w / 2 + 0.06);
       const wh = wheel(r, w, 12, C.wood, C.iron, st.metal); wh.position.set(x, r * 0.45, z);
       c.addMoving(wh, (t) => { wh.rotation.z = -t * 1.6; });
-      // the housing: a half drum with a carved fan and the realm's device on its face
-      c.kit.add(G.custom('box-housing', () => new THREE.CylinderGeometry(1, 1, 1, 20, 1, true, -PI / 2, PI)), c.hullC, x, r * 0.45, z, { rx: PI / 2, sx: r * 1.12, sy: w * 1.2, sz: r * 1.12 });
-      c.kit.add(G.custom('half-disc', () => new THREE.CircleGeometry(1, 20, 0, PI)), shade(c.hullC, 0.9), x, r * 0.45, z + s * w * 0.6, { sx: r * 1.12, sy: r * 1.12, ry: s > 0 ? 0 : PI });
-      c.kit.add(G.tor(r * 1.12, 0.05, 4, 20, PI), st.metal, x, r * 0.45, z + s * w * 0.6, { m: st.metalM, r: 0.4 });
-      c.kit.detail(2, () => {
-        for (let i = 1; i < 6; i++) { const a = (i / 6) * PI; c.kit.bar([x, r * 0.45, z + s * w * 0.61], [x + Math.cos(a) * r * 1.1, r * 0.45 + Math.sin(a) * r * 1.1, z + s * w * 0.61], 0.022, st.carve, { m: st.metalM * 0.5 }); }
-        c.kit.push(x, r * 0.45 + r * 0.55, z + s * (w * 0.62 + 0.01), 0, s > 0 ? 0 : PI, 0); emblemOn(c.kit, st, r * 0.6, { depth: 0.05 }); c.kit.pop();
-      });
+      // the housing: a sculpted half drum, its planked face moulded with a gilt rim, a carved fan and a boss with her device
+      c.kit.add(housingGeo(c), 0xffffff, x, r * 0.45, z, { sx: r * 1.12, sy: r * 1.12, sz: w * 1.2 * s });
+      c.kit.detail(2, () => { c.kit.push(x, r * 0.45 + r * 0.55, z + s * (w * 0.62 + 0.03), 0, s > 0 ? 0 : PI, 0); emblemOn(c.kit, st, r * 0.6, { depth: 0.05 }); c.kit.pop(); });
       c.kit.add(G.rbox(r * 2.3, 0.08, w * 1.3, 0.02), c.trimC, x, r * 0.45 + 0.02, z, { m: 0.3 });
     }
   },

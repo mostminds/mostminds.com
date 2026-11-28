@@ -220,6 +220,16 @@ export class NavalView {
         const sh = b.ents[e.from], tg = b.ents[e.to], fa = sh?.air, ta = tg?.air, sm = this.models[e.from];
         const from = V(e.x0, fa ? AIR_Y : 0.8, e.y0), to = V(e.x1, ta ? (e.hit ? AIR_Y : AIR_Y + 2) : e.hit ? 0.8 : 0, e.y1);
         const dur = sec(e.flight), look = sh?.def.arts?.shot, opt = { hit: e.hit, flesh: e.hit && flesh(tg) };
+        // a hit lands on her side facing the shooter (or on her deck, for plunging fire), and the hole stays there
+        const tm = this.models[e.to];
+        if (e.hit && tg && tm && !ta && e.kind !== 'depth') {
+          const hk = e.kind === 'mortar' || e.kind === 'shell' ? 'mortar' : e.kind;
+          const hit = fx.impactPoint(tm, fx.dims(tm, tg), e.x0, e.y0, hk), d = fx.dm(tm), fl = flesh(tg);
+          d.side = hit.side; d.pend = (d.pend || 0) + 1;
+          if (e.kind !== 'mortar' && e.kind !== 'shell') toWorld(tm, hit.p.x, hit.p.y, hit.p.z, to);
+          const s = e.kind === 'heavy' ? 1.5 : e.kind === 'torpedo' ? 2 : e.kind === 'swivel' ? 0.45 : e.kind === 'chain' ? 0.7 : e.kind === 'mortar' || e.kind === 'shell' ? 1.4 : 1;
+          opt.onLand = (p, f) => { d.pend = Math.max(0, (d.pend || 0) - 1); if (tm.visible && f.hit) fx.wound(tm, hit, s, { flesh: fl, lasting: e.kind !== 'swivel' && e.kind !== 'flak' }); };
+        }
         // a broadside comes from the gun ports facing the target, a few guns at a time
         const gun = e.kind === 'cannon' || e.kind === 'heavy' || e.kind === 'chain' || e.kind === 'beam' || e.kind === 'swivel';
         const gm = gun && sh?.ship ? sm : null;
@@ -233,7 +243,7 @@ export class NavalView {
         if (gm) this.crews.pulse?.(gm, 'fire');
         if (e.kind === 'torpedo') { // it runs along the surface trailing foam
           from.y = 0.1; to.y = e.hit ? 0.3 : 0.05;
-          fx.shot('torpedo', from, to, dur, { ...opt, arc: 0, onLand: (p, f) => { if (f.hit) { fx.splash(p, 2); fx.explode(p, 0.7, { debris: 8, dcol: 0x6a4a30 }); } } });
+          fx.shot('torpedo', from, to, dur, { ...opt, arc: 0, onLand: (p, f) => { opt.onLand?.(p, f); if (f.hit) { fx.splash(p, 2); fx.explode(p, 0.7, { debris: 8, dcol: 0x6a4a30 }); } } });
         } else if (e.kind === 'flak') {
           // flak bursts in black puffs round the fliers
           if (sm && !fx.act(sm, 'flak', 0.5)) fx.rock(sm, 0.01);
@@ -254,6 +264,7 @@ export class NavalView {
           } else { fx.beam(from, to, col, 0.07, 0.42); fx.emit(P.GLOW, from.x, from.y, from.z, 2, 0, 0, 0, 0, 1, col, col); }
           if (e.hit) { fx.emit(P.GLOW, to.x, to.y, to.z, 3, 0, 0, 0, 0, 1.3, col, col); fx.emit(P.SPARK, to.x, to.y, to.z, 8, 0, 0.5, 0, 3, 1, 0xffffff, col); if (!flesh(tg)) fx.splinters(to, V(dir.x, 0.4, dir.z), 4, 0.8, 0x3a2a1a); }
           else fx.splash(to, 0.8);
+          if (e.hit && opt.onLand) fx.after(0.05, () => opt.onLand(to, { hit: true }));
         } else if (e.kind === 'mortar' || e.kind === 'shell') {
           // a mortar lobs its shell high over masts and islands; some realms throw rockets, boulders, skulls or pots
           from.y = 1.4;
@@ -283,23 +294,33 @@ export class NavalView {
       } else if (e.type === 'hit') {
         const x = b.ents[e.id], m = this.models[e.id];
         st.splat(new THREE.Vector3(x.x, 2.5, x.y), e.dmg);
-        if (m && !x.air && !fx.act(m, 'hit', 0.5)) fx.rock(m, Math.min(0.08, 0.01 + e.dmg * 0.0015), 0, 0.02);
+        // a blow with no shot of ours to show it (a bomb, an art, a ram's after-shock): it lands on the beam she last took fire on
+        const d = m ? fx.dm(m) : null, dotTick = x.dot && x.dot.until >= b.tick && e.dmg <= (x.dot.dmg || 6) + 1;
+        if (m && !x.air && !(d.pend > 0) && fx.time - d.hitAt > 0.4 && !dotTick && e.dmg > 0) {
+          toWorld(m, R() * 4 - 2, 0, d.side * 5, _t0);
+          fx.wound(m, fx.impactPoint(m, fx.dims(m, x), _t0.x, _t0.z, e.dmg > 30 ? 'deck' : 'cannon'), Math.min(2, 0.6 + e.dmg / 30), { flesh: flesh(x) });
+        } else if (m && !x.air && dotTick && !fx.act(m, 'hit', 0.4)) fx.rock(m, 0.01);
       } else if (e.type === 'death') {
         this.deathAt.set(e.id, this.time);
-        const x = b.ents[e.id], p = V(x.x, 0.5, x.y);
-        if (x.ship) { fx.explode(p, 0.9, { debris: 16 }); fx.splash(p, 2); fx.emit(P.BLACK, p.x, 1, p.z, 10, 0, 1, 0, 1, 1.6); }
+        const x = b.ents[e.id], p = V(x.x, 0.5, x.y), m = this.models[e.id];
+        if (x.ship && m && !m.userData.beast) {
+          // she breaks up: her powder may go up, masts and gear go by the board, hands and flotsam over the side, and down she goes
+          const burning = this.burning(x), boom = burning || x.def.role === 'siege' || !!x.def.mortar || !!(x.def.arts && (x.def.arts.blast || x.def.arts.fireship || x.def.arts.incendiary)) || /kegs|barrels|mortarPit|bombard|rocketRack/.test(JSON.stringify(x.def.dress || ''));
+          fx.breakUp(m, x, { boom, burning, color: SIDE_COLORS[x.side] });
+        } else if (x.ship) { fx.splash(p, 2.4); if (m) fx.beastDeath(m, x); }
         else if (x.air) fx.explode(V(x.x, AIR_Y, x.y), 0.6, { debris: 8 });
-        else if (!x.fort) { fx.splash(p, 2.4); fx.emit(P.SPRAY, p.x, 0, p.z, 10, 0, 1, 0, 3, 1, 0xd86a5a, 0x8a2a20); }
-        else fx.explode(p, 1.2, { dcol: 0x8a8274, s0: 0x8a7a6a, s1: 0xc8bca0 });
+        else if (!x.fort) { if (m) fx.beastDeath(m, x); else fx.splash(p, 2.4); }
+        else { fx.explode(p, 1.2, { dcol: 0x8a8274, s0: 0x8a7a6a, s1: 0xc8bca0 }); if (m) fx.damage(m, 0, { force: 3 }); }
         msgs.push({ side: x.side, text: `${x.def.name} ${x.ship ? 'is sunk' : x.fort ? 'is reduced to rubble' : x.air ? 'is shot down' : 'is slain'}` });
       } else if (e.type === 'rake') {
         const x = b.ents[e.id], m = this.models[e.id];
         const p = m ? toWorld(m, (e.stern ? -1 : 1) * fx.dims(m, x).hx, fx.dims(m, x).deckY, 0, V()) : V(x.x, 1.2, x.y);
         fx.splinters(p, UP, 14, 1); fx.emit(P.SMOKE, p.x, p.y, p.z, 4, 0, 1, 0, 0.6, 0.8); if (m) fx.rock(m, 0.02, (e.stern ? 1 : -1) * 0.05);
+        if (m) { const D = fx.dims(m, x), sg = e.stern ? -1 : 1, sd = fx.dm(m).side; fx.wound(m, { p: V(sg * D.hx * 0.96, D.deckY * 0.75, sd * D.hz * 0.3), n: V(sg, 0, 0), side: sd }, 1.3); }
         msgs.push({ side: b.ents[e.by].side, text: `${b.ents[e.by].def.name} rakes ${x.def.name} ${e.stern ? 'through the stern' : 'across the bow'}` });
       } else if (e.type === 'rigging') {
         const x = b.ents[e.id], m = this.models[e.id];
-        if (m) { const D = fx.dims(m, x), p = toWorld(m, 0, D.top * 0.7, 0, V()); fx.splinters(p, UP, 8, 1, 0xe8e0cc); fx.splinters(p, UP, 6, 0.8, 0x6a4a2e); }
+        if (m) fx.tear(m, fx.dims(m, x)); // a yard comes down, or her canvas tears and flaps loose
         msgs.push({ side: 1 - b.ents[e.id].side, text: `${b.ents[e.id].def.name}'s rigging is shot away: she loses way` });
       } else if (e.type === 'tack') {
         if (b.tick % 3 === 0) msgs.push({ side: b.ents[e.id].side, text: `${b.ents[e.id].def.name} beats to windward` });
@@ -479,6 +500,8 @@ export class NavalView {
     if (mx && !fx.act(mx, 'ram', 0.9)) fx.rock(mx, 0.02, -0.12 * s, 0.05);
     else if (mx) fx.rock(mx, 0.02, -0.08 * s);
     if (mt) { if (!fx.act(mt, 'hit', 0.7)) fx.rock(mt, 0.2 * s, 0.02, 0.08); else fx.rock(mt, 0.14 * s); }
+    // the stem stoves in her side: a ragged hole that stays, and she heels hard away from the blow
+    if (mt && (t.ship || t.fort)) { const Dt = fx.dims(mt, t), hit = fx.impactPoint(mt, Dt, x.x, x.y, 'torpedo'); hit.p.y = Math.max(0.1, Dt.deckY * 0.45); fx.wound(mt, hit, 2.5 * Math.min(1.3, s)); }
     fx.splinters(p, new THREE.Vector3(d.x * 0.8, 0.5, d.z * 0.8), Math.round(18 * s), 1.1);
     fx.splinters(p, new THREE.Vector3(-d.x * 0.4, 0.6, -d.z * 0.4), Math.round(6 * s), 0.8);
     fx.emit(P.SPARK, p.x, p.y, p.z, 12, d.x, 0.5, d.z, 3);
@@ -693,6 +716,8 @@ export class NavalView {
         // a squadron flies above the masts; shot down, it tumbles into the sea
         const k = died !== undefined ? (t - died) * speed : 0;
         m.position.set(x, Math.max(-1, AIR_Y - k * k * 4), y);
+        if (died !== undefined && m.position.y < 0.1 && !m.userData.splashed) { m.userData.splashed = true; this.fx.splash(m.position, 1.6); this.fx.flotsam(_t0.set(x, 0.2, y), 4, 0.6, { up: 0.5 }); }
+        if (died !== undefined && k < 2 && Math.random() < dt * 20) this.fx.emit(P.BLACK, m.position.x, m.position.y, m.position.z, 1, 0, 1, 0, 0.3, 0.7);
         m.rotation.y = -hd; m.rotation.z = Math.sin(t * 0.9 + i) * 0.15 + (died !== undefined ? k * 2 : 0);
         // just launched she climbs off the deck; on a strafing run she dives on the deck and pulls up
         const cl = this.climbs.get(i);
@@ -718,6 +743,19 @@ export class NavalView {
       m.rotation.y = -hd;
       m.rotation.z = Math.sin(t * 1.1 + i) * 0.04;
       m.rotation.x = 0;
+      if (died === undefined) {
+        // her damage: the model's own look by level, and she lists toward the beam that took it and settles as she takes water
+        const fx = this.fx, d = fx.dm(m);
+        fx.damage(m, e.hp / Math.max(1, e.maxHp), { fire: this.burning(e), flesh: !e.ship && !e.fort });
+        if (e.ship || e.fort) {
+          const lv = d.lv, own = m.userData.list !== undefined || e.fort;
+          const tl = own ? 0 : (lv >= 3 ? 0.13 : lv >= 2 ? 0.06 : 0) * d.side;
+          const ts = e.fort ? 0 : (lv >= 3 ? 0.24 : lv >= 2 ? 0.11 : lv >= 1 ? 0.03 : 0) * Math.min(1.6, 0.5 + (e.def.beam || 1) * 0.3);
+          const k = Math.min(1, dt * speed * 0.7);
+          d.list += (tl - d.list) * k; d.settle += (ts - d.settle) * k;
+          m.rotation.x += d.list; m.position.y -= d.settle;
+        }
+      }
       this.fx.pose(m);
       if (m.userData.lod) {
         const ratio = this.stage.camera.position.distanceTo(m.position) / Math.max(1, (e.def.size || 1) * 1.5);
@@ -737,16 +775,16 @@ export class NavalView {
       if (died !== undefined) {
         const k = (t - died) * speed;
         m.userData.bar.visible = false; m.userData.ring.visible = false;
+        void k;
+        const fx = this.fx;
         if (e.ship && !m.userData.beast) {
-          // she settles on the bottom with her mastheads still above water
-          const down = Math.min((m.userData.top || 3) * 0.72, k * 0.8);
-          m.position.y -= down; m.rotation.x = Math.min(0.35, k * 0.12); m.rotation.z = Math.min(0.5, k * 0.2);
+          // she lists, goes down by the head or the stern and under in a whirl of foam, leaving flotsam and a slick
+          if (!m.userData._wk) fx.breakUp(m, e, { color: SIDE_COLORS[e.side] });
+          if (fx.sinkPose(m, dt * speed)) m.visible = false;
         } else {
-          // a dead beast rolls belly-up and drifts
-          const r = Math.min(1, k / 2.5), e2 = r * r * (3 - 2 * r);
-          m.rotation.x = e2 * Math.PI * 0.92;
-          m.position.y += -0.25 * e2 + Math.sin(t * 0.8 + i) * 0.05;
-          m.rotation.z = Math.sin(t * 0.5 + i) * 0.05;
+          // a dead beast thrashes, rolls belly-up, drifts, and sinks in a cloud of blood
+          if (!m.userData._wk) fx.beastDeath(m, e);
+          if (fx.beastPose(m, dt * speed)) m.visible = false;
         }
       } else {
         setBar(m.userData.bar, e.hp / e.maxHp);
@@ -773,6 +811,14 @@ export class NavalView {
       if (Math.random() < dt * 5) fx.emit(P.SPRAY, _t1.x, 0.05, _t1.z, 2, 0, 1, 0, 1.5, 0.7);
     }
     fx.update(dt);
+  }
+
+  /** is she on fire (not poisoned, not holed by a beast)? */
+  burning(e) {
+    const d = e.dot, b = this.b;
+    if (!d || d.until <= b.tick || d.grip || d.poison) return false;
+    const by = b.ents[d.by], ba = by?.def?.arts || {};
+    return !(ba.poison || ba.acid || ba.skyPoison) && !(by && !by.ship && !by.fort && !by.air);
   }
 
   tether(by, to, until) {

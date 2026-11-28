@@ -97,7 +97,7 @@ function figureSculpt(kind, st, hullC, sideC) {
       const sn = kind === 'boar' ? 0.46 : kind === 'wolf' ? 0.5 : 0.3;
       B.push([0.44, 1.06, 0], [0, 0, kind === 'boar' ? -16 : -6], 1.12);
       B.p(S.ellipsoid(0.2, 0.19, 0.19).at(-0.02, 0.06, 0).color(col).pbr(0.75, 0).blend(0.06).bump(furB[0], furB[1], 'fur'));
-      for (const s of [-1, 1]) B.p(S.ellipsoid(0.12, 0.11, 0.1).at(0.08, -0.02, s * 0.12).color(kind === 'tiger' ? belly : col).blend(0.06).bump(0.005, 14, 'fur'));
+      for (const s of [-1, 1]) B.p(S.ellipsoid(0.08, 0.07, 0.06).at(0.06, -0.01, s * 0.1).color(kind === 'tiger' ? belly : col).blend(0.06).bump(0.005, 14, 'fur'));
       B.p(S.capsule([0.08, 0.02, 0], [0.16 + sn, -0.03, 0], 0.12, kind === 'boar' ? 0.1 : 0.062).color(col).pbr(0.7, 0).blend(0.07));
       for (const s of [-1, 1]) B.p(S.capsule([-0.02, 0.17, s * 0.075], [0.14, 0.12, s * 0.055], 0.05, 0.03).color(shade(col, 0.9)).blend(0.04)); // brows
       if (kind === 'boar') {

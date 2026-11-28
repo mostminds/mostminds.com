@@ -234,14 +234,14 @@ export function sculptL(key, make, o = {}) {
   const k = `sc${key}`;
   if (sculpts.has(k)) return sculpts.get(k);
   const r0 = o.res ?? 64, mn = o.min ?? 9, ao = o.ao ?? 0.7;
-  const RES = [r0, r0 * 0.6, r0 * 0.32, r0 * 0.17].map((r) => Math.max(mn, Math.round(r)));
+  const RES = [r0, r0 * 0.6, r0 * 0.32, r0 * 0.17, r0 * 0.1].map((r, i) => Math.max(i > 3 ? Math.min(mn, 7) : mn, Math.round(r)));
   let part = null;
   const geo = [];
   const at = (i) => {
     if (geo[i] === undefined) {
       part ||= make();
       const t0 = performance.now();
-      let g = buildPartGeometry(part, { res: RES[i], lod: i, levels: 4, ao });
+      let g = buildPartGeometry(part, { res: RES[i], lod: Math.min(i, 3), levels: 4, ao });
       sculptMs += performance.now() - t0;
       if (g && o.paint) paintGeo(g, o.paint);
       if (!g) g = i > 0 ? at(i - 1) : EMPTY_GEO;
@@ -251,7 +251,7 @@ export function sculptL(key, make, o = {}) {
     return geo[i];
   };
   const arr = [];
-  const TOK = [0, 1, 2, 3, 3, 3];
+  const TOK = [0, 1, 2, 3, 4, 4];
   for (let lv = 0; lv < LEVELS; lv++) Object.defineProperty(arr, lv, { enumerable: true, get: () => at(TOK[lv]) });
   arr.tok = TOK; arr.sculpt = true;
   Object.defineProperty(arr, 'probe', { get: () => at(3) });

@@ -299,8 +299,8 @@ function mount(B, parent, x, y, pose = 'sit') {
 // seat no rider of their own get the realm's baked rider on their back.
 DETAIL.flier = [60, 26, 11];
 const UNIT_MOUNT = {
-  pegasus: { len: 1.15, span: 2.0, model: (c, R) => ({ body: 'rider', ...R, mountType: 'pegasus', mount: c, wings: true }) },
-  griffon: { len: 1.35, span: 2.1, model: (c, R) => ({ body: 'rider', ...R, mountType: 'griffon', mount: c, wings: true }) },
+  pegasus: { len: 1.15, span: 2.0, model: (c, R) => ({ ...R, body: 'rider', mountType: 'pegasus', mount: c, wings: true }) },
+  griffon: { len: 1.35, span: 2.1, model: (c, R) => ({ ...R, body: 'rider', mountType: 'griffon', mount: c, wings: true }) },
   bird: { len: 1.0, span: 2.1, seat: 'sit', model: (c) => ({ body: 'bird', kind: 'eagle', color: c, scale: 1.4 }) },
   bat: { len: 0.9, span: 2.3, seat: 'sit', model: (c) => ({ body: 'bat', fur: c, scale: 1.5 }) },
   dragon: { len: 1.7, span: 2.4, seat: 'sit', model: (c) => ({ body: 'dragon', scales: c, scale: 0.8 }) },

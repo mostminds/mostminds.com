@@ -210,6 +210,9 @@ const PREFER = { // where the roster's own choice is plain
   infernal: ['cultist', 'hellknight', 'infernal_leader'], dragons: ['kobold', 'dragonKnight', 'dragons_leader'], beasts: ['minotaur', 'troll', 'beasts_leader'],
   elemental: ['golem', 'fireElemental', 'stormElemental'], crimson: ['crimson_zombie', 'crimson_rustSkel', 'crimson_vampire'],
   khemet: ['khemet_skelSpear', 'khemet_skelBow', 'khemet_tombGuard'], shogunate: ['shogunate_ashigaru', 'shogunate_teppo', 'shogunate_samurai'],
+  aurelia: ['aurelia_halberd', 'aurelia_handgunner', 'aurelia_leader'], principalities: ['principalities_legion', 'principalities_xbowT', 'principalities_duellist'],
+  sunkings: ['sunkings_rodelero', 'sunkings_arquebus', 'sunkings_leader'], thousandgods: ['thousandgods_sepoy', 'thousandgods_chakram', 'thousandgods_rajput'],
+  screaming: ['screaming_brass', null, 'screaming_leader'], caliphate: ['caliphate_spearA', 'caliphate_archerA', 'caliphate_guardA'],
 };
 const crewPick = new Map();
 /** [{ id, role }] for a realm or original faction id */
@@ -223,7 +226,7 @@ function crewOf(rid) {
   const small = (u) => ((u.size || 1) > 1 ? -3 : 0);
   const w = (u) => u.model?.weapon || '';
   const best = (score, not = []) => { let b = null, bs = -1e9; for (const [id, u] of foot) { if (not.includes(id)) continue; const s = score(id, u); if (s > bs) { bs = s; b = id; } } return b; };
-  const pref = (PREFER[rid] || []).filter((id) => UNITS[id] && foot.some(([f]) => f === id));
+  const pref = (PREFER[rid] || []).map((id) => (id && UNITS[id] && foot.some(([f]) => f === id) ? id : null));
   const deck = pref[0] || best((id, u) => (SEA.test(id) ? 6 : 0) + (DECK_ARMS.has(w(u)) ? 2 : 0) + (u.style === 'melee' ? 2 : -4) + small(u) - u.hp / 60 - (/leader/.test(id) ? 5 : 0));
   const gun = pref[1] || best((id, u) => (u.style === 'ranged' ? 4 + (GUNS[w(u)] || 0) : -9) + (SEA.test(id) ? 3 : 0) + small(u), [deck]);
   const officer = pref[2] || best((id, u) => (/captain/i.test(id) ? 8 : /leader/.test(id) ? 4 : 0) + (u.style === 'melee' ? 2 : -2) + u.hp / 40 + small(u) * 2 - (w(u) === 'staff' ? 3 : 0), [deck, gun]);
@@ -392,6 +395,8 @@ export function riderFigure(realm, pose = 'sit', sideColor = 0xcccccc) {
   riders.set(key, out);
   return out;
 }
+/** which ground units crew a realm's ships: [{ id, role: 'deck' | 'gun' | 'officer' }] */
+export function crewRoster(realm) { return crewOf(REALM.has(realm) || OLD[realm] ? realm : 'kingdom'); }
 /** the humanoid model description of a realm's deck hand (for bodies that seat their own rider: carpets, flies, pegasi) */
 export function riderDress(realm) {
   const rid = REALM.has(realm) || OLD[realm] ? realm : 'kingdom';
