@@ -14,7 +14,7 @@ export function createNaval(scn, seed = 1, defs = { SHIPS, CREATURES, FORTS }) {
   const b = {
     W, H, tick: 0, rng: createRng(seed), ents: [], shots: [], events: [], winner: null,
     maxTicks: scn.maxTicks || 2500, islands: scn.islands || [], theme: scn.theme || null,
-    sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, initial: 0 })),
+    sides: scn.sides.map((s, i) => ({ name: s.name || `Side ${i + 1}`, initial: 0, faction: s.faction || null })),
   };
   // the wind blows toward `dir` and backs and veers a little as the fight goes on
   b.wind = { dir: scn.wind !== undefined ? scn.wind : b.rng.next() * Math.PI * 2, speed: 0.85 + b.rng.next() * 0.3, veer: (b.rng.next() - 0.5) * 0.004 };

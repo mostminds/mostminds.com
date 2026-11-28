@@ -380,7 +380,7 @@ function lanternBox(K, S, s = 1, glow = S.glow) {
 
 /** one of her own squadron's fliers, parked (the same mount and rider the carrier launches) */
 function parkFlier(c, x, y, z, ry = 0, s = 1) {
-  const f = buildFlier(c.def.squadrons?.flier || 'glider', c.side, c.def.squadrons?.color);
+  const f = buildFlier(c.def.squadrons?.flier || 'glider', c.side, c.def.squadrons?.color, c.def.realm);
   f.scale.setScalar(s); f.position.set(x, y, z); f.rotation.y = ry;
   c.addMoving(f);
   return f;

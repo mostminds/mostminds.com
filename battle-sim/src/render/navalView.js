@@ -167,7 +167,7 @@ export class NavalView {
   makeModel(e) {
     const b = this.b;
     if (e.air) {
-      const m = buildSquadron(e.def, SIDE_COLORS[e.side]);
+      const m = buildSquadron(e.def, SIDE_COLORS[e.side], b.sides?.[e.side]?.faction);
       const bar = makeBar(0x4fd36a); bar.position.y = 2.2; setBar(bar, 1, 1.2); m.add(bar);
       const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.6, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[e.side], transparent: true, opacity: 0.35 }));
       m.add(ring);
@@ -181,7 +181,7 @@ export class NavalView {
       const n = this.crews.track(m, `ship:${e.def.id}`);
       const slots = m.userData.crewSlots, ys = slots.map((p) => p[1]).sort((a, c) => a - c);
       const deckY = n ? ys[Math.floor(n / 2)] : e.def.beam * 0.25;
-      const keep = e.def.dress ? dressDesign(m, e.def, SIDE_COLORS[e.side], deckY) : dressRole(m, e.def, SIDE_COLORS[e.side], deckY);
+      const keep = e.def.dress ? dressDesign(m, e.def, SIDE_COLORS[e.side], deckY) : dressRole(m, e.def, SIDE_COLORS[e.side], deckY, b.sides?.[e.side]?.faction);
       if (keep.length) m.userData.crewSlots = slots.filter((p) => !keep.some(([x, z, r]) => Math.hypot(p[0] - x, p[2] - z) < r));
     }
     if (!e.fort) m.rotation.order = 'YXZ'; // so a jolt rolls her about her own keel

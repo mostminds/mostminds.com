@@ -112,7 +112,7 @@ const ease = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 const kick = (k, at = 0.08, back = 0.7) => (k <= 0 || k >= 1 ? 0 : k < at ? k / at : Math.max(0, 1 - (k - at) / back) ** 2);
 
 function siege(D, g, L, B, y, acts, anchors, keep) {
-  const st = D.st, fl = D.fl, r = B * 0.12, h = B * 0.34;
+  const st = D.st, fl = D.fl, r = B * 0.085, h = B * 0.26;
   const barrels = [];
   for (const s of [-1, 1]) {
     const x = s * L * 0.13;
