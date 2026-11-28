@@ -516,8 +516,8 @@ function brassRhino(def, o = {}) {
         body.hard.push(spike([0, cy + r + 0.01, z - 0.02], [0, 1, -0.5], 0.11 + 0.03 * (i % 2), 0.034, brassL, [0, 0, -1], 0.25, 0.5).lod(2));
       }
     };
-    lamesAt(0.5, 0.17, 4, 0.76, 0.395, 2.3);
-    lamesAt(-0.25, -0.58, 4, 0.7, 0.375, 2.4);
+    lamesAt(0.5, 0.17, 4, 0.78, 0.365, 2.2);
+    lamesAt(-0.25, -0.58, 4, 0.71, 0.345, 2.3);
     for (const sx of [1, -1]) {
       const X = sideX(sx);
       [[0.3, 0.27], [0.06, 0.25], [-0.18, 0.25], [-0.42, 0.25]].forEach(([z, w], i) => {
@@ -665,10 +665,10 @@ function reapingAxe(brass, steel = 0x6a6660) {
   for (const y of [-0.3, 0.2, 0.42]) out.push(H.cyl(0.03, 0.03, 0.035, 10).at(0, y, 0).color(brass).pbr(0.3, 0.9).lod(1));
   out.push(H.cone(0.03, 0.12, 6).rot(180, 0, 0).at(0, -0.42, 0).color(IRON_L).pbr(0.4, 0.8));                // butt spike
   // the blade: a great crescent, steel edge over a black-iron body with a brass spine
-  const outline = [[0.0, 0.47], [0.1, 0.38], [0.2, 0.27], [0.3, 0.19], [0.38, 0.27], [0.44, 0.42], [0.47, 0.6], [0.43, 0.79], [0.35, 0.95], [0.26, 1.04], [0.2, 0.93], [0.12, 0.83], [0.0, 0.77]];
-  const cx = 0.16, cy = 0.62, inner = outline.map(([x, y]) => [cx + (x - cx) * 0.8, cy + (y - cy) * 0.84]);
-  out.push(H.extrude(outline, 0.01, 0.005).rot(0, -90, 0).color(0xc8c4bc).pbr(0.25, 0.95));
-  out.push(H.extrude(inner, 0.026, 0.005).rot(0, -90, 0).color(IRON).pbr(0.4, 0.8).shade((x, y) => (x < 0.06 ? rgb(brass) : null)));
+  const outline = [[0.0, 0.5], [0.06, 0.44], [0.12, 0.35], [0.15, 0.26], [0.23, 0.31], [0.31, 0.41], [0.36, 0.55], [0.36, 0.69], [0.31, 0.82], [0.23, 0.92], [0.15, 0.99], [0.13, 0.9], [0.08, 0.8], [0.0, 0.74]];
+  const cx = 0.12, cy = 0.62, inner = outline.map(([x, y]) => [cx + (x - cx) * 0.8, cy + (y - cy) * 0.84]);
+  out.push(H.extrude(outline, 0.008, 0.004).rot(0, -90, 0).color(0xc8c4bc).pbr(0.25, 0.95));
+  out.push(H.extrude(inner, 0.02, 0.004).rot(0, -90, 0).color(IRON).pbr(0.4, 0.8).shade((x, y) => (x < 0.06 ? rgb(brass) : null)));
   // a hooked beak behind and a spike on top
   out.push(H.extrude([[0, 0.5], [-0.1, 0.52], [-0.22, 0.46], [-0.12, 0.56], [0, 0.66]], 0.018, 0.004).rot(0, -90, 0).color(IRON).pbr(0.4, 0.8));
   out.push(H.cone(0.022, 0.16, 6).at(0, 0.9, 0).color(steel).pbr(0.3, 0.9));
@@ -835,7 +835,10 @@ function slaughterBrute(def, o = {}) {
     p.push(ir(S.torus(0.13, 0.035).rot(-30, 0, 0).at(0, 0.86, 0.07).blend(0.004)));
     p.push(ir(S.torus(0.2, 0.04).at(0, 0.45, -0.05).blend(0.004)));
     for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI - Math.PI / 2 + 0.2; torso.hard.push(spike([Math.sin(a) * 0.13, 0.89, 0.07 + Math.cos(a) * 0.08 - 0.06], [Math.sin(a), 0.6, Math.cos(a) * 0.4], 0.07, 0.02, IRON_L, [0, 1, 0], 0).lod(1)); }
-    torso.hard.push(...chain([0.26, 0.82, 0.05], [-0.1, 0.62, 0.22], 0.016, IRON_L, 2), ...chain([-0.26, 0.82, 0.05], [0.1, 0.62, 0.22], 0.016, IRON_L, 2));
+    for (const sx of [1, -1]) torso.hard.push(...chain([sx * 0.27, 0.84, 0.12], [sx * 0.2, 0.72, 0.24], 0.018, IRON_L, 2), ...chain([sx * 0.2, 0.72, 0.24], [sx * 0.19, 0.55, 0.29], 0.018, IRON_L, 2),
+      ...chain([sx * 0.28, 0.86, -0.08], [sx * 0.05, 0.62, -0.26], 0.018, IRON_L, 2), H.torus(0.03, 0.01, 10, 5).at(sx * 0.2, 0.72, 0.245).color(brass).pbr(0.3, 0.9));
+    for (let i = 0; i < 4; i++) p.push(ir(S.ellipsoid(0.11 - i * 0.012, 0.05, 0.05).rot(30, 0, 0).at(0, 0.88 - i * 0.09, -0.24 + i * 0.035).blend(0.004)));
+    for (let i = 0; i < 4; i++) torso.hard.push(spike([0, 0.92 - i * 0.09, -0.28 + i * 0.035], [0, 0.4, -1], 0.08, 0.022, IRON_L, [0, 1, 0], 0.2).lod(1));
     // two smokestacks from the hump, glowing at the mouth
     for (const sx of [1, -1]) {
       torso.hard.push(H.lathe([[0.04, 0], [0.04, 0.17], [0.055, 0.2], [0.05, 0.24], [0.035, 0.22]], 10).rot(-25, 0, sx * -18).at(sx * 0.1, 0.92, -0.16).color(plate).pbr(0.5, 0.75));
@@ -858,7 +861,7 @@ function slaughterBrute(def, o = {}) {
     for (const sx of [1, -1]) {
       p.push(S.sphere(0.02).at(sx * 0.04, hy + 0.02, hz + 0.095).color(0x0a0404).cut(0.006));
       head.hard.push(glowEye([sx * 0.04, hy + 0.018, hz + 0.088], 0.009, glow, 2));
-      head.hard.push(...horn([[sx * 0.07, hy + 0.05, hz + 0.02], [sx * 0.13, hy + 0.07, hz + 0.04], [sx * 0.15, hy + 0.11, hz + 0.1]], 0.026, [0x1a1210, 0x4a3a2a, 0xb8a888], { rings: 8 }));
+      head.hard.push(...horn([[sx * 0.07, hy + 0.05, hz + 0.0], [sx * 0.15, hy + 0.08, hz - 0.02], [sx * 0.21, hy + 0.14, hz + 0.04], [sx * 0.2, hy + 0.2, hz + 0.12]], 0.036, [0x1a1210, 0x4a3a2a, 0xb8a888], { rings: 8 }));
     }
     // the glowing maw behind a cage of iron bars strapped round the head
     p.push(S.box(0.11, 0.035, 0.06, 0.012).at(0, hy - 0.05, hz + 0.13).color(0x2a0804).cut(0.006));
@@ -880,6 +883,8 @@ function slaughterBrute(def, o = {}) {
     up.prims.push(sk(S.capsule(Sp, El, 0.1, 0.082)), sk(S.sphere(0.11).at(...Sp).blend(0.04)), sk(S.ellipsoid(0.09, 0.12, 0.1).at(...lerp3(Sp, El, 0.4)).blend(0.04)));
     up.prims.push(ir(S.ellipsoid(0.15, 0.1, 0.14).rot(0, 0, sx * -24).at(...add3(Sp, X([0.03, 0.05, 0]))).blend(0.004)));
     up.prims.push(ir(S.ellipsoid(0.13, 0.07, 0.13).rot(0, 0, sx * -40).at(...add3(Sp, X([0.08, -0.03, 0]))).blend(0.004)));
+    up.prims.push(S.ellipsoid(0.153, 0.103, 0.143).rot(0, 0, sx * -24).at(...add3(Sp, X([0.03, 0.045, 0]))).color(brass).pbr(0.3, 0.9).paint(0.005, 0.005));
+    for (let i = 0; i < 5; i++) { const a = (i / 4 - 0.5) * 2.2; up.hard.push(H.sphere(0.012, 6).at(...add3(Sp, X([0.03 + Math.cos(a) * 0.03 + 0.1, 0.02, Math.sin(a) * 0.12]))).color(brass).pbr(0.3, 0.9).lod(0)); }
     for (let i = 0; i < 3; i++) up.hard.push(spike(add3(Sp, X([0.02 + i * 0.04, 0.12 - i * 0.03, -0.05 + i * 0.04])), X([0.4, 1, -0.2]), 0.11 - i * 0.02, 0.03, IRON_L, [0, 0, 1], 0.2).lod(1));
     const fo = N(`fore${nm}`, `arm${nm}`, El, { rig: 'forearms', detail: 0.95 });
     fo.prims.push(sk(S.sphere(0.085).at(...El)), sk(S.capsule(El, Wr, 0.085, 0.07).blend(0.02)), sk(S.ellipsoid(0.1, 0.13, 0.1).at(...lerp3(El, Wr, 0.4)).blend(0.04)));
