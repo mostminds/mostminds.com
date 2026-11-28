@@ -153,6 +153,7 @@ export function batWing(c0, s1, s2, fingers = 3, o = {}) {
     const a = tips[i - 1], b = tips[i];
     outer.push([(a[0] + b[0]) / 2 + 0.25, (a[1] + b[1]) / 2 - 0.25], b);
   }
+  if (fingers === 1) outer.push([tips[0][0] - c0 * 0.45, s2 * 0.6], [-c0 * 0.75, s2 * 0.25]);
   outer.push([-c0 * 0.3, 0.25], [-c0 * 0.15, -0.04]);
   return { inner, outer, tips };
 }

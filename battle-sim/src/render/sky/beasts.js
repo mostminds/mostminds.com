@@ -470,14 +470,14 @@ function saddle(B, C, A, back, n, w, howdah) {
   const [x, y] = back, slots = [];
   const big = howdah || n >= 3;
   const len = big ? 0.5 + Math.ceil(n / 2) * 0.42 : 0.5 + n * 0.42;
-  // saddle-cloth in the side's colour, hanging down both flanks
+  // saddle-cloth in the side's colour, a blanket over the back with a gilt hem
   const cloth = group(B, x, y, 0);
-  blk(cloth, C.side, 0, -0.02, 0, len + 0.2, 0.06, w * 2 + 0.25);
-  for (const sd of [1, -1]) { const f = blk(cloth, C.side, 0, -0.25, sd * (w + 0.12), len + 0.1, 0.5, 0.05); f.rotation.x = -0.25 * sd; blk(cloth, C.brass, 0, -0.5, sd * (w + 0.18), len + 0.1, 0.05, 0.06).rotation.x = -0.25 * sd; }
-  for (const sd of [1, -1]) rod(cloth, C.leather, [0.1, 0, sd * (w + 0.1)], [0.1, -0.75, sd * (w * 0.6)], 0.035, 0.035, 4); // girth
+  ell(cloth, C.side, 0, -0.24, 0, len / 2 + 0.12, 0.3, w + 0.06, true);
+  ell(cloth, C.brass, 0, -0.27, 0, len / 2 + 0.16, 0.25, w + 0.1, true);
+  for (const sd of [1, -1]) rod(cloth, C.leather, [0.1, 0.02, sd * (w * 0.7)], [0.1, -0.6, sd * (w * 0.9)], 0.035, 0.035, 4); // girth
   if (big) {
     // howdah: a railed wooden platform
-    const W = Math.min(1.0, w + 0.25), deckY = 0.16;
+    const W = Math.min(0.75, w + 0.12), deckY = 0.16;
     blk(cloth, C.wood, 0, deckY - 0.06, 0, len, 0.12, W * 2);
     for (const sd of [1, -1]) {
       blk(cloth, C.wood, 0, deckY + 0.22, sd * W, len, 0.06, 0.06);
