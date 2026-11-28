@@ -246,7 +246,7 @@ function riderKit(K, B, pose = 'sit') {
 }
 
 /** the rider's weapon, on its own so it can dip in a dive: held in the right hand (z+) */
-function weaponKit(K, B, pose) {
+function weaponKit(K, B) {
   const st = B.look.st, kind = WEAPON[B.look.id] || 'lance', wood = 0x5a3e24, steel = 0xb8c0c8, mt = { m: st.metalM, r: 0.35 };
   const hz = 0.06;
   switch (kind) {
@@ -271,10 +271,10 @@ function weaponKit(K, B, pose) {
 function mount(B, parent, x, y, pose = 'sit') {
   const g = B.group(parent, x, y, 0, { k: 'rider' });
   B.part(g, `rider${pose}`, (K) => riderKit(K, B, pose));
-  if (pose === 'sit' || pose === 'stand' || pose === 'cross') {
+  if (pose === 'sit' || pose === 'cross') {
     const w = B.group(g, pose === 'sit' ? 0.13 : 0.06, pose === 'sit' ? 0.1 : pose === 'stand' ? 0.24 : 0.1, 0, { k: 'lance' });
     w.rotation.z = 0.25;
-    B.part(w, `weapon${pose}`, (K) => weaponKit(K, B, pose));
+    B.part(w, `weapon${pose}`, (K) => weaponKit(K, B));
   }
   return g;
 }
@@ -687,7 +687,7 @@ export function animateFlier(f, t, p = 0, dive = 0) {
       case 'sway': o.rotation[x.axis] = Math.sin(t * x.speed + (x.off || 0) + p) * x.amp * (1 + d); break;
       case 'glow': o.material.emissiveIntensity = x.base + Math.sin(t * x.speed + p) * x.amp + d * 1.2; break;
       case 'rider': o.rotation.z = -d * 0.55 + up * 0.15; o.position.x = (o.userData.x0 ??= o.position.x) + d * 0.03; break;
-      case 'lance': o.rotation.z = 0.25 - d * 0.6; break;
+      case 'lance': o.rotation.z = 0.25 + d * 0.75; break; // couched level as the rider leans into the stoop
     }
   }
   // the nose goes down into the dive

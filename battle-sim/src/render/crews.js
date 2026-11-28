@@ -325,7 +325,8 @@ export function realmLook(id) {
     const o = OLD_STYLE[id] || { metal: 0xb08a3a, metalM: 0.5, carve: 0xb08a3a, motif: 'scroll', emblem: 'star', figure: 'horse', lantern: 'lantern', finial: 'ball', banner: 'square', trim: 'band', wood: 0x6b4a2e, glow: 0xffc070, tone: 0.2 };
     st = { id: id || 'plain', ...o, cloth: P.cloth, cloth2: P.cloth2, armor: P.armor, band: [P.cloth, P.cloth2] };
   }
-  const out = { id: id || null, P, species: P.species, kit: look.kit, hat: look.hat, hatCol: look.hatCol, metal: look.metal, st };
+  const known = REALM.has(id) || !!OLD[id];
+  const out = { id: known ? id : null, P, species: P.species, kit: look.kit, hat: look.hat, hatCol: look.hatCol, metal: look.metal, st };
   realmLooks.set(key, out);
   return out;
 }

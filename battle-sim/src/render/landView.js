@@ -911,7 +911,7 @@ export class LandView {
           const n = Math.ceil(dt * 80);
           if (kind === 'fire') { fx.emit(P.FIRE, from.x, from.y, from.z, n, d.x, d.y, d.z, len * 1.5, 1.6, col[0], col[1]); if (Math.random() < 0.4) fx.emit(P.BLACK, from.x, from.y, from.z, 1, d.x, d.y, d.z, len * 0.8, 0.8); }
           else if (kind === 'frost') { fx.emit(P.MIST, from.x, from.y, from.z, n, d.x, d.y, d.z, len * 1.3, 1, col[0], col[1]); if (Math.random() < 0.5) fx.emit(P.GLYPH, from.x, from.y, from.z, 1, d.x, d.y, d.z, len, 0.7, 0xffffff, 0xd8f0ff, G.snow); }
-          else if (kind === 'gas') fx.emit(P.POISON, from.x, from.y, from.z, Math.ceil(n * 0.6), d.x, d.y, d.z, len * 1.1, 1.2, col[0], col[1]);
+          else if (kind === 'gas') { fx.emit(P.POISON, from.x, from.y, from.z, Math.ceil(n * 0.8), d.x, d.y, d.z, len * 1.1, 1.6, col[0], col[1]); fx.emit(P.MOTE, from.x, from.y, from.z, Math.ceil(n * 0.6), d.x, d.y, d.z, len * 1.4, 2.2, col[0], col[1]); }
           else if (kind === 'sound') { if (Math.random() < dt * 12) fx.ring(from.clone().addScaledVector(d, len * k), d.clone(), 0.2, 1.2, col[0], 0.5); }
           else fx.emit(P.MOTE, from.x, from.y, from.z, n, d.x, d.y, d.z, len * 1.4, 1.4, col[0], col[1]);
         });
