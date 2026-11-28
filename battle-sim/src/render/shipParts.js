@@ -11,7 +11,7 @@ import * as THREE from 'three';
 const PI = Math.PI;
 import { buildShip } from './models.js';
 import { sculptMaterial } from './sculpt.js';
-import { Kit, G, C, clamp, lerp, shade, hash, LEVELS, LAZY, sculptL, lazyMap, lazyMesh, SB, S, H, noise3 } from './parts/kit.js';
+import { Kit, G, C, clamp, lerp, shade, hash, LEVELS, LAZY, sculptL, lazyMap, SB, S, H, noise3 } from './parts/kit.js';
 import { styleOf, motif, emblemOn, finial, lantern, banner } from './parts/realmStyle.js';
 import { HULL_PARTS, SAIL_STYLES, buildRig, nativeSail, OAR_KINDS } from './parts/hull.js';
 import { BOW_PARTS, figureHead } from './parts/bow.js';
@@ -555,6 +555,21 @@ function findMasts(m, ctx) {
   return out.sort((a, b) => a.x - b.x);
 }
 
+/**
+ * splitGeo, remembered per source geometry and cut: every ship of a design shares her pristine geometry, so the
+ * second ship (and the second visit to a level) costs nothing. The charring only depends on the level (and at level
+ * 2 on the beam that was hit), the pieces on where the masts break.
+ */
+const SPLITS = new WeakMap();
+function splitCached(g, broken, level, side, fire, top, wantChar) {
+  let m = SPLITS.get(g);
+  if (!m) SPLITS.set(g, (m = new Map()));
+  const cut = broken.map((q) => `${q.x.toFixed(2)},${q.cutY.toFixed(2)},${q.x0 > -1e8 ? q.x0.toFixed(2) : '-'},${q.x1 < 1e8 ? q.x1.toFixed(2) : '-'}`).join(';');
+  const ch = wantChar && level >= 2 ? (level >= 3 ? '3' : `2|${side}`) : 'n';
+  const k = `${cut}|${ch}|${top.toFixed(2)}`;
+  if (!m.has(k)) { m.set(k, splitGeo(g, broken, level, side, fire, top, wantChar)); if (m.size > 24) m.delete(m.keys().next().value); }
+  return m.get(k);
+}
 /** split an indexed geometry: triangles a mast takes go to its piece; the rest stay (colours charred to level) */
 function splitGeo(g, broken, level, side, fire, top, wantChar) {
   const P = g.attributes.position.array, I = g.index ? g.index.array : null, n = I ? I.length : P.length / 3;
@@ -579,14 +594,25 @@ function splitGeo(g, broken, level, side, fire, top, wantChar) {
   };
   return { keep: mk(keep, wantChar && level >= 2), pieces: pieces.map((p) => mk(p, false)) };
 }
+const CHARN = new WeakMap();
+/** the char pattern's noise at every vertex, worked out once per geometry */
+function charNoise(g) {
+  let N = CHARN.get(g);
+  if (!N) {
+    const P = g.attributes.position; N = new Float32Array(P.count);
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i); N[i] = noise3(x * 1.3 + 7, y * 1.6, z * 1.3) * 0.8 + noise3(x * 5, y * 5, z * 5) * 0.2; }
+    CHARN.set(g, N);
+  }
+  return N;
+}
 function charColours(g, level, side, fire, top) {
-  const P = g.attributes.position, C0 = g.attributes.color, out = new Float32Array(C0.count * 3);
+  const P = g.attributes.position, C0 = g.attributes.color, out = new Float32Array(C0.count * 3), NZ = charNoise(g);
   const amt = level >= 3 ? 0.92 : 0.8, cover = level >= 3 ? 0.4 : 0.55;
   for (let i = 0; i < C0.count; i++) {
     const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
     let r = C0.getX(i), gg = C0.getY(i), b = C0.getZ(i);
     if (y < top * 0.6 && (level >= 3 || z * side > -0.2)) {
-      const n = noise3(x * 1.3 + 7, y * 1.6, z * 1.3) * 0.8 + noise3(x * 5, y * 5, z * 5) * 0.2;
+      const n = NZ[i];
       if (n > cover - 0.08) {
         const f = clamp((n - cover) * 4, 0, 1) * amt, e = clamp((n - cover + 0.08) * 8, 0, 1) * (1 - f) * 0.5; // char, and a scorched brown fringe
         r = lerp(lerp(r, 0.16, e), 0.028, f); gg = lerp(lerp(gg, 0.075, e), 0.022, f); b = lerp(lerp(b, 0.03, e), 0.018, f);
@@ -612,12 +638,13 @@ function wireDamage(m, ctx) {
   // the Voronoi cell of each mast along her length
   masts.forEach((q, i) => { q.x0 = i ? (masts[i - 1].x + q.x) / 2 : -1e9; q.x1 = i < masts.length - 1 ? (q.x + masts[i + 1].x) / 2 : 1e9; });
   const overlays = [null, null, null, null], fireG = { g: null };
-  const keyBase = `${def.id}|${ctx.side}|${profKey(ctx.prof)}`;
+  const keyBase = `${def.id}|${profKey(ctx.prof)}`; // overlays and cuts do not depend on her side's colour
   const addOverlay = (kitFn, key) => {
     let geos = OVER.get(key);
     if (!geos) { geos = kitFn().levels(key); OVER.set(key, geos); if (OVER.size > 300) OVER.delete(OVER.keys().next().value); }
-    const g = new THREE.Group(), mesh = lazyMesh(new THREE.Mesh(undefined, ctx.ghost ? ghostMaterial() : sculptMaterial()), geos);
-    mesh.userData.lodLevel = () => lod()?.level || 0;
+    // shown straight at her current level (no stand-in level built first); finer levels are meshed when she is drawn closer
+    const g = new THREE.Group(), mesh = new THREE.Mesh(geos[lod()?.level || 0], ctx.ghost ? ghostMaterial() : sculptMaterial());
+    mesh.castShadow = true; mesh.userData.noCrew = true; mesh.userData.lodGeos = geos; mesh.userData.lodLevel = () => lod()?.level || 0;
     g.add(mesh); ctx.group.add(g);
     lod()?.meshes.push({ mesh, geos });
     return g;
@@ -637,15 +664,15 @@ function wireDamage(m, ctx) {
     const st = { pivots: [], hull: null, dress: null, flags: null };
     if (pristine.hull && !hullSet) {
       const parts = new Map();
-      const one = (g) => { if (!parts.has(g)) parts.set(g, splitGeo(g, cutsAt, level, side, fire, ctx.top, true)); return parts.get(g); };
+      const one = (g) => { if (!parts.has(g)) parts.set(g, splitCached(g, cutsAt, level, side, fire, ctx.top, true)); return parts.get(g); };
       st.hull = lazyMap(pristine.hull, (g) => one(g).keep);
       st.hullPieces = cutsAt.map((_, i) => lazyMap(pristine.hull, (g) => one(g).pieces[i]));
-      if (pristine.flags) st.flags = splitGeo(pristine.flags, cutsAt, level, side, fire, ctx.top, false).keep;
+      if (pristine.flags) st.flags = splitCached(pristine.flags, cutsAt, level, side, fire, ctx.top, false).keep;
     }
     if (pristine.dress && cutsAt.some((q) => q.own)) {
       const own = cutsAt.map((q) => (q.own ? { ...q, x0: q.x - q.span, x1: q.x + q.span } : { ...q, cutY: 1e9 }));
       const parts = new Map();
-      const one = (g) => { if (!parts.has(g)) parts.set(g, splitGeo(g, own, level, side, fire, ctx.top, false)); return parts.get(g); };
+      const one = (g) => { if (!parts.has(g)) parts.set(g, splitCached(g, own, level, side, fire, ctx.top, false)); return parts.get(g); };
       st.dress = lazyMap(pristine.dress, (g) => one(g).keep);
       st.dressPieces = own.map((_, i) => lazyMap(pristine.dress, (g) => one(g).pieces[i]));
     }
@@ -657,7 +684,9 @@ function wireDamage(m, ctx) {
       if (level >= 3) piv.position.y = Math.max(ctx.dy * 0.7, q.cutY - 0.8) + lift;
       for (const [arr] of [[st.hullPieces?.[i]], [st.dressPieces?.[i]]]) {
         if (!arr) continue;
-        const mesh = lazyMesh(new THREE.Mesh(undefined, hull?.material || sculptMaterial()), arr);
+        // its geometry is set when the state is applied, at her current level only
+        const mesh = new THREE.Mesh(undefined, hull?.material || sculptMaterial());
+        mesh.castShadow = true; mesh.userData.noCrew = true; mesh.userData.lodGeos = arr;
         mesh.userData.lodLevel = () => lod()?.level || 0;
         mesh.position.set(-q.x, -q.cutY, 0);
         piv.add(mesh);
@@ -675,7 +704,7 @@ function wireDamage(m, ctx) {
     if (flags && pristine.flags) flags.geometry = st?.flags || pristine.flags;
     if (st) for (const { piv, q } of st.pivots) {
       m.add(piv);
-      for (const c of piv.children) { lod()?.meshes.push({ mesh: c, geos: c.userData.lodGeos }); c.geometry = c.userData.lodGeos[Math.max(lod()?.level || 0, LAZY)]; c.userData.pending0 = true; }
+      for (const c of piv.children) { lod()?.meshes.push({ mesh: c, geos: c.userData.lodGeos }); c.geometry = c.userData.lodGeos[lod()?.level || 0]; }
       bp.push({ mesh: piv, at: [q.x, q.cutY + lift, 0], kind: 'mast' });
     }
   };
@@ -693,8 +722,12 @@ function wireDamage(m, ctx) {
     const tag = `${level}|${level ? side : 0}|${fire ? 1 : 0}`;
     if (tag === cur) return;
     cur = tag;
+    const PR = globalThis.__dmgProf, pt = PR ? performance.now() : 0, lap = PR ? (k, t0) => { PR[k] = (PR[k] || 0) + performance.now() - t0; return performance.now(); } : null;
+    let tt = pt;
     if (hullSet) { try { hullSet(level, info); } catch (err) { console.warn('[shipParts] hull setDamage', err); } }
+    if (PR) tt = lap('hull', tt);
     for (const f of ud.partDamage || []) { try { f(level, info); } catch (err) { console.warn('[shipParts] partDamage', err); } }
+    if (PR) tt = lap('parts', tt);
     for (const f of ctx.damageFns || []) { try { f(level, info); } catch (err) { console.warn('[shipParts] damage', err); } }
     // overlays: every level up to this one, mirrored onto the beam that was hit
     for (let k = 1; k <= 3; k++) {
@@ -703,12 +736,32 @@ function wireDamage(m, ctx) {
     }
     if (fire && !fireG.g) fireG.g = addOverlay(() => fireKit(ctx), `${keyBase}|fire`);
     if (fireG.g) fireG.g.visible = fire;
+    if (PR) tt = lap('overlays', tt);
     // masts and charring
     if (level >= 2 && (masts.length || pristine.hull)) {
       const ck = `${level}|${side}|${fire ? 1 : 0}`;
       if (!cuts.has(ck)) cuts.set(ck, makeCut(level, side, fire));
       apply(cuts.get(ck));
     } else apply(null);
+    if (PR) tt = lap('masts', tt);
     setList(listOf(level, side));
   };
+  // the first ship of a design warms her damage in idle time: the overlay pieces, her first overlay and the hull
+  // cut at a heavy hit, at the detail level she is drawn at, so the first hit in battle finds them made
+  if (!WARM.has(keyBase) && !globalThis.__noDmgWarm) {
+    WARM.add(keyBase);
+    idle(() => {
+      try {
+        const lv = lod()?.level ?? LAZY, P = damagePieces();
+        for (const a of [...P.hole, P.breach, ...P.scorch, P.splinters, P.embers]) void a[lv];
+        const key = `${keyBase}|dmg1`;
+        let geos = OVER.get(key);
+        if (!geos) { geos = overlayKit(ctx, 1).levels(key); OVER.set(key, geos); }
+        void geos[lv];
+        if (masts.length || pristine.hull) idle(() => { try { const st = makeCut(2, 1, false); void st.hull?.[lv]; void st.dress?.[lv]; for (const a of [...(st.hullPieces || []), ...(st.dressPieces || [])]) void a[lv]; } catch (err) { void err; } });
+      } catch (err) { void err; }
+    });
+  }
 }
+const WARM = new Set();
+const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 5000 }) : setTimeout(fn, 300));

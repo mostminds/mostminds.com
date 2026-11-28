@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Kit, G, C, shade, blend, clamp, lerp, hash, loftL, taper, clothPanel, boatHull, noise3, sculptL, sculptKit, SB, S, H } from './kit.js';
 import { sculptMaterial } from '../sculpt.js';
 import { motif, finial, emblemOn } from './realmStyle.js';
+import { weather } from './bow.js';
 
 const PI = Math.PI;
 export const SAIL_STYLES = ['squareSail', 'lateen', 'junkSails', 'leafSails', 'silkSails', 'tatteredSails'];
@@ -112,6 +113,221 @@ function oarGeo(len, col) {
   });
 }
 
+// ---------------------------------------------------------------------------------
+//  sculpted hull dressing: armour plate, planked bays, funnels, treads, keel stones, grave-cloth (cached per size
+//  bucket and colouring; level 0 is meshed only when she is first drawn close, see Kit.mesh)
+// ---------------------------------------------------------------------------------
+const bkt = (v, s = 0.1) => Math.max(s, Math.round(v / s) * s);
+const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _bp = new THREE.Vector3(), _bs = new THREE.Vector3(), _be = new THREE.Euler();
+const _ax = new THREE.Vector3(), _ay = new THREE.Vector3(), _az = new THREE.Vector3();
+/** add geo to a kit in the frame whose x and y axes are ax and ay (z = x cross y), centred at p */
+function addInFrame(K, geo, p, ax, ay, o = {}) {
+  _ax.set(...ax).normalize(); _az.crossVectors(_ax, _ay.set(...ay)).normalize(); _ay.crossVectors(_az, _ax);
+  _bm.makeBasis(_ax, _ay, _az); _bm.decompose(_bp, _bq, _bs); _be.setFromQuaternion(_bq, 'XYZ');
+  K.push(p[0], p[1], p[2], _be.x, _be.y, _be.z); K.add(geo, 0xffffff, 0, 0, 0, o); K.pop();
+}
+const rivetH = (B, x, y, z, r, col) => B.h(H.sphere(r, 8).color(col).pbr(0.42, 0.85).at(x, y, z).lod(1));
+const tearH = (B, pts, r, seed = 1) => { for (let i = 0; i < pts.length - 1; i++) B.p(S.capsule(pts[i], pts[i + 1], r * (0.6 + hash(seed + i) * 0.7), r * (0.5 + hash(seed + i + 9) * 0.6)).cut(0.004)); };
+
+/** one armour plate, w along x by h up y, facing +z: rolled upper edge, a stiffener, rivets round it; holed if dmg */
+function plateGeo(w, h, col, dmg) {
+  return sculptL(`aplate|${f2(w)}|${f2(h)}|${col}|${dmg ? 1 : 0}`, () => {
+    const B = new SB(), dk = shade(col, 0.72);
+    B.p(S.box(w, h, 0.06, 0.02).color(col).pbr(0.45, 0.8).bump(0.003, 14, 'noise'));
+    B.p(S.capsule([-w / 2 + 0.02, h / 2 - 0.01, 0.01], [w / 2 - 0.02, h / 2 - 0.01, 0.01], 0.035).color(shade(col, 1.06)).pbr(0.4, 0.8).blend(0.01));
+    B.p(S.box(w * 0.86, 0.045, 0.03, 0.01).at(0, -h * 0.08, 0.035).color(shade(col, 0.95)).pbr(0.42, 0.8).blend(0.008));
+    const nx = Math.max(3, Math.round(w / 0.13)), ny = Math.max(2, Math.round(h / 0.13));
+    for (let i = 0; i < nx; i++) { const x = -w * 0.44 + (w * 0.88 * i) / (nx - 1); rivetH(B, x, h * 0.36, 0.034, 0.022, dk); rivetH(B, x, -h * 0.42, 0.034, 0.022, dk); }
+    for (let j = 1; j < ny - 1; j++) { const y = h * 0.36 - (h * 0.78 * j) / (ny - 1); for (const s of [-1, 1]) rivetH(B, s * w * 0.44, y, 0.034, 0.022, dk); }
+    if (dmg) {
+      // a shot hole punched through, its lips petalled inward, cracks running from it, the plate scorched
+      const hx = w * 0.12, hy = h * 0.05, hr = Math.min(w, h) * 0.17;
+      B.p(S.sphere(hr).at(hx, hy, 0).cut(0.01));
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * PI * 2 + 0.3; B.p(S.ellipsoid(hr * 0.42, 0.012, hr * 0.22).rot(0, 0, (a * 180) / PI).rot(0, 35, 0).at(hx + Math.cos(a) * hr * 0.9, hy + Math.sin(a) * hr * 0.9, -0.02).color(0x2a2420).pbr(0.6, 0.6).blend(0.004)); }
+      tearH(B, [[hx + hr, hy, 0.03], [hx + hr * 1.8, hy + hr * 0.4, 0.03], [hx + hr * 2.4, hy + hr * 0.2, 0.03]], 0.012, 3);
+      tearH(B, [[hx - hr, hy - hr * 0.3, 0.03], [hx - hr * 1.9, hy - hr * 0.9, 0.03]], 0.012, 7);
+      B.p(S.sphere(hr * 2.4).at(hx, hy, 0).paint(0.04).color(0x1c1814));
+    }
+    return B.part();
+  }, { res: clamp(44 / Math.max(w, h), 26, 56), min: 6, ao: 0.6, paint: weather(col, { char: dmg ? 0.6 : 0 }) });
+}
+
+/** one bay of a box hull's planked side (bw along x, height h from y = -0.12), facing +z: planks, the rib on its
+ *  left end with an iron strap, the painted band; stove in if dmg */
+function bayGeo(bw, h, np, col, band, dmg) {
+  return sculptL(`bay|${f2(bw)}|${f2(h)}|${np}|${col}|${band}|${dmg ? 1 : 0}`, () => {
+    const B = new SB(), ph = h / np;
+    for (let k = 0; k < np; k++) {
+      const y = -0.12 + ph * (k + 0.5), c = shade(col, 0.86 + hash(k * 3.1 + bw) * 0.24);
+      B.p(S.box(ph - 0.014, bw + 0.012, 0.1, 0.022).rot(0, 0, 90).at(0, y, (hash(k + 7) - 0.5) * 0.012).color(c).pbr(0.85).blend(0.003).bump(0.004, 26, 'fur'));
+    }
+    // the rib, its iron strap and the strap's rivets, one per plank
+    B.p(S.box(0.13, h + 0.05, 0.08, 0.02).at(-bw / 2, h / 2 - 0.1, 0.07).color(shade(col, 0.55)).pbr(0.85).blend(0.006).bump(0.004, 22, 'fur'));
+    B.p(S.box(0.085, h + 0.02, 0.018, 0.006).at(-bw / 2, h / 2 - 0.1, 0.118).color(0x3a3a40).pbr(0.5, 0.8).blend(0.004));
+    for (let k = 0; k < np; k++) rivetH(B, -bw / 2, -0.12 + ph * (k + 0.5), 0.13, 0.022, 0x2e2e34);
+    // the band along her top
+    B.p(S.box(bw + 0.012, 0.12, 0.2, 0.03).at(0, h - 0.1, 0.02).color(band).pbr(0.6, 0.2).blend(0.004));
+    if (dmg) {
+      // stove in: a ragged hole through the planks, splintered ends bent inward, the frame behind showing
+      const cx = bw * 0.08, cy = h * 0.38, rx = bw * 0.28, ry = h * 0.26;
+      for (let i = 0; i < 9; i++) { const a = (i / 9) * PI * 2; B.p(S.sphere(Math.min(rx, ry) * (0.55 + hash(i + 3) * 0.4)).at(cx + Math.cos(a) * rx * 0.55, cy + Math.sin(a) * ry * 0.55, 0).cut(0.01)); }
+      B.p(S.ellipsoid(rx * 0.75, ry * 0.75, 0.2).at(cx, cy, 0).cut(0.01));
+      B.p(S.box(rx * 2.4, ry * 2.4, 0.04).at(cx, cy, -0.12).color(0x120d0a).pbr(1)); // the dark hold behind
+      for (const x of [cx - rx * 0.6, cx + rx * 0.5]) B.p(S.box(0.09, ry * 2.6, 0.09, 0.02).at(x, cy, -0.06).color(0x3a2a1a).pbr(0.9).blend(0.005)); // frames
+      for (let i = 0; i < 7; i++) { const a = (i / 7) * PI * 2 + 0.2; B.p(S.ellipsoid(0.12 + hash(i) * 0.08, 0.025, 0.02).rot(0, 30, (a * 180) / PI + 90).at(cx + Math.cos(a) * rx * 0.85, cy + Math.sin(a) * ry * 0.85, -0.04).color(0xb89a6a).pbr(0.9).blend(0.004)); }
+      B.p(S.ellipsoid(rx * 1.6, ry * 1.6, 0.3).at(cx, cy, 0).paint(0.05).color(0x1a1410));
+    }
+    return B.part();
+  }, { res: clamp(40 / Math.max(bw, h), 24, 44), min: 6, paint: weather(col, { kind: 'wood', amt: 0.8, char: dmg ? 0.7 : 0 }) });
+}
+/** a box hull's bow or stern plate (W across z, height h): heavy planks up and down, iron corner straps */
+function endPlateGeo(W, h, col, trim) {
+  return sculptL(`boxend|${f2(W)}|${f2(h)}|${col}|${trim}`, () => {
+    const B = new SB(), n = Math.max(5, Math.round(W / 0.3));
+    for (let i = 0; i < n; i++) B.p(S.box(0.12, h, W / n - 0.012, 0.02).at(0, 0, -W / 2 + (W * (i + 0.5)) / n).color(shade(col, 0.88 + hash(i * 1.7) * 0.2)).pbr(0.85).blend(0.003).bump(0.004, 24, 'fur'));
+    B.p(S.box(0.18, 0.12, W + 0.1, 0.03).at(-0.02, h / 2 - 0.02, 0).color(trim).pbr(0.4, 0.5).blend(0.004));
+    for (const s of [-1, 1]) {
+      B.p(S.box(0.06, h, 0.14, 0.015).at(0.07, 0, s * (W / 2 - 0.02)).color(0x3a3a40).pbr(0.5, 0.8).blend(0.004));
+      for (let j = 0; j < 5; j++) rivetH(B, 0.11, -h * 0.4 + (h * 0.8 * j) / 4, s * (W / 2 - 0.02), 0.024, 0x2e2e34);
+    }
+    for (const z of [-W * 0.3, 0, W * 0.3]) for (let j = 0; j < 5; j++) rivetH(B, 0.07, -h * 0.4 + (h * 0.8 * j) / 4, z, 0.024, 0x2e2e34);
+    return B.part();
+  }, { res: clamp(36 / Math.max(W, h), 20, 40), min: 6, paint: weather(col, { kind: 'wood', amt: 0.7 }) });
+}
+
+/** a funnel h tall (base at the origin): raked crown, bands, rivet rings, a steam pipe, soot; torn open if shattered */
+function funnelGeo(r, h, band, metal, shattered) {
+  return sculptL(`funnel2|${f2(r)}|${f2(h)}|${band}|${metal}|${shattered ? 1 : 0}`, () => {
+    const B = new SB(), iron = 0x3a3a40, M = (p, k = 0.04) => p.color(iron).pbr(0.5, 0.7).blend(k).bump(0.0025, 24, 'noise');
+    B.p(M(S.cone(r * 1.45, r * 1.12, 0.2, 0.02).at(0, 0.1, 0)));
+    B.p(M(S.cone(r * 1.08, r * 1.0, h * 0.68, 0.01).at(0, 0.18 + h * 0.34, 0)));
+    B.p(M(S.cone(r * 1.0, r * 1.32, h * 0.16, 0.01).at(0, h * 0.9, 0)));
+    B.p(S.cyl(r * 0.9, h * 0.5).at(0, h * 0.85, 0).cut(0.01).color(0x0e0c0a));
+    for (const y of [0.3, 0.62]) B.p(S.cyl(r * 1.08, h * 0.06, 0.01).at(0, h * y, 0).color(band).pbr(0.6, 0.2).blend(0.006));
+    B.p(S.torus(r * 1.06, Math.max(0.025, r * 0.1)).at(0, h * 0.8, 0).color(metal).pbr(0.3, 0.85).blend(0.01));
+    B.p(S.torus(r * 1.32, Math.max(0.02, r * 0.08)).at(0, h * 0.98, 0).color(metal).pbr(0.3, 0.85).blend(0.01));
+    for (const y of [0.18, 0.46, 0.74]) { const n = Math.max(10, Math.round(r * 40)); for (let k = 0; k < n; k++) { const a = (k / n) * PI * 2; const rr = r * (1.08 - y * 0.08); rivetH(B, Math.cos(a) * rr, h * y, Math.sin(a) * rr, Math.max(0.016, r * 0.06), 0x2a2a30); } }
+    // the steam pipe up her after side, clamped on
+    B.p(S.capsule([-r * 1.25, 0.1, 0], [-r * 1.18, h * 0.88, 0], r * 0.16, r * 0.14).color(0x8a7040).pbr(0.35, 0.8).blend(0.02));
+    for (const y of [0.3, 0.6]) B.p(S.torus(r * 0.2, r * 0.05).at(-r * 1.2, h * y, 0).color(iron).pbr(0.5, 0.7).blend(0.01));
+    B.h(H.cyl(r * 0.85, r * 0.85, 0.02, 18).color(C.fire).glow(1.5).at(0, h * (shattered ? 0.5 : 0.86), 0));
+    if (shattered) {
+      // a shell took her top off: jagged rim, petals of plate peeled out, holes, everything black with soot
+      const y = h * 0.56;
+      B.p(S.box(r * 5, h, r * 5).rot(8, 0, -10).at(0, y + h * 0.5, 0).cut(0.01));
+      for (let k = 0; k < 7; k++) { const a = (k / 7) * PI * 2; B.p(S.box(r * 0.5, r * 0.9, r * 0.5).rot(20 + k * 30, (a * 180) / PI, 45).at(Math.cos(a) * r, y - r * 0.15 + hash(k) * r * 0.3, Math.sin(a) * r).cut(0.006)); }
+      for (let k = 0; k < 4; k++) { const a = (k / 4) * PI * 2 + 0.6; B.p(S.ellipsoid(r * 0.35, r * 0.06, r * 0.3).rot(0, -(a * 180) / PI, 40).at(Math.cos(a) * r * 1.25, y + r * 0.05, Math.sin(a) * r * 1.25).color(0x221d1a).pbr(0.6, 0.6).blend(0.004)); }
+      for (let k = 0; k < 3; k++) { const a = k * 2.1 + 0.4; B.p(S.sphere(r * 0.28).at(Math.cos(a) * r * 1.05, h * (0.25 + k * 0.1), Math.sin(a) * r * 1.05).cut(0.006)); }
+    }
+    return B.part();
+  }, { res: clamp(24 / r, 28, 80), min: 8, paint: weather(0x3a3a40, { soot: 1.6, sootY: shattered ? h * 0.3 : h * 0.62 }) });
+}
+
+const SHOE = new THREE.BoxGeometry(1, 1, 1);
+/** a tread unit, l long and h tall, w wide, outboard face +z: iron shoes over spoked road wheels, sprockets, a skirt */
+function treadGeo(l, h, w, metal, hullC) {
+  return sculptL(`tread|${f2(l)}|${f2(h)}|${f2(w)}|${metal}|${hullC}`, () => {
+    const B = new SB(), iron = 0x3e3e44, steel = C.steel, run = l - h, R = h / 2 + 0.06;
+    // the shoes, laid round the stadium: each a plate with a grouser
+    const per = 2 * run + PI * 2 * R, n = Math.round(per / 0.17);
+    for (let i = 0; i < n; i++) {
+      let d = (i / n) * per, x, y, a;
+      if (d < run) { x = -run / 2 + d; y = R; a = 0; } else if ((d -= run) < PI * R) { a = -d / R; x = run / 2 + Math.sin(-a) * R; y = Math.cos(a) * R; } else if ((d -= PI * R) < run) { x = run / 2 - d; y = -R; a = PI; } else { d -= run; a = PI - d / R; x = -run / 2 - Math.sin(d / R) * R; y = -Math.cos(d / R) * R; }
+      const deg = (a * 180) / PI;
+      const sc = shade(steel, 0.8 + hash(i) * 0.15);
+      B.h(H.box(0.13, 0.045, w * 1.04, 0.01).color(sc).pbr(0.45, 0.85).rot(0, 0, deg).at(x, y, 0).lod(0));
+      B.h(H.geo(SHOE).scale(0.13, 0.045, w * 1.04).color(sc).pbr(0.45, 0.85).rot(0, 0, deg).at(x, y, 0).from(1));
+      B.h(H.geo(SHOE).scale(0.03, 0.04, w).color(shade(steel, 0.7)).pbr(0.5, 0.85).at(0, 0.035, 0).rot(0, 0, deg).at(x, y, 0).lod(1));
+    }
+    // road wheels: dished, six lightening holes, a bolted hub; toothed sprockets at the ends
+    for (let k = 0; k < 6; k++) {
+      const x = -run / 2 + (run * k) / 5, rw = h * 0.34;
+      B.p(S.cyl(rw, w * 0.6, 0.03).rot(90, 0, 0).at(x, 0, 0).color(0x4a4844).pbr(0.5, 0.6).bump(0.004, 12, 'rock'));
+      B.p(S.torus(rw * 0.92, rw * 0.1).rot(90, 0, 0).at(x, 0, w * 0.3).color(iron).pbr(0.45, 0.8).blend(0.01));
+      for (let j = 0; j < 6; j++) { const a = (j / 6) * PI * 2; B.p(S.cyl(rw * 0.16, w * 0.3).rot(90, 0, 0).at(x + Math.cos(a) * rw * 0.58, Math.sin(a) * rw * 0.58, w * 0.3).cut(0.006)); }
+      B.p(S.cyl(rw * 0.32, w * 0.14, 0.02).rot(90, 0, 0).at(x, 0, w * 0.34).color(metal).pbr(0.3, 0.85).blend(0.01));
+      for (let j = 0; j < 6; j++) { const a = (j / 6) * PI * 2 + 0.5; rivetH(B, x + Math.cos(a) * rw * 0.22, Math.sin(a) * rw * 0.22, w * 0.42, 0.02, iron); }
+    }
+    for (const e of [-1, 1]) {
+      const x = (e * run) / 2;
+      B.p(S.cyl(h * 0.42, w * 0.7, 0.03).rot(90, 0, 0).at(x, 0, 0).color(iron).pbr(0.45, 0.8));
+      for (let j = 0; j < 12; j++) { const a = (j / 12) * PI * 2; B.p(S.box(0.09, 0.08, w * 0.5, 0.01).rot(0, 0, (a * 180) / PI).at(x + Math.cos(a) * h * 0.44, Math.sin(a) * h * 0.44, 0).color(iron).pbr(0.45, 0.8).blend(0.008)); }
+      B.p(S.cyl(h * 0.14, w * 0.2, 0.02).rot(90, 0, 0).at(x, 0, w * 0.4).color(metal).pbr(0.3, 0.85).blend(0.01));
+    }
+    // the skirt over the upper run, riveted
+    B.p(S.box(l * 0.86, h * 0.36, 0.06, 0.02).at(0, h * 0.3, w * 0.55).color(shade(hullC, 0.8)).pbr(0.5, 0.5).bump(0.003, 14, 'noise'));
+    B.p(S.capsule([-l * 0.43, h * 0.13, w * 0.57], [l * 0.43, h * 0.13, w * 0.57], 0.03).color(metal).pbr(0.3, 0.85).blend(0.01));
+    const nr = Math.round(l * 0.86 / 0.16);
+    for (let i = 0; i <= nr; i++) { const x = -l * 0.43 + (l * 0.86 * i) / nr; rivetH(B, x, h * 0.45, w * 0.59, 0.022, iron); }
+    return B.part();
+  }, { res: clamp(36 / Math.max(1, l * 0.5), 18, 36), min: 6, paint: weather(0x4a4844, { amt: 0.8 }) });
+}
+
+/** a keel stone: a rough-hewn crystal of stone with glowing runes cut in it, held in a metal cage */
+function keelStoneGeo(col, metal) {
+  return sculptL(`keelstone|${col}|${metal}`, () => {
+    const B = new SB(), stone = 0x5a5a66;
+    B.p(S.ellipsoid(0.17, 0.28, 0.17).color(stone).pbr(0.6, 0.1).bump(0.012, 9, 'rock'));
+    for (let i = 0; i < 4; i++) B.p(S.box(0.16, 0.36, 0.16, 0.02).rot(0, i * 45, 6).at(0, -0.02, 0).color(shade(stone, 0.9 + i * 0.05)).pbr(0.5).blend(0.03));
+    B.p(S.cone(0.14, 0.02, 0.2).rot(180, 0, 0).at(0, -0.32, 0).color(stone).pbr(0.5).blend(0.04).bump(0.008, 10, 'rock'));
+    // runes, cut and lit from inside
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * 360 + 20; for (let j = 0; j < 3; j++) B.p(S.box(0.025, 0.05 + (j % 2) * 0.03, 0.06).rot(0, a, (j - 1) * 30).at(Math.cos((a * PI) / 180) * 0.155, 0.08 - j * 0.08, -Math.sin((a * PI) / 180) * 0.155).paint(0.004, -0.004).color(col).glow(1.8)); }
+    // the cage: a collar, four claws and a ring
+    B.p(S.torus(0.17, 0.025).at(0, 0.2, 0).color(metal).pbr(0.3, 0.85).blend(0.01));
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * PI * 2 + PI / 4; B.p(S.capsule([Math.cos(a) * 0.17, 0.2, Math.sin(a) * 0.17], [Math.cos(a) * 0.19, 0.0, Math.sin(a) * 0.19], 0.02, 0.012).color(metal).pbr(0.3, 0.85).blend(0.01)); B.p(S.capsule([Math.cos(a) * 0.19, 0.0, Math.sin(a) * 0.19], [Math.cos(a) * 0.13, -0.18, Math.sin(a) * 0.13], 0.012, 0.006).color(metal).pbr(0.3, 0.85).blend(0.01)); }
+    B.p(S.cyl(0.06, 0.12, 0.01).at(0, 0.28, 0).color(metal).pbr(0.3, 0.85).blend(0.01));
+    return B.part();
+  }, { res: 120, min: 10 });
+}
+
+/** a rag of grave-cloth (ln long, hung from its top edge at the origin, facing +z): folded, rotted through, ragged */
+function ragGeo(ln, seed) {
+  return sculptL(`rag2|${f2(ln)}|${seed}`, () => {
+    const B = new SB(), nu = 8, nv = 14, w = 0.36, P = [], idx = [], Cc = [];
+    const hem = (u) => ln * (0.72 + 0.28 * hash(Math.floor(u * 7) + seed * 3) + 0.06 * Math.sin(u * 40 + seed));
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+      const u = i / nu, v = j / nv, len = hem(u), y = -v * len;
+      const z = 0.03 * Math.sin(u * PI * 3 + seed + v * 2) * (0.3 + v) + 0.02 * Math.sin(v * 9 + u * 4) * v;
+      P.push((u - 0.5) * w * (1 - v * 0.25) + 0.02 * Math.sin(v * 7 + seed) * v, y, z);
+      const n = noise3(u * 4 + seed, v * 5, 1), k = 0.55 + 0.35 * n - (v > 0.8 ? 0.15 : 0);
+      Cc.push(k * 0.78, k * 0.86, k * 0.76);
+    }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      if (j > 2 && noise3(i * 0.9 + seed * 2, j * 0.7, 3) > 0.74) continue; // rotted through
+      const a = j * (nu + 1) + i, b = a + 1, d = a + nu + 1, e = d + 1; idx.push(a, b, e, a, e, d);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const ca = g.attributes.color;
+    B.h(H.geo(g).color(0xffffff).pbr(0.95).shade((x, y, z, nx, ny, nz, i) => [ca.getX(i), ca.getY(i), ca.getZ(i)]));
+    // the knot where it is tied to her rail, and the rope round the rail
+    B.p(S.ellipsoid(0.07, 0.05, 0.04).at(0, -0.02, 0.01).color(0xa8b8a0).pbr(0.95).bump(0.006, 30, 'weave'));
+    B.p(S.capsule([-0.04, -0.03, 0.02], [-0.06, -0.12, 0.03], 0.018, 0.01).color(0xa8b8a0).pbr(0.95).blend(0.01));
+    B.p(S.torus(0.05, 0.012).rot(90, 0, 0).at(0, 0.02, 0).color(0x6a6450).pbr(0.9).blend(0.01));
+    return B.part();
+  }, { res: 90, min: 10 });
+}
+/** a corpse-light: a glowing wisp with a curling tail (drawn additively) */
+function wispGeo() {
+  return sculptL('wisp', () => {
+    const B = new SB();
+    B.p(S.sphere(0.09).color(0xffffff));
+    B.p(S.capsule([-0.04, 0.02, 0], [-0.16, 0.06, 0.03], 0.07, 0.035).blend(0.05).color(0xffffff));
+    B.p(S.capsule([-0.16, 0.06, 0.03], [-0.28, 0.02, -0.02], 0.035, 0.008).blend(0.04).color(0xffffff));
+    return B.part();
+  }, { res: 90, min: 10, ao: 0 });
+}
+const onDamage = (c, fn) => { (c.m.userData.partDamage ||= []).push(fn); };
+function twin(a, b) {
+  const g = new THREE.Group(), ga = new THREE.Group(), gb = new THREE.Group();
+  ga.add(a); gb.add(b); gb.visible = false; g.add(ga, gb);
+  return { g, set: (second) => { ga.visible = !second; gb.visible = !!second; } };
+}
+const RUNES = [
+  [[0, -0.5, 0, 0.5], [0, 0.2, 0.35, 0.45]], [[0, -0.5, 0, 0.5], [0, 0.5, 0.35, 0.1], [0.35, 0.1, 0, -0.2]], [[-0.3, -0.5, 0, 0.5], [0, 0.5, 0.3, -0.5], [-0.15, 0, 0.15, 0]],
+  [[0, -0.5, 0, 0.5], [-0.35, 0.35, 0.35, -0.05]], [[-0.3, 0.5, 0.3, -0.5], [0.3, 0.5, -0.3, -0.5]], [[0, -0.5, 0, 0.5], [0, 0, 0.35, 0.35], [0, 0, -0.35, 0.35]],
+  [[-0.3, -0.5, -0.3, 0.5], [0.3, -0.5, 0.3, 0.5], [-0.3, 0.5, 0.3, 0], [0.3, 0.5, -0.3, 0]], [[0, -0.5, 0, 0.5], [0, 0.5, 0.35, 0.25], [0, 0.1, 0.35, -0.15]],
+];
+
 export const HULL_PARTS = {
   // ---- hull forms ----
   catamaran(c) {
@@ -181,59 +397,82 @@ export const HULL_PARTS = {
     for (const s of [-1, 1]) c.kit.add(logL(c.L * 0.9, r * 0.8), shade(C.wood, 0.85), -c.L * 0.02, r * 0.7, s * (W + r * 0.5), { r: 0.9, grain: 0 });
   },
   lowHull(c) {
-    // a low, sleek line: a sloped armour skirt hugging the waterline (riveted plates), a spray rail and a knife forefoot
+    // a low, sleek line: a sloped armour skirt of riveted, weathered plates hugging the waterline, a spray rail and a
+    // knife forefoot; three plates holed through from level 2
     const col = shade(blend(c.hullC, C.iron, 0.4), 0.7), st = c.st, n = 12;
     const x0 = c.sternX + c.L * 0.06, x1 = c.bowX - c.L * 0.1;
+    const DK = new Kit();
     for (const s of [-1, 1]) {
       const pts = [], hi = [];
       for (let i = 0; i <= n; i++) { const x = lerp(x0, x1, i / n), y0 = Math.max(0.05, c.dy * 0.08), y1 = Math.max(0.35, c.dy * 0.62); pts.push([x, y0, s * (c.sideZ(x, y0) + 0.07)]); hi.push([x, y1, s * (c.sideZ(x, y1) + 0.05)]); }
-      // the skirt: a strip from low to high
-      const g = c.kit;
-      const geo = skirt(`skirt${c.def.id}${s}`, pts, hi);
-      g.add(geo, col, 0, 0, 0, { m: 0.5, r: 0.45 });
-      g.add(taper(`spray${c.def.id}${s}`, hi.map(([x, y, z]) => [x, y + 0.02, z + s * 0.03]), [0.04, 0.04], 24, 4), st.metal, 0, 0, 0, { m: st.metalM, r: 0.4 });
-      g.detail(1, () => { for (let i = 0; i <= n; i++) { const [x, y, z] = pts[i], [, y2, z2] = hi[i]; for (let k = 1; k < 4; k++) { const t = k / 4; g.add(G.sph(0.03, 4, 3), C.steel, x, lerp(y, y2, t), lerp(z, z2, t) + s * 0.02, { m: 0.6 }); } } });
-      g.detail(2, () => { for (let i = 1; i < n; i++) { const [x, y, z] = pts[i], [, y2, z2] = hi[i]; g.bar([x, y, z + s * 0.012], [x, y2, z2 + s * 0.012], 0.014, shade(col, 0.7), { m: 0.5 }); } });
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[i + 1], ah = hi[i], bh = hi[i + 1];
+        const mid = [(a[0] + b[0] + ah[0] + bh[0]) / 4, (a[1] + b[1] + ah[1] + bh[1]) / 4, (a[2] + b[2] + ah[2] + bh[2]) / 4];
+        const ax = [(b[0] - a[0]) * s, (b[1] - a[1]) * s, (b[2] - a[2]) * s], ay = [(ah[0] + bh[0] - a[0] - b[0]) / 2, (ah[1] + bh[1] - a[1] - b[1]) / 2, (ah[2] + bh[2] - a[2] - b[2]) / 2];
+        const w = bkt(Math.hypot(...ax) + 0.08, 0.1), h = bkt(Math.hypot(...ay) + 0.04, 0.1);
+        // lapped: every other plate stands a little proud of its neighbours
+        const out = (i % 2) * 0.014, p = [mid[0], mid[1], mid[2] + s * out];
+        addInFrame(c.kit, plateGeo(w, h, col, false), p, ax, ay);
+        if (i === 2 + (s > 0 ? 1 : 4) || i === 8 - (s > 0 ? 0 : 2)) addInFrame(DK, plateGeo(w, h, col, true), [p[0], p[1], p[2] + s * 0.018], ax, ay);
+      }
+      c.kit.add(taper(`spray${c.def.id}${s}`, hi.map(([x, y, z]) => [x, y + 0.02, z + s * 0.03]), [0.04, 0.04], 24, 4), st.metal, 0, 0, 0, { m: st.metalM, r: 0.4 });
     }
+    const dm = DK.mesh(undefined, `lowhulldmg|${c.def.id}|${col}`), dg = new THREE.Group(); dg.add(dm); dg.visible = false;
+    c.addMoving(dg);
+    onDamage(c, (lv) => { dg.visible = lv >= 2; });
     // the forefoot: a lofted knife running into the stem
     const fy = Math.max(0.25, c.dy * 0.5), fl = clamp(c.L * 0.14, 0.9, 2);
     c.kit.add(loftL(`foot${f2(fl)},${f2(fy)}`, [[-fl * 0.6, fy * 0.55, 0, 0.18, fy * 0.5], [0, fy * 0.45, 0, 0.1, fy * 0.45], [fl * 0.5, fy * 0.2, 0, 0.03, fy * 0.2], [fl * 0.62, 0.05, 0, 0.005, 0.02]], { radial: 8, sub: 2, col: 0xffffff }), col, c.bowX - fl * 0.25, 0, 0, { m: 0.55, r: 0.4 });
   },
   boxHull(c) {
-    // slab sides of heavy planks on outside ribs, a sloped bow and stern plate, iron corner straps: a barge, not a ship
+    // slab sides of heavy planks on outside ribs with iron straps, a sloped bow and stern plate: a barge, not a ship.
+    // Sculpted a bay (between two ribs) at a time; one bay a side is stove in from level 2
     const xs = c.sternX + 0.15, xb = c.bowX - c.L * 0.1, l = xb - xs, x0 = (xs + xb) / 2;
     const ws = []; for (let i = 0; i <= 8; i++) ws.push(c.hw(lerp(xs, xb, i / 8)));
     ws.sort((a, b) => a - b);
-    const h = c.dy + 0.3, col = c.hullC, z = ws[4] + 0.06, st = c.st, np = Math.max(4, Math.round(h / 0.2));
+    const h = bkt(c.dy + 0.3, 0.05), col = c.hullC, z = ws[4] + 0.06, st = c.st, np = Math.max(4, Math.round(h / 0.2));
+    const band = st.metal === st.carve ? shade(c.trimC, 1) : st.band[0], bw = bkt(l / 6, 0.05);
+    const tws = [];
     for (const s of [-1, 1]) {
-      for (let k = 0; k < np; k++) c.kit.add(G.rbox(l, h / np - 0.012, 0.1, 0.02), shade(col, 0.88 + hash(k + s) * 0.22), x0, -0.12 + (h * (k + 0.5)) / np, s * z, { r: 0.85 });
-      for (let k = 0; k <= 6; k++) c.kit.add(G.rbox(0.13, h + 0.05, 0.08, 0.02), C.dark, xs + (l * k) / 6, h / 2 - 0.1, s * (z + 0.07));
-      c.kit.add(G.rbox(l + 0.1, 0.12, 0.2, 0.03), st.metal === st.carve ? shade(c.trimC, 1) : st.band[0], x0, h - 0.1, s * (z + 0.02), { m: 0.25 });
-      c.kit.detail(1, () => { for (let k = 0; k <= 6; k++) for (let j = 0; j < np; j++) c.kit.add(G.sph(0.022, 4, 3), C.iron, xs + (l * k) / 6, -0.12 + (h * (j + 0.5)) / np, s * (z + 0.115), { m: 0.6 }); });
-      // a painted band and the realm's carvings between the ribs
+      for (let k = 0; k < 6; k++) {
+        const x = xs + (l * (k + 0.5)) / 6, stove = k === (s > 0 ? 2 : 4);
+        if (!stove) { c.kit.add(bayGeo(bw, h, np, col, band, false), 0xffffff, x, 0, s * z, { sz: s }); continue; }
+        const one = (d) => { const m = new Kit().add(bayGeo(bw, h, np, col, band, d), 0xffffff).mesh(undefined, `bay|${f2(bw)}|${f2(h)}|${np}|${col}|${band}|${d}`); return m; };
+        const tw = twin(one(false), one(true)); tw.g.position.set(x, 0, s * z); tw.g.scale.z = s;
+        c.addMoving(tw.g); tws.push(tw);
+      }
+      // the last rib, at her bow end
+      c.kit.add(G.rbox(0.13, h + 0.05, 0.08, 0.02), shade(col, 0.55), xb, h / 2 - 0.1, s * (z + 0.07));
+      // the realm's carvings between the ribs
       c.kit.detail(2, () => { for (let k = 0; k < 6; k++) { c.kit.push(xs + (l * (k + 0.5)) / 6, h * 0.62, s * (z + 0.06), 0, s > 0 ? 0 : PI, 0); motif(c.kit, st, Math.min(l / 6 * 0.75, h * 0.5)); c.kit.pop(); } });
     }
+    onDamage(c, (lv) => { for (const t of tws) t.set(lv >= 2); });
     for (const [x, sx] of [[xb, 1], [xs, -1]]) {
-      c.kit.add(G.rbox(0.12, h * 1.05, 2 * z + 0.1, 0.03), shade(col, 0.95), x + sx * h * 0.12, h / 2 - 0.12, 0, { rz: sx * 0.35 });
-      c.kit.add(G.rbox(0.18, 0.12, 2 * z + 0.2, 0.03), c.trimC, x - sx * h * 0.05, h - 0.12, 0, { m: 0.3 });
-      for (const s of [-1, 1]) c.kit.add(G.rbox(0.1, h, 0.14, 0.02), C.iron, x + sx * h * 0.06, h / 2 - 0.12, s * (z + 0.04), { rz: sx * 0.35, m: 0.55, r: 0.45 });
-      c.kit.detail(1, () => { for (let j = 0; j < 5; j++) for (const s of [-0.6, 0, 0.6]) c.kit.add(G.sph(0.025, 4, 3), C.iron, x + sx * (h * 0.12 + 0.07) - sx * j * 0.04, -0.05 + (h * j) / 5, s * z, { m: 0.6 }); });
+      c.kit.add(endPlateGeo(bkt(2 * z + 0.1, 0.1), bkt(h * 1.05, 0.05), col, c.trimC), 0xffffff, x + sx * h * 0.12, h / 2 - 0.12, 0, { rz: sx * 0.35, sx });
     }
   },
   ghost(c) {
     c.ghost = true;
-    // drifting corpse-lights round her, and rags of grave-cloth trailing from her rails
-    const n = 9, motes = new THREE.Group();
+    // drifting corpse-lights round her (wisps trailing their tails), and rags of grave-cloth trailing from her rails
+    const n = 9, motes = new THREE.Group(), wg = wispGeo()[2];
     for (let i = 0; i < n; i++) {
-      const o = new THREE.Mesh(G.sph(0.07 + hash(i) * 0.05, 8, 6), wispMat()); o.userData.base = [lerp(c.sternX, c.bowX, hash(i + 5)), c.dy + 0.4 + hash(i + 2) * 1.6, (hash(i + 7) - 0.5) * c.B * 1.6];
+      const o = new THREE.Mesh(wg, wispMat()); o.scale.setScalar(0.8 + hash(i) * 0.6); o.userData.base = [lerp(c.sternX, c.bowX, hash(i + 5)), c.dy + 0.4 + hash(i + 2) * 1.6, (hash(i + 7) - 0.5) * c.B * 1.6];
       motes.add(o);
     }
-    c.addMoving(motes, (t, ph) => motes.children.forEach((o, i) => { const b = o.userData.base; o.position.set(b[0] + Math.sin(t * 0.7 + i) * 0.3, b[1] + Math.sin(t * 1.3 + i * 2 + ph) * 0.35, b[2] + Math.cos(t * 0.6 + i) * 0.3); }));
+    c.addMoving(motes, (t, ph) => motes.children.forEach((o, i) => { const b = o.userData.base; o.position.set(b[0] + Math.sin(t * 0.7 + i) * 0.3, b[1] + Math.sin(t * 1.3 + i * 2 + ph) * 0.35, b[2] + Math.cos(t * 0.6 + i) * 0.3); o.rotation.y = Math.cos(t * 0.7 + i) * 0.8; }));
     for (const s of [-1, 1]) for (let i = 0; i < 5; i++) {
-      const x = lerp(c.sternX + c.L * 0.15, c.bowX - c.L * 0.2, i / 4), y = c.dy + 0.1, z = s * (c.hw(x) + 0.03), ln = 0.5 + hash(i * 7 + s) * 0.6;
-      const geo = clothPanel(`rag${f2(ln)}${i}`, (u, v) => [(u - 0.5) * 0.35, -v * ln + (u > 0.5 && v > 0.8 ? -0.1 * hash(u * 9) : 0), 1], 0.04, 4, 5);
-      c.kit.add(geo, 0xc8f0d8, x, y, z, { ry: s > 0 ? 0 : PI, r: 0.9, g: 0.15 });
+      const x = lerp(c.sternX + c.L * 0.15, c.bowX - c.L * 0.2, i / 4), y = c.dy + 0.12, z = s * (c.hw(x) + 0.03), ln = bkt(0.5 + hash(i * 7 + s) * 0.6, 0.1);
+      c.kit.add(ragGeo(ln, i % 3), 0xc8f0d8, x, y, z, { ry: s > 0 ? 0 : PI, r: 0.9, g: 0.15 });
     }
+    // her spectral hull: pale shrouds of ectoplasm streaming aft from her waterline, swaying
+    const sh = new THREE.Group(), smat = glowMat(0x8affc8, 0.1);
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+      const x = lerp(c.bowX - c.L * 0.2, c.sternX + c.L * 0.3, i / 2), len = c.L * (0.35 + hash(i + s) * 0.2);
+      const geo = taper(`ecto${f2(len)}${i}`, [[0, 0, 0], [-len * 0.3, 0.03, 0.06], [-len * 0.65, -0.01, 0.14], [-len, 0.04, 0.26]], [0.1, 0.12, 0.07, 0.01], 18, 8);
+      const o = new THREE.Mesh(geo, smat); o.position.set(x, Math.max(0.1, c.dy * 0.25), s * (c.hw(x) + 0.05)); o.scale.z = s; o.userData.ph = i * 1.7 + s;
+      sh.add(o);
+    }
+    c.addMoving(sh, (t) => sh.children.forEach((o) => { o.rotation.y = Math.sin(t * 0.9 + o.userData.ph) * 0.12 * o.scale.z; o.rotation.x = Math.sin(t * 1.3 + o.userData.ph) * 0.08; }));
   },
   hover(c) {
     c.lift = clamp(c.B * 0.24, 0.7, 1.2);
@@ -241,9 +480,13 @@ export const HULL_PARTS = {
     const g = new THREE.Group();
     const disc = new THREE.Mesh(G.circle(1, 32), glowMat(col, 0.3)); disc.rotation.x = -PI / 2; disc.scale.set(c.L * 0.42, c.B * 0.62, 1); disc.position.y = 0.07;
     const ring = new THREE.Mesh(G.ring(0.85, 1, 40), glowMat(col, 0.7)); ring.rotation.x = -PI / 2; ring.scale.set(c.L * 0.48, c.B * 0.7, 1); ring.position.y = 0.09;
-    // a band of glyphs turning inside the ring
+    // a band of glyphs turning inside the ring: cut runes of a dozen shapes, not bars
     const RK = new Kit();
-    for (let i = 0; i < 24; i++) { const a = (i / 24) * PI * 2; RK.add(G.box(0.05, 0.01, i % 3 ? 0.14 : 0.22), 0xffffff, Math.cos(a) * 0.74, 0, Math.sin(a) * 0.74, { ry: -a + (i % 2) * 0.6 }); }
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * PI * 2; RK.push(Math.cos(a) * 0.74, 0, Math.sin(a) * 0.74, 0, -a + PI / 2, 0);
+      for (const [ax, ay, bx, by] of RUNES[i % RUNES.length]) RK.add(G.box(Math.hypot(bx - ax, by - ay) * 0.17 + 0.03, 0.01, 0.03), 0xffffff, ((ax + bx) / 2) * 0.17, 0, ((ay + by) / 2) * 0.17, { ry: -Math.atan2(by - ay, bx - ax) });
+      RK.pop();
+    }
     const runes = new THREE.Mesh(RK.build(), glowMat(col, 0.8)); runes.scale.set(c.L * 0.48, 1, c.B * 0.7); runes.position.y = 0.1;
     g.add(disc, ring, runes);
     // shafts of light from her keel to the water
@@ -252,8 +495,8 @@ export const HULL_PARTS = {
     }
     c.hoverGlow = g;
     c.addMoving(g, (t, ph) => { const k = 0.75 + 0.25 * Math.sin(t * 2.4 + ph); disc.material.opacity = 0.3 * k; const s = 1 + 0.06 * Math.sin(t * 1.7 + ph); ring.scale.set(c.L * 0.48 * s, c.B * 0.7 * s, 1); runes.rotation.y = t * 0.3; });
-    // the keel stones that hold her up
-    c.kit.detail(2, () => { for (const x of [-0.25, 0.05, 0.3].map((f) => f * c.L)) { c.kit.add(G.oct(0.16), col, x, 0.05, 0, { sy: 1.6, g: 1.6, r: 0.2 }); c.kit.add(G.tor(0.2, 0.03, 4, 12), c.st.metal, x, 0.12, 0, { rx: PI / 2, m: c.st.metalM }); } });
+    // the keel stones that hold her up: hewn, rune-cut, caged in her metal
+    for (const x of [-0.25, 0.05, 0.3].map((f) => f * c.L)) c.kit.add(keelStoneGeo(col, c.st.metal), 0xffffff, x, 0.0, 0, { s: 1.1 });
   },
   // ---- drive ----
   paddles(c) {
@@ -312,57 +555,42 @@ export const HULL_PARTS = {
     c.addMoving(inst, set);
   },
   stacks(c) {
-    const n = c.L > 9 ? 2 : 1, h = clamp(1.4 + c.L * 0.14, 1.6, 3.2), r = clamp(c.B * 0.07, 0.18, 0.36), st = c.st;
-    const puffs = [];
+    const n = c.L > 9 ? 2 : 1, h = bkt(clamp(1.4 + c.L * 0.14, 1.6, 3.2), 0.1), r = bkt(clamp(c.B * 0.07, 0.18, 0.36), 0.02), st = c.st;
+    const puffs = [], tws = [];
     for (let i = 0; i < n; i++) {
       const at = c.place(r + 0.15, n === 1 ? -0.05 : 0.08 - i * 0.2, 'c');
-      // a raked, tapered funnel with banding, a flared crown and a base collar
-      c.kit.add(G.lathe(`funnel${f2(r)}${f2(h)}`, [[r * 1.45, 0], [r * 1.35, 0.12], [r * 1.12, 0.2], [r * 1.05, h * 0.5], [r, h * 0.86], [r * 1.25, h * 0.94], [r * 1.32, h], [r * 0.9, h * 0.99]], 16), C.iron, at.x, at.y, at.z, { m: 0.5, r: 0.5 });
-      for (const y of [0.3, 0.7]) c.kit.add(G.cyl(r * 1.11, r * 1.11, h * 0.05, 16), st.band[0], at.x, at.y + h * y, at.z, { m: 0.2, r: 0.6 });
-      c.kit.add(G.cyl(r * 1.1, r * 1.1, h * 0.06, 16), st.metal, at.x, at.y + h * 0.82, at.z, { m: st.metalM, r: 0.4 });
-      c.kit.add(G.cyl(r * 0.85, r * 0.85, 0.02, 12), C.fire, at.x, at.y + h * 0.97, at.z, { g: 1.5 });
-      c.kit.detail(1, () => { for (let k = 0; k < 12; k++) { const a = (k / 12) * PI * 2; c.kit.add(G.sph(0.02, 4, 3), C.iron, at.x + Math.cos(a) * r * 1.13, at.y + h * 0.5, at.z + Math.sin(a) * r * 1.13, { m: 0.6 }); } for (const s of [-1, 1]) c.kit.bar([at.x, at.y + h * 0.75, at.z], [at.x - 0.4, at.y + 0.02, at.z + s * (r + 0.5)], 0.012, C.iron, { m: 0.5 }); });
-      for (let k = 0; k < 3; k++) puffs.push({ x: at.x, y: at.y + h, z: at.z, k, r });
+      // a raked, tapered funnel with banding, rivet rings, a flared crown, a steam pipe and soot; torn open from level 2
+      const one = (sh) => new Kit().add(funnelGeo(r, h, st.band[0], st.metal, sh), 0xffffff).mesh(undefined, `funnel2|${f2(r)}|${f2(h)}|${st.band[0]}|${st.metal}|${sh}`);
+      const tw = twin(one(false), one(true)); tw.g.position.set(at.x, at.y, at.z); tw.g.name = 'funnel';
+      c.addMoving(tw.g); tws.push(tw);
+      (c.breakable ||= []).push({ mesh: tw.g, kind: 'stack' });
+      c.kit.detail(1, () => { for (const s of [-1, 1]) c.kit.bar([at.x, at.y + h * 0.75, at.z], [at.x - 0.4, at.y + 0.02, at.z + s * (r + 0.5)], 0.012, C.iron, { m: 0.5 }); });
+      for (let k = 0; k < 3; k++) puffs.push({ x: at.x, y: at.y + h, y2: at.y + h * 0.56, z: at.z, k, r, i });
     }
     const grp = new THREE.Group(), sm = smokeMat();
     for (const p of puffs) { const o = new THREE.Mesh(G.ico(1, 1), sm); o.userData.p = p; grp.add(o); }
     c.topAt = Math.max(c.topAt || 0, puffs[0].y + 1.5);
+    const act = { torn: 0 };
+    onDamage(c, (lv) => { act.torn = lv >= 2 ? (lv >= 3 ? 2 : 1) : 0; tws.forEach((t, i) => t.set(lv >= 3 || (lv >= 2 && i === 0))); });
     c.addMoving(grp, (t, ph) => grp.children.forEach((o) => {
-      const p = o.userData.p, f = (t * 0.35 + p.k / 3 + ph * 0.1) % 1;
-      o.position.set(p.x - f * 1.2, p.y + 0.15 + f * 1.4, p.z); o.scale.setScalar(p.r * (0.6 + f * 1.3));
+      const p = o.userData.p, f = (t * 0.35 + p.k / 3 + ph * 0.1) % 1, torn = act.torn >= 2 || (act.torn && p.i === 0);
+      // a torn funnel belches lower and thicker
+      o.position.set(p.x - f * 1.2, (torn ? p.y2 : p.y) + 0.15 + f * 1.4, p.z); o.scale.setScalar(p.r * (0.6 + f * 1.3) * (torn ? 1.6 : 1));
     }));
   },
   treadWheel(c) {
-    const l = (c.bowX - c.sternX) * 0.58, h = clamp(c.dy * 0.95, 0.6, 1.4), w = clamp(c.B * 0.18, 0.35, 0.8), x0 = (c.bowX + c.sternX) / 2 - c.L * 0.05, st = c.st;
+    const l = bkt((c.bowX - c.sternX) * 0.58, 0.2), h = bkt(clamp(c.dy * 0.95, 0.6, 1.4), 0.05), w = bkt(clamp(c.B * 0.18, 0.35, 0.8), 0.05), x0 = (c.bowX + c.sternX) / 2 - c.L * 0.05, st = c.st;
     for (const s of [-1, 1]) {
       const z = s * (c.hw(x0) + w / 2 + 0.04), yc = h * 0.42;
+      // the track: iron shoes over spoked road wheels and toothed sprockets, a riveted skirt with the realm's device
+      c.kit.add(treadGeo(l, h, w, st.metal, c.hullC), 0xffffff, x0, yc, z, { sz: s });
       c.kit.push(x0, yc, z);
-      // the track: a stadium of iron shoes over road wheels, a skirt with the realm's device
-      c.kit.add(G.box(l - h, 0.1, w), C.iron, 0, h / 2, 0, { m: 0.6, r: 0.5 }).add(G.box(l - h, 0.1, w), C.iron, 0, -h / 2, 0, { m: 0.6, r: 0.5 });
-      for (const e of [-1, 1]) c.kit.add(G.custom('half-drum', () => new THREE.CylinderGeometry(1, 1, 1, 16, 1, true, 0, PI)), C.iron, e * (l - h) / 2, 0, 0, { rx: PI / 2, rz: e > 0 ? PI : 0, sx: h / 2, sz: h / 2, sy: w, order: 'XZY', m: 0.6 });
-      const nShoe = Math.round((l - h) / 0.16);
-      for (let k = 0; k <= nShoe; k++) for (const yy of [1, -1]) c.kit.add(G.rbox(0.08, 0.06, w * 1.05, 0.015), C.steel, -(l - h) / 2 + ((l - h) * k) / nShoe, yy * (h / 2 + 0.06), 0, { m: 0.7, r: 0.4 });
-      for (let k = 0; k < 6; k++) {
-        const x = -(l - h) / 2 + ((l - h) * k) / 5;
-        c.kit.add(G.cyl(h * 0.34, h * 0.34, w * 0.6, 14), C.darkStone, x, 0, s * w * 0.2, { rx: PI / 2, m: 0.4 });
-        c.kit.add(G.cyl(h * 0.12, h * 0.12, w * 0.7, 8), st.metal, x, 0, s * w * 0.22, { rx: PI / 2, m: st.metalM, r: 0.4 });
-      }
-      c.kit.add(G.rbox(l * 0.86, h * 0.36, 0.06, 0.02), shade(c.hullC, 0.8), 0, h * 0.3, s * w * 0.55);
-      c.kit.detail(2, () => { c.kit.push(0, h * 0.3, s * w * 0.59, 0, s > 0 ? 0 : PI, 0); emblemOn(c.kit, st, h * 0.32, { depth: 0.08 }); c.kit.pop(); });
+      c.kit.detail(2, () => { c.kit.push(0, h * 0.3, s * w * 0.6, 0, s > 0 ? 0 : PI, 0); emblemOn(c.kit, st, h * 0.32, { depth: 0.08 }); c.kit.pop(); });
       c.kit.pop();
     }
   },
 };
 
-/** a strip between two polylines (lo and hi, same length) */
-function skirt(key, lo, hi) {
-  return G.custom(`sk${key}`, () => {
-    const P = [], idx = [];
-    for (let i = 0; i < lo.length; i++) P.push(...lo[i], ...hi[i]);
-    for (let i = 0; i < lo.length - 1; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
-  });
-}
 
 const mats = {};
 function glowMat(col, op) { const k = `g${col},${op}`; return (mats[k] ||= new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })).clone(); }

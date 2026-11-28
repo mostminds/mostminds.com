@@ -5,7 +5,7 @@ import { THREE, PI, TAU, SPH, SPH_LO, HEMI, BOX, CYL, CONE, TORUS, OCTA, ICO, me
 import { styleOf } from './style.js';
 import { decoMats, finial, figurehead, banner, trophies, motif, along, roof } from './deco.js';
 import { envelopeGeo, hullSkinGeo, skinMesh, skinLod, skinDamage, envPoint, holesOf } from './skin.js';
-import { sculptedFigurehead, helmsman } from './carved.js';
+import { sculptedFigurehead, helmsman, sculptedMesh, nacelleGeo, propGeo } from './carved.js';
 
 // hull sizes per lift: [length x len, beam, depth]
 const HULL = { dirigible: [0.55, 1.5, 0.75], ribbed: [0.58, 1.6, 0.8], balloon: [0.62, 1.7, 0.95], lantern: [0.6, 1.7, 0.9], patched: [0.5, 1.6, 0.8], none: [0.78, 1.75, 0.95], crystal: [0.66, 1.7, 0.9], wings: [0.72, 1.6, 0.85] };
@@ -51,7 +51,7 @@ export function buildSkyShip(def, sideColor) {
   for (const w of A.wings) movers.push(w.sh, ...(w.el ? [w.el] : []));
   if (E.group) movers.push(E.group);
   const lodMeshes = bake(root, movers, T);
-  lodMeshes.push(...skinLod(X));
+  lodMeshes.push(...skinLod(X), ...(X.sculpt || []));
   const box = new THREE.Box3().setFromObject(root);
 
   const per = Math.max(1, def.cannons?.perSide || 3);
@@ -89,6 +89,8 @@ export function buildSkyShip(def, sideColor) {
       if (E.group) { const s = lv >= 3 ? (X.skins?.some((k) => k.kind === 'bag') ? 0.94 : E.sag ?? 0.8) : 1; E.group.scale.y = s; E.group.position.y = (E.cy || 0) * (1 - s) * 0.6; E.group.rotation.z = lv >= 3 ? -0.06 : lv >= 2 ? -0.02 : 0; }
       X.g.rotation.x = lv >= 2 ? (info.side || 1) * (lv >= 3 ? 0.07 : 0.03) : 0;   // a list toward the beam that took it
       props.forEach((p, i) => { const dead = lv >= 3 || (lv >= 2 && i === 0); p.userData.dead = dead; if (p.userData.whole) { p.userData.whole.visible = !dead; p.userData.broken.visible = dead; } });
+      // the engines shot through: the first at 2, all of them at 3 (sculpted twins swapped in)
+      (X.nacelles || []).forEach((n, i) => { const hit = lv >= 3 || (lv >= 2 && i === 0); n.a.visible = !hit; n.b.visible = hit; });
     },
   };
   return root;
@@ -168,7 +170,7 @@ function hull(X) {
   const bx = HL / 2 + 0.05;
   rod(H, C.wood, [bx - 0.3, 0.3, 0], [bx + 0.9, 0.62, 0], 0.06, 0.035, 6);
   finial(H, C, S.finial, bx + 0.9, 0.62, 0, 0.5).rotation.z = -1.3;
-  if (S.figure !== 'none') figurehead(H, C, S.figure, bx + 0.22, 0.05, 0, 0.95);
+  if (S.figure !== 'none') { if (!sculptedFigurehead(X, H, S.figure, bx - 0.02, -HD * 0.5, 0, 0.36)) figurehead(H, C, S.figure, bx + 0.22, 0.05, 0, 0.95); }
   else tier(3, () => { const e = emblem(H, C.trim, S.emblem, 0.45, 0.04); e.position.set(bx + 0.12, -0.05, 0); e.rotation.y = PI / 2; });
   // stern ensign on a staff
   rod(H, C.wood, [-HL / 2 + 0.05, 0.2, 0], [-HL / 2 - 0.35, 1.3, 0], 0.03, 0.025, 5);
@@ -501,37 +503,26 @@ function rotor(X, at, h, R, dir = 1) {
   X.A.spin.push({ o: r, axis: 'y', speed: 9 * dir });
   X.blocked.push([x - 0.2, x + 0.2, z - 0.2, z + 0.2]);
 }
-/** a propeller spinning about local x: twisted blades on a hub with a spinner */
+/** a propeller spinning about local x: twisted blades on a bolted hub with a spinner (sculpted), and its shot-away twin */
 function propeller(X, P, x, y, z, R = 0.65, n = 4) {
   const p = group(P, x, y, z), whole = group(p), broken = group(p);
   broken.visible = false; p.userData.whole = whole; p.userData.broken = broken;
   (X.moving ||= []).push(whole, broken);
-  // shot away: two stumps and one bent blade
-  for (let i = 0; i < n; i++) {
-    const q = group(broken); q.rotation.x = (i / n) * TAU + 0.3;
-    const bl = group(q); bl.rotation.y = PI / 2 - 0.45;
-    const len = i === 0 ? R * 0.85 : R * (0.18 + 0.12 * hash(i + 5));
-    if (i === 0) bl.rotation.z = 0.5;
-    if (i === 0 || i % 2) slab(bl, X.C.dark, [[-0.05, 0.06], [-0.08, len * 0.5], [-0.02, len], [0.07, len * 0.9], [0.05, len * 0.6], [0.05, 0.06]], 0.025, 0.004).rotation.x = -PI / 2;
-  }
-  for (let i = 0; i < n; i++) {
-    const q = group(whole); q.rotation.x = (i / n) * TAU;
-    const bl = group(q); bl.rotation.y = PI / 2 - 0.45; // chord across the shaft, pitched
-    slab(bl, X.C.wood, [[-0.05, 0.06], [-0.08, R * 0.5], [-0.05, R], [0.04, R * 0.98], [0.06, R * 0.45], [0.05, 0.06]], 0.025, 0.006, `prop:${R}`).rotation.x = -PI / 2;
-    tier(1, () => { const tip = blk(bl, X.C.trim, 0, R * 0.92, 0, 0.11, 0.12, 0.03); void tip; });
-  }
-  lathe(p, X.C.trim, [[0.001, 0.22], [0.08, 0.14], [0.12, 0.0], [0.11, -0.06]], 12, 'prop:spin').rotation.z = PI / 2;
+  const wood = X.hex.hull, trim = X.hex.trim;
+  sculptedMesh(X, whole, propGeo(R, n, wood, trim, false));
+  sculptedMesh(X, broken, propGeo(R, n, shade(wood, 0.7), trim, true));
   noCrew(p);
   X.props.push(p);
   return p;
 }
+/** a cowled engine nacelle (sculpted), nose forward, s its scale */
 function nacelle(X, P, x, y, z, s = 1) {
-  const { C } = X;
-  const n = lathe(P, C.trim, [[0.001, 0.62], [0.12, 0.55], [0.2, 0.4], [0.23, 0.1], [0.22, -0.25], [0.17, -0.45], [0.1, -0.55], [0.06, -0.6]].map(([r, yy]) => [r * s, yy * s]), 16);
-  n.position.set(x, y, z); n.rotation.z = -PI / 2;
-  add(P, mesh(TORUS(0.12, 20, 5), C.iron, x + 0.4 * s, y, z, 0.215 * s)).rotation.y = PI / 2;
-  tier(1, () => { for (let i = 0; i < 3; i++) { const a = PI * 0.3 + i * 0.25; rod(P, C.iron, [x - 0.1 * s, y + Math.sin(a) * 0.2 * s, z + Math.cos(a) * 0.2 * s], [x - 0.35 * s, y + Math.sin(a) * 0.27 * s, z + Math.cos(a) * 0.27 * s], 0.025, 0.03, 5); }
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; ell(P, C.brass, x + 0.15 * s, y + Math.sin(a) * 0.23 * s, z + Math.cos(a) * 0.23 * s, 0.018); } });
+  const g = group(P), a = group(g), b = group(g);
+  b.visible = false;
+  sculptedMesh(X, a, nacelleGeo(X.hex.trim, 0x3e3e44), x, y, z, s);
+  sculptedMesh(X, b, nacelleGeo(X.hex.trim, 0x3e3e44, true), x, y, z, s);
+  (X.moving ||= []).push(a, b);
+  (X.nacelles ||= []).push({ a, b });
 }
 function engines(X, E) {
   const { H, C, HL, HB } = X;
