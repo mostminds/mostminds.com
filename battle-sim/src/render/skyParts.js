@@ -5,13 +5,10 @@ import { buildSkyBeast } from './sky/beasts.js';
 
 /** returns a model for def (an AIRSHIPS entry with def.sky), or null to use the plain airship */
 export function buildSkyModel(def, sideColor) {
-  let D = def && def.sky;
+  const D = def && def.sky;
   if (!D) return null;
-  /*DEBUG*/ const dq = typeof location !== 'undefined' && new URLSearchParams(location.search).get('opts'); if (dq) { const o = JSON.parse(dq); D = { ...D, ...o }; def = { ...def, sky: D }; }
   try {
-    const m = D.kind === 'beast' ? buildSkyBeast(def, sideColor) : buildSkyShip(def, sideColor);
-    /*DEBUG*/ if (D.damage) m.userData.setDamage(D.damage); if (D.sideX) m.userData.setSide(D.sideX);
-    return m;
+    return D.kind === 'beast' ? buildSkyBeast(def, sideColor) : buildSkyShip(def, sideColor);
   } catch (err) {
     console.warn(`[skyParts] ${def.id} failed, using the plain airship`, err);
     return null;

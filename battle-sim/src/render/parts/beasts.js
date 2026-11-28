@@ -51,8 +51,8 @@ function swimmer(kind, S, len, w) {
   // the body, tapering to the tail
   for (let i = 0; i < n; i++) {
     const K = new Kit(), t = i / (n - 1), r = w * 0.5 * (kind === 'whale' || kind === 'orca' ? lerp(1.05, 0.35, t * t) : lerp(0.9, 0.28, t));
-    K.add(G.sph(r, 9, 6), S.col, 0, 0, 0, { sx: (sl / r) * 0.75, sy: kind === 'gator' ? 0.55 : 0.85 });
-    K.add(G.sph(r * 0.85, 8, 5), S.belly, 0, -r * 0.3, 0, { sx: (sl / r) * 0.7, sy: 0.5 });
+    K.add(G.sph(r, 10, 7), S.col, 0, 0, 0, { sx: (sl / r) * 1.05, sy: kind === 'gator' ? 0.55 : 0.85 });
+    K.add(G.sph(r * 0.85, 8, 5), S.belly, 0, -r * 0.3, 0, { sx: (sl / r) * 1.0, sy: 0.5 });
     if (kind === 'gator' || kind === 'mosasaur') for (const z of [-0.4, 0.4, 0]) K.add(G.cone(r * 0.14, r * 0.35, 4), shade(S.col, 0.7), 0, r * (kind === 'gator' ? 0.48 : 0.75), z * r * (kind === 'gator' ? 1 : 0.2), { s: z ? 1 : 1.3 });
     if (kind === 'serpent' && i % 2 === 0) K.add(G.cone(r * 0.2, r * 0.8, 4), blend(S.col, 0xd84a2a, 0.5), 0, r * 0.95, 0, { rz: 0.4 });
     if (kind === 'orca' && i === 0) K.add(G.shape('orcafin', [[-0.6, 0], [0.2, 0], [-0.4, 1]], 0.06), S.col, 0, r * 0.75, 0, { s: w * 1.1 });
@@ -134,7 +134,7 @@ export function buildTow(c, kind) {
   c.kit.add(G.tor(w * 0.5, 0.05, 4, 14, PI), C.iron, yx, yy - 0.1, 0, { ry: PI / 2, m: 0.7 });
   const by = Math.max(0.5, c.deckAt(c.bowX - 0.4) - 0.2);
   for (const z of [-1, 1]) c.kit.rope([yx, yy, z * w * 0.55], [c.bowX - 0.2, by, z * Math.max(0.25, c.hw(c.bowX - 0.4) * 0.8)], 0.25, 0.04, C.iron, { m: 0.75, r: 0.4 });
-  if (c.def.realm) c.kit.add(G.box(0.03, w * 0.5, w * 0.4), c.side, yx, yy + w * 0.3, 0); // a pennant on the yoke
+  c.kit.add(G.cyl(0.03, 0.03, 0.7, 4), C.dark, yx, yy + 0.35, 0).add(G.shape('pennant', [[0, -0.12], [-1, 0], [0, 0.12]]), c.side, yx, yy + 0.6, 0, { sx: 0.7, sy: 1.2 }); // a pennant on the yoke
   const segs = b.segs, legs = b.legs;
   c.addMoving(b.group, (t, ph) => {
     const a = t * S.speed + ph;

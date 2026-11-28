@@ -178,11 +178,11 @@ export const BOW_PARTS = {
     const pts = [];
     for (let i = 0; i <= 48; i++) { const t = i / 48, a = t * Math.PI * 2 * 3.5, rr = r * (1 - t) + 0.04; pts.push([Math.cos(a) * rr, t * len, Math.sin(a) * rr]); }
     K.add(G.tube(`drill${r.toFixed(2)},${len.toFixed(2)}`, pts, r * 0.11, 64, 4), shade(col, 1.25), 0, 0, 0, { m: 0.9, r: 0.3 });
-    const mesh = K.mesh(); const pivot = new THREE.Group(); pivot.add(mesh); mesh.rotation.z = -Math.PI / 2; pivot.position.set(s.x + 0.1, y, 0);
+    const mesh = K.mesh(); const pivot = new THREE.Group(); pivot.add(mesh); mesh.rotation.order = 'ZYX'; mesh.rotation.z = -Math.PI / 2; pivot.position.set(s.x + 0.1, y, 0);
     c.addMoving(pivot, (t) => { mesh.rotation.y = t * 7; });
     // the collar and the boiler struts that hold her
-    c.kit.add(G.cyl(r * 1.15, r * 1.15, 0.4, 12), C.iron, s.x - 0.1, y, 0, { rz: Math.PI / 2, m: 0.6 });
-    c.kit.add(G.tor(r * 1.15, 0.08, 4, 14), c.trimC, s.x + 0.1, y, 0, { ry: Math.PI / 2, m: 0.7 });
+    c.kit.add(G.cyl(r * 0.8, r * 0.9, 0.5, 12), C.steel, s.x - 0.15, y, 0, { rz: Math.PI / 2, m: 0.7, r: 0.4 });
+    c.kit.add(G.tor(r * 0.85, 0.07, 4, 14), c.trimC, s.x + 0.1, y, 0, { ry: Math.PI / 2, m: 0.7 });
     for (const z of [-1, 1]) c.kit.bar([s.x - 0.1, y, z * r * 0.9], [s.x - c.L * 0.12, s.y, z * c.hw(s.x - c.L * 0.12) * 0.7], 0.08, C.iron, { m: 0.6 });
   },
   jaws(c) {

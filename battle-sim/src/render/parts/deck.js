@@ -74,6 +74,7 @@ export const DECK_PARTS = {
     c.nestAt = [at.x, at.y + h + 0.15, 0]; c.topAt = Math.max(c.topAt || 0, at.y + h + 1.6);
   } },
   pyramid: { size: 3, fn(c) {
+    if (c.def.kind === 'serpentBarge') return; // her class is built round a stepped pyramid already
     const w = clamp(Math.min(c.hw(0) * 1.7, c.L * 0.3), 1.6, 3.6), at = c.place(w * 0.62, -0.05), K = c.kit, col = blend(c.hullC, 0xd8c08a, 0.6), n = 5, sh = 0.32 * c.k;
     K.push(at.x, at.y, 0);
     for (let i = 0; i < n; i++) { const ww = w * (1 - i / (n + 0.6)); K.add(G.box(ww, sh, ww), i % 2 ? shade(col, 0.88) : col, 0, sh * (i + 0.5), 0); }
@@ -83,6 +84,7 @@ export const DECK_PARTS = {
     c.nestAt = [at.x, at.y + sh * n + 0.6, 0]; c.topAt = Math.max(c.topAt || 0, at.y + sh * (n + 2));
   } },
   ziggurat: { size: 3, fn(c) {
+    if (c.def.kind === 'serpentBarge') { const x = -c.L * 0.08; flame(c.kit, x, c.deckAt(x) + 0.05, 0, 1.6 * c.k); return; } // her class's own stepped pyramid; crown it with fire
     const w = clamp(Math.min(c.hw(0) * 1.75, c.L * 0.34), 1.8, 3.8), at = c.place(w * 0.62, -0.08), K = c.kit, col = blend(c.hullC, 0xa07a50, 0.5), n = 3, sh = 0.55 * c.k;
     K.push(at.x, at.y, 0);
     for (let i = 0; i < n; i++) { const ww = w * (1 - i * 0.28); K.add(G.box(ww, sh, ww * 0.9), i % 2 ? shade(col, 0.85) : col, 0, sh * (i + 0.5), 0); K.add(G.box(ww * 1.02, 0.06, ww * 0.92), c.trimC, 0, sh * (i + 1), 0, { m: 0.4 }); }
@@ -488,7 +490,7 @@ export const DECK_PARTS = {
       K.add(G.box(0.4, h, 0.4), C.brick, at.x, at.y + h / 2, at.z).add(G.box(0.5, 0.14, 0.5), shade(C.brick, 0.7), at.x, at.y + h, at.z);
       for (let k = 1; k < 4; k++) K.add(G.box(0.41, 0.025, 0.41), 0x6a3a2a, at.x, at.y + (h * k) / 4, at.z);
       K.add(G.box(0.3, 0.02, 0.3), C.fire, at.x, at.y + h + 0.07, at.z, { g: 2 });
-      for (let k = 0; k < 2; k++) { const o = new THREE.Mesh(G.ico(1, 0), smoke()); o.userData.p = { x: at.x, y: at.y + h, z: at.z, k }; grp.add(o); }
+      for (let k = 0; k < 2; k++) { const o = new THREE.Mesh(G.ico(1, 1), smoke()); o.userData.p = { x: at.x, y: at.y + h, z: at.z, k }; grp.add(o); }
     }
     c.addMoving(grp, (t, ph) => grp.children.forEach((o) => { const p = o.userData.p, f = (t * 0.3 + p.k * 0.5 + ph * 0.1) % 1; o.position.set(p.x - f * 1.1, p.y + 0.25 + f * 1.3, p.z); o.scale.setScalar(0.18 * (1 + f * 2)); }));
   } },
@@ -567,9 +569,10 @@ export const DECK_PARTS = {
     for (const s of [-1, 1]) {
       const xs = along(c, Math.max(4, Math.round(c.L * 0.5)), 0.1, 0.84);
       xs.forEach((x, i) => {
-        const top = hullH(c, x), z = s * (c.hw(x) + 0.05), w = (c.bowX - c.sternX) * 0.74 / xs.length + 0.08;
-        K.add(G.box(w, top * 0.7, 0.06), shade(col, 0.85 + (i % 2) * 0.15), x, top * 0.5, z, { rx: s * 0.12, m: 0.7, r: 0.45 });
-        for (const yy of [0.2, 0.8]) for (const xx of [-0.4, 0, 0.4]) K.add(G.sph(0.035, 4, 3), C.iron, x + xx * w, top * (0.15 + yy * 0.7), z + s * 0.035, { m: 0.8 });
+        const y1 = hullH(c, x) * 0.88, y0 = 0.08, zl = c.hwLo(x) + 0.04, zh = c.hw(x) + 0.04, tilt = Math.atan2(zh - zl, y1 - y0);
+        const z = s * (zl + zh) / 2, w = (c.bowX - c.sternX) * 0.74 / xs.length + 0.08, h = Math.hypot(y1 - y0, zh - zl);
+        K.add(G.box(w, h, 0.06), shade(col, 0.85 + (i % 2) * 0.15), x, (y0 + y1) / 2, z, { rx: s * tilt, m: 0.7, r: 0.45 });
+        for (const yy of [0.15, 0.85]) for (const xx of [-0.4, 0, 0.4]) K.add(G.sph(0.035, 4, 3), C.iron, x + xx * w, y0 + (y1 - y0) * yy, s * (lerp(zl, zh, yy) + 0.035), { m: 0.8 });
       });
     }
   } },
@@ -697,4 +700,4 @@ export const DECK_PARTS = {
 };
 
 let smokeM = null;
-function smoke() { return (smokeM ||= new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 1, transparent: true, opacity: 0.5, depthWrite: false, flatShading: true })); }
+function smoke() { return (smokeM ||= new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 1, transparent: true, opacity: 0.5, depthWrite: false })); }

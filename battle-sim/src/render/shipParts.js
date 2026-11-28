@@ -57,7 +57,7 @@ function profileOf(m, def, deckY) {
   // widths and ends: vertices between the waterline and the deck, close to the hull
   const all = surf.flat().filter((v) => v !== null).sort((a, b) => a - b);
   const dy = deckY ?? all[Math.floor(all.length * 0.35)] ?? B * 0.25;
-  const half = new Array(NX).fill(0);
+  const half = new Array(NX).fill(0), halfLo = new Array(NX).fill(0);
   let bowX = L * 0.5, sternX = -L * 0.5;
   if (geo) {
     const P = geo.attributes.position.array;
@@ -67,12 +67,13 @@ function profileOf(m, def, deckY) {
       if (y < 0.1 || y > dy + 0.15 || z > B * 0.62) continue;
       const bi = Math.round(((x + L / 2) / L) * (NX - 1));
       if (bi >= 0 && bi < NX && z > half[bi]) half[bi] = z;
+      if (bi >= 0 && bi < NX && y < dy * 0.45 && z > halfLo[bi]) halfLo[bi] = z;
       if (y < dy - 0.1) { if (x > bowX) bowX = x; if (x < sternX) sternX = x; }
     }
     if (bowX < 0) bowX = L * 0.5;
     if (sternX > 0) sternX = -L * 0.5;
-  } else for (let i = 0; i < NX; i++) half[i] = B * 0.5 * (1 - Math.pow(Math.abs(xs[i]) / (L * 0.5), 3) * 0.7);
-  const prof = { xs, surf, dy, half, bowX, sternX, top };
+  } else for (let i = 0; i < NX; i++) halfLo[i] = half[i] = B * 0.5 * (1 - Math.pow(Math.abs(xs[i]) / (L * 0.5), 3) * 0.7);
+  const prof = { xs, surf, dy, half, halfLo, bowX, sternX, top };
   profiles.set(key, prof);
   return prof;
 }
@@ -88,7 +89,7 @@ function makeCtx(m, def, sideColor, deckY) {
   const col = (zi) => prof.surf.map((row) => fill(row[zi]));
   const mid = col(1), port = col(0), star = col(2);
   const floor = prof.surf.map((row) => Math.min(...row.map(fill)));
-  const halfS = prof.half.map((h) => Math.max(h, B * 0.12));
+  const halfS = prof.half.map((h) => Math.max(h, B * 0.12)), halfL = prof.halfLo.map((h, i) => Math.max(Math.min(h || halfS[i], halfS[i]), B * 0.08));
   const ctx = {
     m, def, L, B, side: sideColor, dy,
     k: clamp(L / 10, 0.7, 1.4),
@@ -99,6 +100,8 @@ function makeCtx(m, def, sideColor, deckY) {
     floorAt: (x) => interp(floor, x),
     /** the hull's half-width near deck level at x */
     hw: (x) => interp(halfS, x),
+    /** and low down, near the waterline */
+    hwLo: (x) => interp(halfL, x),
     kit: new Kit(),
     group: new THREE.Group(),
     fx: [],

@@ -239,11 +239,11 @@ export const HULL_PARTS = {
       for (let k = 0; k < 3; k++) puffs.push({ x: at.x, y: at.y + h, z: at.z, k, r });
     }
     const grp = new THREE.Group(), sm = smokeMat();
-    for (const p of puffs) { const o = new THREE.Mesh(G.ico(1, 0), sm); o.userData.p = p; grp.add(o); }
+    for (const p of puffs) { const o = new THREE.Mesh(G.ico(1, 1), sm); o.userData.p = p; grp.add(o); }
     c.topAt = Math.max(c.topAt || 0, puffs[0].y + 1.5);
     c.addMoving(grp, (t, ph) => grp.children.forEach((o) => {
       const p = o.userData.p, f = (t * 0.35 + p.k / 3 + ph * 0.1) % 1;
-      o.position.set(p.x - f * 1.4, p.y + 0.2 + f * 1.6, p.z); o.scale.setScalar(p.r * (1 + f * 2.2));
+      o.position.set(p.x - f * 1.2, p.y + 0.15 + f * 1.4, p.z); o.scale.setScalar(p.r * (0.6 + f * 1.3));
     }));
   },
   treadWheel(c) {
@@ -268,7 +268,7 @@ export const HULL_PARTS = {
 const mats = {};
 function glowMat(col, op) { const k = `g${col},${op}`; return (mats[k] ||= new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })).clone(); }
 function wispMat() { return (mats.wisp ||= new THREE.MeshBasicMaterial({ color: 0x8affa8, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false })); }
-function smokeMat() { return (mats.smoke ||= new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 1, transparent: true, opacity: 0.55, depthWrite: false, flatShading: true })); }
+function smokeMat() { return (mats.smoke ||= new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 1, transparent: true, opacity: 0.5, depthWrite: false })); }
 export { glowMat };
 
 // ---------- her own rig ----------
