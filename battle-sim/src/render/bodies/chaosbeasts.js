@@ -408,6 +408,26 @@ function vent(p, dir, r, glow = EMBER, rim = IRON) {
   for (let i = -1; i <= 1; i++) out.push(place(H.box(r * 0.12, r * 0.12, r * 1.4, r * 0.02).at(i * r * 0.4, r * 0.26, 0).color(IRON).pbr(0.5, 0.7)).lod(1));
   return out;
 }
+/** an open shell band (a lame of barding) curving over a back: axis along local Y, crown toward local +Z */
+function lame(r, w, span, color, rim) {
+  const g = new THREE.CylinderGeometry(r, r * 0.97, w, 22, 4, true, -span / 2, span);
+  const c = rgb(color), e = rgb(rim);
+  return H.geo(g).shade((x, y, z) => (Math.abs(y) > w * 0.3 || Math.abs(Math.atan2(x, z)) > span / 2 - 0.12 ? e : c)).color(color).pbr(0.34, 0.85);
+}
+/** a flat plate w x h, its hem toothed (teeth > 0), as an iron backing and a brass face: local Y up, face +Z */
+function jagPlate(w, h, teeth, sx, brass) {
+  const o = [];
+  o.push([-w / 2, h / 2], [w / 2, h / 2]);
+  if (teeth > 0) {
+    const n = teeth * 2;
+    for (let i = 0; i <= n; i++) { const x = w / 2 - (i / n) * w; o.push([x, i % 2 ? -h / 2 - 0.06 : -h / 2 + 0.005]); }
+  } else o.push([w / 2 - 0.02, -h / 2], [-w / 2 + 0.02, -h / 2]);
+  const inner = o.map(([x, y]) => [x * 0.86, y * 0.84 + 0.004]);
+  return {
+    iron: H.extrude(o, 0.014, 0.004).color(IRON).pbr(0.5, 0.7),
+    brass: H.extrude(inner, 0.01, 0.004).color(brass).pbr(0.3, 0.9).shade((x, y) => (Math.abs(x) < 0.012 ? rgb(tone(brass, 0, 0, -0.15)) : null)),
+  };
+}
 /** a hanging bell (open end down) at p */
 function bell(p, r, color) {
   return [
@@ -467,7 +487,7 @@ function poseRider(rig, c, base, dead, lean = 0.12) {
 function brassRhino(def, o = {}) {
   const hide = col(o.hide, 0x5a3a32), brass = col(o.armor, 0xb07a2a), brassD = tone(brass, -0.01, 0, -0.14), brassL = tone(brass, 0.01, -0.05, 0.12);
   const hideD = tone(hide, 0, 0, -0.08), hideL = tone(hide, 0.01, -0.04, 0.08), ridden = !!(o.rider && typeof o.rider === 'object');
-  const sk = (q) => q.color(hide).bump(0.007, 13, 'rock').tint(0.12, 9).pbr(0.82, 0);
+  const sk = (q) => q.color(hide).bump(0.011, 10, 'rock').tint(0.16, 7).pbr(0.85, 0);
   const br = (q) => q.color(brass).pbr(0.32, 0.9).tint(0.08, 14);
   const ir = (q) => q.color(IRON).pbr(0.55, 0.7).tint(0.1, 20);
   const N = rigOf();
@@ -484,36 +504,37 @@ function brassRhino(def, o = {}) {
     p.push(sk(S.capsule([0, 0.66, -0.6], [0, 0.6, -0.68], 0.2, 0.14).blend(0.08)));
     p.push(...S.mirrorX([sk(S.ellipsoid(0.12, 0.2, 0.18).at(0.25, 0.6, 0.34).blend(0.06)), sk(S.ellipsoid(0.14, 0.2, 0.2).at(0.24, 0.62, -0.42).blend(0.06))]));
     // the folds of the hide: a ridge at the shoulder and at the hip, a darker back and paler belly
+    for (let i = 0; i < 3; i++) p.push(orient(S.ellipsoid(0.25 - i * 0.015, 0.022, 0.25 - i * 0.015), [0, 0.79 - i * 0.03, 0.56 + i * 0.06], [0, 0.4, 1]).color(hideD).paint(0.012, 0.014));
     for (const z of [0.1, -0.2]) p.push(S.ellipsoid(0.4, 0.4, 0.028).at(0, 0.68, z).color(hideD).paint(0.014, 0.012));
     p.push(S.ellipsoid(0.24, 0.12, 0.7).at(0, 1.0, -0.04).color(hideD).paint(0.06));
     p.push(S.ellipsoid(0.24, 0.1, 0.42).at(0, 0.32, -0.02).color(hideL).paint(0.05));
-    // barding: a blackened-iron saddle of plates over the back, brass-rimmed
-    p.push(ir(S.ellipsoid(0.33, 0.17, 0.3).at(0, 0.88, -0.4).blend(0.004)));                // crupper
-    p.push(S.ellipsoid(0.335, 0.175, 0.305).at(0, 0.87, -0.4).color(brass).pbr(0.32, 0.9).paint(0.006, 0.006));
-    p.push(ir(S.ellipsoid(0.31, 0.16, 0.26).at(0, 0.96, 0.3).blend(0.004)));                 // shoulder plate
-    p.push(S.ellipsoid(0.315, 0.165, 0.265).at(0, 0.95, 0.3).color(brass).pbr(0.32, 0.9).paint(0.006, 0.006));
-    for (let i = 0; i < 3; i++) p.push(ir(S.ellipsoid(0.17, 0.08, 0.1).rot(-20, 0, 0).at(0, 1.0 - i * 0.025, 0.5 + i * 0.08).blend(0.004)));   // crinet bands
-    // flank plates: brass, layered, jagged
+    // barding: articulated lames over the shoulders and haunches; jagged two-layer plates down the flanks
+    const lamesAt = (z0, z1, n, cy, r, span) => {
+      for (let i = 0; i < n; i++) {
+        const z = lerp(z0, z1, i / (n - 1));
+        body.hard.push(orient(lame(r + i * 0.004, 0.14, span, i % 2 ? IRON : brass, i % 2 ? brassD : IRON_L), [0, cy, z], [0, 0.15, -1], [0, 1, 0]));
+        body.hard.push(spike([0, cy + r + 0.01, z - 0.02], [0, 1, -0.5], 0.11 + 0.03 * (i % 2), 0.034, brassL, [0, 0, -1], 0.25, 0.5).lod(2));
+      }
+    };
+    lamesAt(0.5, 0.17, 4, 0.76, 0.395, 2.3);
+    lamesAt(-0.25, -0.58, 4, 0.7, 0.375, 2.4);
     for (const sx of [1, -1]) {
-      p.push(br(S.ellipsoid(0.07, 0.2, 0.26).rot(0, 0, sx * -14).at(sx * 0.33, 0.72, 0.06).blend(0.004)));
-      p.push(ir(S.ellipsoid(0.07, 0.17, 0.2).rot(0, 0, sx * -12).at(sx * 0.335, 0.7, -0.2).blend(0.004)));
-      p.push(S.ellipsoid(0.04, 0.02, 0.27).at(sx * 0.38, 0.66, 0.06).color(brassD).paint(0.006, 0.005));
+      const X = sideX(sx);
+      [[0.3, 0.27], [0.06, 0.25], [-0.18, 0.25], [-0.42, 0.25]].forEach(([z, w], i) => {
+        const end = i === 0 || i === 3, yUp = end ? 0.86 : 0.85, xUp = end ? 0.335 : 0.315;
+        const up = jagPlate(w, 0.19, 0, sx, brass), lo = jagPlate(w * 1.04, 0.22, 4, sx, brass);
+        body.hard.push(orient(up.iron, X([xUp, yUp, z]), X([-0.6, 1, 0]), X([1, 0.6, 0])), orient(up.brass, X([xUp + 0.012, yUp + 0.007, z]), X([-0.6, 1, 0]), X([1, 0.6, 0])));
+        body.hard.push(orient(lo.iron, X([0.385, 0.63, z + 0.01]), X([-0.12, 1, 0]), X([1, 0.12, 0])), orient(lo.brass, X([0.398, 0.632, z + 0.01]), X([-0.12, 1, 0]), X([1, 0.12, 0])));
+        for (const dz of [-0.08, 0.08]) body.hard.push(H.sphere(0.014, 6).at(...X([0.415, 0.72, z + dz])).color(brassL).pbr(0.3, 0.9).lod(0));
+      });
     }
     // peytral: the brass breastplate with an iron boss
-    p.push(br(S.ellipsoid(0.32, 0.24, 0.12).rot(-8, 0, 0).at(0, 0.6, 0.58).blend(0.004)));
-    p.push(ir(S.ellipsoid(0.1, 0.1, 0.06).at(0, 0.62, 0.69).blend(0.004)));
-    body.hard.push(spike([0, 0.62, 0.72], [0, 0, 1], 0.12, 0.04, IRON_L, [0, 1, 0], 0).lod(2));
-    for (const sx of [1, -1]) body.hard.push(spike([sx * 0.22, 0.56, 0.64], [sx * 0.5, -0.1, 1], 0.1, 0.03, brassL, [0, 1, 0], 0.1).lod(2));
-    // jagged brass teeth along the plate edges and the spine
-    const spine = [], spDir = [];
-    for (let i = 0; i < 9; i++) { const z = 0.42 - i * 0.12; if (ridden && z > -0.2 && z < 0.2) continue; spine.push([0, (z > 0 ? 1.1 : 1.04) - Math.abs(z - 0.3) * 0.06, z]); spDir.push([0, 1, -0.35]); }
-    body.hard.push(...spikeRow(spine, spDir, 0.12, 0.035, brassL));
+    p.push(br(S.ellipsoid(0.3, 0.25, 0.14).rot(-8, 0, 0).at(0, 0.6, 0.62).blend(0.004)));
+    p.push(S.ellipsoid(0.305, 0.255, 0.142).rot(-8, 0, 0).at(0, 0.598, 0.618).color(IRON).pbr(0.5, 0.7).paint(0.006, 0.004));
+    p.push(ir(S.ellipsoid(0.1, 0.1, 0.06).at(0, 0.62, 0.74).blend(0.004)));
+    body.hard.push(spike([0, 0.62, 0.78], [0, 0, 1], 0.12, 0.04, IRON_L, [0, 1, 0], 0).lod(2));
+    for (const sx of [1, -1]) body.hard.push(spike([sx * 0.2, 0.56, 0.7], [sx * 0.5, -0.1, 1], 0.1, 0.03, brassL, [0, 1, 0], 0.1).lod(2));
     for (const sx of [1, -1]) {
-      const edge = [], ed = [];
-      for (let i = 0; i < 6; i++) { const z = 0.28 - i * 0.07; edge.push([sx * 0.38, 0.5 + Math.abs(i - 2.5) * 0.012, z]); ed.push([sx * 0.4, -1, 0.1]); }
-      body.hard.push(...spikeRow(edge, ed, 0.07, 0.022, brass));
-      // brass rivets on the flank plates
-      for (let i = 0; i < 5; i++) body.hard.push(H.sphere(0.014, 6).at(sx * 0.395, 0.62 + i * 0.03, -0.12 + i * 0.09).color(brassL).pbr(0.3, 0.9).lod(0));
       // furnace vents behind the shoulders, glowing
       body.hard.push(...vent([sx * 0.31, 0.88, 0.16], [sx * 0.8, 0.5, -0.3], 0.045, EMBER, IRON));
       body.hard.push(...vent([sx * 0.33, 0.82, -0.02], [sx * 0.85, 0.45, -0.3], 0.038, EMBER, IRON));
@@ -547,8 +568,8 @@ function brassRhino(def, o = {}) {
   {
     const p = head.prims, bare = (q) => q.color(hide).bump(0.005, 18, 'rock').tint(0.1, 14).pbr(0.78);
     p.push(bare(S.ellipsoid(0.17, 0.18, 0.2).at(0, 0.74, 0.8)));
-    p.push(bare(S.capsule([0, 0.7, 0.9], [0, 0.56, 1.14], 0.16, 0.12).blend(0.06)));
-    p.push(bare(S.ellipsoid(0.12, 0.08, 0.08).at(0, 0.5, 1.15).blend(0.04)));                       // the hooked upper lip
+    p.push(bare(S.capsule([0, 0.71, 0.88], [0, 0.57, 1.12], 0.155, 0.105).blend(0.06)));
+    p.push(bare(S.ellipsoid(0.085, 0.06, 0.06).at(0, 0.5, 1.15).blend(0.04)));                       // the hooked upper lip
     p.push(...S.mirrorX([
       bare(S.ellipsoid(0.07, 0.09, 0.12).at(0.12, 0.62, 0.92).blend(0.04)),                           // cheek
       bare(S.capsule([0.1, 0.84, 0.74], [0.15, 0.98, 0.7], 0.045, 0.02).blend(0.03)),                 // ear
@@ -558,8 +579,10 @@ function brassRhino(def, o = {}) {
     ]));
     p.push(S.box(0.22, 0.02, 0.2, 0.01).at(0, 0.48, 1.05).color(0x2a1410).paint(0.008, -0.006));    // mouth line
     // chanfron: brass face-plate down the brow, iron rims, a skull boss
-    p.push(br(S.ellipsoid(0.14, 0.08, 0.22).rot(-28, 0, 0).at(0, 0.84, 0.88).blend(0.004)));
-    p.push(ir(S.ellipsoid(0.15, 0.05, 0.08).rot(-10, 0, 0).at(0, 0.88, 0.74).blend(0.004)));
+    head.hard.push(orient(H.extrude([[-0.1, 0.12], [0.1, 0.12], [0.11, 0.0], [0.06, -0.14], [0, -0.2], [-0.06, -0.14], [-0.11, 0.0]], 0.016, 0.005).color(brass).pbr(0.3, 0.9)
+      .shade((x, y) => (Math.abs(x) < 0.012 || y > 0.1 ? rgb(brassD) : null)), [0, 0.86, 0.9], [0, 0.55, -1], [0, 1, 0.5]));
+    p.push(ir(S.ellipsoid(0.16, 0.06, 0.09).rot(-10, 0, 0).at(0, 0.9, 0.76).blend(0.004)));
+    p.push(...skull([0, 0.895, 0.86], 0.034, [0, 0.5, 1], [0, 1, -0.4], brassL));
     for (const sx of [1, -1]) {
       head.hard.push(glowEye([0.155 * sx, 0.735, 0.935], 0.018, EMBER, 1.8));
       head.hard.push(H.torus(0.03, 0.009, 10, 5).rot(0, 0, 90).at(0.16 * sx, 0.93, 0.71).color(brassL).pbr(0.3, 0.9).lod(1));   // ear rings
@@ -642,10 +665,10 @@ function reapingAxe(brass, steel = 0x6a6660) {
   for (const y of [-0.3, 0.2, 0.42]) out.push(H.cyl(0.03, 0.03, 0.035, 10).at(0, y, 0).color(brass).pbr(0.3, 0.9).lod(1));
   out.push(H.cone(0.03, 0.12, 6).rot(180, 0, 0).at(0, -0.42, 0).color(IRON_L).pbr(0.4, 0.8));                // butt spike
   // the blade: a great crescent, steel edge over a black-iron body with a brass spine
-  const outline = [[0.0, 0.46], [0.08, 0.4], [0.2, 0.32], [0.33, 0.33], [0.42, 0.42], [0.46, 0.56], [0.45, 0.7], [0.4, 0.84], [0.3, 0.95], [0.2, 0.98], [0.24, 0.88], [0.22, 0.8], [0.12, 0.74], [0.0, 0.72]];
-  const blade = H.extrude(outline, 0.022, 0.006).rot(0, -90, 0).color(IRON).pbr(0.35, 0.85)
-    .shade((x, y, z) => { const d = Math.hypot(x - 0.12, y - 0.62); return d > 0.27 ? rgb(0xb8b4ac) : d > 0.22 ? rgb(steel) : x < 0.05 ? rgb(brass) : null; });
-  out.push(blade);
+  const outline = [[0.0, 0.47], [0.1, 0.38], [0.2, 0.27], [0.3, 0.19], [0.38, 0.27], [0.44, 0.42], [0.47, 0.6], [0.43, 0.79], [0.35, 0.95], [0.26, 1.04], [0.2, 0.93], [0.12, 0.83], [0.0, 0.77]];
+  const cx = 0.16, cy = 0.62, inner = outline.map(([x, y]) => [cx + (x - cx) * 0.8, cy + (y - cy) * 0.84]);
+  out.push(H.extrude(outline, 0.01, 0.005).rot(0, -90, 0).color(0xc8c4bc).pbr(0.25, 0.95));
+  out.push(H.extrude(inner, 0.026, 0.005).rot(0, -90, 0).color(IRON).pbr(0.4, 0.8).shade((x, y) => (x < 0.06 ? rgb(brass) : null)));
   // a hooked beak behind and a spike on top
   out.push(H.extrude([[0, 0.5], [-0.1, 0.52], [-0.22, 0.46], [-0.12, 0.56], [0, 0.66]], 0.018, 0.004).rot(0, -90, 0).color(IRON).pbr(0.4, 0.8));
   out.push(H.cone(0.022, 0.16, 6).at(0, 0.9, 0).color(steel).pbr(0.3, 0.9));
@@ -686,7 +709,7 @@ function bloodReaper(def, o = {}) {
     p.push(br(S.ellipsoid(0.185, 0.11, 0.125).rot(8, 0, 0).at(0, 0.8, 0.02).blend(0.004)));
     p.push(ir(S.box(0.025, 0.2, 0.03, 0.01).rot(8, 0, 0).at(0, 0.79, 0.135).blend(0.004)));
     p.push(...skull([0, 0.79, 0.15], 0.035, [0, 0, 1], [0, 1, 0], brassL));
-    p.push(ir(S.torus(0.115, 0.024).scale(1).at(0, 0.56, 0.0).blend(0.004)));
+    p.push(ir(S.torus(0.112, 0.016).scale(1).at(0, 0.56, 0.0).blend(0.004)));
     p.push(S.box(0.06, 0.05, 0.03, 0.008).at(0, 0.56, 0.115).color(brass).pbr(0.3, 0.9).blend(0.004));
     for (let i = 0; i < 6; i++) { const a = (i - 2.5) * 0.55; if (Math.abs(a) < 0.3) continue; p.push(ir(S.box(0.07, 0.11, 0.014, 0.006).rot(-10, 0, 0).rot(0, a / DEG, 0).at(Math.sin(a) * 0.12, 0.47, Math.cos(a) * 0.09).blend(0.003))); }
     p.push(ir(S.ellipsoid(0.17, 0.05, 0.1).at(0, 0.88, -0.03).blend(0.004)));      // iron gorget over the shoulders
@@ -702,12 +725,13 @@ function bloodReaper(def, o = {}) {
     p.push(sk(S.capsule([0, 0.88, 0.0], [0, 0.94, 0.02], 0.05, 0.045)));
     p.push(ir(S.ellipsoid(0.07, 0.07, 0.078).at(0, hy + 0.01, hz - 0.005)));
     p.push(ir(S.box(0.012, 0.03, 0.12, 0.006).at(0, hy + 0.075, hz - 0.01).blend(0.01)));                    // crest
-    p.push(S.ellipsoid(0.058, 0.05, 0.03).at(0, hy - 0.005, hz + 0.055).color(BONE).pbr(0.5).tint(0.1, 40).blend(0.006));   // bone mask
+    p.push(S.ellipsoid(0.05, 0.046, 0.03).at(0, hy - 0.005, hz + 0.055).color(BONE).pbr(0.5).tint(0.1, 40).blend(0.006));   // bone mask
     p.push(S.capsule([-0.055, hy + 0.02, hz + 0.06], [0.055, hy + 0.02, hz + 0.06], 0.012, 0.012).color(IRON).pbr(0.5, 0.7).blend(0.006));  // brow
-    for (const sx of [1, -1]) p.push(S.sphere(0.017).at(sx * 0.024, hy + 0.003, hz + 0.08).color(0x0a0505).cut(0.004));
+    for (const sx of [1, -1]) p.push(S.sphere(0.014).at(sx * 0.022, hy + 0.004, hz + 0.08).color(0x0a0505).cut(0.004), ir(S.ellipsoid(0.02, 0.04, 0.04).at(sx * 0.055, hy - 0.025, hz + 0.04).blend(0.004)));
+    p.push(S.box(0.05, 0.008, 0.03, 0.002).at(0, hy - 0.04, hz + 0.08).color(0x2a1a10).paint(0.003, -0.003));
     p.push(S.ellipsoid(0.008, 0.014, 0.01).at(0, hy - 0.02, hz + 0.085).color(0x0a0505).cut(0.003));
     for (const sx of [1, -1]) {
-      head.hard.push(glowEye([sx * 0.024, hy + 0.003, hz + 0.07], 0.01, 0xff3010, 2));
+      head.hard.push(glowEye([sx * 0.022, hy + 0.004, hz + 0.072], 0.0075, 0xff3010, 2));
       head.hard.push(...horn([[sx * 0.06, hy + 0.04, hz - 0.01], [sx * 0.13, hy + 0.06, hz - 0.03], [sx * 0.18, hy + 0.12, hz + 0.0], [sx * 0.17, hy + 0.2, hz + 0.06]], 0.024, [0x2a1c14, 0x6a5038, BONE], { rings: 12 }));
       head.hard.push(...horn([[sx * 0.04, hy + 0.06, hz - 0.04], [sx * 0.06, hy + 0.11, hz - 0.08], [sx * 0.06, hy + 0.15, hz - 0.13]], 0.012, [0x2a1c14, 0x6a5038, BONE], { rings: 6 }));
     }
@@ -833,15 +857,16 @@ function slaughterBrute(def, o = {}) {
     p.push(bare(S.ellipsoid(0.085, 0.06, 0.08).at(0, hy - 0.04, hz + 0.06).blend(0.03)));
     for (const sx of [1, -1]) {
       p.push(S.sphere(0.02).at(sx * 0.04, hy + 0.02, hz + 0.095).color(0x0a0404).cut(0.006));
-      head.hard.push(glowEye([sx * 0.04, hy + 0.02, hz + 0.088], 0.012, glowHot, 2));
+      head.hard.push(glowEye([sx * 0.04, hy + 0.018, hz + 0.088], 0.009, glow, 2));
       head.hard.push(...horn([[sx * 0.07, hy + 0.05, hz + 0.02], [sx * 0.13, hy + 0.07, hz + 0.04], [sx * 0.15, hy + 0.11, hz + 0.1]], 0.026, [0x1a1210, 0x4a3a2a, 0xb8a888], { rings: 8 }));
     }
     // the glowing maw behind a cage of iron bars strapped round the head
-    p.push(S.ellipsoid(0.065, 0.035, 0.03).at(0, hy - 0.05, hz + 0.115).color(glow).glow(1.6).blend(0.004));
-    head.hard.push(H.torus(0.1, 0.012, 16, 5, Math.PI).rot(90, 0, 0).rot(0, 0, 180).scale(1, 1, 0.9).at(0, hy - 0.01, hz + 0.02).color(plate).pbr(0.5, 0.75));
-    head.hard.push(H.torus(0.095, 0.012, 16, 5, Math.PI).rot(90, 0, 0).rot(0, 0, 180).scale(1, 1, 0.9).at(0, hy - 0.1, hz + 0.02).color(plate).pbr(0.5, 0.75));
-    for (let i = 0; i < 7; i++) { const a = (i / 6 - 0.5) * 2.4; head.hard.push(H.cyl(0.008, 0.008, 0.11, 6).at(Math.sin(a) * 0.098, hy - 0.055, hz + 0.02 + Math.cos(a) * 0.088).color(IRON_L).pbr(0.45, 0.8)); }
-    head.hard.push(H.box(0.16, 0.016, 0.012, 0.004).at(0, hy + 0.035, hz + 0.02).rot(0, 0, 0).color(brass).pbr(0.3, 0.9).lod(1));
+    p.push(S.box(0.11, 0.035, 0.06, 0.012).at(0, hy - 0.05, hz + 0.13).color(0x2a0804).cut(0.006));
+    head.hard.push(H.sphere(0.05, 12).scale(1, 0.32, 0.5).at(0, hy - 0.05, hz + 0.12).color(glow).glow(1.8));
+    head.hard.push(H.torus(0.11, 0.012, 16, 5, Math.PI).rot(90, 0, 0).rot(0, 0, 180).scale(1, 1, 0.95).at(0, hy - 0.01, hz + 0.05).color(plate).pbr(0.5, 0.75));
+    head.hard.push(H.torus(0.105, 0.012, 16, 5, Math.PI).rot(90, 0, 0).rot(0, 0, 180).scale(1, 1, 0.95).at(0, hy - 0.1, hz + 0.05).color(plate).pbr(0.5, 0.75));
+    for (let i = 0; i < 7; i++) { const a = (i / 6 - 0.5) * 2.4; head.hard.push(H.cyl(0.008, 0.008, 0.11, 6).at(Math.sin(a) * 0.108, hy - 0.055, hz + 0.05 + Math.cos(a) * 0.102).color(IRON_L).pbr(0.45, 0.8)); }
+    head.hard.push(H.box(0.18, 0.016, 0.012, 0.004).at(0, hy + 0.0, hz + 0.155).rot(0, 0, 0).color(brass).pbr(0.3, 0.9).lod(1));
   }
   const jaw = N('jaw', 'head', [0, 0.87, 0.2], { rig: 'jaw', detail: 1.3, minRes: 60 });
   jaw.prims.push(S.ellipsoid(0.075, 0.035, 0.07).at(0, 0.81, 0.27).color(skin).pbr(0.6));
@@ -865,7 +890,7 @@ function slaughterBrute(def, o = {}) {
       // cleaver: a broad slab of black iron, steel-edged, running on from the forearm past the fist
       const cl = H.extrude([[0, -0.02], [0.33, -0.03], [0.36, 0.02], [0.34, 0.12], [0.06, 0.1], [0, 0.06]], 0.016, 0.004)
         .shade((x, y) => (y > 0.08 ? rgb(0xc0bab0) : x > 0.3 ? rgb(0x8a8680) : null)).color(IRON).pbr(0.35, 0.85);
-      fo.hard.push(orient(cl.rot(0, 0, -90).rot(0, -90, 0), add3(lerp3(El, Wr, 0.55), [0, 0, 0.06]), dir, [0, 0, 1]));
+      fo.hard.push(orient(cl.rot(0, 0, 90).rot(0, 90, 0), add3(lerp3(El, Wr, 0.55), [0, 0, 0.06]), dir, [0, 0, 1]));
       fo.hard.push(H.sphere(0.015, 6).at(...add3(lerp3(El, Wr, 0.7), [sx * -0.01, 0, 0.07])).color(brass).pbr(0.3, 0.9).lod(0));
     } else {
       for (let i = 0; i < 3; i++) fo.hard.push(spike([Wr[0] + (i - 1) * 0.035, Wr[1] - 0.09, Wr[2] + 0.04], [(i - 1) * 0.15, -1, 0.35], 0.16, 0.022, IRON_L, [0, 0, 1], 0.35).lod(3));
@@ -890,9 +915,9 @@ function bruteAnim(rig, inner, c, base) {
 // rig: torso, head (upper skull), jaw, throat, tongue, legs[4] (FL FR BL BR), shins[4], bells[]
 function plagueToad(def, o = {}) {
   const skin = col(o.skin, 0x6a8a3a), belly = col(o.belly, 0xc8c070), rnd = rng(hashStr((def.id || 'toad') + ':toad'));
-  const skinD = tone(skin, 0.02, -0.05, -0.12), skinL = tone(skin, -0.02, 0.05, 0.08), moss = tone(skin, 0.03, 0.05, -0.06), mud = 0x4a3a22, wart = tone(skin, -0.04, 0.1, -0.04);
+  const skinD = tone(skin, 0.02, -0.05, -0.12), skinL = tone(skin, -0.02, 0.05, 0.08), moss = tone(skin, 0.04, -0.08, -0.13), mud = 0x4a3a22, wart = tone(skin, -0.04, 0.1, -0.04);
   const rust = 0x8a4a22, boilC = 0xd8c048, boilR = 0x9a3a2a;
-  const sk = (q) => q.color(skin).bump(0.006, 18, 'scales').tint(0.18, 9).pbr(0.42, 0);
+  const sk = (q) => q.color(skin).bump(0.006, 18, 'scales').tint(0.2, 9).pbr(0.55, 0);
   const N = rigOf();
   N('root', null, [0, 0, 0]);
   const TO = [0, 0.36, 0];
@@ -944,7 +969,7 @@ function plagueToad(def, o = {}) {
   // bells on the harness
   const bells = [];
   for (const sx of [1, -1]) for (const z of [-0.04, 0.18]) {
-    const at = [sx * (z > 0 ? 0.33 : 0.41), 0.34, z];
+    const at = [sx * (z > 0 ? 0.4 : 0.47), 0.3, z];
     const b = N(`bell${bells.length}`, 'torso', at, { rig: 'bells', detail: 1 });
     b.hard.push(...bell(at, 0.035, rust));
     bells.push(b);
@@ -972,7 +997,7 @@ function plagueToad(def, o = {}) {
     jaw.prims.push(S.ellipsoid(0.3, 0.06, 0.22).at(0, 0.28, 0.38).color(belly).paint(0.03));
     jaw.prims.push(S.ellipsoid(0.3, 0.02, 0.22).at(0, 0.37, 0.38).color(0x8a3a3a).pbr(0.3).blend(0.006));
     // drool strings
-    for (let i = 0; i < 5; i++) { const x = (i - 2) * 0.12 + (rnd() - 0.5) * 0.04, z = 0.55 - Math.abs(i - 2) * 0.05, d = 0.1 + rnd() * 0.16; jaw.hard.push(H.tube([[x, 0.33, z], [x + 0.005, 0.33 - d * 0.5, z + 0.01], [x, 0.33 - d, z + 0.005]], [0.008, 0.005, 0.009], 6, 5).color(0xc8d89a).pbr(0.1).lod(1)); }
+    for (const [x, d] of [[-0.22, 0.09], [-0.05, 0.05], [0.17, 0.11]]) { const z = 0.56 - Math.abs(x) * 0.5, y = 0.31; jaw.hard.push(H.tube([[x, y, z], [x + 0.006, y - d * 0.55, z + 0.01], [x, y - d, z + 0.006]], [0.006, 0.0035, 0.008], 6, 5).color(0xa8c070).pbr(0.08).lod(1)); }
   }
   const throat = N('throat', 'jaw', [0, 0.25, 0.32], { rig: 'throat', detail: 0.9 });
   throat.prims.push(S.ellipsoid(0.2, 0.08, 0.16).at(0, 0.25, 0.32).color(belly).tint(0.1, 20).pbr(0.35));
@@ -1145,7 +1170,7 @@ function flyAnim(rig, inner, c, base) {
     const sg = sgn(w, i);
     if (fl) R(w, 0, sg * 0.15, sg * Math.sin(t * 38 + ph) * 0.55);
     else if (dead) R(w, 0, sg * 0.6, sg * 0.3);
-    else R(w, 0.05, sg * -1.2, sg * -0.12 + sg * Math.sin(t * 1.3 + ph) * 0.02);      // laid back over the abdomen
+    else R(w, 0.05, sg * 1.25, sg * -0.2 + sg * Math.sin(t * 1.3 + ph) * 0.02);      // laid back over the abdomen
   });
   (rig.legs || []).forEach((l, i) => {
     const sg = i % 2 ? -1 : 1;

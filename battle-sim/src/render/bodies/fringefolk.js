@@ -1010,7 +1010,7 @@ function swanAnim(rig, inner, c, base) {
   foldWings(rig, c, base);
   // a swan's neck carries its head high; on the water-walk it bobs
   if (!(c.dead > 0) && !c.flying && rig.neck) rig.neck.rotation.x += -0.05 + (c.moving ? Math.sin(c.t * 9 + (c.phase || 0)) * 0.05 : 0);
-  if (c.flying && !(c.dead > 0) && rig.neck) rig.neck.rotation.x += 0.35;              // neck stretched forward in flight
+  if (c.flying && !(c.dead > 0) && rig.neck) { rig.neck.rotation.x += 1.05; const hd = (rig.mhead || [])[0]; if (hd) hd.rotation.x -= 0.85; }   // neck stretched out ahead in flight
   rideUpper(rig, c, base);
 }
 

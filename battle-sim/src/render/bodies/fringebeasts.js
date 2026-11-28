@@ -908,8 +908,9 @@ function frogAnim(rig, inner, c, base) {
   }
   for (let i = 2; i < 4 && i < L.length; i++) { R(L[i], hind * 1.7 - crouch * 0.12); R(Sn[i], -hind * 2.3 + crouch * 0.2); R(Pw[i], hind * 1.1); }
   for (let i = 0; i < 2 && i < L.length; i++) { R(L[i], -front * 0.8 + crouch * 0.15); R(Sn[i], front * 0.2); R(Pw[i], front * 0.5); }
-  if (rig.tongue) rig.tongue.scale.set(1, 1, 1 + tongue * 7);
-  if (rig.throat) { const b = c.dead > 0 ? 0 : Math.max(0, Math.sin(t * 4.2 + ph)); rig.throat.scale.set(1 + b * 0.12, 1 + b * 0.35, 1 + b * 0.1); }
+  const tg = rig.tongue?.[0], th = rig.throat?.[0];
+  if (tg) tg.scale.set(1, 1, 1 + tongue * 7);
+  if (th) { const b = c.dead > 0 ? 0 : Math.max(0, Math.sin(t * 4.2 + ph)); th.scale.set(1 + b * 0.12, 1 + b * 0.35, 1 + b * 0.1); }
   if (c.dead > 0) {
     const f = smooth(Math.min(1, c.dead * 2));
     inner.rotation.x = 0; inner.rotation.z = f * Math.PI * (Math.floor(ph * 10) % 2 ? 1 : -1);
