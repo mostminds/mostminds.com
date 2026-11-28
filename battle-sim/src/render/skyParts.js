@@ -26,9 +26,9 @@ export function animateSky(m, t) {
   // wingbeats: the outer wing lags the inner, so the stroke whips like a real one
   for (const w of A.wings) {
     const ph = t * A.speed * w.speedK + w.phase, s = Math.sin(ph);
-    const amp = w.amp * (1 - 0.75 * dr), base = w.base * (1 - dr) - 0.5 * dr;
+    const amp = w.amp * (1 - 0.6 * dr), base = w.base * (1 - dr) - 0.22 * dr;
     w.sh.rotation.x = -(base + amp * s);
-    if (w.el) w.el.rotation.x = -(amp * w.outerK * Math.sin(ph - 0.8)) + 0.35 * dr;
+    if (w.el) w.el.rotation.x = -(amp * w.outerK * Math.sin(ph - 0.8)) + 0.25 * dr;
   }
   if (A.body && A.wings.length && !A.buzz) A.body.position.y = 0.07 * Math.sin(t * A.speed + 0.6) * (1 - dr);
   else if (A.body && A.buzz) A.body.position.y = 0.04 * Math.sin(t * 2.3);

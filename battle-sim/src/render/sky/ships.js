@@ -60,7 +60,7 @@ export function buildSkyShip(def, sideColor) {
       T.damage(lv);
       for (const o of hide2) o.visible = lv >= 2;
       A.droop = lv >= 3 ? 1 : 0;
-      if (E.group) { E.group.scale.y = lv >= 3 ? E.sag ?? 0.8 : 1; E.group.rotation.x = lv >= 3 ? 0.06 : 0; E.group.rotation.z = lv >= 3 ? -0.05 : 0; }
+      if (E.group) { const s = lv >= 3 ? E.sag ?? 0.8 : 1; E.group.scale.y = s; E.group.position.y = (E.cy || 0) * (1 - s) * 0.6; E.group.rotation.z = lv >= 3 ? -0.04 : 0; }
     },
   };
   return g;
@@ -662,14 +662,15 @@ const PARTS = {
 
 // tatters and burns that show once badly hurt
 function rents(X) {
-  const E = X.E, g = group(X.g); g.visible = false; X.hide2.push(g);
+  const E = X.E, g = group(E.group || X.g); g.visible = false; X.hide2.push(g);
+  const g2 = group(X.H); g2.visible = false; X.hide2.push(g2);
   const m = X.C.soot;
   if (E.horizontal) for (let i = 0; i < 5; i++) {
     const x = (hash(i + 40) - 0.5) * E.Le * 0.7, a = hash(i + 50) * PI - PI / 2, r = E.rAt(x);
     const p = group(g, x, E.cy, 0); p.rotation.x = a;
     blk(p, m, 0, r * 1.0, 0, 0.5 + hash(i) * 0.5, 0.04, 0.35);
-  } else if (E.cy > 2 && E.R) for (let i = 0; i < 4; i++) { const a = hash(i + 7) * TAU; ell(g, m, Math.cos(a) * E.R * 1.25, E.cy + (hash(i) - 0.5) * E.R, Math.sin(a) * E.R * 0.98, 0.35, 0.3, 0.35); }
-  for (let i = 0; i < 4; i++) { const x = (hash(i + 70) - 0.5) * X.HL * 0.8; blk(g, m, x, -0.3, Math.sign(hash(i + 3) - 0.5) * X.b(x) * 1.0, 0.4, 0.3, 0.05).userData.noCrew = true; }
+  } else if (E.group && E.R) for (let i = 0; i < 4; i++) { const a = hash(i + 7) * TAU, r = E.R * 0.97; ell(g, m, Math.cos(a) * r, E.cy + (hash(i) - 0.3) * E.R * 0.5, Math.sin(a) * r, 0.3, 0.35, 0.3); }
+  for (let i = 0; i < 4; i++) { const x = (hash(i + 70) - 0.5) * X.HL * 0.8; blk(g2, m, x, -0.3, Math.sign(hash(i + 3) - 0.5) * X.b(x) * 1.0, 0.4, 0.3, 0.05).userData.noCrew = true; }
 }
 
 // where the hands stand: a grid over the open deck
