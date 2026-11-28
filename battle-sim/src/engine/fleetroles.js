@@ -17,6 +17,7 @@
 // mortar shells; a rough sea throws mortars off.
 
 import { ramMods, ramArc, fireshipIntent, hovers } from './fleetarts.js';
+import { UNITS } from '../data/units.js';
 
 const DEG = Math.PI / 180;
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -303,8 +304,26 @@ function flyingBeast(b, e, r) {
 
 // ---------- squadrons of fliers ----------
 const SQUAD = { name: 'Squadron', hp: 40, speed: 1.5, radius: 0.8, dmg: [3, 8], crewKill: 2, burn: 0.3, every: 4 };
+// a faction with an air wing (src/data/air) flies its own naval strikers and fighters off its carriers, turn about
+function wingSquad(b, carrier) {
+  const fid = carrier.def.realm || b.sides[carrier.side]?.faction;
+  const pick = (carrier.wingN = (carrier.wingN || 0) + 1) % 2 ? ['naval', 'fighter'] : ['fighter', 'naval'];
+  for (const role of pick) {
+    const u = fid && UNITS[`${fid}_air_${role}`];
+    if (!u) continue;
+    const A = u.airArts || {}, max = u.max || Math.max(4, Math.round((u.rng > 1 ? u.rng : u.str) / 6));
+    const k = Math.sqrt(u.hp / 75);
+    const def = { name: u.name, airUnit: u.id, airRole: role, model: u.model, flier: u.model?.kind || u.model?.mountType || u.model?.body || 'glider', color: u.model?.cloth,
+      hp: Math.round(30 + u.hp * 0.3), speed: +(1.3 + 0.1 * (u.move || 2) * (A.speed || 1)).toFixed(2), dmg: [Math.max(2, Math.round(max * 0.4)), Math.max(4, Math.round(max * 1.1))], crewKill: 2, burn: A.incendiary || A.fireTrail || A.breath === 'fire' ? 0.5 : 0.25, every: 4 };
+    if (role === 'fighter') { def.hunter = true; def.vsAir = A.vsAir || 1.5; }
+    else { def.torpedo = Math.round((A.torpedo || 30) * k); def.diveBomb = Math.round((A.diveBomb || A.torpedo || 24) * k); def.vsShip = A.vsShip || 1; def.vsLeviathan = A.vsLeviathan || 1.2; def.depthCharge = !!A.depthCharge; }
+    return def;
+  }
+  return null;
+}
 function launch(b, carrier, sq) {
-  const def = { ...SQUAD, ...sq.def, name: sq.name || 'Squadron', flier: sq.flier || 'glider', id: `${carrier.def.id}_squadron` };
+  const wing = wingSquad(b, carrier);
+  const def = wing ? { ...SQUAD, ...wing, id: `${carrier.def.id}_squadron_${wing.airRole}` } : { ...SQUAD, ...sq.def, name: sq.name || 'Squadron', flier: sq.flier || 'glider', id: `${carrier.def.id}_squadron` };
   const e = {
     id: b.ents.length, side: carrier.side, def, ship: false, fort: false, air: true, carrier: carrier.id,
     x: carrier.x, y: carrier.y, px: carrier.x, py: carrier.y, heading: carrier.heading, ph: carrier.heading,
@@ -312,7 +331,7 @@ function launch(b, carrier, sq) {
     subUntil: 0, slowUntil: 0, slow: 1, inkUntil: 0, ink: 0, charmUntil: 0, nextSub: 0, dot: null, rig: 1,
   };
   b.ents.push(e);
-  b.events.push({ type: 'launch', id: e.id, from: carrier.id });
+  b.events.push({ type: 'launch', id: e.id, from: carrier.id, ...(def.airUnit ? { unit: def.airUnit, role: def.airRole } : {}) });
 }
 export function squadTick(b, e) {
   if (e.cd > 0) e.cd--;
@@ -327,10 +346,11 @@ export function squadTick(b, e) {
       const a = Math.atan2(foe.y - e.y, foe.x - e.x);
       e.heading = fd > 2 ? a : wrap(a + Math.PI / 2);
       e.x += Math.cos(e.heading) * e.def.speed; e.y += Math.sin(e.heading) * e.def.speed;
-      if (fd < 3 && e.cd <= 0) { e.cd = e.def.every; foe.hp -= b.rng.int(e.def.dmg[0], e.def.dmg[1]) * 2; b.events.push({ type: 'strafe', id: e.id, to: foe.id }); if (foe.hp <= 0 && foe.alive) { foe.alive = false; foe.hp = 0; e.kills++; b.events.push({ type: 'death', id: foe.id }); } }
+      if (fd < 3 && e.cd <= 0) { e.cd = e.def.every; foe.hp -= Math.round(b.rng.int(e.def.dmg[0], e.def.dmg[1]) * 2 * (e.def.vsAir ? e.def.vsAir / 1.5 : 1)); b.events.push({ type: 'strafe', id: e.id, to: foe.id }); if (foe.hp <= 0 && foe.alive) { foe.alive = false; foe.hp = 0; e.kills++; b.events.push({ type: 'death', id: foe.id }); } }
       return;
     }
   }
+  if (e.def.torpedo) return strikerTick(b, e, home);
   if (!t || !t.alive || t.side === e.side || b.tick % 8 === 0) {
     let best = null, bs = Infinity;
     for (const o of b.ents) {
@@ -357,6 +377,45 @@ export function squadTick(b, e) {
     t.hp -= b.rng.int(e.def.dmg[0], e.def.dmg[1]);
     if (t.ship && !t.dot && b.rng.chance(e.def.burn)) { t.dot = { until: b.tick + 18, from: b.tick, every: 3, dmg: 4, by: e.id }; b.events.push({ type: 'fireAboard', id: t.id }); }
     if (t.hp <= 0 && t.alive) { t.alive = false; t.hp = 0; e.kills++; b.events.push({ type: 'death', id: t.id }); }
+  }
+}
+
+// naval strike squadrons (air wings): torpedo runs from range, armour-piercing dive bombs from overhead, depth charges
+// for what dives. Events: { type: 'torpedo', id, to, x0, y0, x1, y1, flight } and { type: 'diveBomb', id, to, depth? }
+function strikerTick(b, e, home) {
+  let t = e.target >= 0 ? b.ents[e.target] : null;
+  if (!t || !t.alive || t.side === e.side || b.tick % 8 === 0) {
+    let best = null, bs = Infinity;
+    for (const o of b.ents) {
+      if (!o.alive || o.side === e.side || o.air || o.fort) continue;
+      const beast = !o.ship;
+      if (submerged(b, o) && !(beast && e.def.depthCharge)) continue;
+      const s = Math.hypot(o.x - e.x, o.y - e.y) - (beast ? 10 * (e.def.vsLeviathan - 1) + 6 : 8 * (e.def.vsShip - 1)) - (o.role === 'carrier' || o.role === 'siege' ? 10 : 0);
+      if (s < bs) { bs = s; best = o; }
+    }
+    t = best; e.target = best ? best.id : -1;
+  }
+  if (!t) { if (home && home.alive) { const a = Math.atan2(home.y - e.y, home.x - e.x); e.heading = a; e.x += Math.cos(a) * e.def.speed; e.y += Math.sin(a) * e.def.speed; } return; }
+  const a = Math.atan2(t.y - e.y, t.x - e.x), dd = Math.hypot(t.x - e.x, t.y - e.y);
+  e.heading = dd > 3 ? a : wrap(a + Math.PI / 2);
+  e.x = Math.max(1, Math.min(b.W - 1, e.x + Math.cos(e.heading) * e.def.speed)); e.y = Math.max(1, Math.min(b.H - 1, e.y + Math.sin(e.heading) * e.def.speed));
+  if (e.cd > 0) return;
+  const screened = b.ents.some((o) => o.alive && o.ship && o.side !== e.side && o.def.arts?.intercept && Math.hypot(o.x - e.x, o.y - e.y) < o.def.arts.intercept);
+  const beast = !t.ship, mul = beast ? e.def.vsLeviathan : e.def.vsShip, arm = t.def.armour || 0;
+  if (dd < 9 && dd > 3 && !submerged(b, t)) {
+    e.cd = 14;
+    if (screened && b.rng.chance(0.5)) { b.events.push({ type: 'art', name: 'intercept', id: e.id }); return; }
+    const hit = b.rng.chance(0.55 + Math.min(0.3, t.radius * 0.06));
+    const flight = 2 + Math.floor(dd / 5);
+    b.shots.push({ tick: b.tick + flight, from: e.id, to: t.id, dmg: hit ? Math.round(e.def.torpedo * mul * (100 / (100 + arm * 0.4))) : 0, hit, x: t.x, y: t.y, torpedo: true, kind: 'torpedo' });
+    b.events.push({ type: 'torpedo', id: e.id, to: t.id, x0: e.x, y0: e.y, x1: t.x, y1: t.y, flight, hit });
+  } else if (dd <= 3) {
+    e.cd = 10;
+    if (screened && b.rng.chance(0.5)) { b.events.push({ type: 'art', name: 'intercept', id: e.id }); return; }
+    const depth = beast && submerged(b, t);
+    const hit = b.rng.chance(depth ? 0.5 : 0.65);
+    b.shots.push({ tick: b.tick + 1, from: e.id, to: t.id, dmg: hit ? Math.round(e.def.diveBomb * mul * (depth ? 1.3 : 1) * (100 / (100 + arm))) : 0, hit, x: t.x, y: t.y, depth, kind: 'dive' });
+    b.events.push({ type: 'diveBomb', id: e.id, to: t.id, x: t.x, y: t.y, hit, ...(depth ? { depth: true } : {}) });
   }
 }
 

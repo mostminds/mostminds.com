@@ -426,7 +426,38 @@ function civic(p, R, o) {
 
 // ---------- armies ----------
 // Stronger units cost more than their level alone suggests, so price rises faster than level.
-const priceOf = (id) => Math.pow(combatLevel(UNITS[id]), 1.45) * (UNITS[id].fly ? 1.15 : 1);
+const priceOf = (id) => Math.pow(combatLevel(UNITS[id]), 1.45) * (UNITS[id].fly ? 1.15 : 1) * (UNITS[id].priceMul || 1); // aircraft carry a role premium (realms.js AIR_T)
+
+// ---------- air wings ----------
+// Each side flies a few groups of its faction's aircraft (src/data/air), picked across the roles and paid for out of
+// its army's points; the big battles bring the faction's sky-behemoth too, at most one a side.
+const AIR_ROLE_LIST = ['transport', 'bomber', 'fighter', 'cas', 'hunter', 'naval', 'assault', 'escort'];
+const AIR_GROUPS = { village: 3, fort: 4, coast: 4, island: 4, castle: 5, harbor: 5, city: 6, region: 6, isles: 6 };
+const AIR_SHARE = 0.12; // of the army's points
+const BEHEMOTH_SITES = new Set(['city', 'harbor', 'region', 'isles']);
+export const behemothPrice = (id) => (AIRSHIPS[id] ? Math.pow(AIRSHIPS[id].level || 99, 1.45) * 10 * (AIRSHIPS[id].priceMul || 1) : 0);
+/** { groups, airships, rest }: the air wing bought from `points`, and what is left for the ground army */
+function airWing(fid, points, siteId, r, sea) {
+  const roles = AIR_ROLE_LIST.filter((k) => UNITS[`${fid}_air_${k}`] && (sea || k !== 'naval' || r.chance(0.25)));
+  const out = { groups: [], airships: [], rest: points };
+  const bid = `${fid}Behemoth`;
+  if (BEHEMOTH_SITES.has(siteId) && AIRSHIPS[bid] && behemothPrice(bid) < points * 0.3) { out.airships.push({ unit: bid, count: 1 }); out.rest -= behemothPrice(bid); }
+  if (!roles.length) return out;
+  for (let i = roles.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [roles[i], roles[j]] = [roles[j], roles[i]]; }
+  // close support and fighters nearly always fly; escorts only where there is something to guard
+  roles.sort((a, c) => (a === 'cas' || a === 'fighter' ? -1 : 0) - (c === 'cas' || c === 'fighter' ? -1 : 0));
+  const want = Math.max(3, Math.min(roles.length, (AIR_GROUPS[siteId] || 4) - (points < 9000 ? 1 : 0)));
+  const pick = roles.filter((k) => k !== 'escort' || out.airships.length).slice(0, want);
+  const per = (points * AIR_SHARE) / Math.max(1, pick.length);
+  for (const k of pick) {
+    const id = `${fid}_air_${k}`, u = UNITS[id], price = priceOf(id);
+    const n = Math.max(1, Math.min((u.count || 2) * (siteId === 'region' || siteId === 'isles' ? 5 : 2), Math.round(per / price)));
+    if (price * n > per * 1.6 && n === 1 && price > per * 2.5) continue; // too dear for so small a fight
+    out.groups.push({ unit: id, count: n }); out.rest -= price * n;
+  }
+  out.rest = Math.max(points * 0.6, out.rest);
+  return out;
+}
 // ---------- sea battles ----------
 // Open water with islands, some of them fortified; two fleets drawn from their factions' own hulls, each with a
 // diving boat (or the beast that does that work) and a few sea monsters bound to it. In the far north the sea is
@@ -859,8 +890,9 @@ export function generateScenario(opts = {}) {
   // armies
   const scale = (S / site.size) ** 1.3;
   // `cost` corrects a faction whose troops fight above or below their price (found by tools-side trials)
-  const garrison = muster(D.army, (site.points * scale) / (D.cost || 1), r);
-  const host = muster({ ...A.army, ...A.assault }, (site.points * scale * site.edge) / (A.cost || 1), r);
+  const dAir = airWing(defId, (site.points * scale) / (D.cost || 1), siteId, r, sea), aAir = airWing(attId, (site.points * scale * site.edge) / (A.cost || 1), siteId, r, sea);
+  const garrison = [...muster(D.army, dAir.rest, r), ...dAir.groups];
+  const host = [...muster({ ...A.army, ...A.assault }, aAir.rest, r), ...aAir.groups];
   const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
   const sides = [
     { name: `${A.adj} ${sea ? 'landing' : 'host'}`, posture: 'attack', groups: host, placed: [], leader: leaderOf(attId), faction: attId },
@@ -871,6 +903,8 @@ export function generateScenario(opts = {}) {
   const look = D.look || defId; // the building style to fall back on until a realm's own is sculpted
   if (big || S >= 96) sides[0].airships = zep(attId);
   if (moored && (siteId === 'city' || siteId === 'harbor' || r.chance(0.5))) sides[1].airships = zep(defId);
+  if (aAir.airships.length) sides[0].airships = [...(sides[0].airships || []), ...aAir.airships];
+  if (dAir.airships.length) sides[1].airships = [...(sides[1].airships || []), ...dAir.airships];
   if (sea) {
     const big = siteId === 'harbor' ? 4 : 3;
     sides[0].ships = [{ unit: A.ships[0], count: Math.max(1, big - 1) }];
@@ -1146,16 +1180,17 @@ function generateRegion({ r, seed, siteId, site, defId, attId, D, A }) {
   for (const R of Object.values(rects)) p.scatter(D.small, { x: R.x - 12, y: R.y - 10, w: R.w + 24, h: R.h + 20 }, 6, 2);
 
   // ---- armies, in waves
-  const garrison = muster(D.army, site.points / (D.cost || 1), r);
-  const hostArmy = muster({ ...host.army, ...host.assault }, (site.points * site.edge) / (host.cost || 1), r);
+  const dAir = airWing(defId, site.points / (D.cost || 1), siteId, r, isles), aAir = airWing(attId, (site.points * site.edge) / (host.cost || 1), siteId, r, isles);
+  const garrison = [...muster(D.army, dAir.rest, r), ...dAir.groups];
+  const hostArmy = [...muster({ ...host.army, ...host.assault }, aAir.rest, r), ...aAir.groups];
   const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
   const sides = [
     { name: `${host.adj} ${isles ? 'invasion' : 'host'}`, posture: 'attack', groups: hostArmy, placed: [], leader: leaderOf(attId), faction: attId, waves: 4 },
     { name: `${place} march`, posture: 'defend', groups: garrison, placed: [], leader: leaderOf(defId), faction: defId, waves: 4 },
   ];
   const zep = (id) => (AIRSHIPS[`${id}Zeppelin`] ? [{ unit: `${id}Zeppelin`, count: 1 }] : []);
-  sides[0].airships = zep(attId);
-  sides[1].airships = zep(defId);
+  sides[0].airships = [...zep(attId), ...aAir.airships];
+  sides[1].airships = [...zep(defId), ...dAir.airships];
   if (isles) {
     sides[0].ships = [{ unit: host.ships[0], count: 3 }];
     if (host.ships[1]) sides[0].ships.push({ unit: host.ships[1], count: 2 });
