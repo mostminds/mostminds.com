@@ -54,7 +54,7 @@ export class Kit {
     const s = o.s ?? 1;
     _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(o.rx || 0, o.ry || 0, o.rz || 0, o.order || 'XYZ')), _s.set(o.sx ?? s, o.sy ?? s, o.sz ?? s));
     const c = colOf(col);
-    this.items.push({ geo, mtx: this.base.clone().multiply(_m), c: [c.r, c.g, c.b], pbr: [o.r ?? 0.8, o.m ?? 0, o.g ?? 0] });
+    this.items.push({ geo, mtx: this.base.clone().multiply(_m), c: [c.r, c.g, c.b], pbr: [o.r ?? 0.8, Math.min(0.55, o.m ?? 0), o.g ?? 0] });
     return this;
   }
   /** a round bar from a to b (local coordinates) */
@@ -64,7 +64,7 @@ export class Kit {
     _q.setFromUnitVectors(UP, _d.normalize());
     _m.compose(_p.addVectors(_a, _b).multiplyScalar(0.5), _q, _s.set(1, 1, 1));
     const c = colOf(col);
-    this.items.push({ geo: G.cyl(o.r2 ?? r, r, 1, n).clone().scale(1, len, 1), mtx: this.base.clone().multiply(_m), c: [c.r, c.g, c.b], pbr: [o.r ?? 0.8, o.m ?? 0, o.g ?? 0] });
+    this.items.push({ geo: G.cyl(o.r2 ?? r, r, 1, n).clone().scale(1, len, 1), mtx: this.base.clone().multiply(_m), c: [c.r, c.g, c.b], pbr: [o.r ?? 0.8, Math.min(0.55, o.m ?? 0), o.g ?? 0] });
     return this;
   }
   /** a sagging chain or rope from a to b, as a tube */
@@ -73,7 +73,7 @@ export class Kit {
     for (let i = 0; i <= 6; i++) { const t = i / 6; pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - Math.sin(t * Math.PI) * sag, a[2] + (b[2] - a[2]) * t]); }
     const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p))), 10, r, 4, false);
     const c = colOf(col);
-    this.items.push({ geo, mtx: this.base.clone(), c: [c.r, c.g, c.b], pbr: [o.r ?? 0.6, o.m ?? 0.5, o.g ?? 0] });
+    this.items.push({ geo, mtx: this.base.clone(), c: [c.r, c.g, c.b], pbr: [o.r ?? 0.6, Math.min(0.55, o.m ?? 0.5), o.g ?? 0] });
     return this;
   }
   get empty() { return !this.items.length; }
@@ -117,7 +117,7 @@ export const lerp = (a, b, t) => a + (b - a) * t;
 
 // common colours
 export const C = {
-  wood: 0x6b4a2e, dark: 0x4a3220, plank: 0x8a6a44, rope: 0xc8b88a, iron: 0x2e2e33, steel: 0x6a6e74, bronze: 0xb08a3a, gold: 0xd4a83a,
+  wood: 0x6b4a2e, dark: 0x4a3220, plank: 0x8a6a44, rope: 0xc8b88a, iron: 0x3a3a40, steel: 0x9aa2aa, bronze: 0xb08a3a, gold: 0xd4a83a,
   stone: 0x8f8a7c, darkStone: 0x3a3836, bone: 0xd8cfb4, cloth: 0xe8e0c8, fire: 0xff7a22, green: 0x6aff5a, black: 0x161616, red: 0x9a1a14,
   leaf: 0x4f8a34, felt: 0xb8a07a, brick: 0x8a4a32, flesh: 0xb06a5a, slime: 0x8ad83a,
 };

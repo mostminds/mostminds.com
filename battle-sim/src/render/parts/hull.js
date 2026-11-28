@@ -85,7 +85,7 @@ function oarGeo(len, col) {
 export const HULL_PARTS = {
   // ---- hull forms ----
   catamaran(c) {
-    const w = c.B * 0.5, l = (c.bowX - c.sternX) * 0.86, h = Math.max(0.5, c.dy * 0.85);
+    const w = c.B * 0.46, l = (c.bowX - c.sternX) * 0.84, h = Math.max(0.45, c.dy * 0.7);
     const z = -(c.hw(0) + 0.55 + w / 2);
     const x0 = twinHull(c, z, l, w, h);
     // a bridging deck and beams between the hulls
@@ -127,20 +127,21 @@ export const HULL_PARTS = {
     }
   },
   lowHull(c) {
-    // a low, sleek line: an armoured spray skirt along the waterline and a knife-edged forefoot
-    const l = (c.bowX - c.sternX) * 0.78, x0 = (c.bowX + c.sternX) / 2 - c.L * 0.04, col = shade(c.hullC, 0.55), h = Math.max(0.35, c.dy * 0.5);
-    for (const s of [-1, 1]) {
-      const z = s * (c.hw(x0) + 0.08);
-      c.kit.add(G.box(l, h, 0.07), col, x0, h * 0.45, z, { rx: s * 0.45, m: 0.5, r: 0.45 });
-      c.kit.add(G.box(l * 1.01, 0.06, 0.09), c.trimC, x0, h * 0.85, z - s * h * 0.18, { m: 0.6, r: 0.35 });
+    // a low, sleek line: an armoured spray skirt hugging the waterline and a knife-edged forefoot
+    const col = shade(c.hullC, 0.55), n = 8;
+    for (const s of [-1, 1]) for (let i = 0; i < n; i++) {
+      const x = lerp(c.sternX + c.L * 0.08, c.bowX - c.L * 0.14, (i + 0.5) / n), l = ((c.bowX - c.sternX) * 0.8) / n + 0.06;
+      const zl = c.hwLo(x), zh = c.hw(x), h = Math.max(0.3, c.dy * 0.45);
+      c.kit.add(G.box(l, h, 0.07), col, x, h * 0.4, s * (Math.max(zl, zh * 0.85) + 0.06), { rx: s * 0.55, m: 0.5, r: 0.45 });
     }
-    c.kit.add(G.shape('lowfoot', [[0, 0], [1, 0.15], [0, 1]], 0.1), col, c.bowX - 0.2, 0, 0, { sx: c.L * 0.12, sy: c.dy * 0.8, m: 0.5 });
+    c.kit.add(G.shape('lowfoot', [[0, 0], [1, 0.15], [0, 1]], 0.1), col, c.bowX - 0.25, 0, 0, { sx: c.L * 0.1, sy: c.dy * 0.8, m: 0.5 });
   },
   boxHull(c) {
     // slab sides and a squared bow: a barge, not a ship
     const xs = c.sternX + 0.15, xb = c.bowX - c.L * 0.1, l = xb - xs, x0 = (xs + xb) / 2;
-    let hwM = 0; for (let i = 0; i <= 8; i++) hwM = Math.max(hwM, c.hw(lerp(xs, xb, i / 8)));
-    const h = c.dy + 0.15, col = c.hullC, z = hwM + 0.05;
+    const ws = []; for (let i = 0; i <= 8; i++) ws.push(c.hw(lerp(xs, xb, i / 8)));
+    ws.sort((a, b) => a - b);
+    const h = c.dy + 0.3, col = c.hullC, z = ws[4] + 0.06;
     for (const s of [-1, 1]) {
       c.kit.add(G.box(l, h, 0.1), col, x0, h / 2 - 0.12, s * z);
       for (let k = 1; k < 4; k++) c.kit.add(G.box(l, 0.035, 0.12), shade(col, 0.7), x0, (h * k) / 4 - 0.12, s * z);
@@ -159,7 +160,7 @@ export const HULL_PARTS = {
     for (let i = 0; i < n; i++) K.add(G.sph(0.12 + hash(i) * 0.08, 6, 4), 0x9affb0, 0, 0, 0, { g: 3 });
     const g = K.build(), motes = new THREE.Group();
     for (let i = 0; i < n; i++) {
-      const o = new THREE.Mesh(G.sph(0.11 + hash(i) * 0.08, 6, 4), wispMat()); o.userData.base = [lerp(c.sternX, c.bowX, hash(i + 5)), c.dy + 0.4 + hash(i + 2) * 1.6, (hash(i + 7) - 0.5) * c.B * 1.6];
+      const o = new THREE.Mesh(G.sph(0.07 + hash(i) * 0.05, 6, 4), wispMat()); o.userData.base = [lerp(c.sternX, c.bowX, hash(i + 5)), c.dy + 0.4 + hash(i + 2) * 1.6, (hash(i + 7) - 0.5) * c.B * 1.6];
       motes.add(o);
     }
     void g;
@@ -169,7 +170,7 @@ export const HULL_PARTS = {
     c.lift = clamp(c.B * 0.24, 0.7, 1.2);
     const col = blend(c.trimC, 0x9adfff, 0.35);
     const g = new THREE.Group();
-    const disc = new THREE.Mesh(G.circle(1, 24), glowMat(col, 0.45)); disc.rotation.x = -Math.PI / 2; disc.scale.set(c.L * 0.42, c.B * 0.62, 1); disc.position.y = 0.07;
+    const disc = new THREE.Mesh(G.circle(1, 24), glowMat(col, 0.3)); disc.rotation.x = -Math.PI / 2; disc.scale.set(c.L * 0.42, c.B * 0.62, 1); disc.position.y = 0.07;
     const ring = new THREE.Mesh(G.ring(0.85, 1, 28), glowMat(col, 0.7)); ring.rotation.x = -Math.PI / 2; ring.scale.set(c.L * 0.48, c.B * 0.7, 1); ring.position.y = 0.09;
     g.add(disc, ring);
     // shafts of light from her keel to the water
@@ -177,7 +178,7 @@ export const HULL_PARTS = {
       const j = new THREE.Mesh(G.cyl(0.08, c.B * 0.22, 1, 10, true), glowMat(col, 0.28)); j.scale.y = c.lift; j.position.set(x, c.lift / 2, 0); g.add(j);
     }
     c.hoverGlow = g;
-    c.addMoving(g, (t, ph) => { const k = 0.75 + 0.25 * Math.sin(t * 2.4 + ph); disc.material.opacity = 0.45 * k; const s = 1 + 0.06 * Math.sin(t * 1.7 + ph); ring.scale.set(c.L * 0.48 * s, c.B * 0.7 * s, 1); });
+    c.addMoving(g, (t, ph) => { const k = 0.75 + 0.25 * Math.sin(t * 2.4 + ph); disc.material.opacity = 0.3 * k; const s = 1 + 0.06 * Math.sin(t * 1.7 + ph); ring.scale.set(c.L * 0.48 * s, c.B * 0.7 * s, 1); });
   },
   // ---- drive ----
   paddles(c) {

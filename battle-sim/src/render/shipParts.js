@@ -42,16 +42,19 @@ function profileOf(m, def, deckY) {
   if (geo) { const t = new THREE.Mesh(geo); t.updateMatrixWorld(true); targets.push(t); }
   else { m.updateMatrixWorld(true); m.traverse((o) => { if (o.isMesh && !o.userData.noCrew) targets.push(o); }); }
   const inv = geo ? null : new THREE.Matrix4().copy(m.matrixWorld).invert();
+  const cover = [];
   const surf = xs.map((x) => zs.map((z) => {
     _o.set(x, top + 2, z); if (!geo) _o.applyMatrix4(m.matrixWorld);
     ray.set(_o, DOWN); ray.far = top + 6;
-    const hits = ray.intersectObjects(targets, false);
-    for (const h of hits) {
-      const p = inv ? h.point.clone().applyMatrix4(inv) : h.point;
-      if (!h.face || h.face.normal.y < 0.5) continue;
-      if (p.y > Math.max(top * 0.42, 2.2) || p.y < -0.3) continue;
-      return p.y;
+    const hits = ray.intersectObjects(targets, false).map((h) => [inv ? h.point.clone().applyMatrix4(inv).y : h.point.y, h.face ? Math.abs(h.face.normal.y) : 0]);
+    for (const [y, ny] of hits) {
+      if (ny < 0.5 || y > Math.max(top * 0.42, 2.2) || y < -0.3) continue;
+      // something solid over this spot (a roof, a tent, a deckhouse) that is not rigging
+      const cov = hits.some(([y2, n2]) => n2 > 0.3 && y2 > y + 0.9 && y2 < top * 0.62);
+      cover.push(cov);
+      return y;
     }
+    cover.push(false);
     return null;
   }));
   // widths and ends: vertices between the waterline and the deck, close to the hull
@@ -73,7 +76,8 @@ function profileOf(m, def, deckY) {
     if (bowX < 0) bowX = L * 0.5;
     if (sternX > 0) sternX = -L * 0.5;
   } else for (let i = 0; i < NX; i++) halfLo[i] = half[i] = B * 0.5 * (1 - Math.pow(Math.abs(xs[i]) / (L * 0.5), 3) * 0.7);
-  const prof = { xs, surf, dy, half, halfLo, bowX, sternX, top };
+  const covered = xs.map((_, i) => cover.slice(i * zs.length, i * zs.length + zs.length));
+  const prof = { xs, surf, covered, dy, half, halfLo, bowX, sternX, top };
   profiles.set(key, prof);
   return prof;
 }
@@ -121,7 +125,10 @@ function makeCtx(m, def, sideColor, deckY) {
         const x = lo + ((hi - lo) * i) / 40;
         for (const sgn of mode === 'c' ? [0] : [1, -1]) {
           const z = sgn * Math.max(0, ctx.hw(x) - r - 0.12);
-          const y = ctx.deckAt(x, z), clutter = Math.max(0, y - ctx.floorAt(x) - 0.25);
+          const y = ctx.deckAt(x, z), zi = z < -B * 0.14 ? 0 : z > B * 0.14 ? 2 : 1;
+          let cov = 0;
+          for (let j = Math.floor(idx(x - r * 0.7)); j <= Math.ceil(idx(x + r * 0.7)); j++) if (prof.covered[j]?.[zi]) cov++;
+          const clutter = Math.max(0, y - Math.min(dy, ctx.floorAt(x)) - 0.3) + cov * 1.5;
           let over = 0;
           for (const [tx, tz, tr] of ctx.taken) { const d = Math.hypot(tx - x, tz - z); if (d < tr + r) over += (tr + r - d); }
           const narrow = mode === 'c' ? Math.max(0, r * 0.8 - ctx.hw(x)) : 0;

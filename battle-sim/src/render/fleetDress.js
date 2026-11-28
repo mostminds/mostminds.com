@@ -6,9 +6,10 @@
 //   troop     stores amidships, a tall command banner, a lantern for the aura
 //   landing   a hinged ramp at the bow
 //   line      a bronze ram at the waterline when she has one
-// and squadrons: three small fliers flying together (gliders, gyros or winged beasts).
+// and squadrons: three small fliers flying together, each with its rider (see fliers.js for the styles).
 import * as THREE from 'three';
-import { buildAircraft, mat } from './models.js';
+import { mat } from './models.js';
+import { makeFlier, animateFlier } from './fliers.js';
 
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const cyl = (a, b, h, n = 8) => new THREE.CylinderGeometry(a, b, h, n);
@@ -98,39 +99,22 @@ export function dressRole(m, def, sideColor, deckY) {
   return keep;
 }
 
-/** a winged beast for realms that tame rather than build their fliers */
-function buildBeastFlier(sideColor) {
-  const g = new THREE.Group(), hide = mat(0x4a3a30);
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), hide); body.scale.set(2.4, 0.8, 0.9); g.add(body);
-  const head = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 6), hide); head.rotation.z = -Math.PI / 2; head.position.x = 0.62; g.add(head);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.6, 5), hide); tail.rotation.z = Math.PI / 2; tail.position.x = -0.75; g.add(tail);
-  const wings = [];
-  for (const s of [-1, 1]) {
-    const pivot = new THREE.Group(); pivot.position.set(0.05, 0.08, s * 0.15);
-    const w = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0.3, 0, 0), new THREE.Vector3(-0.35, 0, 0), new THREE.Vector3(-0.1, 0, s * 1.1)]), mat(0x6a4a3a, { side: THREE.DoubleSide }));
-    w.geometry.computeVertexNormals();
-    pivot.add(w); pivot.userData.s = s; g.add(pivot); wings.push(pivot);
-  }
-  // the rider, in the side's colour
-  const rider = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.18, 2, 6), mat(sideColor)); rider.position.set(0.05, 0.32, 0); g.add(rider);
-  g.userData.wings = wings;
-  return g;
-}
+/** a winged beast for realms that tame rather than build their fliers: a scaly wyvern with a rider */
+function buildBeastFlier(sideColor, color) { return makeFlier('beast', sideColor, color); }
 
-export function buildFlier(style, sideColor) {
-  if (style === 'beast') return buildBeastFlier(sideColor);
-  const a = buildAircraft(style === 'gyro' ? 'gyro' : 'glider', sideColor, style);
-  // the stand-in aircraft is small; give it a pilot so a crew shows
-  const pilot = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.14, 2, 6), mat(sideColor)); pilot.position.set(0, 0.2, 0); a.add(pilot);
-  return a;
+/** one flier of a carrier's style (glider gyro beast bird bat pegasus griffon dragon carpet disc insect kite),
+ *  ridden by a figure in the side's colour; color tints its body and wings when given */
+export function buildFlier(style, sideColor, color) {
+  if (style === 'beast') return buildBeastFlier(sideColor, color);
+  return makeFlier(style, sideColor, color);
 }
 
 /** a squadron in the air: three fliers in a loose vee */
 export function buildSquadron(def, sideColor) {
   const g = new THREE.Group(), style = def.flier || 'glider';
-  const slots = [[0.7, 0], [-0.6, 1.1], [-0.6, -1.1]];
+  const slots = [[0.8, 0], [-0.7, 1.55], [-0.7, -1.55]];
   g.userData.fliers = slots.map(([x, z], i) => {
-    const f = buildFlier(style, sideColor);
+    const f = buildFlier(style, sideColor, def.color);
     f.scale.setScalar(1.5); f.position.set(x, i * 0.15, z); g.add(f);
     return f;
   });
@@ -142,8 +126,7 @@ export function animateSquadron(m, t, phase, alive = 3) {
   m.userData.fliers.forEach((f, i) => {
     f.visible = i < alive;
     f.position.y = i * 0.15 + Math.sin(t * 2.2 + phase + i) * 0.12;
-    for (const w of f.userData.wings || []) w.rotation.x = w.userData.s * Math.sin(t * 9 + phase + i) * 0.55;
-    if (f.userData.rotor) f.userData.rotor.rotation.y = t * 30;
-    (f.userData.props || []).forEach((p) => { p.rotation.x = t * 30; });
+    f.rotation.x = Math.sin(t * 1.3 + phase + i * 2) * 0.06; // each rocks a little on its own
+    animateFlier(f, t, phase + i * 1.9);
   });
 }

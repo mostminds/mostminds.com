@@ -148,14 +148,21 @@ export const DECK_PARTS = {
     c.nestAt = [at.x, at.y + h * 1.2, 0]; c.topAt = Math.max(c.topAt || 0, at.y + h * 1.3);
   } },
   deadTree: { size: 2.5, fn(c) {
-    const h = clamp(c.L * 0.36, 2.6, 5), at = c.place(0.6, 0.05), K = c.kit, bark = 0x3a3430;
+    const h = clamp(c.L * 0.36, 2.6, 5), at = c.place(0.6, 0.05), K = c.kit, bark = 0x4a4038, k = c.k;
     K.push(at.x, at.y, 0);
-    K.add(G.tube('deadtrunk', [[0, 0, 0], [0.15, 0.35, 0.05], [-0.1, 0.65, 0], [0.05, 1, 0.08]], 1, 10, 6), bark, 0, 0, 0, { sx: 0.25 * c.k, sy: h, sz: 0.25 * c.k });
-    const br = [[0.05, 0.55, 0.5, 0.85, 0.3], [0, 0.7, -0.6, 0.95, -0.2], [0.02, 0.85, 0.3, 1.1, -0.5], [0, 0.45, -0.4, 0.6, 0.6], [0.04, 0.95, -0.2, 1.15, 0.4]];
-    for (const [x0, y0, x1, y1, z1] of br) { K.bar([x0, y0 * h, 0], [x1 * c.k * 1.4, y1 * h, z1 * c.k * 1.4], 0.06 * c.k, bark, { r2: 0.015 }); K.bar([x1 * c.k * 1.4, y1 * h, z1 * c.k * 1.4], [x1 * c.k * 1.9, y1 * h + 0.3, z1 * c.k * 1.1], 0.02, bark); }
-    for (let i = 0; i < 3; i++) K.add(G.box(0.04, 0.5, 0.04), C.rope, br[i][2] * c.k * 1.2, br[i][3] * h - 0.25, br[i][4] * c.k * 1.2);
+    const trunk = [[0, 0, 0], [0.12, 0.3, 0.05], [-0.08, 0.6, 0], [0.05, 0.85, 0.06], [0, 1, 0]].map(([x, y, z]) => [x * k, y * h, z * k]);
+    for (let i = 0; i < trunk.length - 1; i++) K.bar(trunk[i], trunk[i + 1], 0.26 * k * (1 - i * 0.2), bark, { r2: 0.26 * k * (1 - (i + 1) * 0.2) });
+    for (let i = 0; i < 4; i++) { const a = i * 1.6; K.bar([0, 0.15, 0], [Math.cos(a) * 0.6 * k, 0, Math.sin(a) * 0.5 * k], 0.1 * k, bark, { r2: 0.03 }); }
+    const br = [[0.4, 0.5, 0.35], [0.55, -0.6, 0.15], [0.7, 0.3, -0.5], [0.62, -0.4, 0.6], [0.85, 0.2, 0.4], [0.8, -0.3, -0.35]];
+    br.forEach(([f, dx, dz], i) => {
+      const a = [0, f * h, 0], b = [dx * 1.8 * k, f * h + 0.55 * h * 0.35, dz * 1.8 * k], e = [dx * 2.6 * k, f * h + 0.7, dz * 2.4 * k + 0.2];
+      K.bar(a, b, 0.09 * k, bark, { r2: 0.05 * k }).bar(b, e, 0.05 * k, bark, { r2: 0.015 });
+      K.bar(b, [b[0] + 0.3, b[1] + 0.45, b[2] - 0.2], 0.035 * k, bark, { r2: 0.01 });
+      if (i < 3) K.bar(e, [e[0], e[1] - 0.6, e[2]], 0.012, C.rope).add(G.box(0.1, 0.25, 0.1), 0x6a5a48, e[0], e[1] - 0.72, e[2]);
+    });
     K.pop();
-    c.nestAt = [at.x, at.y + h, 0]; c.topAt = Math.max(c.topAt || 0, at.y + h + 0.4);
+    if (!c.nestAt) c.nestAt = [at.x, at.y + h, 0];
+    c.topAt = Math.max(c.topAt || 0, at.y + h + 0.6);
   } },
   portal: { size: 3, fn(c) {
     const R = clamp(c.B * 0.34, 0.9, 1.8), at = c.place(R * 0.7, -0.05), K = c.kit, gc = glowColor(c, 0x9a4aff), y = at.y + R + 0.3;

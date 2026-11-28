@@ -460,7 +460,7 @@ export class NavalView {
         else { setBar(m.userData.bar, e.hp / e.maxHp); m.userData.ring.position.y = -AIR_Y + 0.08; }
         return;
       }
-      if (e.ship && m.userData.crewSlots) crewList.push({ model: m, frac: died === undefined ? (e.crew ?? 0) / Math.max(1, e.def.crew || 1) : 0, color: SIDE_COLORS[e.side], alive: died === undefined && (m.userData.depth || 0) < 0.4 });
+      if (e.ship && m.userData.crewSlots) crewList.push({ model: m, frac: died === undefined ? (e.crew ?? 0) / Math.max(1, e.def.crew || 1) : 0, color: SIDE_COLORS[e.side], def: e.def, faction: b.sides?.[e.side]?.faction, alive: died === undefined && (m.userData.depth || 0) < 0.4 });
       if (e.fort) {
         m.position.set(x, 0, y);
         const tur = m.userData.turret;

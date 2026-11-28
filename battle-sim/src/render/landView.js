@@ -1138,8 +1138,8 @@ export class LandView {
     // the hands aboard every ship and airship: fewer as she takes damage or loses crew
     const cl = this.crewList || (this.crewList = []);
     cl.length = 0;
-    b.ships.forEach((sh, i) => { const m = this.shipModels[i]; if (m.userData.crewSlots) cl.push({ model: m, frac: 0.35 + 0.65 * sh.hp / Math.max(1, sh.maxHp), color: SIDE_COLORS[sh.side], alive: sh.alive && !this.shipSunkAt.has(i) }); });
-    b.airships.forEach((a, i) => { const am = this.airModels[i]; cl.push({ model: am.m, frac: a.crew / Math.max(1, a.def.crew), color: SIDE_COLORS[a.side], alive: a.alive && am.downAt === undefined }); });
+    b.ships.forEach((sh, i) => { const m = this.shipModels[i]; if (m.userData.crewSlots) cl.push({ model: m, frac: 0.35 + 0.65 * sh.hp / Math.max(1, sh.maxHp), color: SIDE_COLORS[sh.side], def: sh.def, alive: sh.alive && !this.shipSunkAt.has(i) }); });
+    b.airships.forEach((a, i) => { const am = this.airModels[i]; cl.push({ model: am.m, frac: a.crew / Math.max(1, a.def.crew), color: SIDE_COLORS[a.side], def: a.def, alive: a.alive && am.downAt === undefined }); });
     this.crews.update(cl, t);
     for (const tm of this.transitMarks || []) {
       const L = tm.L, x = L.px + (L.x - L.px) * alpha, z = L.py + (L.y - L.py) * alpha, car = tm.car;

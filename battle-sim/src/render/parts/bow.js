@@ -105,11 +105,13 @@ function figure(K, kind, c) {
       break;
     }
     case 'skull': {
-      K.add(G.sph(0.55, 10, 8), C.bone, 0.2, 0.8, 0, { sy: 0.9, r: 0.7 });
-      K.add(G.box(0.45, 0.25, 0.5), C.bone, 0.38, 0.35, 0, { r: 0.7 });
-      for (const s of [-1, 1]) { K.add(G.sph(0.15, 8, 6), C.black, 0.6, 0.85, s * 0.2); K.add(G.sph(0.05, 6, 4), 0x6aff8a, 0.7, 0.85, s * 0.2, { g: 3 }); }
-      K.add(G.cone(0.08, 0.16, 3), C.black, 0.72, 0.62, 0, { rz: Math.PI });
-      for (let i = 0; i < 5; i++) K.add(G.box(0.05, 0.12, 0.06), 0xf0ead8, 0.62, 0.5, -0.16 + i * 0.08);
+      K.add(G.sph(0.5, 10, 8), C.bone, 0.15, 0.85, 0, { sx: 1.15, sy: 0.95, r: 0.7 });
+      K.add(G.box(0.4, 0.32, 0.62), C.bone, 0.5, 0.55, 0, { r: 0.7 });
+      K.add(G.box(0.36, 0.14, 0.56), C.bone, 0.48, 0.28, 0, { rz: -0.15, r: 0.7 });
+      for (const s of [-1, 1]) { K.add(G.sph(0.15, 8, 6), C.black, 0.55, 0.78, s * 0.2, { sx: 0.7 }); K.add(G.sph(0.05, 6, 4), 0x6aff8a, 0.62, 0.78, s * 0.2, { g: 3 }); K.add(G.box(0.3, 0.1, 0.1), C.bone, 0.45, 0.62, s * 0.33); }
+      K.add(G.cone(0.08, 0.16, 3), C.black, 0.7, 0.62, 0, { rz: Math.PI });
+      for (let i = 0; i < 6; i++) { K.add(G.box(0.05, 0.12, 0.07), 0xf0ead8, 0.69, 0.45, -0.2 + i * 0.08); K.add(G.box(0.05, 0.1, 0.07), 0xf0ead8, 0.66, 0.33, -0.2 + i * 0.08); }
+      for (const s of [-1, 1]) K.add(G.box(0.2, 0.06, 0.06), C.black, 0.1, 1.12, s * 0.12, { ry: s * 0.4, rz: 0.3 });
       break;
     }
     case 'eye': {
@@ -132,8 +134,8 @@ function figure(K, kind, c) {
       break;
     }
     case 'comet': {
-      K.add(G.ico(0.38, 1), 0xffe08a, 0.4, 1.2, 0, { g: 2.5 });
-      for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.22; K.add(G.cone(0.2 - Math.abs(i - 2) * 0.04, 1.6, 6), i % 2 ? 0xffb02a : 0xffe08a, -0.35, 1.2 + a * 1.4, a * 0.8, { rz: Math.PI / 2 + a * 0.4, g: 1.4 }); }
+      K.add(G.ico(0.38, 1), 0xffc040, 0.4, 1.2, 0, { g: 1.1 });
+      for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.22; K.add(G.cone(0.2 - Math.abs(i - 2) * 0.04, 1.6, 6), i % 2 ? 0xe8902a : 0xf0c050, -0.35, 1.2 + a * 1.4, a * 0.8, { rz: Math.PI / 2 + a * 0.4, g: 0.7 }); }
       K.bar([0, 0, 0], [0.4, 1.0, 0], 0.1, gilt, { m: 0.8 });
       break;
     }
