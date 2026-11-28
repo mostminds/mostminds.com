@@ -1611,6 +1611,11 @@ function canopy(g, a, b, c, d, c1, c2, n = 6, sag = 0.06, seed = 0) {
 }
 const mark = (g, l) => { if (globalThis.__fm) globalThis.__fm.push([l, g.I.length / 3]); };
 
+// snow (as the frozen realms lay it)
+const snowCol = (seed = 0) => (x, y, z, nx, ny) => mul(mix([0.6, 0.7, 0.86], SNOW, smooth(0.2, 0.8, ny ?? 1)), 0.9 + 0.14 * noise3(x * 4 + seed, y * 4, z * 4));
+const snowGround = (earth, seed, amt = 0.5) => (x, y, z) => mix(mul(earth, 0.65 + 0.6 * fbm3(x * 3, y * 5, z * 3, 3)), SNOW, smooth(0.62 - amt * 0.4, 0.72 - amt * 0.4, noise3(x * 1.3 + seed, 2, z * 1.3)));
+function drift(g, rx, ry, rz, seed = 0) { g.surf(K_PLAIN, 0.6); g.sheet(nq(14), nq(5), (u, v) => { const a = u * TAU, k = 1 + 0.25 * noise3(Math.cos(a) * 1.3 + seed, 1, Math.sin(a) * 1.3); return [Math.cos(a) * rx * v * k, v > 0.99 ? -0.03 : ry * Math.pow(1 - v * v, 0.7), Math.sin(a) * rz * v * k]; }, snowCol(seed), true); }
+
 // =====================================================================================================
 // Balor: bog basalt, bronze, bone and fog
 // =====================================================================================================
@@ -2315,8 +2320,8 @@ function bloodWell(g) {
 // =====================================================================================================
 // Pearlfleet: white marble, turquoise, silver and mother-of-pearl by the sea
 // =====================================================================================================
-const MARBLE = rgb(0xe4e8e4), MARBLE_PAL = sw(0xe4e8e4, 0xdadfdc, 0xeceee8, 0xd2d8d6, 0xe8e4dc), SEA = [0.08, 0.42, 0.48], LAMP = [0.6, 1.0, 0.95];
-const marbleCol = (seed = 0, k = 1) => (x, y, z) => { const v = Math.abs(noise3(x * 3 + seed, y * 3, z * 3) - 0.5); return mul(mix(MARBLE, rgb(0xa8b8bc), smooth(0.04, 0, v) * 0.5), k * (0.9 + 0.12 * noise3(x * 11, y * 11, z * 11))); };
+const MARBLE = rgb(0xccd2cc), MARBLE_PAL = sw(0xccd2cc, 0xc2c8c4, 0xd6d8d0, 0xbcc4c2, 0xd2cec4), SEA = [0.05, 0.3, 0.36], LAMP = [0.6, 1.0, 0.95];
+const marbleCol = (seed = 0, k = 1) => (x, y, z) => { const v = Math.abs(noise3(x * 3 + seed, y * 3, z * 3) - 0.5); return mul(mix(mix(MARBLE, rgb(0xb8b0a0), smooth(0.4, 0.8, noise3(x * 1.3 + 7, y * 1.3, z * 1.3)) * 0.4), rgb(0x8a9aa0), smooth(0.05, 0, v) * 0.6), k * (0.86 + 0.18 * noise3(x * 11, y * 11, z * 11))); };
 /** mother-of-pearl: shifting pink, green and blue sheen */
 const nacre = (x, y, z) => { const t = noise3(x * 7, y * 7, z * 7) * 3 + Math.atan2(z, x); return mix(P.pearl, [0.72 + 0.2 * Math.sin(t), 0.82 + 0.12 * Math.sin(t + 2.1), 0.86 + 0.12 * Math.sin(t + 4.2)], 0.7); };
 const marbleSt = (seed, o) => stoneStyle(0xe4e8e4, { seed, pal: MARBLE_PAL, chip: 0.08, var: 0.05, rough: 0.004, course: 0.2, len: [0.35, 0.6], cell: 0.25 / qual(), mortar: [0.55, 0.6, 0.6], ...o });
@@ -2326,7 +2331,7 @@ function scallop(g, s, col) {
   g.sheet(nq(12), 3, (u, v) => { const a = (u - 0.5) * 2.6, r = s * 0.5 * v * (1 + 0.06 * Math.abs(Math.sin(u * 12 * Math.PI))); return [Math.sin(a) * r, Math.cos(a) * r - s * 0.1, 0.02 * s + 0.12 * s * v * (1 - v)]; }, (x, y, z, nx, ny, nz, u) => mul(typeof col === 'function' ? col(x, y, z) : col, 0.8 + 0.25 * Math.abs(Math.sin(u * 12 * Math.PI))));
   g.in(M(0, -s * 0.12, 0.02 * s), () => g.cbox(s * 0.22, s * 0.1, 0.03 * s, 0.01, typeof col === 'function' ? col(0, 0, 0) : col));
 }
-function pearlLighthouse(g) {
+function pearlLighthouse(g, fog) {
   g.moss = 0.2;
   pad(g, 2, 2, 0.03, (x, y, z) => mul(rgb(0xc8b890), 0.8 + 0.3 * fbm3(x * 4, y * 4, z * 4, 2)), 901, { sq: 4 });
   // the plinth: two marble steps, a turquoise band, scallops at the corners
@@ -2346,7 +2351,9 @@ function pearlLighthouse(g) {
     g.surf(K_PLAIN, 0.2, 0.9); for (let k = 0; k < 12; k++) g.in(M(0, y, 0, 0, k * 30 + 15, 0).multiply(M(0, 0, rAt(y) + 0.036)), () => g.stud(0.018, P.silver, 6));
   }
   // windows climbing the shaft in a spiral, arched in turquoise, lit within
-  for (let i = 0; i < 7; i++) { const y = 1.2 + i * 0.68, a = i * 115 + 20; g.in(M(0, y, 0, 0, a, 0).multiply(M(0, 0, rAt(y) - 0.04)), () => archFrame(g, 0.16, 0.34, 'round', P.turq, { t: 0.025, fill: mul(LAMP, 0.7), fillGlow: 0.5, kind: K_PLAIN })); }
+  for (let i = 0; i < 7; i++) { const y = 1.2 + i * 0.68, a = i * 115 + 20; g.in(M(0, y - 0.18, 0, 0, a, 0).multiply(M(0, 0, rAt(y) - 0.006)), () => { archFrame(g, 0.2, 0.42, 'round', P.turq, { t: 0.03, fill: mul(LAMP, 0.75), fillGlow: 0.7, kind: K_PLAIN }); g.in(M(0, -0.03, 0.03), () => { g.surf(K_STONE, 0.4); g.cbox(0.3, 0.05, 0.08, 0.01, marbleCol(i)); }); }); }
+  // a spiral of pearl inlay winding up the shaft between the windows
+  { const pts = []; for (let i = 0; i <= 120; i++) { const t = i / 120, y = lerp(0.75, 5.85, t), a = t * TAU * 3.5 + 1.0; pts.push([Math.cos(a) * (rAt(y) - 0.012), y, Math.sin(a) * (rAt(y) - 0.012)]); } g.surf(K_PLAIN, 0.15, 0.4); g.tube(pts, 0.022, 4, nacre, false); }
   // the door: a tall arch, turquoise doors with silver studs, a pearl shell over it
   g.in(M(0, H0, rAt(0.9) - 0.03), () => { archFrame(g, 0.46, 0.95, 'round', P.turq, { t: 0.04, fill: [0.02, 0.05, 0.06], kind: K_PLAIN }); for (const e of [-1, 1]) g.in(M(e * 0.105, 0, 0.012), () => roundDoor(g, 0.2, 0.82, mix(P.turq, rgb(0x1a5a64), 0.5), P.silver, 3 + e, { bands: [0.3, 0.7], ringX: -e * 0.25 })); g.in(M(0, 1.1, 0.04), () => scallop(g, 0.32, nacre)); });
   for (let q = 0; q < 3; q++) g.in(M(0, 0.06 + q * 0.08, 0.98 + q * -0.0 + 0.12 - q * 0.06), () => { g.surf(K_STONE, 0.4); g.cbox(0.6, 0.08, 0.14, 0.01, marbleCol(q, 0.95)); });
@@ -2364,7 +2371,7 @@ function pearlLighthouse(g) {
   g.surf(K_STONE, 0.4); g.in(M(0, ly, 0), () => g.cyl(0.48, 0.46, 0.14, nq(20), marbleCol(6), false, true));
   for (let k = 0; k < 8; k++) g.in(M(0, ly + 0.14, 0, 0, k * 45, 0).multiply(M(0, 0, 0.42)), () => columnOn(g, 0.86, 0.035, marbleCol(k), P.turq));
   g.in(M(0, ly + 0.14, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); g.cyl(0.12, 0.08, 0.12, nq(10), P.silver, false, true); g.in(M(0, 0.1, 0), () => crystal(g, 0.13, 0.7, 7, { deep: rgb(0x1a8a9a), bright: rgb(0xc8fff8), glow: 1.3, m: 6 })); for (let k = 0; k < 5; k++) { const a = k * 1.26; g.in(M(Math.cos(a) * 0.12, 0.1, Math.sin(a) * 0.12, Math.sin(a) * 22, 0, -Math.cos(a) * 22), () => crystal(g, 0.06, 0.34, 20 + k, { deep: rgb(0x1a8a9a), bright: rgb(0xc8fff8), glow: 1.1, m: 5 })); } });
-  g.surf(K_PLAIN, 0.3, 0, 0.6); g.in(M(0, ly + 0.55, 0), () => g.add(new THREE.IcosahedronGeometry(0.3, 2), (x, y, z) => mul(LAMP, 0.35 + 0.15 * noise3(x * 9, y * 9, z * 9))));
+  fog.surf(K_PLAIN, 1, 0, 1.4); fog.in(M(0, ly + 0.5, 0), () => { fog.add(new THREE.IcosahedronGeometry(0.36, 2), (x, y, z) => mul(LAMP, 0.7 + 0.2 * noise3(x * 9, y * 9, z * 9))); fog.add(new THREE.IcosahedronGeometry(0.22, 2), LAMP); });
   const dy = ly + 1.0;
   g.surf(K_STONE, 0.4); g.in(M(0, dy, 0), () => g.lathe([[0.5, 0], [0.54, 0.04], [0.54, 0.1], [0.48, 0.12]], nq(24), marbleCol(8)));
   g.surf(K_ROOF, 0.25, 0.35);
@@ -2378,7 +2385,7 @@ function pearlLighthouse(g) {
 function amphitheatre(g, fog) {
   g.moss = 0.6;
   pad(g, 4, 4, 0.03, (x, y, z) => mul(rgb(0xc8b890), 0.8 + 0.3 * fbm3(x * 4, y * 4, z * 4, 2)), 911, { sq: 4 });
-  const C = [0, 0, 0.35], R0 = 0.8, tw = 0.16, th = 0.16, nT = 8, WL = 0.3;
+  const C = [0, 0, 0.35], R0 = 0.8, tw = 0.17, th = 0.15, nT = 7, WL = 0.3;
   // the cavea: curved tiers of marble seats stepping up from the water, aisles of steps between wedges
   g.in(M(C[0], 0, C[2]), () => {
     for (let k = 0; k < nT; k++) {
@@ -2393,6 +2400,8 @@ function amphitheatre(g, fog) {
     g.lathe([[RB, 0], [RB + 0.14, 0], [RB + 0.14, top + 0.36], [RB, top + 0.36]], nq(40), marbleCol(30), Math.PI, TAU);
     g.lathe([[RB - 0.02, top + 0.36], [RB + 0.17, top + 0.36], [RB + 0.17, top + 0.42], [RB - 0.02, top + 0.42]], nq(40), marbleCol(31, 1.04), Math.PI, TAU);
     for (let k = 0; k < 9; k++) { const a = Math.PI + ((k + 0.5) / 9) * Math.PI; g.in(M(Math.cos(a) * (RB + 0.15), top - 0.1, Math.sin(a) * (RB + 0.15), 0, 90 - a / DEG, 0), () => { archFrame(g, 0.26, 0.4, 'round', marbleCol(k), { t: 0.03, fill: [0.12, 0.2, 0.22] }); g.in(M(0, 0.4, 0.03), () => { g.surf(K_PLAIN, 0.3, 0.3); g.cbox(0.06, 0.08, 0.03, 0.006, P.turq); }); }); }
+    for (let k = 0; k < 10; k++) { const a = Math.PI + (k / 9) * Math.PI; g.in(M(Math.cos(a) * (RB + 0.14), 0, Math.sin(a) * (RB + 0.14), 0, 90 - a / DEG, 0), () => { g.surf(K_STONE, 0.4); g.in(M(0, (top + 0.36) / 2, 0.03), () => g.cbox(0.12, top + 0.36, 0.08, 0.01, marbleCol(k + 90))); g.in(M(0, top + 0.2, 0.08), () => scallop(g, 0.14, nacre)); }); }
+    g.surf(K_PLAIN, 0.3, 0.3); g.lathe([[RB + 0.14, top * 0.45], [RB + 0.165, top * 0.45 + 0.02], [RB + 0.165, top * 0.45 + 0.07], [RB + 0.14, top * 0.45 + 0.09]], nq(40), P.turq, Math.PI, TAU);
     // ends of the cavea: walls closing the tiers, a pearl-inlaid pilaster on each
     for (const e of [-1, 1]) {
       g.surf(K_STONE, 0.4);
@@ -2404,14 +2413,14 @@ function amphitheatre(g, fog) {
     // aisles: little steps cut up the middle of each wedge
     for (const a of [Math.PI * 1.25, Math.PI * 1.5, Math.PI * 1.75]) for (let k = 0; k < nT * 2; k++) { const r = R0 + (k + 0.5) * tw / 2, y = 0.08 + (Math.floor(k / 2) + (k % 2 ? 1 : 0.5)) * th; g.in(M(Math.cos(a) * r, y - th * 0.25 + 0.004, Math.sin(a) * r, 0, 90 - a / DEG, 0), () => { g.surf(K_STONE, 0.45); g.cbox(0.22, th * 0.5, tw / 2, 0.006, marbleCol(k, 0.9)); }); }
     // the flood: sea water over the orchestra and the lowest seats, coral and weed growing on the marble
-    pond(g, R0 + 2 * tw - 0.01, R0 + 2 * tw - 0.01, WL, 3, SEA, 0.16);
+    pond(g, R0 + 2 * tw - 0.01, R0 + 2 * tw - 0.01, WL, 3, SEA, 0.08);
     const rnd = rng(921), CORAL = sw(0xe86a7a, 0xf0904a, 0xb05ad0, 0xe8c050, 0xe84a5a);
     for (let i = 0; i < 16; i++) { const a = Math.PI + rnd() * Math.PI, r = R0 + (rnd() < 0.6 ? 0.25 + rnd() * 0.15 : 0.45 + rnd() * 0.12), y = r < R0 + 2 * tw ? WL - 0.04 : 0.08 + (Math.floor((r - R0) / tw) + 1) * th; g.in(M(Math.cos(a) * r, y, Math.sin(a) * r, 0, rnd() * 360, 0), () => coral(g, 0.6 + 0.5 * rnd(), CORAL[i % 5], 930 + i, i % 4 === 3)); }
     for (let i = 0; i < 10; i++) { const a = Math.PI + rnd() * Math.PI, r = R0 + 2 * tw + rnd() * 0.3, k = Math.floor((r - R0) / tw), y = 0.08 + (k + 1) * th; g.in(M(Math.cos(a) * r, y, Math.sin(a) * r, 0, -a / DEG + 90, 0), () => seaCrust(g, 0.35, 950 + i)); }
   });
   // the stage: a marble platform half under the tide, a broken colonnade, a shell niche
   const sz = 1.35;
-  water(g, -1.95, 1.95, C[2], 1.95, WL, 7, SEA, 0.16);
+  water(g, -1.95, 1.95, C[2], 1.95, WL, 7, SEA, 0.08);
   g.surf(K_STONE, 0.4);
   for (const [x0, x1, z0, z1] of [[-1.98, 1.98, 1.86, 1.98], [-1.98, -1.86, C[2], 1.98], [1.86, 1.98, C[2], 1.98]]) g.in(M((x0 + x1) / 2, (WL + 0.06) / 2, (z0 + z1) / 2), () => g.cbox(x1 - x0, WL + 0.06, z1 - z0, 0.01, marbleCol(x0 * 3)));
   g.in(M(0, 0.2, sz), () => g.cbox(2.6, 0.4, 0.62, 0.02, marbleCol(60)));
@@ -2424,12 +2433,343 @@ function amphitheatre(g, fog) {
   for (const [x, z, s, c, sd] of [[-0.9, 1.0, 0.7, rgb(0xe86a7a), 1], [1.15, 1.05, 0.8, rgb(0xf0904a), 2], [0.5, 1.7, 0.6, rgb(0xb05ad0), 3], [-1.5, 1.6, 0.9, rgb(0xe8c050), 4]]) g.in(M(x, WL - 0.04, z), () => coral(g, s, c, 960 + sd, sd === 3));
   fog.in(M(0, WL, 1.9), () => fogBank(fog, 1.4, 0.18, 0.25, 5, 6, [0.85, 0.95, 0.98], 0.15));
 }
-function observatory(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
-function windmillLab(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
-function skullTower(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
-function winterCamp(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
-function sunTemple(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
-function riverCitadel(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
+
+// =====================================================================================================
+// Glimmer: brass, velvet and teal, telescopes and lightning
+// =====================================================================================================
+const BRASS_C = (seed = 0, k = 1) => (x, y, z) => mul(P.brass, k * (0.72 + 0.4 * noise3(x * 6 + seed, y * 6, z * 6)));
+const ELIX = [[0.4, 1.0, 0.5], [0.3, 0.9, 1.0], [1.0, 0.45, 0.9], [1.0, 0.8, 0.3]];
+const velvetCol = (seed = 0) => (x, y, z) => mul(P.velvet, 0.8 + 0.3 * noise3(x * 5 + seed, y * 5, z * 5));
+function observatory(g, fog) {
+  g.moss = 1.0;
+  // the hill: a mossy knoll with rocks breaking through, a stair of slabs up the front
+  const HH = 0.62, hill = (x, z) => { const d = Math.hypot(x / 1.45, z / 1.45); return d >= 1 ? 0 : HH * Math.pow(1 - d * d, 0.5); };
+  pad(g, 3, 3, 0.03, grassCol(41), 1001, { sq: 3 });
+  g.surf(K_LEAF, 0.95);
+  g.sheet(nq(40), nq(10), (u, v) => { const a = u * TAU, d = v * 1.47, x = Math.cos(a) * d, z = Math.sin(a) * d; return [x, v > 0.98 ? -0.04 : Math.max(hill(x, z), d < 1.0 ? HH : 0) + 0.03 * (fbm3(x * 3, 0, z * 3, 2) - 0.5), z]; }, grassCol(43), true);
+  for (const [x, z, sd] of [[-1.05, 0.55, 1], [0.95, -0.85, 2], [-0.8, -0.95, 3], [1.15, 0.4, 4]]) g.in(M(x, hill(x, z) - 0.08, z, 0, sd * 60, 0), () => boulder(g, 0.2, 0.16, 0.18, 1010 + sd, rgb(0x7a7a70), nq(18)));
+  for (let q = 0; q < 4; q++) { const z = 1.4 - q * 0.13; g.surf(K_STONE, 0.9); g.in(M(0, hill(0, z) + 0.02, z), () => g.cbox(0.5, 0.1 + q * 0.03, 0.16, 0.02, stoneTint(rgb(0x8a8478), q, 5))); }
+  // the drum: a stone footing, velvet-plastered wall banded in teal, round brass portholes
+  const y0 = HH - 0.05, R = 0.92, y1 = y0 + 1.55;
+  g.in(M(0, y0, 0), () => {
+    g.surf(K_STONE, 0.9); g.cyl(R + 0.08, R + 0.06, 0.25, nq(28), stoneTint(rgb(0x8a8478), 3, 4), false, true);
+    g.surf(K_PLASTER, 0.9); g.in(M(0, 0.25, 0), () => g.lathe([[R, 0], [R, y1 - y0 - 0.25]], nq(32), velvetCol(3)));
+    g.surf(K_PLAIN, 0.4, 0.3);
+    for (const y of [0.3, 0.95, y1 - y0 - 0.06]) g.in(M(0, y, 0), () => g.lathe([[R, -0.04], [R + 0.03, -0.03], [R + 0.03, 0.03], [R, 0.04]], nq(32), P.teal));
+    for (let k = 0; k < 7; k++) { const a = (k / 7) * 360 + 25; g.in(M(0, 1.22, 0, 0, a, 0).multiply(M(0, 0, R)), () => porthole(g, 0.13, BRASS_C(k), [0.6, 0.95, 0.9], 0.7)); }
+    // the door: an arched brass-studded door in a teal frame, a lamp beside it
+    g.in(M(0, 0.22, R - 0.02), () => { archFrame(g, 0.46, 0.66, 'round', P.teal, { t: 0.04, fill: [0.02, 0.02, 0.03], kind: K_PLAIN }); g.in(M(0, 0, 0.01), () => roundDoor(g, 0.4, 0.62, rgb(0x4a2a40), P.brass, 7, { bands: [0.25, 0.7] })); });
+    g.in(M(0.4, 0.95, R - 0.02, 0, 0, 0), () => bracketLamp(g, 0.6, [1.0, 0.75, 0.4], { frame: P.brass }));
+    // exposed clockwork on the east wall: two meshing gears and a crank
+    g.in(M(0, 0.7, 0, 0, 90, 0).multiply(M(0, 0, R + 0.06)), () => { g.in(M(-0.12, 0.05, 0), () => gear(g, 0.36, 16, 0.05, P.brass)); g.in(M(0.34, 0.33, 0.03), () => gear(g, 0.2, 10, 0.05, mul(P.brass, 0.85))); g.in(M(0.3, -0.25, 0.02), () => gear(g, 0.14, 8, 0.04, mul(P.brass, 0.95))); });
+  });
+  // the dome: ribbed brass plates, a shutter slit turned to the sky, a cupola ring
+  const dy = y1, DR = R + 0.06, slitA = 0.25, slit = (a, v) => Math.abs(Math.atan2(Math.sin(a - (Math.PI / 2 + slitA)), Math.cos(a - (Math.PI / 2 + slitA)))) < 0.17 && v > 0.12;
+  g.surf(K_PLAIN, 0.35, 0.85);
+  g.sheet(nq(48), nq(14), (u, v) => { const a = u * TAU, t = v * Math.PI / 2, r = DR * Math.cos(t) - (slit(a, v) ? 0.06 : 0); return [Math.cos(a) * r, dy + Math.sin(t) * DR * 0.95, Math.sin(a) * r]; }, (x, y, z) => { const a = Math.atan2(z, x), v = (y - dy) / (DR * 0.95); return slit(a, v) ? [0.03, 0.03, 0.04] : mul(BRASS_C(5)(x, y, z), 0.8 + 0.25 * Math.abs(Math.sin(a * 12))); }, true, true);
+  for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU; if (Math.abs(Math.atan2(Math.sin(a - (Math.PI / 2 + slitA)), Math.cos(a - (Math.PI / 2 + slitA)))) < 0.25) continue; const pts = []; for (let i = 0; i <= 8; i++) { const t = (i / 8) * Math.PI / 2 * 0.93; pts.push([Math.cos(a) * (DR * Math.cos(t) + 0.015), dy + Math.sin(t) * DR * 0.95, Math.sin(a) * (DR * Math.cos(t) + 0.015)]); } g.tube(pts, 0.022, 4, mul(P.brass, 0.7), false); }
+  g.in(M(0, dy, 0), () => { g.surf(K_PLAIN, 0.4, 0.85); g.lathe([[DR + 0.02, -0.04], [DR + 0.06, 0], [DR + 0.02, 0.05]], nq(36), mul(P.brass, 0.75)); for (let k = 0; k < 24; k++) g.in(M(0, 0, 0, 0, k * 15, 0).multiply(M(0, 0.0, DR + 0.055)), () => g.stud(0.016, P.brass, 5)); });
+  // the telescope: a great brass tube through the slit, ringed, on a trunnion; a finder scope alongside
+  const ta = Math.PI / 2 + slitA, el = 34;
+  g.in(M(0, dy + 0.35, 0, 0, 90 - ta / DEG, 0).multiply(M(0, 0, 0, -el, 0, 0, 1.35)), () => {
+    g.surf(K_PLAIN, 0.3, 0.9);
+    g.in(M(0, 0, -0.5, 90, 0, 0), () => g.lathe([[0.1, 0], [0.13, 0.05], [0.13, 0.4], [0.17, 0.9], [0.19, 1.6], [0.22, 1.66], [0.22, 1.82], [0.19, 1.84], [0.17, 1.84]], nq(16), BRASS_C(9)));
+    g.surf(K_PLAIN, 0.1, 0.2, 0.5); g.in(M(0, 0, 1.33, 90, 0, 0), () => g.cyl(0.17, 0.17, 0.002, nq(14), [0.4, 0.7, 0.9]));
+    g.surf(K_PLAIN, 0.35, 0.85);
+    for (const z of [0.0, 0.5, 0.95]) g.in(M(0, 0, z, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.16 + z * 0.03, 0.022, 5, nq(16)), P.teal));
+    g.in(M(0.2, 0.08, 0.2, 90, 0, 0), () => g.lathe([[0.03, 0], [0.04, 0.05], [0.04, 0.55], [0.05, 0.6]], nq(8), BRASS_C(3)));
+    g.in(M(0, -0.04, -0.6, 90, 0, 0), () => g.lathe([[0.02, 0], [0.04, 0.05], [0.035, 0.18]], nq(8), [0.1, 0.1, 0.1]));
+  });
+  // the cupola on top: a teal lantern ring, a brass orrery spinning in the open air
+  g.in(M(0, dy + DR * 0.95 - 0.02, 0), () => {
+    g.surf(K_PLAIN, 0.4, 0.4); g.cyl(0.2, 0.18, 0.14, nq(14), P.teal, false, true);
+    g.surf(K_PLAIN, 0.3, 0.9); g.in(M(0, 0.14, 0), () => { g.cyl(0.015, 0.012, 0.7, 6, P.brass, false, true); g.in(M(0, 0.55, 0), () => { g.add(new THREE.SphereGeometry(0.08, 10, 8), P.brass); for (const [r, t, s2] of [[0.22, 20, 0.035], [0.34, -15, 0.05]]) g.in(M(0, 0, 0, t, 0, 0), () => { g.add(new THREE.TorusGeometry(r, 0.008, 4, nq(20)), P.brass); g.in(M(r, 0, 0), () => { g.surf(K_PLAIN, 0.4, 0.2, 0.3); g.add(new THREE.SphereGeometry(s2, 8, 6), r < 0.3 ? P.teal : P.velvet); g.surf(K_PLAIN, 0.3, 0.9); }); }); }); });
+  });
+  // chimney pipes off the back of the drum, puffing
+  for (const [a, h, sd] of [[200, 3.75, 1], [235, 3.45, 2]]) { const x = Math.cos(a * DEG) * (R + 0.12), z = -Math.sin(a * DEG) * (R + 0.12) * -1; pipe(g, [[x, y0 + 0.4, z], [x * 1.05, y0 + 1.2, z * 1.05], [x * 1.04, dy + 0.5, z * 1.04], [x * 0.98, h, z * 0.98]], 0.07, BRASS_C(sd), { every: 1 }); g.in(M(x * 0.98, h, z * 0.98), () => { g.surf(K_PLAIN, 0.4, 0.85); g.lathe([[0.07, 0], [0.12, 0.06], [0.12, 0.12], [0.04, 0.14]], nq(10), mul(P.brass, 0.8)); }); fog.in(M(x * 0.98, h + 0.12, z * 0.98), () => smoke(fog, 0.08, 0.7, sd, [0.6, 0.6, 0.65], [0.88, 0.88, 0.9], 4, 0.2)); }
+  // a brass weathervane spike, a little brass bench and a crate of lenses by the door
+  g.in(M(0.75, hill(0.75, 0.9), 0.9, 0, -30, 0), () => { g.surf(K_WOOD, 0.8); g.in(M(0, 0.12, 0), () => g.cbox(0.3, 0.22, 0.22, 0.01, woodTint(rgb(0x6a4a2c), 3))); g.surf(K_PLAIN, 0.15, 0.2, 0.3); for (let k = 0; k < 3; k++) g.in(M(-0.08 + k * 0.08, 0.25, 0), () => g.add(new THREE.SphereGeometry(0.035, 8, 6).scale(1, 0.4, 1), [0.6, 0.9, 1.0])); });
+}
+function windmillLab(g, fog) {
+  g.moss = 0.7;
+  pad(g, 3, 3, 0.04, grassCol(51), 1101, { sq: 3 });
+  const plank = (seed) => (x, y, z, i, edge) => mul(i % 2 ? P.teal : mix(P.teal, rgb(0x3a6a7a), 0.4), (edge ? 0.62 : 1) * (0.8 + 0.3 * noise3(x * 4 + seed, y * 18, z * 4)) * (Math.abs(((y * 7) % 1 + 1) % 1 - 0.5) > 0.45 ? 0.7 : 1));
+  // the footing: rough stone, a stair round to the door
+  g.surf(K_STONE, 0.9); g.cyl(1.0, 0.94, 0.3, 8, stoneTint(rgb(0x8a8478), 2, 4), false, true);
+  // the crooked tower: three stages of teal clapboard, each set a little askew on the last
+  const stages = [[0.86, 0.74, 1.5, 3, 0], [0.72, 0.6, 1.25, -4, 12], [0.58, 0.5, 0.95, 5, -8]];
+  let fr = M(0, 0.3, 0);
+  const frames = [];
+  stages.forEach(([r0, r1, h, tilt, turn], k) => {
+    const m = fr.clone().multiply(M(0, 0, 0, 0, turn, tilt));
+    frames.push(m.clone());
+    g.in(m, () => {
+      g.surf(K_WOOD, 0.85); facetCol(g, 8, r0, h, { r1, vs: Math.max(2, Math.round(h / 0.15)), col: plank(k) });
+      g.surf(K_PLAIN, 0.45, 0.3); g.in(M(0, h - 0.04, 0), () => g.lathe([[r1 + 0.04, -0.04], [r1 + 0.07, 0], [r1 + 0.04, 0.06], [0, 0.06]], 8, P.velvet));
+      // round windows in brass rims on each stage
+      for (let q = 0; q < 3; q++) { const a = (q * 120 + k * 50 + 20) * DEG, y = h * 0.55; g.in(M(0, y, 0, 0, 90 - a / DEG, 0).multiply(M(0, 0, lerp(r0, r1, 0.55) * Math.cos(Math.PI / 8) + 0.005)), () => porthole(g, 0.1, BRASS_C(q), ELIX[(q + k) % 4], 0.8)); }
+    });
+    fr = m.multiply(M(0, h, 0));
+  });
+  // the door at the foot, a step and a shelf of glowing jars beside it
+  g.in(frames[0], () => g.in(M(0, 0, 0, 0, 0, 0).multiply(M(0, 0, 0.86 * Math.cos(Math.PI / 8) - 0.02)), () => { g.in(M(0, 0, 0.0), () => roundDoor(g, 0.4, 0.8, rgb(0x4a2a40), P.brass, 11, { bands: [0.25, 0.7] })); g.surf(K_PLAIN, 0.4, 0.4); g.in(M(0, 0.84, 0.03), () => g.cbox(0.5, 0.06, 0.06, 0.01, P.velvet)); }));
+  g.surf(K_STONE, 0.9); g.in(M(0, 0.06, 1.02), () => g.cbox(0.6, 0.12, 0.26, 0.02, stoneTint(rgb(0x8a8478), 5, 5)));
+  g.in(M(0.75, 0.3, 0.72, 0, 45, 0), () => { g.surf(K_WOOD, 0.85); for (const y of [0.3, 0.7]) g.in(M(0, y, 0), () => g.cbox(0.5, 0.04, 0.16, 0.01, woodTint(rgb(0x5a3a2a), y * 9))); for (const e of [-1, 1]) g.in(M(e * 0.24, 0.45, 0), () => g.cbox(0.04, 0.9, 0.16, 0.01, woodTint(rgb(0x5a3a2a), e))); for (const [y, n] of [[0.32, 3], [0.72, 2]]) for (let q = 0; q < n; q++) g.in(M(-0.15 + q * 0.15, y, 0), () => vessel(g, 0.5, ELIX[(q + n) % 4], { glow: 0.9 })); });
+  // a gallery round the second stage: brackets, a brass rail, jars and retorts bubbling on it
+  g.in(frames[1], () => {
+    const R2 = 1.02;
+    g.surf(K_WOOD, 0.88);
+    g.sheet(nq(24), 1, (u, v) => { const a = u * TAU, r = lerp(0.68, R2, v); return [Math.cos(a) * r, 0.02, Math.sin(a) * r]; }, (x, y, z) => mul(rgb(0x6a4a2c), 0.7 + 0.4 * Math.abs(Math.sin(Math.atan2(z, x) * 20))), true);
+    for (let k = 0; k < 8; k++) g.in(M(0, -0.12, 0, 0, k * 45 + 22.5, 0).multiply(M(0, 0, 0.8)), () => g.beamTo([0, -0.2, -0.1], [0, 0.1, 0.22], 0.05, 0.05, 0.01, woodTint(rgb(0x5a3a2a), k), 1));
+    g.surf(K_PLAIN, 0.3, 0.9);
+    for (let k = 0; k < 16; k++) g.in(M(0, 0.02, 0, 0, k * 22.5, 0).multiply(M(0, 0, R2 - 0.03)), () => g.cyl(0.012, 0.012, 0.36, 5, P.brass, false, true));
+    g.in(M(0, 0.38, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(R2 - 0.03, 0.016, 4, nq(28)), P.brass));
+    for (let k = 0; k < 7; k++) { const a = k * 51 + 10; g.in(M(0, 0.03, 0, 0, a, 0).multiply(M(0, 0, 0.88)), () => (k % 3 === 2 ? g.in(M(0, 0, 0), () => { g.surf(K_PLAIN, 0.1, 0.1, 0.8); g.lathe([[0, 0], [0.08, 0.03], [0.1, 0.1], [0.06, 0.16], [0.025, 0.2], [0.025, 0.32]], nq(10), ELIX[k % 4]); }) : vessel(g, 0.55 + 0.2 * hash1(k, 3), ELIX[k % 4], { glow: 0.95 }))); }
+  });
+  // brass pipes winding up the tower from a boiler at its foot
+  g.in(M(-0.92, 0.3, 0.3), () => { g.surf(K_PLAIN, 0.4, 0.85); g.lathe([[0.22, 0], [0.24, 0.05], [0.24, 0.5], [0.2, 0.6], [0.08, 0.66], [0.05, 0.75]], nq(14), BRASS_C(4)); for (const y of [0.15, 0.45]) g.in(M(0, y, 0), () => g.lathe([[0.245, -0.02], [0.26, 0], [0.245, 0.02]], nq(14), mul(P.brass, 0.7))); g.in(M(0, 0.2, 0.22), () => { g.surf(K_PLAIN, 0.6, 0, 1.0); g.flat([[-0.07, -0.05, 0], [0.07, -0.05, 0], [0.07, 0.05, 0], [-0.07, 0.05, 0]], [1.0, 0.5, 0.15]); }); });
+  { const pts = []; for (let i = 0; i <= 18; i++) { const t = i / 18, a = 2.5 + t * TAU * 1.15, y = 1.0 + t * 2.6, r = lerp(0.95, 0.66, t); pts.push([Math.cos(a) * r - 0.04 * t, y, Math.sin(a) * r]); } pipe(g, [[-0.92, 1.05, 0.3], ...pts], 0.045, BRASS_C(7), { every: 3 }); }
+  pipe(g, [[-0.8, 0.9, 0.15], [-0.85, 1.4, -0.3], [-0.78, 2.0, -0.55]], 0.035, BRASS_C(8), { every: 1 });
+  fog.in(M(-0.92, 1.1, 0.3), () => smoke(fog, 0.07, 0.6, 3, [0.8, 0.8, 0.82], [0.92, 0.92, 0.95], 4, 0.15));
+  // the cap: a velvet-shingled cone, a little crooked, the sails on its face
+  g.in(fr, () => {
+    g.surf(K_ROOF, 0.8);
+    g.sheet(nq(24), nq(8), (u, v) => { const a = u * TAU, r = lerp(0.66, 0.02, v) * (1 + 0.04 * Math.sin(v * Math.PI)); return [Math.cos(a) * r + 0.12 * v * v, v * 1.05, Math.sin(a) * r]; }, (x, y, z) => mul(P.velvet, (0.72 + 0.3 * noise3(x * 9, y * 9, z * 9)) * (Math.abs(((y * 10) % 1 + 1) % 1 - 0.5) > 0.42 ? 0.7 : 1)), true, true);
+    g.surf(K_PLAIN, 0.4, 0.4); g.lathe([[0.66, -0.04], [0.7, 0], [0.66, 0.04]], nq(24), P.teal);
+    // the lightning rod: an iron spike wound with copper, a spark caught at its tip
+    g.in(M(0.12, 1.02, 0), () => { g.surf(K_PLAIN, 0.4, 0.85); g.cyl(0.02, 0.008, 1.1, 6, IRON, false, true); g.surf(K_PLAIN, 0.3, 0.9); const c = []; for (let i = 0; i <= 30; i++) { const t = i / 30; c.push([Math.cos(t * TAU * 5) * 0.04, 0.1 + t * 0.45, Math.sin(t * TAU * 5) * 0.04]); } g.tube(c, 0.01, 4, COPPER, false); for (const y of [0.15, 0.6]) g.in(M(0, y, 0, 90, 0, 0), () => g.add(new THREE.TorusGeometry(0.06, 0.012, 4, 10), P.brass)); g.in(M(0, 1.1, 0), () => crystal(g, 0.05, 0.18, 3, { deep: rgb(0x4a6aff), bright: rgb(0xe0f0ff), glow: 1.4, m: 4 })); });
+    g.in(M(0.12, 2.12, 0), () => { fog.in(new THREE.Matrix4().copy(fr).multiply(M(0.12, 2.12, 0)), () => { fog.surf(K_PLAIN, 1, 0, 1.4); fog.add(new THREE.IcosahedronGeometry(0.12, 1), [0.6, 0.75, 1.0]); }); });
+    // the sails: four lattice arms with velvet cloth, on a brass hub turned to the front
+    g.in(M(0, 0.42, 0.64, -8, 0, 0), () => {
+      g.surf(K_PLAIN, 0.35, 0.9); g.in(M(0, 0, -0.2, 90, 0, 0), () => g.cyl(0.07, 0.09, 0.3, nq(10), P.brass, false, true)); g.in(M(0, 0, 0.1), () => g.stud(0.1, P.brass, 10, 0.8));
+      for (let k = 0; k < 4; k++) g.in(M(0, 0, 0.05, 0, 0, k * 90 + 20), () => {
+        g.surf(K_WOOD, 0.85); g.in(M(0, 0.85, 0), () => g.cbox(0.05, 1.6, 0.04, 0.008, woodTint(rgb(0x5a3a2a), k)));
+        for (let i = 0; i < 6; i++) g.in(M(0.12, 0.42 + i * 0.22, -0.01), () => g.cbox(0.26, 0.025, 0.02, 0.004, woodTint(rgb(0x6a4a2c), k + i)));
+        g.in(M(0.25, 0.97, -0.01), () => g.cbox(0.025, 1.15, 0.02, 0.004, woodTint(rgb(0x6a4a2c), k + 9)));
+        g.surf(K_CLOTH, 0.9); g.sheet(3, nq(6), (u, v) => [0.03 + u * 0.21, 0.42 + v * 1.1, -0.02 - 0.03 * Math.sin(u * Math.PI)], (x, y, z, nx, ny, nz, u, v) => mul(v > 0.85 ? P.brass : P.velvet, 0.8 + 0.2 * noise3(x * 9, y * 9, k)));
+      });
+    });
+  });
+  // a lean-to workshop on the west side with its own stovepipe
+  g.in(M(-0.85, 0.0, -0.75, 0, 40, 0), () => { shack(g, 0.7, 0.55, 0.62, [rgb(0x5a3a2a), rgb(0x4a3020), rgb(0x6a4a30)], 1120, { lit: ELIX[1], door: false }); pipe(g, [[0.15, 0.7, -0.1], [0.15, 1.3, -0.1]], 0.04, BRASS_C(2), { every: 1 }); });
+}
+
+// =====================================================================================================
+// Khanate: dark felt, lacquered red, gold, horse-skulls and timber
+// =====================================================================================================
+const KH_WOOD = sw(0x5a4632, 0x4a3a2a, 0x6a523a, 0x3e3226);
+/** a coarse horse skull for building with: about 0.36 long, muzzle toward +Z */
+function horseSkullLo(g, s = 1) {
+  const geo = geoOnce('horseSkullLo', () => {
+    const c = 0xd8ccaa, d = 0x1a1612, Pp = [];
+    Pp.push(S.ellipsoid(0.085, 0.08, 0.11).at(0, 0.11, -0.12).color(c));
+    Pp.push(S.capsule([0, 0.1, -0.06], [0, 0.07, 0.26], 0.07, 0.045).color(c).blend(0.04));
+    Pp.push(...S.mirrorX([S.ellipsoid(0.04, 0.035, 0.04).at(0.075, 0.125, -0.05).color(d).cut(0.008)]));
+    Pp.push(...S.mirrorX([S.ellipsoid(0.02, 0.015, 0.05).at(0.03, 0.11, 0.2).color(d).cut(0.006)]));
+    return buildPartGeometry({ prims: Pp }, { res: 21 * qual(), ao: 0.8 });
+  });
+  const k = g.kind; g.surf(K_PLAIN, 0.75); g.in(M(0, 0, 0, 0, 0, 0, s), () => g.add(geo, boneCol(5, P.bone))); g.kind = k;
+}
+const snowy = (base, seed = 0) => (x, y, z, nx, ny) => mix(typeof base === 'function' ? base(x, y, z, nx, ny) : base, SNOW, smooth(0.75, 0.95, ny ?? 0) * smooth(0.5, 0.72, noise3(x * 2.5 + seed, y * 2.5, z * 2.5)));
+function skullTower(g) {
+  g.moss = 0.2;
+  pad(g, 2, 2, 0.03, snowGround(rgb(0x6a6048), 7, 0.5), 1201, { sq: 4 });
+  const TOP = 4.1, b0 = 0.76, b1 = 0.6, at = (y) => lerp(b0, b1, y / TOP);
+  g.surf(K_STONE, 0.9); g.in(M(0, 0.1, 0), () => g.cbox(1.86, 0.24, 1.86, 0.03, stoneTint(rgb(0x6a6a66), 3, 4)));
+  // corner posts leaning in, crib logs between them, bands of horse skulls stacked muzzle-out
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) logTo(g, [x * b0, 0.1, z * b0], [x * b1, TOP + 0.35, z * b1], 0.09, 0.075, x + z * 3, { seg: 8, vseg: 8, bark: KH_WOOD[0] });
+  const bands = [[0.3, 0.98], [1.5, 2.18], [2.7, 3.38]];
+  for (let s = 0; s < 4; s++) g.in(M(0, 0, 0, 0, s * 90, 0), () => {
+    // timber courses where there are no skulls
+    for (let y = 0.24; y < TOP; y += 0.15) {
+      if (bands.some(([a, b]) => y > a - 0.05 && y < b + 0.02)) continue;
+      const hw = at(y);
+      logTo(g, [-hw - 0.05, y, hw], [hw + 0.05, y, hw], 0.065, 0.06, s * 31 + Math.round(y * 20), { seg: 5, vseg: 3, bark: KH_WOOD[Math.round(y * 7) % 4], capB: true });
+    }
+    for (const [a, b] of bands) {
+      g.surf(K_PLAIN, 1); g.flat([[-at(a) + 0.05, a, at(a) - 0.06], [at(a) - 0.05, a, at(a) - 0.06], [at(b) - 0.05, b, at(b) - 0.06], [-at(b) + 0.05, b, at(b) - 0.06]], [0.05, 0.045, 0.04]);
+      for (let r = 0; r < 3; r++) { const y = a + 0.02 + r * 0.22, hw = at(y), n = 2; for (let i = 0; i < n; i++) { const x = (i - 0.5) * hw * 0.95 + (r % 2 ? 0.12 : -0.12); g.in(M(x, y, hw - 0.06, -6 + 10 * hash1(i, r, s), ((i + r) % 2 ? 80 : -80) + (hash1(i, r) - 0.5) * 20, (hash1(r, i) - 0.5) * 10), () => horseSkullLo(g, 1.15)); } }
+      logTo(g, [-at(b) - 0.05, b + 0.06, at(b)], [at(b) + 0.05, b + 0.06, at(b)], 0.07, 0.065, s * 7 + a * 10, { seg: 5, vseg: 3, bark: KH_WOOD[2], capB: true });
+    }
+  });
+  // the lookout: a plank floor on outriggers, a red-lacquered rail, a felt roof on four posts
+  const LY = TOP + 0.05, LW = 0.88;
+  g.surf(K_WOOD, 0.85);
+  for (const e of [-1, 1]) { g.in(M(e * 0.5, LY - 0.08, 0), () => g.cbox(0.1, 0.1, 2 * LW + 0.1, 0.01, woodTint(KH_WOOD[1], e))); g.in(M(0, LY - 0.18, e * 0.5), () => g.cbox(2 * LW + 0.1, 0.1, 0.1, 0.01, woodTint(KH_WOOD[1], e + 4))); }
+  deck(g, -LW, LW, -LW, LW, LY, KH_WOOD, 1210, { pw: 0.15, rag: 0.04 });
+  g.surf(K_WOOD, 0.5);
+  for (let s = 0; s < 4; s++) g.in(M(0, 0, 0, 0, s * 90, 0), () => {
+    for (let i = 0; i < 6; i++) g.in(M(-LW + 0.05 + i * ((2 * LW - 0.1) / 5), LY + 0.22, LW - 0.03), () => g.cbox(0.04, 0.44, 0.04, 0.008, woodTint(P.khRed, i)));
+    g.in(M(0, LY + 0.46, LW - 0.03), () => g.cbox(2 * LW, 0.06, 0.07, 0.01, woodTint(P.lacquer, s)));
+    g.surf(K_PLAIN, 0.3, 0.9); for (let i = 0; i < 6; i++) g.in(M(-LW + 0.15 + i * 0.3, LY + 0.46, LW + 0.006), () => g.stud(0.016, P.khGold, 5)); g.surf(K_WOOD, 0.5);
+    // a red banner with a gold border hanging off two of the sides
+    if (s % 2 === 0) g.in(M(0, LY - 0.05, LW + 0.06), () => hanging(g, 0.5, 1.1, P.khRed, P.khGold, { bar: P.khGold, point: true, device: P.khGold }));
+  });
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.in(M(x * (LW - 0.06), LY, z * (LW - 0.06)), () => { g.surf(K_WOOD, 0.5); g.cyl(0.04, 0.035, 0.9, 6, woodTint(P.khRed, x + z), false, true); });
+  g.in(M(0, LY + 0.88, 0), () => {
+    g.surf(K_CLOTH, 0.95);
+    g.sheet(nq(24), nq(6), (u, v) => { const a = u * TAU + Math.PI / 4, sq = Math.pow(Math.pow(Math.abs(Math.cos(a)), 3) + Math.pow(Math.abs(Math.sin(a)), 3), -1 / 3), r = lerp(1.18, 0.05, v) * sq * (1 - 0.06 * Math.sin(v * Math.PI)); return [Math.cos(a) * r, v * 0.78 - 0.08 * (1 - v) * Math.abs(Math.sin(a * 2)), Math.sin(a) * r]; }, snowy((x, y, z) => mul(P.khDark, 0.85 + 0.3 * noise3(x * 6, y * 6, z * 6)), 3), true, true);
+    g.surf(K_CLOTH, 0.9); g.sheet(nq(24), 1, (u, v) => { const a = u * TAU + Math.PI / 4, sq = Math.pow(Math.pow(Math.abs(Math.cos(a)), 3) + Math.pow(Math.abs(Math.sin(a)), 3), -1 / 3), r = 1.2 * sq; return [Math.cos(a) * r, -0.08 * Math.abs(Math.sin(a * 2)) - v * 0.12, Math.sin(a) * r]; }, (x, y, z) => (Math.abs(tri1(Math.atan2(z, x) * 6) - 0.5) < 0.15 ? P.khGold : P.khRed), true, true);
+    g.in(M(0, 0.76, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); g.lathe([[0.08, 0], [0.1, 0.05], [0.05, 0.12], [0.07, 0.2], [0, 0.28]], nq(10), P.khGold); g.in(M(0, 0.2, 0), () => tug(g, 0.55, rgb(0x1a1612), P.khGold, 3)); });
+  });
+  // a ladder up the back, horse-hair standards at the foot, a brazier on the lookout
+  ladder(g, [0.3, 0, -1.08], [0.3, LY + 0.05, -0.86], 0.34, 1220, KH_WOOD[2]);
+  for (const e of [-1, 1]) g.in(M(e * 0.9, 0, 0.92), () => tug(g, 2.2, e > 0 ? rgb(0x1a1612) : rgb(0xd8d0c0), P.khGold, 1230 + e));
+  g.in(M(-0.45, LY, -0.45), () => fireBowl(g, 0.35, FIRE_HOT, IRON, 3, 0.8));
+}
+function winterCamp(g) {
+  g.moss = 0.2;
+  pad(g, 4, 4, 0.03, snowGround(rgb(0x6a6048), 11, 0.6), 1301, { sq: 4 });
+  const SK = 1.82;
+  // the stockade: sharpened logs, lashed rails, a gap for the gate
+  for (let s = 0; s < 4; s++) g.in(M(0, 0, 0, 0, s * 90, 0), () => {
+    const n = 22;
+    for (let i = 0; i <= n; i++) { const x = -SK + (2 * SK * i) / n; if (s === 0 && Math.abs(x) < 0.55) continue; g.in(M(x, 0, SK, (hash1(i, s) - 0.5) * 5, 0, (hash1(s, i) - 0.5) * 5), () => stake(g, 0.075, 0.95 + 0.15 * hash1(i, s + 9), s * 40 + i, KH_WOOD[i % 4], rgb(0xb89a70))); }
+    g.surf(K_WOOD, 0.9);
+    for (const y of [0.3, 0.7]) { if (s === 0) { for (const e of [-1, 1]) g.in(M(e * (SK + 0.55) / 2, y, SK - 0.08), () => g.beam(SK - 0.55, 0.06, 0.05, 0.01, woodTint(KH_WOOD[1], y * 9 + e), 3)); } else g.in(M(0, y, SK - 0.08), () => g.beam(2 * SK, 0.06, 0.05, 0.01, woodTint(KH_WOOD[1], y * 9 + s), 4)); }
+  });
+  // the gate: two tall posts, a lacquered lintel with gold studs and a felt-roofed cap, the doors swung open
+  g.in(M(0, 0, SK), () => {
+    for (const e of [-1, 1]) g.in(M(e * 0.58, 0, 0), () => { log(g, 0.1, 0.09, 1.75, 1310 + e, { bark: KH_WOOD[3] }); g.in(M(0, 1.75, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); g.lathe([[0.1, 0], [0.12, 0.04], [0.04, 0.14], [0, 0.22]], nq(8), P.khGold); }); });
+    g.surf(K_WOOD, 0.45);
+    g.in(M(0, 1.5, 0.02), () => g.beam(1.5, 0.16, 0.12, 0.02, woodTint(P.lacquer, 3), 6, (x) => [0.05 * Math.pow(Math.abs(x) / 0.75, 3), 0]));
+    g.in(M(0, 1.26, 0.02), () => g.beam(1.2, 0.08, 0.1, 0.01, woodTint(P.khRed, 4), 4));
+    g.surf(K_PLAIN, 0.3, 0.9); for (let i = 0; i < 7; i++) g.in(M(-0.54 + i * 0.18, 1.5, 0.085), () => g.stud(0.025, P.khGold, 6));
+    g.in(M(0, 1.38, 0.09), () => { g.surf(K_PLAIN, 0.4, 0.8); g.cbox(0.34, 0.16, 0.02, 0.01, P.khGold); g.surf(K_PLAIN, 0.5); g.in(M(0, 0, 0.012), () => g.cbox(0.26, 0.09, 0.01, 0.004, P.khDark)); });
+    g.surf(K_CLOTH, 0.9); g.in(M(0, 1.62, 0), () => g.sheet(nq(10), 3, (u, v) => [(u - 0.5) * 1.7, 0.18 * Math.sin(v * Math.PI) + 0.04 * Math.pow(Math.abs(u - 0.5) * 2, 3), (v - 0.5) * 0.4], snowy(mul(P.khDark, 0.9), 5)));
+    for (const e of [-1, 1]) g.in(M(e * 0.52, 0, 0.02, 0, e * -65, 0), () => g.in(M(-e * 0.25, 0, 0), () => { g.surf(K_WOOD, 0.5); for (let i = 0; i < 4; i++) g.in(M(-0.19 + i * 0.125, 0.55, 0), () => g.cbox(0.12, 1.1, 0.05, 0.01, woodTint(P.khRed, i + e))); g.surf(K_PLAIN, 0.3, 0.9); for (const y of [0.25, 0.85]) g.in(M(0, y, 0.03), () => g.cbox(0.5, 0.05, 0.01, 0.004, P.khGold)); }));
+    for (const e of [-1, 1]) g.in(M(e * 0.82, 0, 0.25), () => tug(g, 2.0, e > 0 ? rgb(0x1a1612) : rgb(0xd8d0c0), P.khGold, 1320 + e));
+  });
+  // the hall: a log-walled long room under a vaulted felt roof, lacquered beam ends and a gilt crest
+  const HX = 1.05, HZ = 0.72, HC = -0.35, WH = 0.95;
+  g.in(M(0, 0, HC), () => {
+    for (let s = 0; s < 4; s++) { const W = s % 2 ? HZ : HX, D = s % 2 ? HX : HZ; g.in(M(0, 0, 0, 0, s * 90, 0), () => { for (let y = 0.07, i = 0; y < WH; y += 0.13, i++) { if (s === 0 && Math.abs(0) < 1 && y < 0.78 && false) continue; logTo(g, [-W - 0.12 * (i % 2), y, D], [W + 0.12 * ((i + 1) % 2), y, D], 0.068, 0.062, s * 50 + i, { seg: 6, vseg: 3, bark: KH_WOOD[(i + s) % 4], capB: true }); } }); }
+    // the door: lacquered red, gold bosses, a felt curtain looped up
+    g.in(M(0, 0, HZ + 0.07), () => { g.surf(K_WOOD, 0.45); for (const e of [-1, 1]) g.in(M(e * 0.17, 0.4, 0), () => { g.cbox(0.32, 0.8, 0.05, 0.01, woodTint(P.khRed, e)); g.surf(K_PLAIN, 0.3, 0.9); for (const y of [-0.22, 0.0, 0.22]) g.in(M(0, y, 0.03), () => g.stud(0.03, P.khGold, 6)); g.surf(K_WOOD, 0.45); }); for (const e of [-1, 1]) g.in(M(e * 0.38, 0.45, 0.01), () => g.cbox(0.08, 0.9, 0.08, 0.01, woodTint(P.lacquer, e))); g.in(M(0, 0.92, 0.01), () => g.cbox(0.9, 0.1, 0.1, 0.01, woodTint(P.lacquer, 5))); });
+    // the roof: a barrel of dark felt, ribbed with lashed ropes, snow lying along its back
+    const RR = HZ + 0.18;
+    g.surf(K_CLOTH, 0.95);
+    g.sheet(nq(20), nq(14), (u, v) => { const x = (u - 0.5) * 2 * (HX + 0.22), a = v * Math.PI, sag = 0.03 * Math.abs(Math.sin(u * Math.PI * 6)); return [x, WH - 0.05 + Math.sin(a) * (0.72 - sag), Math.cos(a) * RR]; }, snowy((x, y, z) => mul(P.khDark, 0.85 + 0.3 * noise3(x * 5, y * 5, z * 5)), 9), false);
+    for (const e of [-1, 1]) g.in(M(e * (HX + 0.22), 0, 0), () => { g.surf(K_CLOTH, 0.95); g.sheet(nq(14), 1, (u, v) => { const a = u * Math.PI; return [0, WH - 0.05 + Math.sin(a) * 0.72 * v, Math.cos(a) * RR * v]; }, (x, y, z) => mul(P.khDark, 0.8)); });
+    for (let i = 0; i < 6; i++) { const x = -HX + (i * 2 * HX) / 5, pts = []; for (let k = 0; k <= 10; k++) { const a = (k / 10) * Math.PI; pts.push([x, WH - 0.05 + Math.sin(a) * 0.74, Math.cos(a) * (RR + 0.02)]); } rope(g, pts, 0.016, rgb(0x8a6a40), 5); }
+    g.surf(K_WOOD, 0.45); g.in(M(0, WH + 0.72, 0), () => g.beam(2 * HX + 0.8, 0.1, 0.1, 0.02, woodTint(P.lacquer, 9), 6, (x) => [0.12 * Math.pow(Math.abs(x) / (HX + 0.4), 3), 0]));
+    for (const e of [-1, 1]) g.in(M(e * (HX + 0.42), WH + 0.82, 0, 0, e > 0 ? 0 : 180, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); horn(g, [[0, 0, 0], [0.06, 0.08, 0], [0.04, 0.2, 0], [-0.04, 0.26, 0]], 0.04, P.khGold, mul(P.khGold, 0.7), { rings: 8, rough: 0.3, metal: 0.9 }); });
+    g.in(M(0, WH + 0.82, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); g.lathe([[0.07, 0], [0.09, 0.05], [0.04, 0.14], [0.06, 0.2], [0, 0.3]], nq(10), P.khGold); });
+    for (const z of [-1, 1]) for (const x of [-1, 1]) g.in(M(x * (HX + 0.06), WH + 0.04, z * (HZ + 0.06)), () => { g.surf(K_WOOD, 0.45); g.cbox(0.12, 0.12, 0.12, 0.02, woodTint(P.khRed, x + z * 2)); });
+  });
+  // a white-felt yurt in the back corner, a fire ring, a weapon rack, a hitching rail with hay
+  g.in(M(1.15, 0, -1.2), () => yurt(g, 0.42, 0.42, 0.95, 1330, { wall: rgb(0xd8d0c0), roof: rgb(0xc8c0b0), red: P.khRed, gold: P.khGold }));
+  g.in(M(-0.9, 0, 0.95), () => { for (let k = 0; k < 8; k++) { const a = (k / 8) * TAU; g.in(M(Math.cos(a) * 0.22, 0.03, Math.sin(a) * 0.22), () => boulder(g, 0.06, 0.05, 0.06, 1340 + k, rgb(0x6a6a66), 10)); } g.surf(K_WOOD, 0.9); for (let k = 0; k < 3; k++) g.in(M(0, 0.05, 0, 0, k * 60, 0), () => g.cbox(0.34, 0.04, 0.04, 0.006, charCol(k))); g.in(M(0, 0.06, 0), () => fire(g, 0.32, FIRE_HOT, 3, 0.9)); });
+  g.in(M(0.95, 0, 0.95, 0, -30, 0), () => { for (const e of [-1, 1]) g.in(M(e * 0.3, 0, 0), () => stake(g, 0.035, 0.75, e + 7, KH_WOOD[2])); g.surf(K_WOOD, 0.8); g.in(M(0, 0.62, 0), () => g.beam(0.7, 0.05, 0.05, 0.01, woodTint(KH_WOOD[1], 3), 2)); for (let i = 0; i < 4; i++) g.in(M(-0.22 + i * 0.15, 0.32, 0.04, 0, 0, (i - 1.5) * 4), () => { g.surf(K_WOOD, 0.8); g.cyl(0.012, 0.012, 1.05, 5, woodTint(rgb(0x6a4a30), i), false, true); g.surf(K_PLAIN, 0.35, 0.85); g.in(M(0, 1.05, 0), () => g.cyl(0.02, 0.002, 0.14, 4, [0.5, 0.5, 0.52], false, true)); }); });
+  g.in(M(-1.2, 0, -1.25), () => { g.surf(K_PLAIN, 0.95); g.add(new THREE.SphereGeometry(0.28, 10, 8).scale(1, 0.75, 1).translate(0, 0.12, 0), (x, y, z) => mix(mul(rgb(0xc8a860), 0.7 + 0.4 * noise3(x * 20, y * 20, z * 20)), SNOW, smooth(0.15, 0.3, y) * 0.8)); });
+  for (const [x, z, sd] of [[1.3, 0.3, 1], [-1.35, -0.3, 2], [0.2, -1.45, 3]]) g.in(M(x, 0, z, 0, sd * 70, 0), () => drift(g, 0.35, 0.1, 0.22, sd));
+}
+
+// =====================================================================================================
+// Emerald: white limestone, gold suns, jade and feathered serpents
+// =====================================================================================================
+const LIME = rgb(0xd0c6a8), LIME_PAL = sw(0xd0c6a8, 0xc4ba9a, 0xdad0b4, 0xbcb294, 0xd6caa6, 0xc8c0a4), FEATHER = sw(0x2a8a5a, 0x3aa86a, 0xd8b03a, 0x2a6a8a);
+const limeSt = (seed, o) => stoneStyle(0xd0c6a8, { seed, pal: LIME_PAL, chip: 0.25, course: 0.15, len: [0.3, 0.55], cell: 0.26 / qual(), ...o });
+const limeTint = (seed = 0, k = 1) => (x, y, z) => mix(mul(LIME, k * (0.82 + 0.25 * noise3(x * 4 + seed, y * 4, z * 4))), [0.3, 0.38, 0.2], smooth(0.62, 0.82, noise3(x * 2.4 + seed, y * 2.4 + 5, z * 2.4)) * 0.45);
+/** a coursed drum of stone, radius R from y0 to y1 */
+function drumWall(g, R, y0, y1, st, seed) { g.surf(K_STONE, 0.9); g.in(M(0, y0, 0, 0, seed * 23, 0), () => g.bend(R - st.r, () => g.ashlar((R - st.r) * TAU, y1 - y0, { ...st, seed, wrap: true }))); }
+/** a feathered serpent body: a tube through pts with a ruff of feathers along its back */
+function featherSerpent(g, pts, r, col, seed = 0) {
+  g.surf(K_STONE, 0.6);
+  g.tube(pts, r, 6, (x, y, z, nx, ny, nz, t) => mul(col, (0.8 + 0.2 * noise3(x * 9, y * 9, z * 9)) * (Math.abs(Math.sin(t * 80)) > 0.3 ? 1 : 0.72)), true);
+  g.surf(K_PLAIN, 0.5, 0.2);
+  for (let i = 1; i < pts.length - 1; i += 1) { const a = pts[i - 1], b = pts[i + 1], f = along(a, b); g.in(new THREE.Matrix4().copy(f.m).setPosition(pts[i][0], pts[i][1], pts[i][2]), () => g.in(M(0, r * 0.7, 0, 0, 0, -25), () => prism(g, [[-r * 0.8, 0], [r * 0.8, 0], [r * 0.4, r * 2.4], [0, r * 2.9], [-r * 0.4, r * 2.4]], r * 0.4, FEATHER[(i + seed) % 4], [0, r]))); }
+}
+function sunTemple(g) {
+  g.moss = 0.5;
+  pad(g, 4, 4, 0.03, (x, y, z) => mix(mul(rgb(0x7a6a48), 0.7 + 0.4 * fbm3(x * 3, y * 3, z * 3, 2)), [0.3, 0.42, 0.18], smooth(0.4, 0.7, noise3(x * 1.3, 2, z * 1.3)) * 0.6), 1401, { sq: 2 });
+  // the stepped round platform
+  const steps = [[1.92, 0, 0.3], [1.62, 0.3, 0.6], [1.34, 0.6, 0.9]];
+  steps.forEach(([R, y0, y1], k) => { drumWall(g, R, y0, y1, limeSt(1410 + k), 1411 + k); g.surf(K_STONE, 0.85); g.in(M(0, y1, 0), () => g.lathe([[R + 0.03, -0.04], [R + 0.03, 0.0], [0, 0.0]], nq(48), limeTint(k, 0.95))); g.surf(K_PLAIN, 0.5, 0.2); g.in(M(0, y1 - 0.09, 0), () => g.lathe([[R + 0.005, -0.03], [R + 0.02, -0.02], [R + 0.02, 0.02], [R + 0.005, 0.03]], nq(48), P.jade)); });
+  // the front stair, its cheeks ending in feathered serpent heads
+  g.surf(K_STONE, 0.88);
+  for (let q = 0; q < 6; q++) { const h = (q + 1) * 0.15; g.in(M(0, h / 2 - 0.02, 1.98 - q * 0.13), () => g.cbox(0.7, h + 0.04, 0.14, 0.01, limeTint(q, 0.97))); }
+  for (const e of [-1, 1]) {
+    g.in(M(e * 0.43, 0, 1.6), () => g.in(M(0, 0, 0, 0, 90, 0), () => prism(g, [[0.42, 0], [-0.42, 0], [-0.42, 0.98], [-0.32, 0.98], [0.42, 0.2]], 0.16, limeTint(e, 0.9))));
+    g.in(M(e * 0.43, 0.2, 2.02), () => { g.in(M(0, 0, 0, -10, 0, 0), () => serpentHead(g, 0.4, mix(P.jade, LIME, 0.3), [0.95, 0.75, 0.2])); g.surf(K_PLAIN, 0.5, 0.2); for (let k = 0; k < 5; k++) g.in(M(0, 0.12, -0.08, 0, 0, (k - 2) * 28), () => prism(g, [[-0.03, 0], [0.03, 0], [0.02, 0.2], [0, 0.24], [-0.02, 0.2]], 0.02, FEATHER[k % 4], [0, 0.08])); });
+  }
+  // the sanctuary drum: limestone ashlar, jade inlay bands, a feathered serpent coiling round it
+  const R = 1.08, y0 = 0.9, y1 = 3.05;
+  drumWall(g, R, y0, y1, limeSt(1420, { course: 0.143 }), 1421);
+  g.surf(K_PLAIN, 0.4, 0.2);
+  for (const y of [y0 + 0.62, y1 - 0.12]) g.in(M(0, y, 0), () => g.lathe([[R + 0.005, -0.05], [R + 0.03, -0.035], [R + 0.03, 0.035], [R + 0.005, 0.05]], nq(48), (x, yy, z) => (Math.abs(Math.sin(Math.atan2(z, x) * 18)) > 0.85 ? P.eGold : P.jade)));
+  g.surf(K_PLAIN, 0.35, 0.85); for (let k = 0; k < 24; k++) g.in(M(0, y0 + 0.62, 0, 0, k * 15 + 7.5, 0).multiply(M(0, 0, R + 0.03)), () => g.stud(0.02, P.eGold, 6));
+  { const pts = []; for (let i = 0; i <= 64; i++) { const t = i / 64, a = Math.PI / 2 + 0.35 + t * TAU * 0.92, y = y0 + 1.0 + 0.16 * Math.sin(t * TAU * 5) + t * 0.5; pts.push([Math.cos(a) * (R + 0.05), y, Math.sin(a) * (R + 0.05)]); } featherSerpent(g, pts, 0.05, mix(P.jade, LIME, 0.25), 2); const e = pts[pts.length - 1], d = pts[pts.length - 2]; g.in(M(e[0], e[1], e[2], 0, Math.atan2(e[0] - d[0], e[2] - d[2]) / DEG, 0), () => serpentHead(g, 0.3, mix(P.jade, LIME, 0.25), [0.95, 0.75, 0.2])); }
+  // the door: a stepped corbel arch framed in gold, a jade mask over it
+  g.in(M(0, y0, R - 0.03), () => {
+    g.surf(K_PLAIN, 1); g.in(M(0, 0, 0.02), () => g.poly([[-0.28, 0, 0], [0.28, 0, 0], [0.28, 0.62, 0], [0.18, 0.75, 0], [0.1, 0.88, 0], [-0.1, 0.88, 0], [-0.18, 0.75, 0], [-0.28, 0.62, 0]], 0, 0, 1, [0.03, 0.025, 0.02]));
+    g.surf(K_PLAIN, 0.3, 0.9); g.tube([[-0.31, 0, 0.04], [-0.31, 0.64, 0.04], [-0.2, 0.78, 0.04], [-0.12, 0.91, 0.04], [0.12, 0.91, 0.04], [0.2, 0.78, 0.04], [0.31, 0.64, 0.04], [0.31, 0, 0.04]], 0.03, 5, P.eGold, true);
+    g.in(M(0, 1.08, 0.04), () => { g.surf(K_PLAIN, 0.4, 0.3); g.cbox(0.4, 0.26, 0.06, 0.02, P.jade); g.surf(K_PLAIN, 0.3, 0.9); for (const e of [-1, 1]) g.in(M(e * 0.09, 0.03, 0.035), () => g.stud(0.035, P.eGold, 6)); g.in(M(0, -0.08, 0.035), () => g.cbox(0.16, 0.03, 0.01, 0.004, P.eGold)); });
+    for (const e of [-1, 1]) g.in(M(e * 0.62, 0, 0.12), () => fireBowl(g, 0.4, FIRE_HOT, P.eGold, e + 5, 0.8));
+  });
+  // the roof: tiers stepping in, gold-edged, a drum carrying the sun disc crown
+  const tiers = [[R + 0.12, 0.16], [0.88, 0.22], [0.66, 0.24], [0.45, 0.26]];
+  let y = y1;
+  tiers.forEach(([r, h], k) => { g.surf(K_STONE, 0.85); g.in(M(0, y, 0), () => g.cyl(r, r - 0.04, h, nq(40), limeTint(k + 30), false, true)); g.surf(K_PLAIN, 0.3, 0.9); g.in(M(0, y + h - 0.02, 0), () => g.lathe([[r - 0.04, -0.02], [r - 0.01, 0.0], [r - 0.04, 0.03]], nq(40), P.eGold)); if (k === 1) for (let q = 0; q < 16; q++) g.in(M(0, y + h * 0.5, 0, 0, q * 22.5, 0).multiply(M(0, 0, r - 0.02)), () => { g.surf(K_PLAIN, 0.4, 0.2); g.stud(0.035, P.jade, 6); }); y += h; });
+  g.in(M(0, y, 0), () => {
+    g.surf(K_STONE, 0.85); g.cyl(0.22, 0.2, 0.3, nq(16), limeTint(40), false, true);
+    for (const r of [0, 180]) g.in(M(0, 0.95, 0, 0, r, 0).multiply(M(0, 0, 0.04)), () => sunDisc(g, 3.0, P.eGold, { rays: 16, ray: mul(P.eGold, 1.1), glow: 0.08 }));
+    g.in(M(0, 0.95, 0.12), () => { g.surf(K_PLAIN, 0.3, 0.5); g.in(M(0, 0, 0, 90, 0, 0), () => g.cyl(0.18, 0.18, 0.03, nq(16), P.jade, true, true)); g.surf(K_PLAIN, 0.3, 0.9); g.in(M(0, 0, 0.035), () => g.stud(0.08, P.eGold, 10, 0.6)); });
+    g.in(M(0, 0.3, 0), () => { g.surf(K_PLAIN, 0.3, 0.9); g.cyl(0.06, 0.06, 0.3, 8, P.eGold, false, true); });
+  });
+  // jungle at the foot: a few broad-leaved plants and a flowering vine up the stair cheek
+  for (const [x, z, r, sd] of [[1.7, 1.0, 0.3, 1], [-1.75, 0.9, 0.28, 2], [1.3, -1.45, 0.32, 3], [-1.2, -1.55, 0.3, 4]]) g.in(M(x, 0.08, z), () => leafClump(g, r, 1440 + sd, sw(0x2f6a2a, 0x3a7a32, 0x4a8a3a), 4));
+  for (const a of [40, 140, 220, 320]) g.in(M(0, 0, 0, 0, a, 0).multiply(M(0, 0.9, 1.34)), () => vines(g, 0.4, 0.6, a, { leaf: sw(0x2f6a2a, 0x3a7a32), bloom: rgb(0xe84a6a), bloomP: 0.3 }));
+}
+function riverCitadel(g) {
+  g.moss = 1.1;
+  pad(g, 5, 5, 0.03, (x, y, z) => mix(mul(rgb(0x6a5a40), 0.7 + 0.4 * fbm3(x * 3, y * 3, z * 3, 2)), [0.28, 0.42, 0.18], smooth(0.35, 0.65, noise3(x * 1.3, 2, z * 1.3)) * 0.7), 1501, { sq: 4 });
+  // the river along the front: banks of stone, reeds, a causeway to the gate
+  water(g, -2.48, 2.48, 1.72, 2.48, 0.06, 4, [0.1, 0.32, 0.3], 0.12);
+  g.surf(K_STONE, 0.9);
+  for (const e of [-1, 1]) g.in(M(e * 1.45, 0.08, 1.66), () => g.cbox(2.0, 0.16, 0.12, 0.02, limeTint(e + 50, 0.9)));
+  g.in(M(0, 0.1, 2.08), () => g.cbox(0.82, 0.2, 0.92, 0.02, limeTint(51, 0.92)));
+  g.surf(K_STONE, 0.9); for (const e of [-1, 1]) g.in(M(e * 0.36, 0.24, 2.08), () => g.cbox(0.1, 0.12, 0.9, 0.01, limeTint(52 + e, 0.95)));
+  for (let i = 0; i < 12; i++) { const x = (hash1(i, 3) - 0.5) * 4.6, z = 1.85 + hash1(i, 5) * 0.55; if (Math.abs(x) < 0.55) continue; g.surf(K_LEAF, 0.8); for (let k = 0; k < 4; k++) g.tube([[x + k * 0.02, 0.0, z], [x + k * 0.02 + 0.03 * Math.sin(i + k), 0.3 + 0.1 * hash1(i, k), z + 0.02 * k]], [0.01, 0.003], 3, sw(0x5a7a3a, 0x6a8a3a)[k % 2], false); }
+  // three stepped tiers of limestone, each a hanging garden
+  const CZ = -0.3, T = [[2.25, 1.95, 0, 1.35], [1.62, 1.38, 1.35, 2.55], [0.95, 0.82, 2.55, 3.6]];
+  T.forEach(([hx, hz, y0, y1], k) => {
+    const st = limeSt(1510 + k, { course: 0.2, len: [0.36, 0.62] });
+    g.in(M(0, 0, CZ), () => {
+      stoneBox(g, hx, hz, y0, y1, st, 1511 + k * 5, { noFoot: k > 0, quoin: [0.4, 0.22], holes: k === 0 ? [[[hx - 0.36, 0, hx + 0.36, 0.9]], null, null, null] : null });
+      g.surf(K_STONE, 0.9);
+      for (let s = 0; s < 4; s++) { const W = s % 2 ? hz : hx, D = s % 2 ? hx : hz; g.in(M(0, 0, 0, 0, s * 90, 0).multiply(M(0, y1 - 0.08, D)), () => g.mould([[0, 0], [0.05, 0.02], [0.06, 0.08], [0, 0.1]], 2 * W, limeTint(s + k * 4), 1, 1)); }
+      g.flat([[-hx, y1 + 0.003, -hz], [-hx, y1 + 0.003, hz], [hx, y1 + 0.003, hz], [hx, y1 + 0.003, -hz]], mix(LIME, [0.3, 0.4, 0.2], 0.35));
+      // a parapet of stepped merlons round the lower two tiers
+      if (k < 2) for (let s = 0; s < 4; s++) { const W = s % 2 ? hz : hx, D = s % 2 ? hx : hz, n = Math.round((2 * W) / 0.42); g.in(M(0, 0, 0, 0, s * 90, 0), () => { for (let i = 0; i < n; i++) { const x = -W + (i + 0.5) * (2 * W / n); if (s === 0 && Math.abs(x) < 0.45) continue; g.in(M(x, y1, D - 0.06), () => prism(g, MERLON.step(0.3, 0.3), 0.1, limeTint(i + s, 0.95), [0, 0.1])); } }); }
+      // garden beds along the inner edge: shrubs, flowers, vines spilling over the wall below
+      if (k > 0) for (let s = 0; s < 4; s++) { const [phx, phz] = T[k - 1], W = s % 2 ? phz : phx, D = s % 2 ? hx : hz, pD = s % 2 ? phx : phz; g.in(M(0, 0, 0, 0, s * 90, 0), () => { const n = Math.round((2 * W) / 0.62); for (let i = 0; i < n; i++) { const x = -W + 0.25 + i * ((2 * W - 0.5) / Math.max(1, n - 1)); if (s === 0 && Math.abs(x) < 0.5) continue; g.in(M(x, y0 + 0.12, (D + pD) / 2 + 0.05), () => leafClump(g, 0.24, 1520 + k * 40 + s * 10 + i, sw(0x2f6a2a, 0x3a7a32, 0x4a8a3a), 3)); if (i % 2 === 0) g.in(M(x + 0.12, y0 + 0.02, pD - 0.02), () => vines(g, 0.3, 0.55 + 0.3 * hash1(i, s), k * 30 + s * 7 + i, { leaf: sw(0x2f6a2a, 0x3a7a32), bloom: [rgb(0xe84a6a), rgb(0xe8c83a), rgb(0xd84ad8)][(i + s) % 3], bloomP: 0.35 })); } }); }
+    });
+  });
+  // vines down the outer wall too
+  for (let s = 0; s < 4; s++) for (let i = 0; i < 3; i++) { const W = s % 2 ? T[0][1] : T[0][0], D = s % 2 ? T[0][0] : T[0][1], x = -W + 0.4 + i * (2 * W - 0.8) / 2; if (s === 0 && Math.abs(x) < 0.6) continue; g.in(M(0, 0, CZ).multiply(M(0, 0, 0, 0, s * 90, 0)).multiply(M(x, T[0][3] - 0.02, D + 0.02)), () => vines(g, 0.4, 0.7, s * 9 + i, { leaf: sw(0x2f6a2a, 0x3a7a32), bloom: rgb(0xe84a6a), bloomP: 0.25 })); }
+  // the gate in the river wall: a corbelled arch, jade-and-gold lintel, timber doors
+  g.in(M(0, 0, CZ + T[0][1] + 0.02), () => {
+    g.surf(K_PLAIN, 1); g.in(M(0, 0, -0.04), () => g.poly([[-0.36, 0, 0], [0.36, 0, 0], [0.36, 0.7, 0], [0.22, 0.85, 0], [0.12, 0.98, 0], [-0.12, 0.98, 0], [-0.22, 0.85, 0], [-0.36, 0.7, 0]], 0, 0, 1, [0.03, 0.025, 0.02]));
+    for (const e of [-1, 1]) g.in(M(e * 0.17, 0, -0.02), () => roundDoor(g, 0.32, 0.7, rgb(0x5a4028), P.eGold, 1530 + e, { bands: [0.25, 0.7], ringX: -e * 0.25 }));
+    g.surf(K_STONE, 0.85); g.in(M(0, 1.06, 0.03), () => g.cbox(1.0, 0.16, 0.1, 0.02, limeTint(60)));
+    g.surf(K_PLAIN, 0.4, 0.3); g.in(M(0, 1.06, 0.085), () => g.cbox(0.8, 0.08, 0.02, 0.006, (x) => (Math.abs(tri1(x * 5) - 0.5) < 0.15 ? P.eGold : P.jade)));
+    for (const e of [-1, 1]) g.in(M(e * 0.5, 1.15, 0.05), () => { g.in(M(0, 0, 0, 0, e * 90, 0), () => serpentHead(g, 0.34, mix(P.jade, LIME, 0.3), [0.95, 0.75, 0.2])); });
+  });
+  // the stair up the front of the upper tiers, and the shrine on top with its roof comb
+  g.surf(K_STONE, 0.88);
+  for (let k = 1; k < 3; k++) { const [hx, hz, y0, y1] = T[k], pz = T[k - 1][1]; const n = 5; for (let q = 0; q < n; q++) { const h = ((q + 1) * (y1 - y0)) / n, z = CZ + hz + (pz - hz) * (1 - (q + 0.5) / n); g.in(M(0, y0 + h / 2 - 0.02, z), () => g.cbox(0.7, h + 0.04, (pz - hz) / n + 0.01, 0.01, limeTint(q + k * 6, 0.97))); } }
+  g.in(M(0, T[2][3], CZ), () => {
+    stoneBox(g, 0.62, 0.5, 0, 0.95, limeSt(1540), 1541, { noFoot: true, holes: [[[0.42, 0, 0.82, 0.6]], null, null, null] });
+    g.in(M(0, 0, 0.51), () => { g.surf(K_PLAIN, 1); g.flat([[-0.2, 0, 0], [0.2, 0, 0], [0.2, 0.6, 0], [-0.2, 0.6, 0]], [0.03, 0.025, 0.02]); });
+    g.surf(K_STONE, 0.85); g.in(M(0, 0.95, 0), () => g.cbox(1.36, 0.12, 1.12, 0.02, limeTint(61)));
+    g.surf(K_PLAIN, 0.4, 0.3); g.in(M(0, 0.85, 0.505), () => g.cbox(1.2, 0.1, 0.02, 0.004, (x) => (Math.abs(tri1(x * 6) - 0.5) < 0.15 ? P.eGold : P.jade)));
+    // the comb: a pierced crest of stone, gilded suns set in it
+    g.in(M(0, 1.01, -0.05), () => { g.surf(K_STONE, 0.85); prism(g, [[-0.55, 0], [0.55, 0], [0.42, 0.7], [0.28, 0.75], [0.25, 1.05], [0.0, 1.2], [-0.25, 1.05], [-0.28, 0.75], [-0.42, 0.7]], 0.14, limeTint(62), [0, 0.4]); g.surf(K_PLAIN, 1); for (const [x, y] of [[-0.25, 0.3], [0.25, 0.3], [0, 0.62]]) g.in(M(x, y, 0.072), () => g.poly([[-0.07, -0.1, 0], [0.07, -0.1, 0], [0.07, 0.1, 0], [-0.07, 0.1, 0]], 0, 0, 1, [0.08, 0.1, 0.06])); g.in(M(0, 0.95, 0.075), () => sunDisc(g, 0.9, P.eGold, { rays: 12, glow: 0.05 })); for (const e of [-1, 1]) g.in(M(e * 0.38, 0.62, 0.075), () => { g.surf(K_PLAIN, 0.4, 0.3); g.stud(0.05, P.jade, 8); }); });
+  });
+  // flowering trees on the corners of the middle tier
+  for (const [x, z] of [[-1, -1], [1, -1]]) g.in(M(x * 1.35, T[1][3], CZ + z * 1.1), () => { g.surf(K_WOOD, 0.9); limb(g, [[0, 0, 0], [0.05, 0.4, 0], [0, 0.7, 0.05]], [0.06, 0.05, 0.04], { nu: 6, nv: 6, col: rgb(0x5a4a34) }); g.in(M(0, 0.85, 0), () => leafClump(g, 0.42, 1550 + x, sw(0x2f6a2a, 0x3a7a32, 0xe84a6a), 5)); });
+}
 function nestTree(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
 function spiritTotem(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
 function palace(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
