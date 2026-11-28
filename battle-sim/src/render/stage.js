@@ -123,8 +123,20 @@ export class Stage {
     if (kind === 'arrow' || kind === 'bolt' || kind === 'ranged' || kind === 'harpoon') {
       obj = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.5, 3), new THREE.MeshBasicMaterial({ color: 0x3a2a1a }));
       obj.geometry.rotateX(Math.PI / 2);
-    } else if (kind === 'rock' || kind === 'cannon' || kind === 'musket' || kind === 'shell') {
-      obj = new THREE.Mesh(new THREE.SphereGeometry(kind === 'musket' ? 0.06 : kind === 'shell' ? 0.2 : 0.14, 6, 4), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+    } else if (kind === 'rock' || kind === 'cannon' || kind === 'musket' || kind === 'shell' || kind === 'heavy' || kind === 'mortar' || kind === 'swivel') {
+      const r = kind === 'musket' || kind === 'swivel' ? 0.06 : kind === 'shell' || kind === 'mortar' ? 0.2 : kind === 'heavy' ? 0.22 : 0.14;
+      obj = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), new THREE.MeshBasicMaterial({ color: kind === 'mortar' ? 0x3a2a1a : 0x222222 }));
+    } else if (kind === 'chain') {
+      // two balls on a length of chain, tumbling end over end
+      obj = new THREE.Group();
+      const bm = new THREE.MeshBasicMaterial({ color: 0x222222 });
+      for (const s of [-1, 1]) { const b0 = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 4), bm); b0.position.x = s * 0.3; obj.add(b0); }
+      obj.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.025, 0.025), bm));
+      obj.userData.spin = true;
+    } else if (kind === 'flak') {
+      obj = new THREE.Mesh(new THREE.SphereGeometry(0.07, 5, 3), new THREE.MeshBasicMaterial({ color: 0xffd060 }));
+    } else if (kind === 'depth') {
+      obj = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.32, 8), new THREE.MeshBasicMaterial({ color: 0x3a2a1a }));
     } else {
       obj = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), new THREE.MeshBasicMaterial({ color: colors[kind] || colors.magic }));
     }
@@ -140,6 +152,7 @@ export class Stage {
         f.obj.position.y += Math.sin(k * Math.PI) * arc * a.distanceTo(b) * 0.15;
         if (k > 0.02) f.obj.lookAt(prev.lerp(f.obj.position, 2));
         else f.obj.lookAt(b);
+        if (f.obj.userData.spin) f.obj.rotateY(k * 40);
       },
     });
   }

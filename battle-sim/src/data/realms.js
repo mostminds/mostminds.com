@@ -965,6 +965,8 @@ export function realmShips(BASE, SUB = null) {
       if (!b) continue;
       const { color, sail, sail2, trim, emblem } = look;
       out[`${f.id}_${role}`] = { ...b, name: `${f.adj} ${label}`, kind, realm: f.id, fleet: f.name, roleShip: true, ...(color !== undefined ? { color } : {}), ...(sail !== undefined ? { sail } : {}), ...(sail2 !== undefined ? { sail2 } : {}), ...(trim !== undefined ? { trim } : {}), ...(emblem ? { emblem } : {}), ...(role === 'landing' ? { oars: true, sails: 0 } : {}) };
+      // realms that build airships fly gliders and gyros off their carriers; the rest fly tamed beasts
+      if (role === 'carrier') out[`${f.id}_${role}`].squadrons = { ...b.squadrons, flier: f.air ? (f.id.length % 2 ? 'gyro' : 'glider') : 'beast', name: f.air ? `${f.adj} Squadron` : `${f.adj} Sky-Riders` };
     }
   }
   for (const f of REALMS) for (const [id, name, baseId, kind, over = {}] of f.ships) {

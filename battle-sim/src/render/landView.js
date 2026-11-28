@@ -1,5 +1,6 @@
 // Renders a land/amphibious battle state produced by engine/battle.js.
 import * as THREE from 'three';
+import { Crews } from './crews.js';
 import { animateCreature, buildUnitModel, animateUnit, buildStructure, buildCraft, buildShip, buildRubble, buildAirship, buildDropPod, buildCableCar, buildBalloon, buildTrain, buildHalt, shipMuzzle, setLod, mat, LEVEL_H } from './models.js';
 import { bakePose } from './rigkit.js';
 import { sculptMaterial } from './sculpt.js';
@@ -39,7 +40,7 @@ export class LandView {
     loadFracture();
   }
 
-  dispose() { this.stage.scene.remove(this.root); }
+  dispose() { this.stage.scene.remove(this.root); this.crews?.dispose(); }
 
   buildTerrain(b) {
     const key = `${b.mode}:${b.W}:${b.shape}:${b.biome}:${hashTerrain(b.terrain)}:${b.height ? hashRelief(b.height, b.cliff) : 0}`;
@@ -213,8 +214,11 @@ export class LandView {
     this.stage.clear(this.dynamic);
     this.stage.clearFx();
     this.models = b.units.map((u) => this.addUnitModel(u));
+    this.crews?.dispose();
+    this.crews = new Crews(this.stage.scene);
     this.shipModels = b.ships.map((sh) => {
       const m = buildShip(sh.def, SIDE_COLORS[sh.side]);
+      if (!sh.def.beast) this.crews.track(m, `ship:${sh.def.id}`);
       const bar = makeBar(0x4fd36a); bar.position.y = (m.userData.top ?? 1.7 + sh.def.len * 0.35) + 0.3; setBar(bar, 1, Math.min(3, sh.def.len * 0.4));
       m.add(bar); m.userData.bar = bar;
       const ring = new THREE.Mesh(new THREE.RingGeometry(sh.radius + 0.3, sh.radius + 0.5, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[sh.side], transparent: true, opacity: 0.6 }));
@@ -226,12 +230,15 @@ export class LandView {
     this.airModels = b.airships.map((a) => {
       const m = buildAirship(a.def, SIDE_COLORS[a.side]);
       m.userData.setSide?.(SIDE_COLORS[a.side]);
-      const top = (m.userData.top ?? 4.2) + 0.5;
-      const bar = makeBar(0x4fd36a); bar.position.y = top; setBar(bar, 1, 3.2); m.add(bar);
-      const crew = makeBar(0xe8d8a0); crew.position.y = top - 0.24; setBar(crew, 1, 2.2); m.add(crew);
+      // hands in the gondola: find where they stand before the bars go on, then draw her big enough to see them
+      this.crews.track(m, `air:${a.def.id}`, { airship: true });
+      m.scale.multiplyScalar(AIR_SCALE);
+      const top = (m.userData.top ?? 4.2) + 0.5 / AIR_SCALE;
+      const bar = makeBar(0x4fd36a); bar.position.y = top; setBar(bar, 1, 3.2); bar.scale.setScalar(1 / AIR_SCALE); m.add(bar);
+      const crew = makeBar(0xe8d8a0); crew.position.y = top - 0.24 / AIR_SCALE; setBar(crew, 1, 2.2); crew.scale.setScalar(1 / AIR_SCALE); m.add(crew);
       const lp = (m.userData.ladders || [[0, 0, 0.7]])[0];
       const ladder = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1, 5).translate(0, -0.5, 0), mat(0xc8b48a));
-      ladder.position.set(lp[0], lp[1], lp[2]); ladder.visible = false; m.add(ladder);
+      ladder.position.set(lp[0], lp[1], lp[2]); ladder.visible = false; ladder.scale.set(1 / AIR_SCALE, 1, 1 / AIR_SCALE); m.add(ladder);
       const mark = new THREE.Mesh(new THREE.RingGeometry(a.radius * 0.5, a.radius * 0.5 + 0.25, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: SIDE_COLORS[a.side], transparent: true, opacity: 0.5 }));
       this.dynamic.add(m, mark);
       return { m, bar, crew, ladder, mark, side: a.side, dmg: 0, downAt: undefined, smoke: 0 };
@@ -1106,6 +1113,12 @@ export class LandView {
       if (dead >= 0.5) this.layBody(u, m);
     });
     this.updateAir(alpha, t, dt, speed);
+    // the hands aboard every ship and airship: fewer as she takes damage or loses crew
+    const cl = this.crewList || (this.crewList = []);
+    cl.length = 0;
+    b.ships.forEach((sh, i) => { const m = this.shipModels[i]; if (m.userData.crewSlots) cl.push({ model: m, frac: 0.35 + 0.65 * sh.hp / Math.max(1, sh.maxHp), color: SIDE_COLORS[sh.side], alive: sh.alive && !this.shipSunkAt.has(i) }); });
+    b.airships.forEach((a, i) => { const am = this.airModels[i]; cl.push({ model: am.m, frac: a.crew / Math.max(1, a.def.crew), color: SIDE_COLORS[a.side], alive: a.alive && am.downAt === undefined }); });
+    this.crews.update(cl, t);
     for (const tm of this.transitMarks || []) {
       const L = tm.L, x = L.px + (L.x - L.px) * alpha, z = L.py + (L.y - L.py) * alpha, car = tm.car;
       if (!L.live) {
@@ -1296,7 +1309,7 @@ export class LandView {
       for (const p of m.userData.props || []) p.rotation.x = t * (a.crew > 0 ? 22 : 2);
       setBar(am.bar, a.hp / a.maxHp); setBar(am.crew, a.crew / a.def.crew);
       const down = a.ladder > 0 || ((a.mode === 'rescue' || a.mode === 'ferry') && Math.hypot((a.pick || a.drop || a).x - a.x, (a.pick || a.drop || a).y - a.y) < 3);
-      am.ladder.visible = down; if (down) am.ladder.scale.y = Math.max(0.5, m.position.y - ground - 0.2);
+      am.ladder.visible = down; if (down) am.ladder.scale.y = Math.max(0.5, m.position.y - ground - 0.2) / AIR_SCALE;
       if (m.userData.lod) { const ratio = this.stage.camera.position.distanceTo(m.position) / 2.5; let lv = 0; while (lv < 5 && ratio > [14, 30, 60, 110, 200][lv]) lv++; setLod(m, lv); }
       // the worse the damage, the more she smokes
       if (level && (am.smoke += dt) > (level === 1 ? 0.5 : 0.18)) {
@@ -1359,3 +1372,5 @@ const LAND_SCENERY = {
 };
 function hashRelief(h, c) { let v = 0; for (let i = 0; i < h.length; i += 5) v = (v * 31 + Math.round(h[i] * 50) + (c[i] ? 7 : 0)) | 0; return v; }
 function hashTerrain(t) { let h = 0; for (let i = 0; i < t.length; i += 7) h = (h * 31 + t[i]) | 0; return h; }
+
+const AIR_SCALE = 1.5; // airships are drawn half again as big as their footprint so their crews show

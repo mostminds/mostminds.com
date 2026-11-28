@@ -242,6 +242,43 @@ hunters in the water, and its own life and buildings ashore.
   coast; stilt shacks and fireflies in the marshes; ash-buried ruins under the volcano. (`src/render/seaset.js`
   lays them out; the pieces are in `src/render/props/jungleset.js`, `seascapes.js` and `arctic.js`.)
 
+### Fleet roles
+
+Every realm's fleet now sails six kinds of working ship beside its line of battle, each in the realm's own
+hulls and colours (`src/engine/fleetroles.js`, hulls in `src/data/naval.js`). A generated fleet spends about
+half its money on the line and the rest on the supporting roles, with more mortars and landing barges when the
+enemy holds forts.
+
+- **Line-breakers** (cutters to men-o'-war). Round shot from mid range, heavy shot at close range (a short
+  supply that ignores much of the armour), chain shot at a fleeing or full-rigged target to strip her sails,
+  swivel guns against boarders and beasts. Frigates and men-o'-war ram: the blow builds over a straight run in
+  open deep water. Shoals, reefs and narrow water slow their turns and can run them aground.
+- **Leviathan hunters.** Harpoons that tether a beast so it cannot dive, depth charges that force a submerged
+  one up, swivel guns aimed at weak points, fire barrels dropped astern on a pursuer. They picket the flanks
+  and fall back behind the line when enemy warships close.
+- **Bomb-ketches.** Long-range mortars that lob shells over islands and masts. Calm water, an anchorage, a
+  flier spotting overhead or a fixed target (a fort) steady their aim; a rough sea throws it off. They keep to
+  the rear, flee anything that comes close, and drop fire barrels astern.
+- **Sky-carriers and flak ships.** Carriers stay far back and launch squadrons of fliers (gliders or gyros
+  for realms that build airships, tamed winged beasts for the rest). Squadrons strafe crews, set rigging alight,
+  hunt bomb-ketches and carriers, and spot for the mortars. Flak ships hold the fleet's centre over the flagships
+  and shred squadrons and flying beasts with rapid fire. Islands block direct fire; mortars arc over them.
+- **Supply flagships.** Sail just behind the line inside a ring of escorts. They repair hulls, pass across
+  heavy shot, shells and fresh hands, steady nearby crews (faster reloads), and lay alongside crippled enemy
+  ships to board and take them.
+- **Landing barges.** Flat-bottomed, so shoals do not stop them. They hold back until the enemy line is
+  broken, then run for the nearest fort under their swivel guns, beach and storm it.
+
+Battles move through phases: opening (hunters sweep, scouts and mortars range in), closing (chain shot,
+broadsides, flak against the first squadrons), brawl and capture (rams, heavy shot, boarding) and, once
+the sea is won, the coastal assault. When a side's line is gone, its support ships fight for themselves.
+
+**Ships you can see the crews of.** Every hull is drawn half again as large as before, and airships too, so
+the hands on deck show: small sailors in the side's colour, fewer as the crew is killed. Each role carries its
+fittings on deck (mortars, a flight deck with parked fliers, flak mounts, a bow harpoon gun, stores and a
+command banner, a bow ramp, a bronze ram). Tethers, fire barrels, depth charges, chain shot, flak bursts and
+squadrons in the air all show in the battle.
+
 ## The land
 
 - **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights
