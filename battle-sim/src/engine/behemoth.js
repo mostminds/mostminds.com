@@ -53,7 +53,7 @@ export function skyFxTick(b) {
   for (const a of b.airships) {
     if (!a.def.behemoth || !working(a)) continue;
     for (const ab of a.def.abilities || []) {
-      const e = { air: a.id, side: a.side, x: a.x, y: a.y };
+      const e = { air: a.id, side: a.side, x: a.x, y: a.y, hull: a.radius * 0.4 };
       if (ab.kind === 'ward') fx.ward.push({ ...e, r: num(ab.radius, 8, 2, 20), reduce: num(ab.reduce, 0.3, 0, 0.8) });
       else if (ab.kind === 'camouflage') fx.camo.push({ ...e, r: num(ab.radius, 8, 2, 20) });
       else if (ab.kind === 'flares') fx.flares.push({ ...e, r: 14, penalty: num(ab.penalty, 0.3, 0, 0.8) });
@@ -68,14 +68,14 @@ export function wardMul(b, t) {
   const W = b.skyFx && b.skyFx.ward;
   if (!W || !W.length) return 1;
   let m = 1;
-  for (const w of W) if (w.side === t.side && Math.hypot(t.x - w.x, t.y - w.y) <= w.r) m = Math.min(m, 1 - w.reduce);
+  for (const w of W) if (w.side === t.side && Math.hypot(t.x - w.x, t.y - w.y) <= w.r + w.hull) m = Math.min(m, 1 - w.reduce);
   return m;
 }
 /** a unit under allied camouflage, seen from a shooter more than 4 tiles off */
 export function camouflaged(b, t, from) {
   const C = b.skyFx && b.skyFx.camo;
   if (!C || !C.length || Math.hypot(t.x - from.x, t.y - from.y) <= 4) return false;
-  for (const c of C) if (c.side === t.side && Math.hypot(t.x - c.x, t.y - c.y) <= c.r) return true;
+  for (const c of C) if (c.side === t.side && Math.hypot(t.x - c.x, t.y - c.y) <= c.r + c.hull) return true;
   return false;
 }
 /** extra miss chance for a shot at airship `a` from a shooter of `side` at (x, y): flares and camouflage */
@@ -144,7 +144,9 @@ function groundMark(b, a, range) {
 }
 const enemyAir = (b, a, r) => { const out = []; near(b, a.x, a.y, r + 1, (v) => { if (v.alive && v.side !== a.side && v.aboard < 0 && airborne(b, v) && Math.hypot(ucx(v) - a.x, ucy(v) - a.y) <= r) out.push(v); }); return out; };
 const enemyShips = (b, a, r) => (b.airships || []).filter((o) => o.alive && o.side !== a.side && Math.hypot(o.x - a.x, o.y - a.y) <= r + o.radius * 0.5);
-const friendlyBelow = (b, a, r, fn) => near(b, a.x, a.y, r + 1, (v) => { if (v.alive && v.side === a.side && v.aboard < 0 && v.x >= 0 && Math.hypot(v.x - a.x, v.y - a.y) <= r) fn(v); });
+// a behemoth is huge: what lies 'beneath' it reaches out from its hull, not its centre
+const reach = (a, r) => r + a.radius * 0.4;
+const friendlyBelow = (b, a, r, fn) => { const R = reach(a, r); near(b, a.x, a.y, R + 1, (v) => { if (v.alive && v.side === a.side && v.aboard < 0 && v.x >= 0 && Math.hypot(v.x - a.x, v.y - a.y) <= R) fn(v); }); };
 // the forward rally point (or the front, or the mark below) where troops are set down
 function dropSpot(b, a) {
   const p = pressedPoint(b, a.side);
@@ -356,7 +358,7 @@ const KINDS = {
     const fresh = [];
     for (const u of b.units) {
       if (fresh.length >= 3) break;
-      if (u.alive || u.raised || u.down || u.def.fly || u.def.leader || u.x < 0 || u.aboard >= 0 || Math.hypot(u.x - a.x, u.y - a.y) > r) continue;
+      if (u.alive || u.raised || u.down || u.def.fly || u.def.leader || u.x < 0 || u.aboard >= 0 || Math.hypot(u.x - a.x, u.y - a.y) > reach(a, r)) continue;
       u.raised = true;
       const spot = freeTileNear(b, u.x, u.y, def.size, a.side);
       if (spot) fresh.push(spawnUnit(b, def, a.side, spot[0], spot[1]));
@@ -455,12 +457,12 @@ const KINDS = {
   },
   aura(b, a, ab) {
     const r = num(ab.radius, 8, 2, 20), eff = ab.effect || 'courage';
-    if (eff === 'courage') { for (const sq of b.squads) if (sq.side === a.side && sq.alive > 0 && Math.hypot(sq.cx - a.x, sq.cy - a.y) <= r) sq.steadyUntil = Math.max(sq.steadyUntil || 0, b.tick + 12); }
+    if (eff === 'courage') { for (const sq of b.squads) if (sq.side === a.side && sq.alive > 0 && Math.hypot(sq.cx - a.x, sq.cy - a.y) <= reach(a, r)) sq.steadyUntil = Math.max(sq.steadyUntil || 0, b.tick + 12); }
     else if (eff === 'frenzy') friendlyBelow(b, a, r, (v) => { if (v.cd > 0) v.cd--; });
     else if (eff === 'vigor') friendlyBelow(b, a, r, (v) => { if (v.hp < v.def.hp) v.hp = Math.min(v.def.hp, v.hp + 2); });
     else if (eff === 'reload') friendlyBelow(b, a, r, (v) => { if (v.ammo !== undefined) v.ammo = Math.min(40, v.ammo + 4); if (v.cd > 0 && v.def.style !== 'melee') v.cd--; });
     else if (eff === 'dispel') friendlyBelow(b, a, r, (v) => { v.poison = null; v.pinUntil = 0; v.blindUntil = 0; });
-    else if (eff === 'terror') near(b, a.x, a.y, r + 1, (v) => { if (v.alive && v.side !== a.side && v.aboard < 0 && Math.hypot(v.x - a.x, v.y - a.y) <= r && b.rng.chance(0.35)) v.cd += 2; });
+    else if (eff === 'terror') near(b, a.x, a.y, reach(a, r) + 1, (v) => { if (v.alive && v.side !== a.side && v.aboard < 0 && Math.hypot(v.x - a.x, v.y - a.y) <= reach(a, r) && b.rng.chance(0.35)) v.cd += 2; });
     const key = `aura:${eff}`;
     if ((a.fxSaid?.[key] ?? -999) <= b.tick - 24) { (a.fxSaid ||= {})[key] = b.tick; fire(b, a, ab, a.x, a.y, { r, effect: eff }); }
     return true;

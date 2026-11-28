@@ -16,11 +16,32 @@ import { weapon as makeWeapon, shield as makeShield } from './render/bodies/weap
 import { prepareDef } from './engine/battle.js';
 import { UNITS as GAME_UNITS, EXAMPLE_UNIT } from './data/units.js';
 const UNITS = { ...GAME_UNITS, _example: EXAMPLE_UNIT };
+// (raw specs from kind=spec / kind=wing are added to this table below)
 import { STRUCTURES } from './data/structures.js';
 import { SHIPS, CREATURES, FORTS } from './data/naval.js';
 
 const q = new URLSearchParams(location.search);
-const kind = q.get('kind') || 'unit', ids = (q.get('id') || 'footman').split(',');
+const kind0 = q.get('kind') || 'unit';
+// dev: kind=spec&spec=<json> previews raw unit model specs (an object, or an array of objects / { model, pose, t, id }),
+// e.g. spec=[{"body":"aircraft","kind":"gyro","style":"grom"},{"model":{"body":"rider","mountType":"eagle"},"pose":"fly"}];
+// kind=wing&id=<faction>_<role>[@pose],... previews the aircraft designed in src/data/air (built as flying units)
+const SPECS = {};
+let ids = (q.get('id') || 'footman').split(',');
+if (kind0 === 'spec') {
+  const raw = JSON.parse(q.get('spec') || '[]'), list = Array.isArray(raw) ? raw : [raw];
+  ids = list.map((e, i) => {
+    const model = e.model || e, id = e.id || `spec${i}`;
+    SPECS[id] = { name: id, hp: 10, size: e.size || 1, fly: true, airRole: e.role || 'fighter', faction: e.faction || model.style, model };
+    return e.pose ? `${id}@${e.pose}${e.t !== undefined ? ':' + e.t : ''}` : id;
+  });
+} else if (kind0 === 'wing') {
+  const { AIRWINGS } = await import('./data/air/index.js');
+  for (const spec of ids) {
+    const id = spec.split('@')[0], cut = id.lastIndexOf('_'), f = id.slice(0, cut), r = id.slice(cut + 1), w = AIRWINGS[f]?.[r];
+    if (w) SPECS[id] = { name: w.name, hp: 10, size: w.tier === 'heavy' ? 2 : 1, fly: true, airRole: r, faction: f, model: w.model };
+  }
+}
+const kind = kind0 === 'spec' || kind0 === 'wing' ? 'unit' : kind0;
 const view = q.get('view') || 'quad';
 const stats = { kind, ids, errors: [], models: {} };
 window.__stats = stats;
@@ -59,7 +80,7 @@ for (const spec of ids) {
   let m = null, width = 1.2, anim = null, late = null;
   try {
     if (kind === 'unit') {
-      const def = prepareDef(UNITS[id]);
+      const def = SPECS[id] ? { id: SPECS[id].faction ? `${SPECS[id].faction}_air_${SPECS[id].airRole}` : id, ...SPECS[id] } : prepareDef(UNITS[id]);
       m = buildUnitModel(def);
       width = Math.max(1.2, def.size * 1.3 * (def.model?.scale || 1));
       anim = () => {

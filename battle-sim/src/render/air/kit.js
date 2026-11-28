@@ -132,14 +132,19 @@ export function lookOf(style, o = {}) {
   if (L.wood === L.cloth) L.wood = tone(L.wood, -0.1);
   return L;
 }
+/** a wood grain for hard pieces: streaks along the longest axis */
+function grain(c) {
+  const b = rgb(c);
+  return (x, y, z) => { const g = 0.82 + 0.18 * Math.sin((x + y * 0.3 + z) * 90 + Math.sin((x - z) * 23) * 3); return [b[0] * g, b[1] * g, b[2] * g]; };
+}
 /** prim / hard finishers for a look */
 export function finishes(L) {
   return {
     metal: (q, c = L.metal) => q.color(c).pbr(0.34, L.shine),
     iron: (q) => q.color(L.grim ? 0x3a3438 : 0x55585e).pbr(0.48, 0.7),
-    wood: (q, c = L.wood) => q.color(c).bump(0.0025, 26, 'fur').tint(0.12, 18).pbr(0.82),
-    cloth: (q, c = L.cloth) => q.color(c).bump(0.0018, 40, 'weave').tint(0.08, 12).pbr(0.88),
-    leather: (q, c = 0x5a3a22) => q.color(c).tint(0.15, 30).pbr(0.66),
+    wood: (q, c = L.wood) => (q.bump ? q.color(c).bump(0.0025, 26, 'fur').tint(0.12, 18).pbr(0.82) : q.color(c).pbr(0.82).shade(grain(c))),
+    cloth: (q, c = L.cloth) => (q.bump ? q.color(c).bump(0.0018, 40, 'weave').tint(0.08, 12).pbr(0.88) : q.color(c).pbr(0.88)),
+    leather: (q, c = 0x5a3a22) => (q.tint ? q.color(c).tint(0.15, 30).pbr(0.66) : q.color(c).pbr(0.66)),
   };
 }
 

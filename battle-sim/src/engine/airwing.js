@@ -155,7 +155,7 @@ function transport(b, u, s, A) {
     const r = s.rear;
     if (Math.hypot(r.x - u.x, r.y - u.y) > 2) { goTo(b, u, r.x, r.y); return true; }
     if (b.tick < s.until) return true;
-    if (s.sorties >= 3) { s.mode = 'done'; return false; }
+    if (s.sorties >= 2) { s.mode = 'done'; return false; }
     s.loads = A.carry ? 1 : 0; s.crates = A.supply ? 1 : 0; s.lifts = A.extract ? 1 : 0; s.mode = 'out';
   }
   if (s.mode === 'done' || !(s.loads || s.crates || s.lifts || A.heal)) return false;
@@ -348,7 +348,9 @@ function naval(b, u, s, A) {
   if (!t) return false;
   const p = t.pos(), d = Math.hypot(p.x - ucx(u), p.y - ucy(u));
   const arm = t.kind === 'ship' ? t.o.def.armour || 0 : 0;
-  if (A.torpedo && d <= 6 && d > 2 && s.cd <= 0) {
+  const torp = A.torpedo && (!A.diveBomb || !s.alt); // with both, torpedo runs and dive bombs take turns
+  if (torp && d <= 6 && s.cd <= 0) {
+    s.alt = true;
     const dmg = Math.round(A.torpedo * (t.kind === 'beast' ? A.vsLeviathan || 1 : A.vsShip || 1) * (100 / (100 + arm * 0.4)));
     strike(b, u, t, dmg, 3);
     ev(b, u, 'torpedo', ucx(u), ucy(u), { to: { x: p.x, y: p.y } });
@@ -359,6 +361,7 @@ function naval(b, u, s, A) {
   const base = A.diveBomb || A.torpedo || Math.round(u.def.max * 2.5);
   const dmg = Math.round(base * (t.kind === 'beast' ? (A.vsLeviathan || 1) * (A.depthCharge ? 1.3 : 1) : A.vsShip || 1) * (100 / (100 + arm)));
   strike(b, u, t, dmg, 2);
+  s.alt = false;
   ev(b, u, 'dive', p.x, p.y, { n: 1 });
   s.cd = 12; s.egress = 4;
   return true;
@@ -420,7 +423,7 @@ function escort(b, u, s, A) {
   // missiles at the ship it guards are shot down
   if (A.pointDefense && (b.tick + u.id) % 2 === 0 && Math.hypot(home.x - u.x, home.y - u.y) < R + 4) {
     for (const p of b.pending) {
-      if (p.air !== home.id || p.pd || !(p.dmg > 0) || p.tick <= b.tick || p.from === undefined || p.from < 0) continue;
+      if (p.air !== home.id || p.pd || !(p.dmg > 0) || p.tick < b.tick || p.from === undefined || p.from < 0) continue;
       p.pd = true;
       if (b.rng.chance(0.3)) { p.dmg = 0; p.hit = false; const f = b.units[p.from]; ev(b, u, 'pd', f ? (f.x + home.x) / 2 : home.x, f ? (f.y + home.y) / 2 : home.y, { air: home.id }); break; }
     }

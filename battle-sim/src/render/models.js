@@ -8,6 +8,7 @@ import { tmat } from './textures.js';
 import { assemble, cloneRigged as cloneSculpted, getDetail, setLod } from './rigkit.js';
 import { animateRig } from './animate.js';
 import * as REG from './registry.js';
+import * as AIRM from './air/index.js';
 import { STRUCTURES } from '../data/structures.js';
 import { CREATURES as NAVAL_CREATURES } from '../data/naval.js';
 
@@ -20,7 +21,7 @@ function guarded(label, fn) {
   try { return fn() || null; } catch (err) { console.warn(`[models] ${label} failed, using the fallback model`, err); sculptFailed.add(label); return null; }
 }
 /** drop cached sculpts (call after the detail preset changes) */
-export function resetModelCache() { sculptTpl.clear(); sculptFailed.clear(); }
+export function resetModelCache() { sculptTpl.clear(); sculptFailed.clear(); AIRM.resetAirCache(); }
 export { setLod };
 export const LEVEL_H = 0.8; // world height of one walkable level
 
@@ -490,6 +491,11 @@ function standIn(def) {
 }
 
 export function buildUnitModel(def) {
+  // flying units (riders on flying mounts, great beasts aloft, machines and conveyances): src/render/air
+  if (AIRM.isAirSpec(def) && !instantiateCustom(def.id, 1, 'unit')) {
+    const am = guarded(`air:${def.id}:${JSON.stringify(def.model)}:${getDetail()}`, () => AIRM.buildAirModel(def));
+    if (am) return am;
+  }
   def = standIn(def);
   if (def.model?.body === 'aircraft' && !instantiateCustom(def.id, 1, 'unit')) {
     // one-man flying machines: built nose toward +X, turned to face +Z like every other unit
@@ -541,6 +547,7 @@ function buildTemplate(def, o) {
 }
 
 // t: seconds, moving: bool, atk: 0..1 progress of an attack swing (or -1), dead: 0..1
+AIRM.useUnitBuilder((d) => buildUnitModel(d), (...a) => animateUnit(...a));
 export function animateUnit(model, t, moving, atk, dead, phase = 0, flying = false, fx = null) {
   const r = model.userData.rig;
   if (!r) return;

@@ -1234,6 +1234,10 @@ export function realmAirwings(BASE) {
       if (arts.speed) { const s = num(arts.speed, 0.7, 1.4, 1); u.move = Math.max(1, Math.round(u.move * s)); u.stamina = Math.round(u.stamina * s); u.speed = Math.max(2, Math.round(u.speed / Math.sqrt(s))); }
       if (arts.breath) { u.abilities.push({ type: 'breath', every: 4, maxHit: Math.round(10 * r + 4), radius: 1 }); if (u.style !== 'melee') u.projectile = BREATH_PROJ[arts.breath] || u.projectile; u.breath = arts.breath; }
       if (role === 'transport') arts.troop = arts.troop && BASE[arts.troop] ? arts.troop : f.troop;
+      // what the role brings besides its own fighting: troops set down, crates, bombs
+      if (role === 'transport') u.priceMul = +(u.priceMul + 0.12 * num(arts.carry, 0, 0, 12) + 0.05 * num(arts.supply, 0, 0, 6) + (arts.extract ? 0.1 : 0)).toFixed(2);
+      if (role === 'bomber') u.priceMul = +(u.priceMul + 0.04 * num(arts.bombs, 2, 1, 8) * num(arts.blast, 1.5, 1, 4) / 1.5).toFixed(2);
+      if (role === 'assault' && arts.dropTroops) u.priceMul = +(u.priceMul + 0.08 * num(arts.dropCount, 3, 1, 8)).toFixed(2);
       if (role === 'assault' && arts.dropTroops && !BASE[arts.dropTroops]) arts.dropTroops = f.troop;
       out[`${fid}_air_${role}`] = u;
     }
