@@ -1129,7 +1129,8 @@ export class LandView {
         m.userData.bar.visible = false; m.userData.ring.visible = false;
         const fx = this.fx;
         if (!m.userData._wk) { if (m.userData.beast) fx.beastDeath(m, sh); else fx.breakUp(m, sh, { color: SIDE_COLORS[sh.side] }); }
-        if (m.userData._wk.beast ? fx.beastPose(m, dt * speed) : fx.sinkPose(m, dt * speed)) m.visible = false;
+        const wd = fx.wallDt(m, t, speed);
+        if (m.userData._wk.beast ? fx.beastPose(m, wd) : fx.sinkPose(m, wd)) m.visible = false;
       } else setBar(m.userData.bar, sh.hp / sh.maxHp);
     });
     if (this.water) {
@@ -1419,7 +1420,7 @@ export class LandView {
         // she falls, tumbling and burning (a beast limp, its wings trailing), crashes, and lies where she fell
         am.bar.visible = am.crew.visible = am.ladder.visible = false; am.mark.visible = false;
         if (!m.userData._wk) fx.airWreck(m, a, { beast, color: SIDE_COLORS[a.side] });
-        fx.airFall(m, dt * speed);
+        fx.airFall(m, fx.wallDt(m, t, speed));
         if (m.userData.skyAnim) animateSky(m, beast ? am.downAt : t);
         return;
       }

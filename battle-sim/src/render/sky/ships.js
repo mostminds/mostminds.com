@@ -170,7 +170,7 @@ function hull(X) {
   const bx = HL / 2 + 0.05;
   rod(H, C.wood, [bx - 0.3, 0.3, 0], [bx + 0.9, 0.62, 0], 0.06, 0.035, 6);
   finial(H, C, S.finial, bx + 0.9, 0.62, 0, 0.5).rotation.z = -1.3;
-  if (S.figure !== 'none') { if (!sculptedFigurehead(X, H, S.figure, bx - 0.02, -HD * 0.5, 0, 0.36)) figurehead(H, C, S.figure, bx + 0.22, 0.05, 0, 0.95); }
+  if (S.figure !== 'none') { if (!sculptedFigurehead(X, H, S.figure, bx - 0.02, X.dress.has('spikes') ? -0.08 : -HD * 0.5, 0, X.dress.has('spikes') ? 0.3 : 0.36)) figurehead(H, C, S.figure, bx + 0.22, 0.05, 0, 0.95); }
   else tier(3, () => { const e = emblem(H, C.trim, S.emblem, 0.45, 0.04); e.position.set(bx + 0.12, -0.05, 0); e.rotation.y = PI / 2; });
   // stern ensign on a staff
   rod(H, C.wood, [-HL / 2 + 0.05, 0.2, 0], [-HL / 2 - 0.35, 1.3, 0], 0.03, 0.025, 5);

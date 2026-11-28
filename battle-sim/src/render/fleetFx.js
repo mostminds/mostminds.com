@@ -775,6 +775,8 @@ export class FleetFx {
   // Everything thrown is pooled: scorch marks, flotsam (planks, barrels, spars), stains, whirlpools; cut-away model parts
   // (breakParts) are capped at PIECES and share their geometry with the model they came from.
 
+  /** wreck time keeps to the clock however slow the frames come: seconds since this model's last call (t in seconds) times speed */
+  wallDt(m, t, speed = 1) { const u = m.userData, last = u._wt ?? t; u._wt = t; return Math.min(0.5, Math.max(0, t - last)) * speed; }
   dm(m) { return m.userData._dm || (m.userData._dm = { lv: 0, side: 1, fire: false, wounds: [], list: 0, settle: 0, plain: typeof m.userData.setDamage !== 'function', hitAt: -99 }); }
   /** which beam of m faces the world point (x, z): 1 her +z side, -1 her -z side */
   beamOf(m, x, z) { _p.set(x - m.position.x, 0, z - m.position.z).applyQuaternion(_q2.copy(m.quaternion).invert()); return _p.z >= 0 ? 1 : -1; }
@@ -1144,7 +1146,7 @@ export class FleetFx {
     W.t += dt;
     const p = W.p, nk = this.near(p);
     if (!W.landed) {
-      W.v.y -= (W.beast ? 7.5 : 4.5) * dt; W.v.x *= 1 - 0.2 * dt; W.v.z *= 1 - 0.2 * dt;
+      W.v.y -= (W.beast ? 7.5 : 3) * dt; W.v.x *= 1 - 0.2 * dt; W.v.z *= 1 - 0.2 * dt;
       p.addScaledVector(W.v, dt);
       const k = W.t;
       W.pitch = -Math.min(W.beast ? 1.15 : 0.5, k * (W.beast ? 0.6 : 0.22));

@@ -92,7 +92,7 @@ export function nacelleGeo(trim, iron, dmg = false) {
       B.p(SP.ellipsoid(0.5, 0.3, 0.3).at(-0.45, 0.1, 0).paint(0.05).color(0x1e1a16));
     }
     return B.part();
-  }, { res: 96, min: 12, paint: weather(trim, { kind: 'bronze', amt: 0.6, soot: 4, sootY: 0.26 }) });
+  }, { res: 80, min: 12, paint: weather(trim, { kind: 'bronze', amt: 0.6, soot: 4, sootY: 0.26 }) });
 }
 const shade = (hex, k) => new THREE.Color(hex).multiplyScalar(k).getHex();
 /** a propeller about the x axis, blades of length R twisted from root to tip on a bolted hub, a spinner aft; shot away if broken */
@@ -103,10 +103,10 @@ export function propGeo(R, n, wood, trim, broken) {
       // shot away: one blade bent back, the rest snapped near the root
       const len = !broken || i === 0 ? R : R * (0.2 + 0.12 * ((i * 7) % 3) / 2);
       B.push([0, 0, 0], [(i / n) * 360 + (broken ? 17 : 0), broken && i === 0 ? 24 : 0, broken && i === 0 ? -18 : 0]);
-      const N = 7;
+      const N = 10;
       for (let k = 0; k < N; k++) {
         const t = (k + 0.5) / N, y = 0.07 + t * (len - 0.07), chord = (0.06 + 0.05 * Math.sin(Math.PI * Math.min(1, t * 1.15))) * (len < R ? 1 : 1 - 0.3 * t * t);
-        B.p(SP.ellipsoid(0.014, (len / N) * 0.75, chord).rot(0, 55 - 35 * t, 0).at(0, y, 0).color(wood).pbr(0.55, 0.05).blend(0.035).bump(0.0015, 50, 'fur'));
+        B.p(SP.ellipsoid(0.013, (len / N) * 1.15, chord).rot(0, 55 - 35 * t, 0).at(0, y, 0).color(wood).pbr(0.55, 0.05).blend(0.035).bump(0.0015, 50, 'fur'));
       }
       if (len === R) B.p(SP.box(0.08, R * 0.14, 0.2, 0.01).at(0, R * 0.93, 0).paint(0.004).color(trim).pbr(0.3, 0.85)); // the tip sheathed in metal
       else { B.p(SP.sphere(0.06).at(0.01, len + 0.02, 0.03).cut(0.01)); B.p(SP.sphere(0.07).at(0, len, 0).paint(0.02).color(0x1a1410)); }
@@ -116,6 +116,6 @@ export function propGeo(R, n, wood, trim, broken) {
     B.p(SP.cone(0.11, 0.004, 0.22, 0.01).rot(0, 0, 90).at(-0.15, 0, 0).color(trim).pbr(0.28, 0.85).blend(0.02));
     for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; B.h(HP.sphere(0.012, 6).color(shade(trim, 0.7)).pbr(0.4, 0.85).at(0.066, Math.cos(a) * 0.06, Math.sin(a) * 0.06).lod(1)); }
     return B.part();
-  }, { res: 110, min: 12 });
+  }, { res: 84, min: 12 });
 }
 void lathe;

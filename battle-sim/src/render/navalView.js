@@ -780,11 +780,11 @@ export class NavalView {
         if (e.ship && !m.userData.beast) {
           // she lists, goes down by the head or the stern and under in a whirl of foam, leaving flotsam and a slick
           if (!m.userData._wk) fx.breakUp(m, e, { color: SIDE_COLORS[e.side] });
-          if (fx.sinkPose(m, dt * speed)) m.visible = false;
+          if (fx.sinkPose(m, fx.wallDt(m, t, speed))) m.visible = false;
         } else {
           // a dead beast thrashes, rolls belly-up, drifts, and sinks in a cloud of blood
           if (!m.userData._wk) fx.beastDeath(m, e);
-          if (fx.beastPose(m, dt * speed)) m.visible = false;
+          if (fx.beastPose(m, fx.wallDt(m, t, speed))) m.visible = false;
         }
       } else {
         setBar(m.userData.bar, e.hp / e.maxHp);
