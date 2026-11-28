@@ -310,7 +310,7 @@ export class NavalView {
         } else if (x.ship) { fx.splash(p, 2.4); if (m) fx.beastDeath(m, x); }
         else if (x.air) fx.explode(V(x.x, AIR_Y, x.y), 0.6, { debris: 8 });
         else if (!x.fort) { if (m) fx.beastDeath(m, x); else fx.splash(p, 2.4); }
-        else { fx.explode(p, 1.2, { dcol: 0x8a8274, s0: 0x8a7a6a, s1: 0xc8bca0 }); if (m) fx.damage(m, 0, { force: 3 }); }
+        else { fx.explode(p, 1.2, { dcol: 0x8a8274, s0: 0x8a7a6a, s1: 0xc8bca0 }); if (m) fx.damage(m, 0, false, false, 3); }
         msgs.push({ side: x.side, text: `${x.def.name} ${x.ship ? 'is sunk' : x.fort ? 'is reduced to rubble' : x.air ? 'is shot down' : 'is slain'}` });
       } else if (e.type === 'rake') {
         const x = b.ents[e.id], m = this.models[e.id];
@@ -746,7 +746,7 @@ export class NavalView {
       if (died === undefined) {
         // her damage: the model's own look by level, and she lists toward the beam that took it and settles as she takes water
         const fx = this.fx, d = fx.dm(m);
-        fx.damage(m, e.hp / Math.max(1, e.maxHp), { fire: this.burning(e), flesh: !e.ship && !e.fort });
+        fx.damage(m, e.hp / Math.max(1, e.maxHp), this.burning(e), !e.ship && !e.fort);
         if (e.ship || e.fort) {
           const lv = d.lv, own = m.userData.list !== undefined || e.fort;
           const tl = own ? 0 : (lv >= 3 ? 0.13 : lv >= 2 ? 0.06 : 0) * d.side;

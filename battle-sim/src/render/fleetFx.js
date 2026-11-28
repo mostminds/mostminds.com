@@ -229,7 +229,7 @@ const STAIN_FS = `varying vec2 vU; varying vec3 vCol; void main() { vec2 p = vU 
 const SWIRL_FS = `uniform float uTime; varying vec2 vU; varying vec3 vCol; void main() { vec2 p = vU - 0.5; float d = length(p) * 2.0; if (d > 1.0) discard;
   float a = atan(p.y, p.x), s = sin(a * 3.0 + log(d + 0.03) * 7.0 + uTime * 5.0) * 0.5 + 0.5;
   float foam = smoothstep(0.55, 1.0, s) * smoothstep(1.0, 0.55, d) * smoothstep(0.05, 0.3, d), eye = smoothstep(0.32, 0.0, d);
-  vec3 c = mix(vec3(0.9, 0.95, 1.0), vec3(0.02, 0.06, 0.09), eye); gl_FragColor = vec4(c, (foam * 0.75 + eye * 0.65) * vCol.r); }`;
+  vec3 c = mix(vec3(0.9, 0.95, 1.0), vec3(0.02, 0.06, 0.09), eye); gl_FragColor = vec4(c, (foam * 0.45 + eye * 0.55) * vCol.r); }`;
 
 function figureGeos() {
   const put = (g, x, y, z, rx = 0, ry = 0, rz = 0) => { g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); return g.index ? g.toNonIndexed() : g; };
@@ -341,6 +341,8 @@ export class FleetFx {
   act(m, name, dur = 0.8) {
     const fn = m?.userData?.actions?.[name];
     if (!fn) return false;
+    // skyParts' rig-beast animator reads rig.mjaw as one joint, but a mounted beast's is a list: its jaw actions would throw
+    const A = m.userData.anim;
     for (const a of this.acts) if (a.m === m && a.name === name) { a.t = 0; a.dur = dur; return true; }
     if (this.acts.length > 160) { const o = this.acts.shift(); o.fn(1, o.m); }
     this.acts.push({ m, name, fn, t: 0, dur });
@@ -786,8 +788,8 @@ export class FleetFx {
     if (lv < cur && frac < [0.75, 0.45, 0.2][cur - 1] + 0.07) lv = cur;
     return lv;
   }
-  /** drive m's damage look from her hp fraction (force: set that level outright); flesh never gets the scorched fallback */
-  damage(m, frac, { fire = false, force = -1, flesh = false } = {}) {
+  /** drive m's damage look from her hp fraction (force: set that level outright); flesh never gets the scorched fallback. No allocation. */
+  damage(m, frac, fire = false, flesh = false, force = -1) {
     const d = this.dm(m), lv = force >= 0 ? force : FleetFx.level(frac, d.lv), f = !!fire;
     if (lv === d.lv && f === d.fire) return lv;
     d.lv = lv; d.fire = f;
@@ -940,9 +942,9 @@ export class FleetFx {
       const a = R() * 6.283, sp = (0.8 + R() * 3.2) * spread;
       d.p.set(p.x + rnd(0.5 * s), p.y + R() * 0.3, p.z + rnd(0.5 * s)); d.v.set(Math.cos(a) * sp, (1.8 + R() * 4) * up, Math.sin(a) * sp);
       d.r.set(R() * 6, R() * 6, R() * 6); d.w.set(rnd(8), rnd(8), rnd(8));
-      if (F.kind === 'plank') { d.sx = (0.4 + R() * 0.7) * s; d.sy = 0.045 * s; d.sz = (0.1 + R() * 0.08) * s; }
-      else if (F.kind === 'barrel') { d.sx = d.sz = 0.22 * s; d.sy = 0.3 * s; }
-      else { d.sx = d.sz = (0.05 + R() * 0.04) * s; d.sy = (0.8 + R() * 1.4) * s; }
+      if (F.kind === 'plank') { d.sx = (0.25 + R() * 0.45) * s; d.sy = 0.035 * s; d.sz = (0.07 + R() * 0.06) * s; }
+      else if (F.kind === 'barrel') { d.sx = d.sz = 0.16 * s; d.sy = 0.22 * s; }
+      else { d.sx = d.sz = (0.04 + R() * 0.03) * s; d.sy = (0.5 + R() * 0.9) * s; }
       d.t = 0; d.life = life * (0.7 + R() * 0.6); d.on = true; d.mode = 0; d.still = 0;
       const base = F.kind === 'barrel' ? 0x6a4a2c : F.kind === 'spar' ? 0x5a4028 : [0x7a5a38, 0x8a6a44, 0x6a4a30][k % 3];
       F.pool.tint(i, burnt && R() < 0.55 ? 0x241a12 : base, 0.75 + R() * 0.4);
@@ -1015,7 +1017,7 @@ export class FleetFx {
   /** a dead hull settles, lists hard, goes down by the head (or the stern) and under, in a whirl of foam; true once she is gone */
   breakUp(m, e, { boom = false, color = 0xcccccc, burning = false } = {}) {
     const D = this.dims(m, e), d = this.dm(m), side = d.side;
-    this.damage(m, 0, { force: 3, fire: boom || burning });
+    this.damage(m, 0, boom || burning, false, 3);
     const len = Math.max(2, e?.def?.len || D.hx * 2), s = Math.min(1.6, 0.6 + len * 0.08);
     const W = m.userData._wk = { t: 0, side, bow: R() < 0.6 ? 1 : -1, depth: D.top * m.scale.y + 1.4, fire: boom || burning, s, len, whirl: false, gone: false, acc: {} };
     const mid = toWorld(m, 0, D.deckY, 0, new THREE.Vector3()), fy = this.floor(mid.x, mid.z);
@@ -1067,8 +1069,8 @@ export class FleetFx {
       const D = m.userData._fx;
       if (D && down < W.depth * 0.6) for (let n = this.rate(W.acc, 'fi', 14 * nk, dt); n > 0; n--) { const q = toWorld(m, rnd(D.hx * 0.8), D.deckY, rnd(D.hz * 0.6), _a); if (q.y > fy) this.emit(P.FIRE, q.x, q.y, q.z, 1, 0, 1, 0, 0.7, 1.2); }
     }
-    if (!W.whirl && down > W.depth * 0.45) { W.whirl = true; this.lasting(this.whirls, _a.set(p.x, fy + 0.05, p.z), Math.max(1.6, W.len * 0.55), 0xffffff, 10, 1.5); this.emit(P.SPRAY, p.x, fy, p.z, 20, 0, 1, 0, 3.5, 1.2); }
-    if (W.whirl && !W.gone && this.rate(W.acc, 'cv', 2, dt)) this.ring(_a.set(p.x, fy + 0.05, p.z), null, W.len * 0.7, 0.2, 0xffffff, 1.2);
+    if (!W.whirl && down > W.depth * 0.45) { W.whirl = true; this.lasting(this.whirls, _a.set(p.x, fy + 0.05, p.z), Math.max(1.3, W.len * 0.42), 0xffffff, 10, 1.5); this.emit(P.SPRAY, p.x, fy, p.z, 20, 0, 1, 0, 3.5, 1.2); }
+    if (W.whirl && !W.gone && this.rate(W.acc, 'cv', 1.2, dt)) this.ring(_a.set(p.x, fy + 0.05, p.z), null, W.len * 0.55, 0.2, 0x6a8a9a, 1.3);
     if (down >= W.depth) {
       if (!W.gone) { W.gone = true; this.emit(P.SPRAY, p.x, fy, p.z, 28, 0, 1, 0, 5, 1.4); this.emit(P.MIST, p.x, fy + 0.5, p.z, 6, 0, 1, 0, 0.8, 1.6); this.flotsam(_a.set(p.x, fy + 0.2, p.z), 6, 1, { up: 0.8, spread: 0.6 }); }
       return true;
@@ -1111,13 +1113,14 @@ export class FleetFx {
    */
   airWreck(m, a, { beast = false, color = 0xcccccc } = {}) {
     const D = this.dims(m, a), sc = m.scale.y;
-    this.damage(m, 0, { force: 3, fire: !beast, flesh: beast });
+    this.damage(m, 0, !beast, beast, 3);
     const fwd = _d.set(1, 0, 0).applyQuaternion(m.quaternion);
     const W = m.userData._wk = {
       t: 0, air: true, beast, v: new THREE.Vector3(fwd.x * 1.8, beast ? 0.3 : 0.6, fwd.z * 1.8), spin: rnd(0.5), roll: R() < 0.5 ? -1 : 1, p: m.position.clone(),
       yaw: m.rotation.y, rollA: 0, pitch: 0, landed: false, wet: false, acc: {}, rest: Math.max(0.2, -D.box.min.y * sc), s: Math.min(1.6, 0.6 + (a?.radius || 2) * 0.2), lt: 0,
     };
     const p = m.position;
+    this.acts = this.acts.filter((x) => x.m !== m); // no more poses: she is dead
     if (beast) {
       this.emit(P.SPRAY, p.x, p.y, p.z, 18, 0, 0.4, 0, 3, 1.1, 0xc84a3a, 0x7a1a14);
       this.emit(P.MIST, p.x, p.y, p.z, 5, 0, 0.3, 0, 0.6, 1.4, 0xa82a20, 0x5a1410);

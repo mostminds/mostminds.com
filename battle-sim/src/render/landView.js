@@ -1111,7 +1111,7 @@ export class LandView {
       if (sunk === undefined) {
         // her damage by level; she lists toward the beam that took it and settles as she takes water
         const fx = this.fx, d = fx.dm(m);
-        fx.damage(m, sh.hp / Math.max(1, sh.maxHp), { flesh: !!sh.def.beast });
+        fx.damage(m, sh.hp / Math.max(1, sh.maxHp), false, !!sh.def.beast);
         const lv = d.lv, tl = m.userData.list !== undefined ? 0 : (lv >= 3 ? 0.13 : lv >= 2 ? 0.06 : 0) * d.side, ts = (lv >= 3 ? 0.22 : lv >= 2 ? 0.1 : lv ? 0.03 : 0);
         const k = Math.min(1, dt * speed * 0.7);
         d.list += (tl - d.list) * k; d.settle += (ts - d.settle) * k;
@@ -1421,11 +1421,11 @@ export class LandView {
         am.bar.visible = am.crew.visible = am.ladder.visible = false; am.mark.visible = false;
         if (!m.userData._wk) fx.airWreck(m, a, { beast, color: SIDE_COLORS[a.side] });
         fx.airFall(m, fx.wallDt(m, t, speed));
-        if (m.userData.skyAnim) animateSky(m, beast ? am.downAt : t);
+        if (m.userData.skyAnim) { const A = m.userData.anim; if (A && beast) A.act = {}; animateSky(m, beast ? am.downAt : t); } // limp: no more actions
         return;
       }
       // her damage by level: the model shows it; she trails smoke and fire and sinks lower, a beast bleeds and labours
-      const level = fx.damage(m, a.hp / Math.max(1, a.maxHp), { fire: !!(a.dot && a.dot.until > b.tick), flesh: beast });
+      const level = fx.damage(m, a.hp / Math.max(1, a.maxHp), !!(a.dot && a.dot.until > b.tick), beast);
       m.rotation.set(0, -(a.ph + dh * alpha), Math.sin(t * 0.7 + i) * 0.015 - (beast && level >= 2 ? 0.07 * (level - 1) : 0));
       m.position.set(x, ground * 0.3 + am.alt - (beast && level >= 2 ? 0.12 * Math.abs(Math.sin(t * 1.7 + i)) : 0), y);
       // a stoop on its mark: down, nose first, and up again

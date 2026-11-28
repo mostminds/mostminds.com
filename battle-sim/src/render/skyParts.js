@@ -114,7 +114,7 @@ function animateRigBeast(A, t, act, dr, fold, flare, beat) {
     if (lame) { mixTo(w, 'z', r[2] - sg * 0.55, 0.75 * lame); if (tip) mixTo(tip, 'z', q[2] - sg * 0.6, 0.8 * lame); }
   });
   if (rig.jaw && act.jaw) rig.jaw.rotation.x += 0.75 * act.jaw;
-  if (rig.mjaw && act.jaw) rig.mjaw.rotation.x += 0.75 * act.jaw;
+  if (rig.mjaw && act.jaw) for (const j of Array.isArray(rig.mjaw) ? rig.mjaw : [rig.mjaw]) if (j && j.rotation) j.rotation.x += 0.75 * act.jaw;
   const head = rig.head || rig.mhead;
   if (head) {
     head.rotation.x += -(act.headUp || 0) + 0.35 * dr;

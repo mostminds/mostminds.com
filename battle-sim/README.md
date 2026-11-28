@@ -325,6 +325,35 @@ dragons and more, ridden by their crews. Sky arts include:
 - swarms of carpets or harpies;
 - beasts that fight on alone when their riders fall (`src/data/fleets/sky.js`).
 
+### Ships, airships and crews at the quality of the ground units
+
+**Sculpted models.** The realm fleets, sky units, fliers and crews are built with the same sculpting pipeline
+as the ground soldiers:
+
+- figureheads and towed sea-beasts are full sculpts, and deck machines and buildings have finished timber,
+  stone and metal;
+- sky-beasts are the game's own sculpted monsters with the realm's pilot and tack;
+- airships have stitched, gored envelopes, lapstrake gondolas and sculpted engines;
+- every crew is made of the realm's real soldiers, baked in fourteen deck poses (stand, haul, man the gun,
+  brace, attack, cheer...) at three distances.
+
+**Damage.** Damage builds up where the shots land:
+
+- shot holes, scorch and smoke;
+- then ragged breaches showing the ribs, a mast down over the side, charred and smashed deck work, a list
+  and fire spreading along the deck;
+- then a dismasted, burning wreck.
+
+**Ships going down.** A ship that goes down:
+
+- loses her masts and loose pieces as floating wreckage;
+- scatters planks, barrels and swimmers;
+- blows her magazine if she carried powder or fire;
+- lists and goes under by the bow or stern into a whirlpool, leaving an oil slick.
+
+**Airships and sky-beasts.** Airships burn with their bags collapsing and fall nose-down, shedding pieces,
+to crash in fire and dust (or a splash and a floating wreck). Sky-beasts fall limp and lie where they land.
+
 ### High-detail ships, fliers and crews, and their animations
 
 Every designed ship, sky unit, carrier flier and deck crew is modelled in detail: planked and plated hulls,
