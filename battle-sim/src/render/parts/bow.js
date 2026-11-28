@@ -331,7 +331,7 @@ export const BOW_PARTS = {
     const mesh = K.mesh(undefined, `drill${f2(r)}${f2(len)}`); const pivot = new THREE.Group(); pivot.add(mesh); mesh.rotation.order = 'ZYX'; mesh.rotation.z = -PI / 2; pivot.position.set(s.x + 0.1, y, 0);
     const act = { surge: 0, spin: 0 };
     c.addMoving(pivot, (t) => { act.spin += 0; mesh.rotation.y = t * 7 + act.spin; pivot.position.x = s.x + 0.1 + act.surge; act.surge *= 0.85; });
-    c.action('ram', (k) => { const b = bump(k); act.surge = b * len * 0.22; act.spin += 0.6 * b; pivot.position.x = s.x + 0.1 + act.surge; if (k >= 1) act.surge = 0; });
+    c.action('ram', (k) => { const b = bump(k); act.surge = b * len * 0.22; act.boost = 0.6 * b; mesh.rotation.y += act.boost; pivot.position.x = s.x + 0.1 + act.surge; if (k >= 1) { act.surge = 0; act.boost = 0; pivot.position.x = s.x + 0.1; } });
     // the collar, gear ring and boiler struts that hold her
     c.kit.add(G.cyl(r * 0.8, r * 0.9, 0.5, 16), C.steel, s.x - 0.15, y, 0, { rz: PI / 2, m: 0.55, r: 0.4 });
     c.kit.add(G.tor(r * 0.85, 0.07, 5, 20), c.trimC, s.x + 0.1, y, 0, { ry: PI / 2, m: 0.55 });
@@ -412,7 +412,7 @@ export const BOW_PARTS = {
       const rec = k < 0.12 ? k / 0.12 : Math.max(0, 1 - (k - 0.12) / 0.6);
       barrel.position.copy(dir).multiplyScalar(-rec * len * 0.16);
       const f = clamp(1 - k / 0.25, 0, 1); flash.visible = f > 0.01; flash.material.opacity = f; flash.scale.setScalar(r * (2 + 4 * (1 - f)));
-      if (k >= 1) { barrel.position.set(0, 0, 0); flash.visible = false; }
+      if (k >= 1) { barrel.position.set(0, 0, 0); flash.visible = false; flash.scale.setScalar(1); }
     });
     c.anchor('gun', [at.x + dir.x * len * 0.95, at.y + 0.3 + r * 1.4 + dir.y * len * 0.95, 0], 'bowGun');
   },

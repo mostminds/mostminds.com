@@ -1069,9 +1069,9 @@ export const DECK_PARTS = {
       cl.pop();
       const cm = moverMesh(c, cl); cm.position.set(0.18, 0.08, 0);
       gm.add(cm);
-      const holder = new THREE.Group(); holder.position.set(at.x, at.y + 0.6 * s, at.z); holder.rotation.y = out > 0 ? -PI / 2 : PI / 2; holder.scale.setScalar(s);
-      holder.add(gm);
-      c.addMoving(holder, (tt, ph) => { gm.rotation.y = Math.sin(tt * 0.4 + ph + pref * 5) * 0.5; });
+      const mount = new THREE.Group(); mount.position.set(at.x, at.y + 0.6 * s, at.z); mount.rotation.y = out > 0 ? -PI / 2 : PI / 2; mount.scale.setScalar(s);
+      mount.add(gm);
+      c.addMoving(mount, (tt, ph) => { gm.rotation.y = Math.sin(tt * 0.4 + ph + pref * 5) * 0.5; });
       units.push({ gm, cm });
     }
     const burst = (kk) => { for (const u of units) { u.cm.rotation.x = spinK(kk, 3); u.cm.position.x = 0.18 - pulses(kk, 6, 0.3) * 0.025; } };
@@ -1337,12 +1337,12 @@ export const DECK_PARTS = {
       }
       for (const z of [-1, 1]) rk.m.add(G.box(0.95, 0.38, 0.03), frame, 0, 0.16, z * 0.32);
       rk.push(0, 0.16, 0.34); relief(rk.f, S, 0.12, S.met); rk.pop();
-      const holder = new THREE.Group(); holder.position.set(at.x, at.y + 0.55 * k, at.z); holder.scale.setScalar(k);
-      const tilt = new THREE.Group(); holder.add(tilt);
+      const mount = new THREE.Group(); mount.position.set(at.x, at.y + 0.55 * k, at.z); mount.scale.setScalar(k);
+      const tilt = new THREE.Group(); mount.add(tilt);
       const rm = moverMesh(c, rk), ro = holder(rocket.mesh()), fm = glowMesh(fl, 0.9);
       rm.add(ro, fm); fm.visible = false; tilt.add(rm);
       tilt.rotation.x = out * -0.6;
-      c.addMoving(holder);
+      c.addMoving(mount);
       racks.push({ tilt, ro, fm, out });
     }
     act(c, 'mortar', (kk) => { for (const r of racks) { r.tilt.rotation.x = r.out * -(0.6 + bump(kk) * 0.25); r.fm.visible = kk > 0.08 && kk < 0.35; r.fm.scale.set(1, 1, r.fm.visible ? 1 + Math.sin(kk * 60) * 0.3 : 1); r.ro.visible = !(kk > 0.12 && kk < 0.85); } });
