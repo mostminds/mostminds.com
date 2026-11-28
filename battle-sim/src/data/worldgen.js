@@ -539,8 +539,9 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
     void foeId;
     return groups;
   };
+  const FORT_WORTH = 1.5; // what an island fort is worth in ships to the side that must take it
   const base = 13500 + r.int(0, 4500);
-  const fortWorth = forts.filter((f) => f.side === 1).reduce((n, f) => n + seaPrice(FORTS[f.type]) * 2.4, 0) - forts.filter((f) => f.side === 0).reduce((n, f) => n + seaPrice(FORTS[f.type]) * 2.4, 0);
+  const fortWorth = forts.filter((f) => f.side === 1).reduce((n, f) => n + seaPrice(FORTS[f.type]) * FORT_WORTH, 0) - forts.filter((f) => f.side === 0).reduce((n, f) => n + seaPrice(FORTS[f.type]) * FORT_WORTH, 0);
   const sides = [
     { name: `${A.adj} fleet`, groups: fleet(attId, A, base + Math.max(0, fortWorth), defId, 0) },
     { name: `${D.adj} fleet`, groups: fleet(defId, D, base + Math.max(0, -fortWorth), attId, 1) },

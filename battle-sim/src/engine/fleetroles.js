@@ -16,6 +16,8 @@
 // scrape their bottoms there; near land a big ship's wide turns are cramped; islands stop direct shot but not
 // mortar shells; a rough sea throws mortars off.
 
+import { ramMods, ramArc, fireshipIntent, hovers } from './fleetarts.js';
+
 const DEG = Math.PI / 180;
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const dist = (a, c) => Math.hypot(a.x - c.x, a.y - c.y) - a.radius - c.radius;
@@ -30,7 +32,7 @@ export function roleOf(def) {
   return 'line';
 }
 /** draws deep water: a hull that grounds in the shallows */
-const deepDraft = (e) => e.ship && !e.def.flat && !e.def.beast && e.role !== 'landing' && e.role !== 'hunter' && (e.def.len || 0) >= 6;
+const deepDraft = (e) => e.ship && !e.def.flat && !hovers(e) && !e.def.beast && e.role !== 'landing' && e.role !== 'hunter' && (e.def.len || 0) >= 6;
 
 export function roleSetup(b, e) {
   if (!e.ship) return;
@@ -122,6 +124,8 @@ export function roleIntent(b, e, t, d, bearing, range) {
       return Math.hypot(flank.x - e.x, flank.y - e.y) > 6 ? { desired: toward(e, flank), speedMul: 0.8 } : null;
     }
     case 'siege': {
+      const fs = fireshipIntent(b, e);
+      if (fs) return fs;
       // stand off at mortar range, behind the line, ready to anchor
       const m = e.def.mortar, tgt = siegeTarget(b, e);
       const threat = foe.mine.find((o) => o.role !== 'landing' && Math.hypot(o.x - e.x, o.y - e.y) < 12);
@@ -129,7 +133,7 @@ export function roleIntent(b, e, t, d, bearing, range) {
       if (!tgt) return { desired: toward(e, behindLine(b, e.side, 10)), speedMul: 0.7 };
       const dd = Math.hypot(tgt.x - e.x, tgt.y - e.y);
       if (dd > m.range * 0.92) { e.anchored = false; return { desired: toward(e, tgt), speedMul: 0.9, target: tgt }; }
-      if (dd < m.range * 0.55) { e.anchored = false; return { desired: toward(e, tgt) + Math.PI, speedMul: 0.8, target: tgt }; }
+      if (dd < m.range * 0.55 && !(e.def.arts && e.def.arts.claws)) { e.anchored = false; return { desired: toward(e, tgt) + Math.PI, speedMul: 0.8, target: tgt }; }
       if (!e.anchored) { e.anchored = true; if (!(b.tick - (e.anchorSaid || -999) < 120)) { e.anchorSaid = b.tick; b.events.push({ type: 'anchor', id: e.id }); } }
       return { desired: e.heading, speedMul: 0, target: tgt };
     }
@@ -167,7 +171,7 @@ export function roleIntent(b, e, t, d, bearing, range) {
     }
     case 'line': {
       // a ram on a long straight run when the water is deep and open, and the mark is ahead
-      if (e.def.ram && t && t.ship && e.ramCd <= 0 && d < 14 && !nearLand(b, e.x, e.y, 6)) {
+      if ((e.def.ram || e.def.arts?.grapple) && t && t.ship && e.ramCd <= 0 && d < 14 && (!nearLand(b, e.x, e.y, 6) || e.def.arts?.blade)) {
         const off = Math.abs(wrap(bearing - e.heading));
         if (off < 30 * DEG) return { desired: bearing, speedMul: 1.15, target: t };
       }
@@ -247,11 +251,19 @@ export function roleWeapons(b, e, t, shoot) {
       const dd = dist(e, tgt);
       if (dd <= m.range && dd >= (m.minRange || 0)) {
         const spotted = b.ents.some((o) => o.alive && o.air && o.side === e.side && Math.hypot(o.x - tgt.x, o.y - tgt.y) < 14);
-        const sea = b.wind.speed > 1.05 ? 0.8 : 1.1; // a rough sea throws the shell off; a calm one steadies the mortar
-        const acc = m.acc * sea * (spotted ? 1.3 : 1) * (e.anchored ? 1.15 : 0.85) * (tgt.fort ? 1.25 : 1);
-        shoot(b, e, tgt, m.dmg, Math.min(0.95, acc), m.range * 1.4, 'mortar');
-        const s = b.shots[b.shots.length - 1]; s.splash = m.splash || 2; s.tick += 2;
-        e.shells--; e.mortarCd = Math.round(m.reload / Math.min(1, crewEff + 0.3));
+        const ar = d0.arts || {};
+        const sea = ar.claws ? 1.1 : b.wind.speed > 1.05 ? 0.8 : 1.1; // a rough sea throws the shell off; a calm one steadies the mortar
+        const acc = m.acc * sea * (spotted ? 1.3 : 1) * (e.anchored || ar.claws ? 1.15 : 0.85) * (tgt.fort ? 1.25 : 1);
+        // one colossal gun, or a scattered salvo of lighter shells
+        const n = ar.salvo || 1, k = (ar.single || 1) * (n > 1 ? 1.6 / n : 1);
+        for (let i = 0; i < n; i++) {
+          const dmg = [Math.round(m.dmg[0] * k), Math.round(m.dmg[1] * k)];
+          shoot(b, e, tgt, dmg, Math.min(0.95, acc * (n > 1 ? 0.85 : 1)), m.range * 1.4, 'mortar');
+          const s = b.shots[b.shots.length - 1]; s.splash = (m.splash || 2) * (ar.single ? 1.4 : 1); s.tick += 2 + i;
+          s.look = ar.shot || 'mortar';
+          if (n > 1 && !s.hit) { s.x += (b.rng.next() - 0.5) * 4; s.y += (b.rng.next() - 0.5) * 4; }
+        }
+        e.shells--; e.mortarCd = Math.round((m.reload * (ar.rapid || 1) * (ar.single || 1)) / Math.min(1, crewEff + 0.3));
       }
     }
   }
@@ -267,15 +279,18 @@ export function roleWeapons(b, e, t, shoot) {
     const up = b.ents.filter((o) => o.alive && o.air && o.carrier === e.id).length;
     if (up < sq.max) { launch(b, e, sq); e.launchCd = sq.every; }
   }
+  // grapnels and maws: touching an enemy hull, she locks on
+  if (d0.arts && d0.arts.grapple && t && t.alive && t.ship && !(e.lockUntil > b.tick) && dist(e, t) < 0.6 && e.ramCd <= 0) { e.ramCd = 20; e.lockTo = t.id; e.lockUntil = b.tick + 14; t.lockTo = e.id; t.lockUntil = b.tick + 14; b.events.push({ type: 'art', name: 'grapple', id: t.id, by: e.id }); }
   // ramming: the run builds the blow
   if (d0.ram && t && t.alive && t.ship && e.ramCd <= 0 && dist(e, t) < 0.4) {
-    const ahead = Math.abs(wrap(Math.atan2(t.y - e.y, t.x - e.x) - e.heading)) < 35 * DEG;
+    const ahead = Math.abs(wrap(Math.atan2(t.y - e.y, t.x - e.x) - e.heading)) < ramArc(e) * DEG;
     if (ahead) {
-      const run = Math.min(30, e.run || 0), dmg = Math.round(d0.ram.base + run * d0.ram.perTile);
-      t.hp -= 0; // the engine's hurt is applied by the caller
+      const run = Math.min(30, e.run || 0);
+      const rm = ramMods(b, e, t, Math.round(d0.ram.base + run * d0.ram.perTile), 0);
+      const dmg = rm.dmg;
       e.ramCd = d0.ram.cooldown; e.run = 0;
       b.events.push({ type: 'ram', id: e.id, to: t.id, dmg });
-      return { ram: { t, dmg, self: Math.round(dmg * 0.12) } };
+      return { ram: { t, dmg, self: rm.self === 0 ? 0 : Math.round(dmg * 0.12) } };
     }
   }
   return null;
@@ -304,6 +319,18 @@ export function squadTick(b, e) {
   const home = b.ents[e.carrier];
   // pick: siege ships and carriers first, then supply flagships, then whatever is nearest
   let t = e.target >= 0 ? b.ents[e.target] : null;
+  if (e.def.hunter) {
+    // interceptors go for the enemy's fliers first
+    let foe = null, fd = 30;
+    for (const o of b.ents) { if (!o.alive || !o.air || o.side === e.side) continue; const dd = Math.hypot(o.x - e.x, o.y - e.y); if (dd < fd) { fd = dd; foe = o; } }
+    if (foe) {
+      const a = Math.atan2(foe.y - e.y, foe.x - e.x);
+      e.heading = fd > 2 ? a : wrap(a + Math.PI / 2);
+      e.x += Math.cos(e.heading) * e.def.speed; e.y += Math.sin(e.heading) * e.def.speed;
+      if (fd < 3 && e.cd <= 0) { e.cd = e.def.every; foe.hp -= b.rng.int(e.def.dmg[0], e.def.dmg[1]) * 2; b.events.push({ type: 'strafe', id: e.id, to: foe.id }); if (foe.hp <= 0 && foe.alive) { foe.alive = false; foe.hp = 0; e.kills++; b.events.push({ type: 'death', id: foe.id }); } }
+      return;
+    }
+  }
   if (!t || !t.alive || t.side === e.side || b.tick % 8 === 0) {
     let best = null, bs = Infinity;
     for (const o of b.ents) {
@@ -322,6 +349,9 @@ export function squadTick(b, e) {
   e.x = Math.max(1, Math.min(b.W - 1, e.x)); e.y = Math.max(1, Math.min(b.H - 1, e.y));
   if (dd < 5 && e.cd <= 0) {
     e.cd = e.def.every;
+    // an intercepting screen over the enemy fleet spoils the run
+    const screened = b.ents.some((o) => o.alive && o.ship && o.side !== e.side && o.def.arts?.intercept && Math.hypot(o.x - e.x, o.y - e.y) < o.def.arts.intercept);
+    if (screened && b.rng.chance(0.5)) { b.events.push({ type: 'art', name: 'intercept', id: e.id }); return; }
     b.events.push({ type: 'strafe', id: e.id, to: t.id });
     t.crew = Math.max(0, t.crew - b.rng.int(0, e.def.crewKill));
     t.hp -= b.rng.int(e.def.dmg[0], e.def.dmg[1]);

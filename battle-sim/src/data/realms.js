@@ -41,6 +41,8 @@ const TOWN = {
 };
 const PLACES = { village: 'village', fort: 'fort', castle: 'castle', city: 'city', coast: 'coastal town', harbor: 'harbour', island: 'island hold' };
 
+import { FLEET_DESIGNS } from './fleets/index.js';
+
 export const REALM_GROUPS = ['The Realms of Order', 'The Forces of Destruction', 'The Undead Legions', 'Outcasts and Distant Lands', 'The Realms of Chaos', 'The Hidden and Fringe Races'];
 
 // Every faction: id, names, group (index above), palette, town kind, own buildings and the rest.
@@ -917,6 +919,36 @@ const COST = { aethel: 0.71, ashur: 0.82, aurelia: 0.8, caliphate: 0.89, cloven:
   kharnak: 0.60, morbus: 0.85, velvet: 0.67, malvash: 0.8, ashhorde: 0.63, balor: 0.55, kurgan: 0.85, hearthmoot: 0.52, baobab: 0.76, nagavar: 0.73,
   pearlfleet: 0.77, glimmer: 0.98, khanate: 0.50, emerald: 0.82, deeproot: 0.44, goldsands: 0.9, labyrinth: 1.2 };
 
+/** lays a realm's own design (src/data/fleets) over a working hull: name, looks, arts and what they need */
+function designed(out, id, f, D) {
+  const s = out[id];
+  if (!s || !D) return;
+  s.name = `${f.adj} ${D.name}`;
+  if (D.note) s.note = D.note;
+  if (D.look) { if (D.look.hull !== undefined) s.color = D.look.hull; if (D.look.sail !== undefined) s.sail = D.look.sail; if (D.look.trim !== undefined) s.trim = D.look.trim; }
+  s.dress = D.dress || [];
+  const a = { ...(D.arts || {}) };
+  s.arts = a;
+  const m = D.mul || {};
+  if (m.hull) s.hull = Math.round(s.hull * m.hull);
+  if (m.speed) s.speed = +(s.speed * m.speed).toFixed(3);
+  if (m.armour) s.armour = Math.round(s.armour * m.armour);
+  if (m.crew) s.crew = Math.round(s.crew * m.crew);
+  if (m.turn) s.turn = +(s.turn * m.turn).toFixed(2);
+  if (a.armour) s.armour += a.armour;
+  if (a.aa) s.flak = { range: 14, dmg: [6, 14], reload: 2, acc: 0.55, guns: 2, ...a.aa };
+  if ((a.ram || a.drill || a.blade || a.tow) && !s.ram) s.ram = { base: 30, perTile: 3, cooldown: 30 };
+  if (a.hover || a.phase) s.flat = true;
+  if (a.oars) s.oars = true;
+  if (D.flier && s.squadrons) {
+    const F = D.flier;
+    s.squadrons = { ...s.squadrons, flier: F.style || s.squadrons.flier, name: F.name ? `${f.adj} ${F.name}` : s.squadrons.name, color: F.color,
+      def: { ...(F.hp ? { hp: F.hp } : {}), ...(F.dmg ? { dmg: F.dmg } : {}), ...(F.burn !== undefined ? { burn: F.burn } : {}), ...(F.crewKill ? { crewKill: F.crewKill } : {}), ...(F.speed ? { speed: F.speed } : {}), ...(F.hunter ? { hunter: true } : {}), color: F.color } };
+  }
+  // a siege ship's shells must last if she fires salvoes
+  if (s.mortar && a.salvo) s.mortar = { ...s.mortar, shells: Math.round((s.mortar.shells ?? 16) * 1.3) };
+}
+
 /** Worldgen factions: how each realm builds and what it musters. */
 export function realmFactions() {
   const out = {};
@@ -925,7 +957,7 @@ export function realmFactions() {
     for (const [id, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w) (mods.as ? assault : army)[uid(f, id)] = mods.w;
     const { civic, ...build } = t;
     out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, cost: COST[f.id] || 1, ...build, civic: [...civic, ...landmarksOf(f.id)], look: f.look, army, assault,
-      ships: f.ships.map((s) => uid(f, s[0])), roleShips: Object.fromEntries(['siege', 'carrier', 'flak', 'troop', 'hunter', 'landing'].map((k) => [k, `${f.id}_${k}`])), undersea: underseaOf(f), seaMonster: f.sea || null, airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
+      ships: [...(FLEET_DESIGNS[f.id]?.line ? [`${f.id}_line`] : []), ...f.ships.map((s) => uid(f, s[0]))], roleShips: Object.fromEntries(['siege', 'carrier', 'flak', 'troop', 'hunter', 'landing'].map((k) => [k, `${f.id}_${k}`])), undersea: underseaOf(f), seaMonster: f.sea || null, airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
   }
   return out;
 }
@@ -967,6 +999,15 @@ export function realmShips(BASE, SUB = null) {
       out[`${f.id}_${role}`] = { ...b, name: `${f.adj} ${label}`, kind, realm: f.id, fleet: f.name, roleShip: true, ...(color !== undefined ? { color } : {}), ...(sail !== undefined ? { sail } : {}), ...(sail2 !== undefined ? { sail2 } : {}), ...(trim !== undefined ? { trim } : {}), ...(emblem ? { emblem } : {}), ...(role === 'landing' ? { oars: true, sails: 0 } : {}) };
       // realms that build airships fly gliders and gyros off their carriers; the rest fly tamed beasts
       if (role === 'carrier') out[`${f.id}_${role}`].squadrons = { ...b.squadrons, flier: f.air ? (f.id.length % 2 ? 'gyro' : 'glider') : 'beast', name: f.air ? `${f.adj} Squadron` : `${f.adj} Sky-Riders` };
+      designed(out, `${f.id}_${role}`, f, FLEET_DESIGNS[f.id]?.[role]);
+    }
+    // the realm's own ship of the line, built for breaking other ships
+    const L = FLEET_DESIGNS[f.id]?.line;
+    if (L && BASE[L.base || 'frigate']) {
+      const lk = look;
+      out[`${f.id}_line`] = { ...BASE[L.base || 'frigate'], kind, realm: f.id, fleet: f.name, roleShip: true, role: 'line',
+        ...(lk.color !== undefined ? { color: lk.color } : {}), ...(lk.sail !== undefined ? { sail: lk.sail } : {}), ...(lk.trim !== undefined ? { trim: lk.trim } : {}), ...(lk.emblem ? { emblem: lk.emblem } : {}) };
+      designed(out, `${f.id}_line`, f, L);
     }
   }
   for (const f of REALMS) for (const [id, name, baseId, kind, over = {}] of f.ships) {

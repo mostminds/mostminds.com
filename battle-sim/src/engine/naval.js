@@ -3,6 +3,7 @@
 import { createRng } from './rng.js';
 import { SHIPS, CREATURES, FORTS } from '../data/naval.js';
 import { roleSetup, roleIntent, roleWeapons, rolesTick, squadTick, blocked } from './fleetroles.js';
+import { aimMods, onHit, boardMult, moveMul, magicMul, wardMul, hidden, ignoresIslands, artsTick, fleeHeading } from './fleetarts.js';
 
 const DEG = Math.PI / 180;
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -72,6 +73,7 @@ export function stepNaval(b) {
   if (b.tick === 1 && b.refused) for (const r of b.refused) b.events.push({ type: 'refused', side: r.side, name: r.name });
   for (let i = 0; i < b.ents.length; i++) { const e = b.ents[i]; if (e.alive) (e.air ? squadTick : e.ship ? shipTick : e.fort ? fortTick : creatureTick)(b, e); }
   rolesTick(b);
+  artsTick(b);
   // fire in the rigging, water in the hold, coils round the hull: harm that goes on after the blow
   for (const e of b.ents) {
     const d = e.dot;
@@ -122,9 +124,10 @@ const dist = (a, c) => Math.hypot(a.x - c.x, a.y - c.y) - a.radius - c.radius;
 function chooseTarget(b, e) {
   let best = null, bs = Infinity;
   for (const o of b.ents) {
-    if (!o.alive || o.side === e.side || submerged(b, o) || o.air) continue;
+    if (!o.alive || o.side === e.side || submerged(b, o) || o.air || hidden(b, o, e)) continue;
     const d = Math.hypot(o.x - e.x, o.y - e.y);
     let s = d + (o.hp / o.maxHp) * 15;
+    if (!e.ship && !e.fort && e.lured === o.id) s -= 40; // a lure draws the beasts
     // a living barricade fills the gunners' sights: ships near it shoot at it before anything behind
     if (e.ship && o.def.screen && d < o.def.screen) s -= 60;
     if (s < bs) { bs = s; best = o; }
@@ -141,7 +144,7 @@ function steer(b, e, desired, speedMul = 1) {
   if (e.x > b.W - margin) ax -= (e.x - (b.W - margin)) * 0.4;
   if (e.y < margin) ay += (margin - e.y) * 0.4;
   if (e.y > b.H - margin) ay -= (e.y - (b.H - margin)) * 0.4;
-  for (const isl of b.islands) {
+  if (!ignoresIslands(e)) for (const isl of b.islands) {
     // pack ice and bergs: sea creatures swim beneath, a diving boat passes under, an ice-breaking bow goes through
     if (isl.ice && (!e.ship || e.def.icebreaker || e.def.kind === 'icebreaker' || e.def.kind === 'dreadnought' || submerged(b, e))) continue;
     const dx = e.x - isl.x, dy = e.y - isl.y, d = Math.hypot(dx, dy);
@@ -159,6 +162,7 @@ function steer(b, e, desired, speedMul = 1) {
   if (e.ship) spd *= 0.35 + 0.65 * Math.max(0.25, e.crew / e.def.crew); // short-handed ships are slow
   if (e.ship) spd *= sailFactor(b, e);
   if (submerged(b, e)) spd *= 1.4;
+  if (e.ship) spd *= moveMul(b, e, b.ents[e.target]);
   e.x += Math.cos(e.heading) * spd;
   e.y += Math.sin(e.heading) * spd;
   e.run = e.straight ? (e.run || 0) + spd : 0;
@@ -249,7 +253,7 @@ function fireBroadsides(b, e) {
       const d = dist(e, o);
       if (d > c.range || blocked(b, e, o)) continue;
       const ang = Math.abs(wrap(Math.atan2(o.y - e.y, o.x - e.x) - beam));
-      if (ang > 35 * DEG) continue;
+      if (ang > 35 * DEG && !(e.def.arts && e.def.arts.turrets)) continue;
       const score = d + (o.id === e.target ? -5 : 0);
       if (score < bd) { bd = score; best = o; }
     }
@@ -257,10 +261,14 @@ function fireBroadsides(b, e) {
     const guns = Math.max(1, Math.round(c.perSide * crewEff));
     // what goes down the barrel: heavy shot close in, chain shot at a ship running away, round shot otherwise
     const bd2 = dist(e, best), fleeing = best.ship && Math.abs(wrap(Math.atan2(best.y - e.y, best.x - e.x) - best.heading)) < 70 * DEG;
-    let ammo = 'cannon';
+    const ar = e.def.arts || {};
+    let ammo = ar.beam ? 'beam' : 'cannon';
     if (best.ship && e.role === 'line' && e.heavy > 0 && bd2 < c.range * 0.4) { ammo = 'heavy'; e.heavy--; }
-    else if (best.ship && (e.role === 'line' || e.role === 'hunter') && bd2 > c.range * 0.5 && (fleeing || best.rig > 0.8) && b.rng.chance(e.def.speed >= 0.6 ? 0.7 : 0.35)) ammo = 'chain';
-    for (let g = 0; g < guns; g++) shoot(b, e, best, c.dmg, c.acc, c.range, ammo, s, g / guns);
+    else if (best.ship && (e.role === 'line' || e.role === 'hunter') && bd2 > c.range * 0.5 && (fleeing || best.rig > 0.8) && b.rng.chance(Math.min(0.9, (e.def.speed >= 0.6 ? 0.7 : 0.35) + (ar.chainBias || 0)))) ammo = 'chain';
+    // an overcharged broadside: a heavier blow, and now and then a gun bursts
+    let dmg = c.dmg;
+    if (ar.overcharge && b.rng.chance(ar.overcharge)) { dmg = [Math.round(c.dmg[0] * 1.8), Math.round(c.dmg[1] * 1.8)]; if (b.rng.chance(0.25)) { hurt(b, e, b.rng.int(6, 16), null); b.events.push({ type: 'art', name: 'misfire', id: e.id }); } }
+    for (let g = 0; g < guns; g++) shoot(b, e, best, dmg, c.acc, c.range, ammo, s, g / guns);
     e.reload[s] = Math.round(c.reload / Math.min(1, crewEff + 0.3));
     b.events.push({ type: 'broadside', id: e.id, side: s, guns });
   }
@@ -273,10 +281,12 @@ function shoot(b, e, t, dmg, acc, range, kind, broadside = 0, offset = 0) {
   if (kind === 'cannon') { const upwind = Math.cos(wrap(Math.atan2(t.y - e.y, t.x - e.x) - b.wind.dir)); p *= 1 + 0.12 * upwind; }
   p *= Math.min(1.3, 0.75 + t.radius * 0.15);
   if (b.tick < e.inkUntil) p *= 1 - e.ink;
+  const am = aimMods(b, e, t, kind);
+  p *= am.acc;
   const hit = b.rng.next() < p;
-  let dm = hit ? b.rng.int(dmg[0], dmg[1]) : 0;
+  let dm = hit ? Math.round(b.rng.int(dmg[0], dmg[1]) * am.dmg) : 0;
   if (kind === 'heavy') dm = Math.round(dm * 1.6); else if (kind === 'chain') dm = Math.round(dm * 0.35); else if (kind === 'flak' && !t.air) dm = Math.round(dm * 0.3);
-  const armour = t.ship ? t.def.armour : t.def.armour || 0;
+  const armour = (t.ship ? t.def.armour : t.def.armour || 0) * am.armour;
   dm = Math.round(dm * (100 / (100 + (kind === 'torpedo' || kind === 'heavy' ? armour * 0.4 : kind === 'swivel' ? armour * 1.5 : armour)))); // a torpedo strikes below the belt; heavy shot punches through plate
   const flight = 1 + Math.floor(d / 7);
   // miss lands somewhere near the target
@@ -302,6 +312,8 @@ function creatureTick(b, e) {
   const atk = e.def.attack;
   const bearing = Math.atan2(t.y - e.y, t.x - e.x);
   // ranged creatures hover at range, others close in
+  const away = fleeHeading(b, e);
+  if (away !== null) { steer(b, e, away, 1.1); return; }
   const want = atk.range > 4 ? (d < atk.range * 0.5 ? bearing + Math.PI : d > atk.range * 0.9 ? bearing : bearing + Math.PI / 2) : bearing;
   if (e.def.jet) {
     // jet-propelled: a few ticks of straight, violent thrust, then a drift in which it lines up the next run
@@ -459,6 +471,7 @@ function eruptions(b) {
 
 function hurt(b, t, dmg, from) {
   if (!t.alive) return;
+  dmg = Math.round(dmg * wardMul(b, t));
   t.hp -= dmg;
   if ((t.ship || t.fort) && dmg > 0) t.crew = Math.max(0, t.crew - Math.floor(dmg / 12 + (b.rng.chance(0.3) ? 1 : 0)));
   b.events.push({ type: 'hit', id: t.id, dmg });
@@ -486,7 +499,10 @@ function resolveShots(b) {
         // shot aloft cuts up sails and rigging
         if (t.rig > 0.35 && b.rng.chance(0.12)) { t.rig = Math.max(0.35, t.rig - 0.1); if (t.rig <= 0.55 && !t.crippled) { t.crippled = true; b.events.push({ type: 'rigging', id: t.id }); } }
       }
+      if (s.kind === 'spell') dmg = Math.round(dmg * magicMul(b, t));
       hurt(b, t, dmg, src);
+      const more = onHit(b, s, src, t, dmg);
+      if (more) hurt(b, more.also, more.dmg, src);
       // holed below the waterline: she takes water for a while
       if (s.torpedo && t.alive && t.ship && !t.dot && dmg > 10) t.dot = { until: b.tick + 15, from: b.tick, every: 3, dmg: 5, by: s.from };
       if (s.grapple) { t.slowUntil = b.tick + s.grapple.duration; t.slow = s.grapple.slow; }
@@ -529,8 +545,9 @@ function boarding(b) {
     if (a.fort && c.fort) continue;
     if (a.side === c.side || dist(a, c) > (a.fort || c.fort ? 3 : 1.2)) continue;
     if (b.tick % 2) continue;
-    const la = Math.max(0, Math.round(c.crew * 0.08 * b.rng.next() + b.rng.next()));
-    const lc = Math.max(0, Math.round(a.crew * 0.08 * b.rng.next() + b.rng.next()));
+    const ma = boardMult(b, a, c), mc = boardMult(b, c, a);
+    const la = Math.max(0, Math.round((c.crew * mc / ma) * 0.08 * b.rng.next() + b.rng.next()));
+    const lc = Math.max(0, Math.round((a.crew * ma / mc) * 0.08 * b.rng.next() + b.rng.next()));
     a.crew = Math.max(0, a.crew - la); c.crew = Math.max(0, c.crew - lc);
     b.events.push({ type: 'boarding', a: a.id, c: c.id });
     for (const [loser, winner] of [[a, c], [c, a]]) {
@@ -555,7 +572,7 @@ function fortTick(b, e) {
   if (e.cd > 0 || e.crew <= 0) return;
   let best = null, bs = Infinity;
   for (const o of b.ents) {
-    if (!o.alive || o.side === e.side || submerged(b, o) || (o.air && !w.antiAir && !w.grapple)) continue;
+    if (!o.alive || o.side === e.side || submerged(b, o) || (o.air && !w.antiAir && !w.grapple) || hidden(b, o, e)) continue;
     const d = dist(e, o);
     if (d > w.range || d < (w.minRange || 0)) continue;
     const s = d - (w.vsCreature && !o.ship && !o.fort ? 15 : 0) + (o.hp / o.maxHp) * 5;
