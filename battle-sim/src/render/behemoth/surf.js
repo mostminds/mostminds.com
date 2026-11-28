@@ -70,7 +70,7 @@ const V9 = new Float64Array(9);
 export function gridGeo(nu, nv, vert, o = {}) {
   nu = Math.max(1, Math.round(nu)); nv = Math.max(1, Math.round(nv));
   const n = (nu + 1) * (nv + 1), P = new Float32Array(n * 3), C = new Float32Array(n * 3), M = new Float32Array(n * 3);
-  const F = o.flow ? new Float32Array(n * 2) : null;
+  const F = o.flow ? new Float32Array(n * 3) : null;
   for (let i = 0; i <= nu; i++) for (let j = 0; j <= nv; j++) {
     const k = i * (nv + 1) + j;
     V9.fill(0); V9[3] = V9[4] = V9[5] = 0.7; V9[6] = 0.8;
@@ -78,7 +78,7 @@ export function gridGeo(nu, nv, vert, o = {}) {
     P[k * 3] = V9[0]; P[k * 3 + 1] = V9[1]; P[k * 3 + 2] = V9[2];
     C[k * 3] = V9[3]; C[k * 3 + 1] = V9[4]; C[k * 3 + 2] = V9[5];
     M[k * 3] = V9[6]; M[k * 3 + 1] = V9[7]; M[k * 3 + 2] = V9[8];
-    if (F) { F[k * 2] = o.flow(i / nu, j / nv)[0]; F[k * 2 + 1] = o.flow(i / nu, j / nv)[1]; }
+    if (F) { const f = o.flow(i / nu, j / nv); F[k * 3] = f[0]; F[k * 3 + 1] = f[1]; F[k * 3 + 2] = f[2] ?? i / nu; }
   }
   const idx = [];
   const drop = o.drop, rows = o.rows; // rows: v indices where the strip is cut (sharp profile corners: duplicated rows)
@@ -92,7 +92,7 @@ export function gridGeo(nu, nv, vert, o = {}) {
   g.setAttribute('position', new THREE.BufferAttribute(P, 3));
   g.setAttribute('color', new THREE.BufferAttribute(C, 3));
   g.setAttribute('aPbr', new THREE.BufferAttribute(M, 3));
-  if (F) g.setAttribute('aFlow', new THREE.BufferAttribute(F, 2));
+  if (F) g.setAttribute('aFlow', new THREE.BufferAttribute(F, 3));
   g.setIndex(n > 65535 ? new THREE.BufferAttribute(new Uint32Array(idx), 1) : new THREE.BufferAttribute(new Uint16Array(idx), 1));
   g.computeVertexNormals();
   if (o.wrap) seamNormals(g, nu, nv);
@@ -238,6 +238,17 @@ export function pattern(P, s, t, up = 0) {
       const cl = cells3(s * 4, t * 4, sd), por = 1 - sstep(0.15, 0.3, cl);
       const c = mulc(mixc(c0, c2, sstep(0.3, 0.7, noise3(s, t, sd))), 0.85 + 0.2 * cl - 0.25 * por);
       r = set(c, 0.75, 0, 0, -0.03 * por + 0.02 * cl); break;
+    }
+    case 'scute': {
+      const cl = cells3(s * 0.45, t * 0.45, sd), e = sstep(0.0, 0.08, Math.abs(cl - 0.55) * 0.3);
+      const ring = 0.5 + 0.5 * Math.sin(cl * 40);
+      const c = mulc(mixc(c0, c2, ring * 0.4 + 0.3 * nz), 0.75 + 0.3 * cl);
+      r = set(e > 0.5 ? mulc(c, 0.55) : c, 0.75, 0, 0, -0.06 * e + 0.02 * ring); break;
+    }
+    case 'rock': {
+      const cl = cells3(s * 0.8, t * 0.8, sd), f = fbm3(s * 0.6, t * 0.9, sd, 3);
+      const c = mulc(mixc(c0, c2, sstep(0.35, 0.65, f)), 0.7 + 0.45 * cl);
+      r = set(c, 0.92, 0, 0, 0.08 * (cl - 0.5) + 0.06 * (f - 0.5)); break;
     }
     case 'glass': {
       // stained glass: leaded cells of colour that light up from within
@@ -389,7 +400,9 @@ function buildPrism(sp, lv, dmg) {
   const per = plan.len;
   const vert = (u, vv, o) => {
     const j = Math.round(vv * nv), R = rows[j], [px, pz, nx, nz, cn] = plan.at(u);
-    let x = px * R.k + nx * R.off, z = pz * R.k + nz * R.off, y = R.y;
+    let kx = R.k, kz = R.k;
+    if (sp.ridge && sp.plan === 'rect' && sp.d && sp.w !== sp.d) { if (sp.w > sp.d) kx = 1 - (1 - R.k) * (sp.d / sp.w); else kz = 1 - (1 - R.k) * (sp.w / sp.d); }
+    let x = px * kx + nx * R.off, z = pz * kz + nz * R.off, y = R.y;
     if (R.e && sp.upturn) y += sp.upturn * R.e * Math.pow(cn, 2);
     const P = sp.mats[R.mat] || sp.mats.wall;
     const s = u * per * clamp(R.k + R.off / Math.max(0.3, sp.w / 2), 0.08, 2);
@@ -680,7 +693,7 @@ export function flowSheet(key, pts, w, o = {}) {
       if (o.ring) { const i = Math.round(u * nu), a = v * TAU; out[0] = p.x + (F.normals[i].x * Math.cos(a) + F.binormals[i].x * Math.sin(a)) * ww; out[1] = p.y + (F.normals[i].y * Math.cos(a) + F.binormals[i].y * Math.sin(a)) * ww; out[2] = p.z + (F.normals[i].z * Math.cos(a) + F.binormals[i].z * Math.sin(a)) * ww; }
       else { out[0] = p.x + side.x * (v - 0.5) * 2 * ww; out[1] = p.y + side.y * (v - 0.5) * 2 * ww; out[2] = p.z + side.z * (v - 0.5) * 2 * ww; }
       out[3] = out[4] = out[5] = 1;
-    }, { flow: (u, v) => [u * L, v] });
+    }, { flow: (u, v) => [u * L, v, u] });
   });
 }
 /** a shell of revolution about +y for mist, vortices, beams of light: prof [[r, y], ...]; aFlow = (around * R, up) */
@@ -693,6 +706,6 @@ export function flowShell(key, prof, o = {}) {
     return gridGeo(nu, nv, (u, v, out) => {
       const [r, y] = at(v), a = u * TAU + (o.twist || 0) * v;
       out[0] = Math.cos(a) * r; out[1] = y; out[2] = Math.sin(a) * r; out[3] = out[4] = out[5] = 1;
-    }, { flow: (u, v) => [u * TAU * Rm, v], wrap: true });
+    }, { flow: (u, v) => [u * TAU * Rm, v, v], wrap: true });
   });
 }

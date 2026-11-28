@@ -380,7 +380,12 @@ export class NavalView {
         if (e.hit) fx.explode(p, 0.7, { debris: 6, dcol: 0x2a1a10 }); else { fx.splash(p, 1.2); fx.emit(P.MIST, p.x, 0.4, p.z, 6, 0, 1, 0, 1, 1.2, 0xffffff, 0xd8d8d8); }
       } else if (e.type === 'torpedo') {
         const x = b.ents[e.id];
-        if (b.tick !== this.torpSaid) { this.torpSaid = b.tick; msgs.push({ side: x.side, text: `${x.def.name} looses a torpedo at ${b.ents[e.to].def.name}` }); }
+        if (e.x0 !== undefined && x.air) this.torpedoRun(e, sec(e.flight));
+        if (b.tick !== this.torpSaid) { this.torpSaid = b.tick; msgs.push({ side: x.side, text: `${x.def.name} ${x.air ? 'drops' : 'looses'} a torpedo at ${b.ents[e.to].def.name}` }); }
+      } else if (e.type === 'diveBomb') {
+        const x = b.ents[e.id], t2 = b.ents[e.to];
+        this.diveBombFx(e);
+        if (b.tick - (this.diveSaid || -99) > 12) { this.diveSaid = b.tick; msgs.push({ side: x.side, text: e.depth ? `${x.def.name} drops depth bombs where ${t2.def.name} dived` : `${x.def.name} dive-bombs ${t2.def.name}${e.hit ? ': a hit' : ''}` }); }
       } else if (e.type === 'frozen') {
         const x = b.ents[e.id];
         fx.mark(e.id, 'freeze');
@@ -453,7 +458,8 @@ export class NavalView {
         const p = cm ? toWorld(cm, fx.dims(cm, c).bow[0] * 0.7, fx.dims(cm, c).deckY + 0.2, 0, V()) : V(c.x, 2, c.y);
         fx.emit(P.GUN, p.x, p.y, p.z, 8, 0, 0.6, 0, 1.6, 1.1); fx.emit(P.SPRAY, p.x, 0.05, p.z, 6, 0, 1, 0, 2, 0.7);
         this.climbs.set(e.id, { t0: fx.time, y0: p.y });
-        if (b.tick - (this.launchSaid || -99) > 15) { this.launchSaid = b.tick; msgs.push({ side: c.side, text: `${c.def.name} launches ${b.ents[e.id].def.name.toLowerCase().startsWith('the') ? '' : 'a '}${b.ents[e.id].def.name}` }); }
+        if (e.role) { const k = ROLE_SMOKE[e.role]; if (k) fx.emit(P.GLOW, p.x, p.y, p.z, 2, 0, 0, 0, 0, 1.2, k, k); }
+        if (b.tick - (this.launchSaid || -99) > 15) { this.launchSaid = b.tick; const nm = b.ents[e.id].def.name, wing = e.role && ROLE_WORD[e.role]; msgs.push({ side: c.side, text: `${c.def.name} launches ${nm.toLowerCase().startsWith('the') ? '' : 'a '}${nm}${wing && !nm.toLowerCase().includes(wing.split(' ')[0]) ? ` (${wing})` : ''}` }); }
       } else if (e.type === 'strafe') {
         const x = b.ents[e.id], t2 = b.ents[e.to];
         this.strafeFx(e.id, e.to);
@@ -511,6 +517,47 @@ export class NavalView {
     for (const sg of [-1, 1]) fx.emit(P.SPRAY, p.x, 0.05, p.z, Math.round(18 * s), sx * sg + d.x * 0.3, 1.1, sz * sg + d.z * 0.3, 4 * s, 1.3);
     fx.emit(P.MIST, p.x, 0.5, p.z, 5, 0, 1, 0, 0.8, 1.2);
     fx.ring(new THREE.Vector3(p.x, 0.05, p.z), null, 0.4, 2.6 * s, 0xffffff, 1);
+  }
+
+  /** an air-wing torpedo run: down to the wave tops, the fish let go in a splash, its wake running to the hull */
+  torpedoRun(e, dur) {
+    const fx = this.fx, m = this.models[e.id], tg = this.b.ents[e.to], mt = this.models[e.to];
+    this.dives.set(e.id, { t0: fx.time, dur: 1.2 });
+    if (m) fx.act(m, 'torpedo', 0.9);
+    const w0 = new THREE.Vector3(e.x0, 0.05, e.y0), to = new THREE.Vector3(e.x1, e.hit ? 0.3 : 0.05, e.y1);
+    if (!e.hit) to.add(new THREE.Vector3(rnd(2), 0, rnd(2)));
+    fx.after(0.4, () => {
+      fx.splash(w0, 0.9); fx.ring(w0, null, 0.3, 1.6, 0xffffff, 0.8);
+      let hit = null;
+      if (e.hit && mt && tg) { const D = fx.dims(mt, tg); hit = fx.impactPoint(mt, D, e.x0, e.y0, 'torpedo'); hit.p.y = Math.max(0.1, D.deckY * 0.4); toWorld(mt, hit.p.x, hit.p.y, hit.p.z, to); }
+      const f = fx.shot('torpedo', w0, to, Math.max(0.4, dur - 0.4), { arc: 0, hit: e.hit, onLand: (p) => {
+        if (!e.hit) { fx.splash(p, 0.6); return; }
+        // a column of white water higher than her masts, and a hole at her waterline
+        fx.splash(p, 2.4); fx.explode(p, 0.8, { debris: 10, dcol: 0x6a4a30 });
+        fx.after(0.12, () => { fx.emit(P.SPRAY, p.x, 0.1, p.z, 36, 0, 1, 0, 10, 1.8); fx.emit(P.MIST, p.x, 2, p.z, 10, 0, 1, 0, 1, 2); });
+        if (mt && hit && mt.visible) { fx.wound(mt, hit, 2.2); if (!fx.act(mt, 'hit', 0.7)) fx.rock(mt, 0.16, 0.02, 0.06); }
+      } });
+      // the wake: a line of foam behind the running fish
+      fx.emitter(Math.max(0.4, dur - 0.4), (k, dt) => { if (fx.rate(f, 'wk', 34 * fx.near(f.p), dt)) fx.emit(P.MIST, f.p.x, 0.04, f.p.z, 1, 0, 0.1, 0, 0.2, 0.55, 0xffffff, 0xe8f4f8); });
+    });
+  }
+
+  /** a steep dive on her deck: the bomb let go at the bottom, a blast (or a deep plume where a beast went under) */
+  diveBombFx(e) {
+    const fx = this.fx, m = this.models[e.id], tg = this.b.ents[e.to], mt = this.models[e.to];
+    this.dives.set(e.id, { t0: fx.time, dur: 1.3 });
+    if (m) fx.act(m, 'bomb', 1);
+    fx.after(0.55, () => {
+      const from = m ? m.position.clone().setY(m.position.y - 0.4) : new THREE.Vector3(e.x, 3, e.y);
+      let to = new THREE.Vector3(e.x + (e.hit ? 0 : rnd(1.6)), e.hit && !e.depth ? 0.9 : 0, e.y + (e.hit ? 0 : rnd(1.6))), hit = null;
+      if (e.hit && !e.depth && mt && tg && tg.ship) { const D = fx.dims(mt, tg); hit = fx.impactPoint(mt, D, e.x, e.y, 'mortar'); to = toWorld(mt, hit.p.x, hit.p.y, hit.p.z, new THREE.Vector3()); }
+      const f = fx.shot(e.depth ? 'depth' : 'bomb', from, to, 0.3, { arc: 0, hit: e.hit && !e.depth, onLand: (p) => {
+        if (e.depth) return; // the depth bomb's own plume comes up after it sinks
+        if (e.hit) { fx.explode(p, 1, { debris: 12 }); if (mt && hit && mt.visible) { fx.wound(mt, hit, 1.6); if (!fx.act(mt, 'hit', 0.6)) fx.rock(mt, 0.08, 0.03, 0.04); } }
+      } });
+      f.r = 0.14;
+      if (e.depth && e.hit) fx.after(1.1, () => { const q = new THREE.Vector3(e.x, 0, e.y); fx.emit(P.SPRAY, q.x, 0, q.z, 24, 0, 1, 0, 7, 1.6, 0xffffff, 0xc84a3a); for (let k = 0; k < 2; k++) fx.ring(q.clone().setY(0.05), null, 0.5, 2 + k * 1.5, 0xffffff, 0.9 + k * 0.3); });
+    });
   }
 
   /** a squadron's diving run: down out of the sky, guns walking along the deck, and up again */
@@ -827,5 +874,8 @@ export class NavalView {
   }
 }
 const AIR_Y = 6.5;
+// carrier launches by wing: a lamp of its colour on the deck, and what the ticker calls it
+const ROLE_SMOKE = { naval: 0x9ad8ff, fighter: 0xffe0a0, escort: 0xffe0a0, bomber: 0xffa060 };
+const ROLE_WORD = { naval: 'torpedo wing', fighter: 'fighter wing', escort: 'escort wing', bomber: 'bomber wing', cas: 'strike wing', hunter: 'hunter wing', transport: 'transport wing', assault: 'assault wing' };
 
 const buildFort = buildFortModel;

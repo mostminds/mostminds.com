@@ -189,8 +189,8 @@ const crewKey = (style, o) => `${style}|${['skin', 'cloth', 'cloth2', 'armor', '
  * detail level of the host model. pose: seat | stand | brace | kneel | wave | aim (his own attack, mid-swing / loosing).
  * Returns { geos: [level 0..n-1], height } or null. Cached per faction, palette, pose and detail preset.
  */
-export function crewFigure(style, o = {}, pose = 'stand') {
-  const key = `${crewKey(style, o)}|${pose}|${getDetail()}`;
+export function crewFigure(style, o = {}, pose = 'stand', lean = false) {
+  const key = `${crewKey(style, o)}|${pose}|${getDetail()}|${lean ? 1 : 0}`;
   if (CREW.has(key)) return CREW.get(key);
   let out = null;
   try {
@@ -220,7 +220,7 @@ export function crewFigure(style, o = {}, pose = 'stand') {
       const bake = new Map(), B = (l) => { l = Math.min(l, lv - 1); if (!bake.has(l)) bake.set(l, bakePose(m, l) || EMPTY); return bake.get(l); };
       // close up he is a soldier one level coarser than on the field (he is small in the frame); far off a sketch
       const geos = [];
-      for (let i = 0; i < n; i++) geos.push(B(Math.min(i + 1, lv - 1)));
+      for (let i = 0; i < n; i++) geos.push(B(Math.min(i + (lean ? 2 : 1), lv - 1)));
       if (n > 3) geos[n - 1] = EMPTY;
       const hipW = new THREE.Vector3(), hipR = new THREE.Vector3();
       (rig.legs?.[0] || m).getWorldPosition(hipW); (rig.legs?.[1] || rig.legs?.[0] || m).getWorldPosition(hipR);
@@ -304,6 +304,7 @@ export function roleProps(o, L, parent, at, s = 1, opts = {}) {
     const per = Math.ceil(nr / 2);
     for (const sx of [1, -1]) {
       const pod = node(`rocketPod${sx > 0 ? 'L' : 'R'}`, parent, [at[0] + sx * side * 1.15, at[1] + 0.02 * s, at[2] + 0.05 * s], { detail: 1 });
+      nodes.push(pod);
       pod.hard.push(H.tube([[-sx * side * 0.9, 0.1 * s, 0], [-sx * side * 0.4, 0.04 * s, 0], [0, 0, 0]], 0.012 * s, 10, 5).color(iron).pbr(0.5, 0.7));
       for (let i = 0; i < per; i++) {
         const a = (i / per) * Math.PI * 2, x = Math.cos(a) * 0.035 * s * (per > 1 ? 1 : 0), y = Math.sin(a) * 0.035 * s * (per > 1 ? 1 : 0);
@@ -314,7 +315,6 @@ export function roleProps(o, L, parent, at, s = 1, opts = {}) {
       }
       pod.hard.push(H.torus(0.065 * s, 0.006 * s, 18, 5).at(0, 0, 0.1 * s).color(L.metal).pbr(0.35, L.shine).lod(1));
       pod.hard.push(H.torus(0.065 * s, 0.006 * s, 18, 5).at(0, 0, -0.1 * s).color(L.metal).pbr(0.35, L.shine).lod(1));
-      nodes.push(pod);
     }
     an.rockets = [at[0], at[1], at[2] + 0.2 * s];
   }

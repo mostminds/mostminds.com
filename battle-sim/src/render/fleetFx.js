@@ -182,7 +182,7 @@ export const P = {
 };
 
 // ---------------------------------------------------------------- instanced pools
-class Pool {
+export class Pool {
   constructor(scene, geo, material, n) {
     this.n = n; this.mesh = new THREE.InstancedMesh(geo, material, n);
     this.mesh.frustumCulled = false; this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

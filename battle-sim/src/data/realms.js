@@ -1209,6 +1209,17 @@ const fillModel = (model, f) => {
   return m;
 };
 
+/** the gear an aircraft's role hangs on it, for the model to draw (bomb racks, torpedoes, harpoons, rocket pods, cargo) */
+function roleProps(role, a) {
+  if (a.breath) return {};
+  if (role === 'bomber') return { bombs: Math.max(2, Math.min(6, a.bombs || 4)) };
+  if (role === 'naval') return a.torpedo ? { torpedo: true } : { bombs: 2 };
+  if (role === 'hunter' && (a.harpoon || !a.lance)) return { harpoon: true };
+  if (role === 'cas' && (a.rockets || !a.arrows)) return { rockets: Math.max(2, Math.min(8, a.rockets || 4)) };
+  if (role === 'transport') return { cargo: a.carry ? 'cage' : a.supply ? 'crate' : 'ladder' };
+  return {};
+}
+
 /** the flying units of every air wing: { `${faction}_air_${role}`: def } */
 export function realmAirwings(BASE) {
   const out = {};
@@ -1223,7 +1234,7 @@ export function realmAirwings(BASE) {
       const u = { name: `${f.adj} ${D.name || role}`, category: f.name, realm: fid, fly: true, airRole: role, airArts: arts, airTier: tier, note: D.note || '',
         hp: Math.round(T.hp * k), att: 1, str: 1, def: Math.round(T.def * r), rng: 1, mag: 1, style: T.style, speed: T.speed, move: T.move, stamina: T.stamina, size,
         count: Math.round(num(D.count, 1, 8, count)), priceMul: T.priceMul, bonus: Object.fromEntries(Object.entries(T.bonus).map(([key, v]) => [key, Math.round(v * r)])),
-        abilities: (T.abilities || []).map((a) => ({ ...a })), model: fillModel(D.model, f) };
+        abilities: (T.abilities || []).map((a) => ({ ...a })), model: { ...fillModel(D.model, f), ...roleProps(role, arts) } };
       if (T.style === 'melee') { u.att = Math.round(T.att * r); u.str = Math.round(T.str * r); } else { u.rng = Math.round(T.rng * r); u.range = T.range; u.projectile = T.projectile; }
       if (role === 'cas' && arts.arrows) u.projectile = 'arrow';
       // arts any role may have

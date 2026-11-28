@@ -56,7 +56,7 @@ function hullPrims(L, len, b, d, y, F, col = L.wood) {
   out.push(S.box(b * 3, d * 2, len * 3, 0.01).at(0, y + d, 0).cut(0.006));          // sheer the top flat
   out.push(S.ellipsoid(b * 0.84, d * 1.4, len * 0.9).at(0, y + 0.01, 0).cut(0.01).color(tone(col, -0.12)));
   out.push(...seamsY([y - d * 0.25, y - d * 0.55, y - d * 0.85, y - d * 1.15]).map((q) => q.at(0, 0, 0)));
-  out.push(S.box(0.03, d * 3.4, len * 2.2, 0.01).at(0, y - d * 1.5, 0).color(tone(col, -0.15)).pbr(0.8).blend(0.01));   // keel
+  out.push(S.capsule([0, y - d * 1.5, -len * 0.8], [0, y - d * 1.5, len * 0.8], 0.025, 0.025).color(tone(col, -0.15)).pbr(0.8).blend(0.03));   // keel
   return out;
 }
 /** a gunwale rail along the sheer of a hull made by hullPrims */
@@ -109,7 +109,7 @@ function gyro(L, o) {
 // ================================================================================================ twin-rotor heavy
 function gyrobomber(L, o) {
   const F = finishes(L), nodes = [node('root', null, [0, 0, 0])];
-  const BY = 0.62, body = node('body', 'root', [0, BY, 0], { rig: 'body', detail: 0.95 });
+  const BY = 0.62, body = node('body', 'root', [0, BY, 0], { rig: 'body', detail: 0.72 });
   const shell = L.grim ? 0x3a3236 : L.rough ? mix(L.wood, 0x6a5a48, 0.4) : L.metal, P = body.prims, H0 = body.hard;
   P.push(F.metal(S.ellipsoid(0.3, 0.27, 0.95), shell).bump(0.0012, 26, 'noise'));
   P.push(F.wood(S.ellipsoid(0.31, 0.12, 0.9)).at(0, -0.14, 0).blend(0.03));                   // a planked belly
@@ -252,20 +252,20 @@ function kite(L, o) {
 
 // ================================================================================================ hot-air balloon (the sculpted war balloon of bodies/machines.js, crewed)
 export function balloonSpec(L) {
-  return { body: 'balloon', o: { color: L.cloth, trim: L.trim, glow: L.glow }, k: 1.75, dropNodes: ['crew0', 'crew1'], crew: [stand('gondola', [0.1, 0.12, 0.1], 'stand', 20), stand('gondola', [-0.1, 0.12, -0.12], 'aim', 180)], props: { parent: 'gondola', at: [0, 0.05, 0], s: 0.6, hw: 0.28 } };
+  return { body: 'balloon', o: { color: L.cloth, trim: L.trim, glow: L.glow }, k: 1.75, dropNodes: ['crew0', 'crew1'], crew: [stand('gondola', [0.1, -0.8, 0.1], 'stand', 20), stand('gondola', [-0.1, -0.8, -0.12], 'aim', 180)], props: { parent: 'gondola', at: [0, -0.9, 0], s: 0.6, hw: 0.28 } };
 }
 
 // ================================================================================================ dirigible
 function dirigible(L, o) {
   const F = finishes(L), nodes = [node('root', null, [0, 0, 0])];
-  const EY = 1.75, env = node('envelope', 'root', [0, EY, 0], { rig: 'core', detail: 0.75 });
+  const EY = 1.75, env = node('envelope', 'root', [0, EY, 0], { rig: 'core', detail: 0.42 });
   env.prims.push(...envelopePrims(L, 0.5, 1.55, 0, { bands: [-0.6, 0, 0.6] }));
   env.prims.push(F.metal(S.ellipsoid(0.12, 0.12, 0.1)).at(0, 0, 1.53).blend(0.04));
   for (const [ax, ay] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) env.hard.push(vane(L, [[0.25, 0], [0.0, 0.42], [-0.3, 0.46], [-0.3, 0]], 0.016, L.cloth2).rot(0, 90, 0).rot(0, 0, ax ? (ax > 0 ? -90 : 90) : ay > 0 ? 0 : 180).at(0, 0, -1.18));
   // the net over the bag, its lines gathered to the gondola
   for (let i = 0; i < 6; i++) { const z = -0.9 + i * 0.36; for (const sx of [1, -1]) env.hard.push(H.tube([[sx * 0.48, -0.12, z], [sx * 0.24, -0.62, z * 0.6]], 0.004, 4, 3).color(0x3a3020).pbr(0.9).lod(2)); }
   nodes.push(env);
-  const gon = node('body', 'root', [0, 0.38, 0], { rig: 'body', detail: 1 });
+  const gon = node('body', 'root', [0, 0.38, 0], { rig: 'body', detail: 0.8 });
   gon.prims.push(...hullPrims(L, 0.7, 0.26, 0.12, 0.1, F, L.grim ? 0x2e2628 : L.wood));
   gon.hard.push(gunwale(L, 0.7, 0.26, 0.1, 0.016));
   for (const z of [0.45, 0, -0.45]) for (const sx of [1, -1]) gon.hard.push(F.wood(H.cyl(0.014, 0.014, 0.55, 6)).at(sx * 0.24, 0.38, z));
@@ -281,14 +281,14 @@ function dirigible(L, o) {
   const gun = node('gun', 'body', [0, 0.18, 0.62], { rig: 'guns', detail: 1.2 });
   gun.hard.push(F.metal(H.cyl(0.022, 0.028, 0.36, 10)).rot(90, 0, 0).at(0, 0.02, 0.14), F.metal(H.sphere(0.05, 12)).at(0, 0, -0.02));
   nodes.push(gun);
-  return { desc: { kind: 'air.craft', attack: 'shoot', mass: 1.6, crash: 'sink', nodes }, k: 1.1, crew: [stand('body', [0, -0.02, 0.42], 'aim', 0), stand('body', [0.08, -0.02, -0.05], 'stand', 30), stand('body', [-0.06, -0.02, -0.45], 'stand', 180)],
+  return { desc: { kind: 'air.craft', attack: 'shoot', mass: 1.6, crash: 'sink', nodes }, k: 1.35, crew: [stand('body', [0, -0.02, 0.42], 'aim', 0), stand('body', [0.08, -0.02, -0.05], 'stand', 30), stand('body', [-0.06, -0.02, -0.45], 'stand', 180)],
     props: { parent: 'body', at: [0, -0.15, 0], s: 1.3, hw: 0.26, bow: [0, 0.1, 0.72] } };
 }
 
 // ================================================================================================ sky-lantern
 function lantern(L, o) {
   const F = finishes(L), nodes = [node('root', null, [0, 0, 0])];
-  const EY = 1.95, env = node('envelope', 'root', [0, EY, 0], { rig: 'core', detail: 0.8 });
+  const EY = 1.95, env = node('envelope', 'root', [0, EY, 0], { rig: 'core', detail: 0.55 });
   // a tall paper lantern on ribs, glowing from within, a roof cap and tassels
   const paper = L.grim ? mix(L.cloth, 0x3a2a2a, 0.3) : mix(L.cloth, 0xf0d8a0, 0.35);
   env.prims.push(S.ellipsoid(0.62, 0.78, 0.62).color(paper).glow(0.45).pbr(0.85).bump(0.0015, 30, 'weave'));
@@ -313,7 +313,7 @@ function lantern(L, o) {
 // ================================================================================================ flying gunboat
 function skiff(L, o) {
   const F = finishes(L), nodes = [node('root', null, [0, 0, 0])];
-  const BY = 0.55, body = node('body', 'root', [0, BY, 0], { rig: 'body', detail: 0.9 });
+  const BY = 0.55, body = node('body', 'root', [0, BY, 0], { rig: 'body', detail: 0.72 });
   const hull = L.grim ? 0x2e2a2c : L.wood, P = body.prims, H0 = body.hard;
   P.push(...hullPrims(L, 1.0, 0.36, 0.17, 0.14, F, hull));
   P.push(S.box(0.9, 0.05, 2.4, 0.004).at(0, 0.02, 0).color(L.cloth).paint(0.006, 0.002));       // a painted strake
@@ -327,7 +327,7 @@ function skiff(L, o) {
   H0.push(sail.at(0, 0.82, 0.22).color(L.cloth).pbr(0.82).shade((x, y) => (Math.abs(x) < 0.08 && Math.abs(y) < 0.08 ? rgb(L.cloth2) : Math.abs(Math.sin(x * 22)) < 0.06 ? rgb(tone(L.cloth, -0.15)) : y < -0.31 ? rgb(L.trim) : null)));
   H0.push(F.metal(H.sphere(0.04, 10)).at(0, 1.47, 0.25));
   // the lift: glowing stones slung under the keel (or a skull lamp for the grim)
-  for (const z of [0.45, -0.45]) { P.push(S.ellipsoid(0.08, 0.14, 0.08).at(0, -0.33, z).color(L.glow).glow(1.1).pbr(0.2).bump(0.004, 20, 'rock')); H0.push(F.metal(H.torus(0.085, 0.012, 16, 5).rot(90, 0, 0)).at(0, -0.28, z)); }
+  for (const z of [0.45, -0.45]) { P.push(S.ellipsoid(0.06, 0.1, 0.06).at(0, -0.2, z).color(L.glow).glow(1.1).pbr(0.2).bump(0.004, 20, 'rock')); H0.push(F.metal(H.torus(0.065, 0.01, 16, 5).rot(90, 0, 0)).at(0, -0.16, z)); }
   // stern post with a lantern, rudder
   H0.push(F.wood(H.tube([[0, 0.12, -0.98], [0, 0.4, -1.08], [0, 0.55, -1.02]], 0.03, 10, 8), hull), F.metal(H.sphere(0.05, 10)).at(0, 0.6, -1.02), H.sphere(0.03, 8).at(0, 0.6, -1.02).color(L.glow).glow(1.4).lod(1));
   H0.push(vane(L, [[0.08, -0.3], [0.08, 0.05], [-0.12, 0.08], [-0.16, -0.25]], 0.02, hull).rot(0, 90, 0).at(0, -0.05, -1.0));
@@ -377,7 +377,7 @@ function chariotCar(L, o) {
 // ================================================================================================ troop cage under a balloon
 function cage(L, o) {
   const F = finishes(L), nodes = [node('root', null, [0, 0, 0])];
-  const EY = 2.75, env = node('envelope', 'root', [0, EY, 0], { rig: 'core', detail: 0.75 });
+  const EY = 2.75, env = node('envelope', 'root', [0, EY, 0], { rig: 'core', detail: 0.45 });
   env.prims.push(...envelopePrims(L, 0.75, 0.95, 0, { flat: 1.1, bands: [-0.3, 0.3] }));
   env.hard.push(F.metal(H.torus(0.35, 0.02, 24, 6).rot(90, 0, 0)).at(0, -0.8, 0));
   for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; env.hard.push(H.tube([[Math.cos(a) * 0.7, -0.2, Math.sin(a) * 0.85], [Math.cos(a) * 0.35, -0.8, Math.sin(a) * 0.35]], 0.005, 4, 3).color(0x3a3020).pbr(0.9).lod(2)); }
@@ -401,7 +401,7 @@ function cage(L, o) {
 // ================================================================================================ drop pod
 function pod(L, o) {
   const F = finishes(L), nodes = [node('root', null, [0, 0, 0])];
-  const body = node('body', 'root', [0, 0.62, 0], { rig: 'body', detail: 1 });
+  const body = node('body', 'root', [0, 0.62, 0], { rig: 'body', detail: 0.8 });
   const shell = L.grim ? 0x3a3236 : L.rough ? mix(L.wood, 0x5a4a3a, 0.4) : tone(L.metal, -0.05), P = body.prims, H0 = body.hard;
   P.push(F.metal(S.capsule([0, -0.35, 0], [0, 0.2, 0], 0.4, 0.42), shell).bump(0.0012, 26, 'noise'));
   P.push(F.metal(S.cone(0.36, 0.08, 0.3, 0.04), tone(shell, -0.1)).at(0, -0.62, 0).blend(0.05));
@@ -413,7 +413,7 @@ function pod(L, o) {
   H0.push(F.metal(H.torus(0.4, 0.03, 32, 6).rot(90, 0, 0)).at(0, 0.21, 0));
   nodes.push(body);
   // the drogue: a striped canopy on its lines
-  const ch = node('chute', 'body', [0, 1.45, 0], { rig: 'sway', detail: 0.85 });
+  const ch = node('chute', 'body', [0, 1.45, 0], { rig: 'sway', detail: 0.55 });
   ch.prims.push(S.ellipsoid(0.75, 0.32, 0.75).color(L.cloth).pbr(0.8).bump(0.0015, 24, 'weave'), S.ellipsoid(0.72, 0.3, 0.72).at(0, -0.04, 0).cut(0.01).color(tone(L.cloth, -0.2)));
   ch.prims.push(S.box(2, 0.6, 2, 0.002).at(0, -0.3, 0).cut(0.01));
   for (let i = 0; i < 4; i++) ch.prims.push(S.box(0.3, 0.8, 1.8, 0.01).rot(0, i * 45, 0).color(L.cloth2).paint(0.01));

@@ -19,6 +19,7 @@ import { REALMS } from '../data/realms.js';
 import { getDetail } from './rigkit.js';
 import { TICK_MS } from '../engine/combat.js';
 import { FleetFx, P, G, toWorld } from './fleetFx.js';
+import { AirFx } from './airFx.js';
 
 export const SIDE_COLORS = [0x3d7bd9, 0xd9463d];
 // camera distance (in unit sizes) beyond which a model drops to the next detail level
@@ -42,7 +43,7 @@ export class LandView {
     loadFracture();
   }
 
-  dispose() { this.stage.scene.remove(this.root); this.crews?.dispose(); this.fx?.dispose(); this.fx = null; }
+  dispose() { this.stage.scene.remove(this.root); this.crews?.dispose(); this.fx?.dispose(); this.fx = null; this.airFx = null; }
 
   buildTerrain(b) {
     const key = `${b.mode}:${b.W}:${b.shape}:${b.biome}:${hashTerrain(b.terrain)}:${b.height ? hashRelief(b.height, b.cliff) : 0}`;
@@ -224,6 +225,9 @@ export class LandView {
       water: (x, z) => { const bb = this.b, X = Math.floor(x), Y = Math.floor(z); if (X < 0 || Y < 0 || X >= bb.W || Y >= bb.H) return false; const tt = bb.terrain[Y * bb.W + X]; return tt === DEEP || tt === SHALLOW; },
     });
     this.fx.reset(); this.fx.colors = SIDE_COLORS;
+    // what the air wings and the sky-behemoths are seen to do (airFx.js)
+    this.airFx ||= new AirFx(this);
+    this.airFx.reset();
     this.shipModels = b.ships.map((sh) => {
       const m = buildShip(sh.def, SIDE_COLORS[sh.side]);
       if (!sh.def.beast) this.crews.track(m, `ship:${sh.def.id}`);
@@ -683,6 +687,7 @@ export class LandView {
     const v = new THREE.Vector3(), w = new THREE.Vector3();
     const msgs = [];
     for (const e of events) {
+      if (e.type === 'airRole' || e.type === 'behemoth') { this.airFx?.onEvent(e, msgs); continue; }
       if (e.type === 'attack') {
         const u = b.units[e.from];
         if (e.style === 'melee') { if (e.air !== undefined) { this.airPos(b.airships[e.air], 1, w); st.puff(w.clone(), 0xd8d0c0, 0.25, 0.5); } continue; }
@@ -998,9 +1003,11 @@ export class LandView {
         this.airPos(a, 1, v); v.y -= 0.6;
         this.dynamic.add(pod);
         this.falling.push({ obj: pod, from: v.clone(), to: new THREE.Vector3(e.x + 0.5, Math.max(0, this.groundY(e.x, e.y)), e.y + 0.5), t0: this.time, dur: (e.delay * TICK_MS) / 1000 / this.speed, stay: 30 });
+        this.airFx?.podTrail(pod, (e.delay * TICK_MS) / 1000 / this.speed);
       } else if (e.type === 'podLand') {
         v.set(e.x + 0.5, 0.1, e.y + 0.5);
         st.ring(v.clone(), 1.4, 0xd8c8a0, 0.6); st.puff(v.clone().setY(0.4), 0xb0a898, 0.8, 1.1);
+        this.airFx?.podImpact(v.clone().setY(this.fx.floor(v.x, v.z) + 0.1));
         msgs.push({ side: e.side, text: `Drop pod lands: ${e.n} shock troops storm out` });
       } else if (e.type === 'airLaunch') {
         const a = b.airships[e.air], am = this.airModels[e.air].m;
@@ -1476,6 +1483,7 @@ export class LandView {
       f.obj.rotation.y = k * 2;
       return true;
     });
+    this.airFx?.update(dt);
     fx.update(dt);
   }
 

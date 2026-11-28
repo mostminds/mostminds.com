@@ -39,7 +39,7 @@ const T = {
   pterosaur: { body: 'saurian', o: (L) => ({ kind: 'pterosaur', skin: L.mount, trim: L.accent }), k: 1.6, seatZ: 0.04 },
   manticore: { body: 'manticore', o: (L) => ({ fur: L.mount, trim: L.trim }), k: 1.0, seatZ: 0.0 },
   sphinx: { body: 'sphinx', o: (L) => ({ stone: mix(L.mount, 0xe8d8b0, 0.4), trim: L.trim, accent: L.accent }), k: 1.05, seatZ: -0.12, wings: true },
-  gargoyle: { body: 'golem', o: (L) => ({ wings: true, stone: mix(L.mount, 0x8a8a88, 0.6) }), k: 1.55, seatZ: -0.06, seatUp: 0.12 },
+  gargoyle: { body: 'golem', o: (L) => ({ wings: true, stone: mix(L.mount, 0x8a8a88, 0.6) }), k: 1.55, seatZ: -0.06, seatAt: [0, 0.3, -0.24] },
   fly: { body: 'carrionFly', o: (L) => ({ body2: L.mount, wing: 0xb8c0a0 }), native: true, k: 1.25 },
   wasp: { body: 'carrionFly', o: (L) => ({ body2: mix(L.mount, 0xe8c030, 0.7), wing: 0xd8c890 }), native: true, k: 1.25, wasp: true },
   beetle: { body: 'carrionFly', o: (L) => ({ body2: mix(L.mount, 0x1a4a3a, 0.6), wing: 0xa8a080 }), native: true, k: 1.25, beetle: true },
@@ -104,7 +104,7 @@ function harpyHead(nodes, L) {
   if (!head) return nodes;
   const at = add3(worldOf(nodes, 'head'), [0, -0.05, -0.02]);
   const out = drop(nodes, ['head']);
-  graft(out, hd, 'head', 'neck', at, 1.25, 'h_', (r) => (r === 'head' ? 'head' : 'h' + r), 1.25);
+  graft(out, hd, 'head', 'neck', add3(at, [0, 0.03, 0.02]), 0.9, 'h_', (r) => (r === 'head' ? 'head' : 'h' + r), 1.1);
   return out;
 }
 
@@ -117,19 +117,20 @@ function beastDesc(def, mt, o, L, rider) {
   if (cfg.idK) did.id = cfg.idK;
   if (cfg.disc) desc = discDesc(L);
   else if (cfg.sky) desc = skyDesc(cfg.sky, L);
-  else if (cfg.own) desc = rider ? BODIES.rider(def, { ...o, mountType: mt, wings: mt !== 'halfgriffon' }) : null;
+  else if (cfg.own) desc = BODIES.rider(def, { ...(rider || {}), ...o, mountType: mt, mount: L.mount, wings: mt !== 'halfgriffon' });
   else if (BODIES[cfg.body]) desc = BODIES[cfg.body](did, { ...cfg.o(L), ...(cfg.native && rider ? { rider } : {}) });
   if (!desc) return null;
   let nodes = desc.nodes;
   if (cfg.hindOnly) {
     nodes = drop(nodes, ['legFL', 'legFR']);
-    for (const n of nodes) if (n.rig === 'legs' || n.rig === 'shins') if (/F[LR]$/.test(n.name)) n.rig = 'h' + n.rig;
+    for (const n of nodes) if (n.rig === 'legs' || n.rig === 'shins') n.rig = 'h' + n.rig;   // the hind legs trail, not clutch forward
   }
   if (cfg.wings && !nodes.some((n) => n.rig === 'wings')) {
     const bd = BODIES.bird({ id: 'airwing' }, { kind: 'eagle', color: mix(L.mount, 0x8a6a40, 0.3) }).nodes;
     const tw = worldOf(nodes, trunkOf(nodes).name);
     graft(nodes, bd, 'wingL', trunkOf(nodes).name, add3(tw, [0.15, 0.3, 0.1]), 1.4);
     graft(nodes, bd, 'wingR', trunkOf(nodes).name, add3(tw, [-0.15, 0.3, 0.1]), 1.4);
+    desc.foldWings = true;
   }
   if (cfg.bald) {
     const skin = rgb(0xc89a8a);
@@ -235,6 +236,9 @@ export function mountDesc(def, o, L, opts = {}) {
   const k = cfg.k * (opts.scale || 1);
   // a riderless own-seat beast (pegasus, griffon...): its rider dropped
   if (riderless && cfg.native) nodes = drop(nodes, (n) => n.name === 'rider' || n.name.startsWith('r_') || n.rig === 'seat');
+  // the beast a notch coarser than a soldier per unit of size (it is big, and seen from the air): keeps a ridden
+  // flier near two ground units' triangle budget
+  for (const n of nodes) n.detail = (n.detail ?? 1) * (cfg.dk ?? (cfg.idK === 'drake' ? 0.68 : 0.8));
   const trunk = trunkOf(nodes);
   const zs = cfg.seatZ ?? 0;
   let seat = null, belly = null, hw = 0;
@@ -243,6 +247,7 @@ export function mountDesc(def, o, L, opts = {}) {
     const bot = surfHit(trunk.prims, [0, -2, zs], [0, 1, 0]);
     const side = surfHit(trunk.prims, [2, (top[1] + bot[1]) / 2, zs], [-1, 0, 0]);
     seat = [0, top[1], zs]; belly = bot[1]; hw = Math.abs(side[0]);
+    if (cfg.seatAt) seat = cfg.seatAt.slice();
   } else if (trunk) { seat = [0, 0.1, 0]; belly = -0.1; hw = 0.2; }
   const out = { desc, k, trunk: trunk?.name, seat, belly: [0, belly ?? 0, zs], hw, native: !!cfg.native, cfg };
   out.mountKind = desc.kind;

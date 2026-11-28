@@ -35,6 +35,12 @@ function mountAnim(rig, inner, c, base) {
   const dive = Math.max(act.strafe || 0, act.bomb || 0, act.torpedo || 0) > 0 && c.dead <= 0 ? Math.sin(Math.max(act.strafe || 0, act.bomb || 0, act.torpedo || 0) * Math.PI) : 0;
   if (dive) inner.rotation.x += 0.28 * dive;
   if (rig.spin) for (const s of rig.spin) s.rotation.y = c.t * 1.6 + (c.phase || 0);
+  if (rig.foldWings) {
+    // grafted wings (the sphinx): beat in the air, folded up and back along the flanks on the ground
+    const fly = c.flying && c.dead <= 0, f = Math.sin(c.t * 7 + (c.phase || 0));
+    (rig.wings || []).forEach((w, i) => { const sg = (w.userData.rest?.[3] ?? (i ? -1 : 1)) >= 0 ? 1 : -1; if (fly) base.R(w, 0, 0, sg * (f * 0.55 + 0.1)); else base.R(w, 0, sg * 1.25, sg * (c.dead > 0 ? -0.3 : 0.45)); });
+    (rig.wingtips || []).forEach((w, i) => { const sg = (w.userData.rest?.[3] ?? (i ? -1 : 1)) >= 0 ? 1 : -1; base.R(w, 0, fly ? 0 : sg * 0.6, fly ? sg * Math.sin(c.t * 7 + (c.phase || 0) - 0.8) * 0.4 : 0); });
+  }
   if (!rig.rtorso) return;
   const S = sub(rig), dead = c.dead > 0, df = dead ? clamp(c.dead * 2) : 0;
   const riding = c.moving || c.flying;
@@ -67,7 +73,7 @@ function craftAnim(rig, inner, c, base) {
   const dead = c.dead > 0, df = dead ? ease(c.dead * 1.4) : 0, fly = c.flying && !dead;
   const run = dead ? Math.max(0, 1 - c.dead * 1.5) : fly || c.moving ? 1 : 0.25;
   // rotors (spin about Y), screws (about Z), wings (flap about Z), sway (pendulum about X)
-  (rig.rotors || []).forEach((r, i) => { r.rotation.y = (r.userData.spin = (r.userData.spin || 0) + 0) + t * (18 + i * 1.3) * run * (i % 2 ? -1 : 1) * (rig.rotorRate || 1); });
+  (rig.rotors || []).forEach((r, i) => { r.rotation.y = t * (18 + i * 1.3) * run * (i % 2 ? -1 : 1) * (rig.rotorRate || 1); });
   (rig.props || []).forEach((r, i) => { r.rotation.z = t * 24 * run * (i % 2 ? -1 : 1); });
   const flapRate = rig.flapRate || 5.5, flapAmp = rig.flapAmp || 0.5;
   (rig.wings || []).forEach((w, i) => {

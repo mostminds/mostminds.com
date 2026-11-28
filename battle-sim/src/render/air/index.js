@@ -20,7 +20,7 @@
 //   (unscaled, facing +Z) for the effects code.
 // Templates are built once per spec (and detail preset) and cloned; crew figures are baked once per faction look.
 import * as THREE from 'three';
-import { assemble, cloneRigged, getDetail } from '../rigkit.js';
+import { assemble, cloneRigged, getDetail, setDetail } from '../rigkit.js';
 import { sculptMaterial } from '../sculpt.js';
 import { registerAnimators } from '../animate.js';
 import { BODIES } from '../registry.js';
@@ -209,8 +209,11 @@ function memberTemplate(def, kind, L, scale) {
   const key = `member|${kind}|${L.id}|${L.mount}|${scale}|${getDetail()}`;
   if (TPL.has(key)) return TPL.get(key);
   let t = null;
-  const m = mountDesc(def, { mountType: kind, mount: L.mount }, L, { riderless: true, saddle: kind !== 'wasp', scale });
-  if (m) t = assemble(m.desc, m.k);
+  const m = mountDesc(def, { mountType: kind, mount: L.mount }, L, { riderless: true, saddle: kind !== 'wasp' && scale > 0.5, scale });
+  // team beasts are a notch coarser than a soldier, flock members much coarser (they are small and many)
+  const was = getDetail(), coarser = { ultra: 'high', high: 'medium', medium: 'low', low: 'low' };
+  setDetail(scale < 0.5 ? 'low' : coarser[coarser[was]] || was);
+  try { if (m) t = assemble(m.desc, m.k); } finally { setDetail(was); }
   TPL.set(key, t);
   return t;
 }
@@ -236,7 +239,7 @@ function template(def) {
   else if (o.body === 'aircraft') t = craftTemplate(def, o, L);
   if (t) {
     // the crew figures, baked now so the first battle frame does not stall
-    t.crew = t.slots.map((s) => crewFigure(L.id, o, s.pose === 'prone' ? 'stand' : s.pose));
+    t.crew = t.slots.map((s, i) => crewFigure(L.id, o, s.pose === 'prone' ? 'stand' : s.pose, i >= 2));   // the third hand on is a notch coarser
   }
   TPL.set(key, t);
   return t;
