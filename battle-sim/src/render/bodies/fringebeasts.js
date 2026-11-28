@@ -388,7 +388,7 @@ function porcupine(def, o = {}) {
   const fur = (q, c = C.fur) => q.color(c).pbr(0.92).tint(0.12, 22).bump(0.006, 40, 'fur');
   const N = rigOf();
   N('root', null, [0, 0, 0]);
-  const torso = N('torso', 'root', [0, 0.28, 0], { rig: 'torso', detail: 0.34, minRes: 10 });
+  const torso = N('torso', 'root', [0, 0.28, 0], { rig: 'torso', detail: 0.26, minRes: 10 });
   const tp = [
     fur(S.ellipsoid(0.2, 0.17, 0.3).at(0, 0.28, -0.05)),
     fur(S.ellipsoid(0.2, 0.18, 0.17).at(0, 0.28, -0.25).blend(0.08)),
@@ -498,7 +498,7 @@ function badger(def, o = {}) {
   N('root', null, [0, 0, 0]);
 
   // ---- body: low, broad, wedge-shaped ----
-  const torso = N('torso', 'root', [0, 0.27, 0], { rig: 'torso', detail: clock ? 0.5 : 0.42, minRes: 10 });
+  const torso = N('torso', 'root', [0, 0.27, 0], { rig: 'torso', detail: clock ? 0.36 : 0.3, minRes: 10 });
   const tp = [
     furP(S.ellipsoid(0.19, 0.15, 0.3).at(0, 0.27, -0.05)),
     furP(S.ellipsoid(0.17, 0.14, 0.15).at(0, 0.265, 0.17).blend(0.08)),
@@ -602,3 +602,327 @@ function badger(def, o = {}) {
   }
   return { kind: clock ? 'fringe.clockquad' : 'beast.quad', attack: 'bite', gait: 'bear', girth: 1.3, ...footVals(JF[2], 0.235, JB[2], -0.225, 0.75), nodes: finish(N.nodes) };
 }
+
+/** a flight feather / plume: a flat leaf along +Y from 0 to 1, pale quill root, coloured vane */
+function featherGeo() {
+  return cached('feather', () => {
+    const prof = [];
+    for (let i = 0; i <= 6; i++) { const t = i / 6; prof.push(new THREE.Vector2(Math.max(0.0001, 0.5 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.05)), 0.7) * (t < 0.1 ? t * 8 : 1)), t)); }
+    return new THREE.LatheGeometry(prof, 6);
+  });
+}
+function plume(base, dir, len, w, colA, colB, face = [0, 0, 1]) {
+  const a = rgb(colA), b = rgb(colB);
+  const h = H.geo(featherGeo()).shade((x, y) => (y < 0.22 ? [0.92, 0.9, 0.84] : y > 0.82 ? mixRgb(b, [0.05, 0.05, 0.06], 0.6) : mixRgb(a, b, smooth((y - 0.22) / 0.6)))).color(colA).pbr(0.6);
+  h.scale(w, len, w * 0.18);
+  return orient(h, base, dir, face);
+}
+
+// =====================================================================================
+//  Giant river-otter of the jungle warbands: sleek, webbed, thick-tailed, in hammered gold and a feathered crown
+// =====================================================================================
+function riverOtter(def, o = {}) {
+  const furC = col(o.fur, 0x5a4030), gold = col(o.armor, 0xd8b03a);
+  const rnd = rng(hashStr((def?.id || 'otter') + ':otter'));
+  const C = { fur: furC, belly: mix(furC, 0xd8c0a0, 0.42), dark: mix(furC, 0x140e0a, 0.45), nose: 0x1a1210, gold, claw: 0x2a2018, gem: 0x2ab8a8 };
+  const fur = (q, c = C.fur) => q.color(c).pbr(0.5).tint(0.08, 18).bump(0.0025, 50, 'fur');
+  const pg = { base: gold, dark: tone(gold, 0, 0, -0.18), pale: tone(gold, 0, -0.1, 0.14) };
+  const goldH = (h) => h.color(gold).pbr(0.3, 1);
+  const N = rigOf();
+  N('root', null, [0, 0, 0]);
+  const torso = N('torso', 'root', [0, 0.24, 0], { rig: 'torso', detail: 0.42, minRes: 10 });
+  const tp = [
+    fur(S.ellipsoid(0.14, 0.13, 0.34).at(0, 0.25, -0.05)),
+    fur(S.ellipsoid(0.13, 0.12, 0.14).at(0, 0.24, 0.2).blend(0.08)),
+    fur(S.ellipsoid(0.145, 0.135, 0.15).at(0, 0.25, -0.3).blend(0.08)),
+    S.ellipsoid(0.11, 0.07, 0.38).at(0, 0.15, -0.02).color(C.belly).pbr(0.6).paint(0.04),
+  ];
+  put(torso, tp);
+  const dfT = distanceField(tp);
+  // hammered gold: a ridge of overlapping back plates with side lappets, a breastplate
+  const sp = [];
+  for (const [i, z] of [0.17, 0.05, -0.07, -0.19, -0.31].entries()) {
+    sp.push({ c: [0, 0.25, z], dir: [0, 1, 0], flow: [0, -0.1, -1], w: 0.2 - i * 0.01, l: 0.17, tilt: 5, lift: 0.008 });
+    for (const sx of [1, -1]) sp.push({ c: [0, 0.25, z - 0.03], dir: [sx * 0.95, 0.55, 0], flow: [sx * 0.3, -0.6, -0.7], w: 0.12, l: 0.12, tilt: 4, lift: 0.006 });
+  }
+  layPlates(dfT, torso.hard, sp, pg, { rnd, rough: 0.3, metal: 1, vary: 0.1, keep: true });
+  layPlates(dfT, torso.hard, [{ c: [0, 0.22, 0.2], dir: [0, -0.15, 1], flow: [0, -1, -0.1], w: 0.19, l: 0.18, tilt: 3, lift: 0.006 }], pg, { rough: 0.3, metal: 1, keep: true });
+  for (const [i, z] of [0.17, 0.05, -0.07, -0.19].entries()) torso.hard.push(H.sphere(0.011, 8).at(0, hitFrom(dfT, [0, 0.25, z], [0, 1, 0])[1] + 0.03 + i * 0.0, z + 0.02).color(C.gem).pbr(0.15).lod(1));
+
+  // ---- neck and head with the feathered crown ----
+  const neck = N('neck', 'torso', [0, 0.26, 0.3], { rig: 'neck', detail: 0.55, minRes: 14 });
+  put(neck, [fur(bone([0, 0.255, 0.27], [0, 0.29, 0.43], 0.1, 0.08)), S.ellipsoid(0.07, 0.05, 0.1).at(0, 0.22, 0.36).color(C.belly).pbr(0.6).paint(0.03)]);
+  neck.hard.push(orient(H.torus(0.09, 0.012, 24, 8).rot(90, 0, 0), [0, 0.272, 0.35], [0, 0.35, 1], [0, 1, 0]).color(gold).pbr(0.28, 1));
+  const head = N('head', 'neck', [0, 0.3, 0.43], { rig: 'head', detail: 0.85, minRes: 18 });
+  const hp = [
+    fur(S.ellipsoid(0.085, 0.062, 0.09).at(0, 0.31, 0.48)),
+    fur(S.ellipsoid(0.066, 0.045, 0.06).at(0, 0.292, 0.55).blend(0.04)),
+    ...S.mirrorX([S.sphere(0.03).at(0.03, 0.28, 0.578).color(C.belly).pbr(0.6).blend(0.02)]),
+    S.ellipsoid(0.022, 0.015, 0.014).at(0, 0.305, 0.606).color(C.nose).pbr(0.4).blend(0.012),
+    ...S.mirrorX([fur(S.ellipsoid(0.018, 0.016, 0.008).rot(0, 25, 0).at(0.074, 0.335, 0.45).blend(0.015), C.dark)]),
+  ];
+  put(head, hp);
+  put(head, H.mirrorX([eyeAt([0.049, 0.33, 0.535], [0.6, 0.35, 0.72], 0.0115, { iris: 0x1a1008 })]));
+  for (const sx of [1, -1]) for (let w = 0; w < 3; w++) head.hard.push(H.tube([[sx * 0.04, 0.285 - w * 0.008, 0.585], [sx * 0.1, 0.29 - w * 0.025, 0.58], [sx * 0.15, 0.285 - w * 0.045, 0.55]], 0.0016, 6, 3).color(0xe8e0d0).pbr(0.5).lod(1));
+  // the crown: a gold band, a sun disc on the brow, a fan of jungle plumes
+  head.hard.push(orient(H.torus(0.078, 0.01, 28, 8).rot(90, 0, 0), [0, 0.335, 0.465], [0, 1, 0.45], [0, 0, 1]).color(gold).pbr(0.28, 1));
+  head.hard.push(orient(H.cyl(0.03, 0.03, 0.01, 18).color(gold).pbr(0.28, 1), [0, 0.365, 0.53], [0, 0.45, 1], [0, 1, 0]));
+  head.hard.push(H.sphere(0.012, 10).at(0, 0.37, 0.538).color(C.gem).pbr(0.15));
+  const plumeCols = [[0xd8302a, 0xf0a020], [0x2aa8a0, 0x1a5ad8], [0x3a9a3a, 0xd8d040], [0xf0c030, 0xd8302a]];
+  for (let k = 0; k < 7; k++) {
+    const a = (k - 3) * 15 * DEG, L = 0.2 - Math.abs(k - 3) * 0.022;
+    const [ca, cb] = plumeCols[(k + 1) % 4];
+    head.hard.push(plume([Math.sin(a) * 0.04, 0.37, 0.44 - Math.abs(k - 3) * 0.006], [Math.sin(a) * 0.9, Math.cos(a), -0.35], L, 0.045, ca, cb, [Math.sin(a) * 0.3, 0, 1]));
+  }
+  const jaw = N('jaw', 'head', [0, 0.275, 0.5], { rig: 'jaw', detail: 0.85, minRes: 18 });
+  put(jaw, [S.ellipsoid(0.045, 0.02, 0.055).at(0, 0.262, 0.55).color(C.belly).pbr(0.6)]);
+
+  // ---- legs: short, the paws broad and webbed ----
+  const JF = [[0.1, 0.22, 0.2], [0.115, 0.12, 0.23], [0.115, 0.045, 0.24]];
+  const JB = [[0.11, 0.24, -0.3], [0.13, 0.13, -0.23], [0.12, 0.045, -0.33]];
+  const L = (q) => fur(q, C.dark);
+  const webbed = (cx, cy, cz, n, sp, len) => {
+    const out = [L(S.ellipsoid(sp * n * 0.55, 0.007, len * 0.55).at(cx, cy - 0.006, cz + len * 0.45).blend(0.01))];
+    for (let k = 0; k < n; k++) {
+      const off = k - (n - 1) / 2, tip = [cx + off * sp * 1.25, cy - 0.01, cz + len * (1 - Math.abs(off) * 0.12)];
+      out.push(L(bone([cx + off * sp * 0.6, cy, cz], tip, 0.009, 0.007).blend(0.008)));
+      out.push(spike(tip, [off * 0.2, -0.3, 1], 0.014, 0.004, C.claw, [0, -1, 0], 0.4));
+    }
+    return out;
+  };
+  const bracer = (a, b, r) => orient(H.cyl(r, r * 1.05, 0.035, 18, true), lerp3(a, b, 0.55), sub3(a, b), [0, 0, 1]).color(gold).pbr(0.28, 1);
+  legPair(N, 'F', JF, {
+    up: [L(bone(JF[0], JF[1], 0.06, 0.042)), L(S.sphere(0.06).at(...JF[0]))],
+    lo: [L(bone(JF[1], JF[2], 0.042, 0.032)), L(S.sphere(0.042).at(...JF[1])), bracer(JF[1], JF[2], 0.042)],
+    paw: [L(S.sphere(0.032).at(...JF[2])), L(S.ellipsoid(0.04, 0.02, 0.045).at(0.115, 0.02, 0.255).blend(0.02)), ...webbed(0.115, 0.018, 0.265, 5, 0.012, 0.04)],
+  }, [0.5, 0.6, 0.8]);
+  legPair(N, 'B', JB, {
+    up: [L(bone(JB[0], JB[1], 0.075, 0.05)), L(S.sphere(0.075).at(...JB[0]))],
+    lo: [L(bone(JB[1], JB[2], 0.048, 0.034)), L(S.sphere(0.048).at(...JB[1]))],
+    paw: [L(S.sphere(0.034).at(...JB[2])), L(S.ellipsoid(0.042, 0.02, 0.06).at(0.12, 0.02, -0.29).blend(0.02)), ...webbed(0.12, 0.018, -0.27, 5, 0.014, 0.06)],
+  }, [0.5, 0.6, 0.8]);
+
+  // ---- tail: thick at the root, tapering like a rudder ----
+  const TL = [[0, 0.26, -0.42], [0, 0.23, -0.58], [0, 0.17, -0.73], [0, 0.1, -0.86], [0, 0.05, -0.97]];
+  const TR = [0.09, 0.072, 0.055, 0.036, 0.012];
+  for (let i = 0; i < 4; i++) {
+    const n = N(`tail${i}`, i ? `tail${i - 1}` : 'torso', TL[i], { rig: 'tail', detail: 0.55, minRes: 16 });
+    put(n, [fur(bone(TL[i], TL[i + 1], TR[i], TR[i + 1])), fur(S.sphere(TR[i]).at(...TL[i]).blend(0.02))]);
+    if (i === 0) n.hard.push(orient(H.cyl(0.082, 0.078, 0.03, 20, true), lerp3(TL[0], TL[1], 0.55), sub3(TL[0], TL[1]), [0, 1, 0]).color(gold).pbr(0.28, 1));
+  }
+  return { kind: 'beast.quad', attack: 'bite', gait: 'cat', strike: 'pounce', girth: 1.1, ...footVals(JF[2], 0.27, JB[2], -0.28, 0.7), nodes: finish(N.nodes) };
+}
+
+// =====================================================================================
+//  Jungle wasp-swarm: a dozen great wasps circling a papery nest. Each wasp rides its own tilted orbit.
+// =====================================================================================
+const SWARM_Y = 0.62;
+const swarmSpin = (i) => (i % 3 === 0 ? -1 : 1) * (1.7 + ((i * 7) % 5) * 0.22);
+function waspParts(C, k) {
+  const axis = [0, Math.sin(20 * DEG), Math.cos(20 * DEG)], ac = [0, -0.024, -0.08];
+  const along = (s) => add3(ac, mul3(axis, s));
+  const prims = [
+    S.ellipsoid(0.022, 0.021, 0.028).color(C.black).pbr(0.35),
+    S.ellipsoid(0.011, 0.006, 0.014).at(0, 0.018, -0.006).color(C.yellow).pbr(0.35).paint(0.004),
+    S.ellipsoid(0.02, 0.018, 0.016).at(0, 0.003, 0.036).color(C.yellow).pbr(0.35).blend(0.008),
+    ...S.mirrorX([S.ellipsoid(0.009, 0.014, 0.01).at(0.014, 0.006, 0.039).color(0x2a1608).pbr(0.2).blend(0.004)]),
+    S.ellipsoid(0.014, 0.006, 0.006).at(0, -0.008, 0.05).color(C.black).pbr(0.4).blend(0.004),
+    S.capsule([0, -0.004, -0.02], [0, -0.01, -0.038], 0.006, 0.007).color(C.black).pbr(0.35).blend(0.006),
+    S.ellipsoid(0.024, 0.022, 0.05).rot(-20, 0, 0).at(...ac).color(C.yellow).pbr(0.35).blend(0.008),
+    ...[0.022, -0.004, -0.03].map((s) => S.box(0.07, 0.07, 0.0085, 0.001).rot(-20, 0, 0).at(...along(s)).color(C.black).paint(0.003)),
+    S.ellipsoid(0.03, 0.03, 0.012).rot(-20, 0, 0).at(...along(-0.05)).color(C.black).paint(0.003),
+  ];
+  const hard = [
+    spike(along(-0.05), mul3(axis, -1), 0.022, 0.0035, C.black, [0, -1, 0], 0.1),
+    ...H.mirrorX([H.tube([[0.006, 0.014, 0.048], [0.016, 0.036, 0.062], [0.026, 0.044, 0.084]], 0.0019, 6, 3).color(C.black).pbr(0.4).lod(1)]),
+  ];
+  for (const z of [0.012, -0.004, -0.018]) hard.push(...H.mirrorX([H.tube([[0.012, -0.014, z], [0.032, -0.035, z - 0.01], [0.03, -0.068, z - 0.03]], 0.0022, 6, 3).color(C.leg).pbr(0.45).lod(1)]));
+  for (const p of prims) p.scale(k);
+  for (const h of hard) h.scale(k);
+  return { prims, hard };
+}
+function waspWing(C, k) {
+  const sh = (x, y, z) => mixRgb(rgb(C.wing), rgb(C.vein), clamp(Math.abs(z) * 30));
+  return [
+    H.sphere(1, 10).scale(0.052, 0.0022, 0.013).at(0.05, 0, -0.004).rot(0, 16, 8).color(C.wing).shade(sh).pbr(0.18).glow(0.12),
+    H.sphere(1, 8).scale(0.034, 0.002, 0.01).at(0.033, -0.002, -0.022).rot(0, 26, 4).color(C.wing).pbr(0.18).glow(0.12),
+  ].map((h) => h.scale(k));
+}
+function waspSwarm(def, o = {}) {
+  const yellow = col(o.body2, 0xe8c83a), black = col(o.stripe, 0x1a1a1a);
+  const rnd = rng(hashStr((def?.id || 'wasps') + ':swarm'));
+  const C = { yellow, black, leg: mix(yellow, 0x8a4a10, 0.35), wing: mix(0xa08050, yellow, 0.2), vein: 0x4a3418, paper: mix(0xc4b496, yellow, 0.08) };
+  const N = rigOf();
+  N('root', null, [0, 0, 0]);
+  const HC = SWARM_Y, K = 1.3;
+  const nest = N('nest', 'root', [0, HC, 0], { rig: 'core', detail: 0.8, minRes: 16 });
+  put(nest, [
+    S.ellipsoid(0.12, 0.16, 0.12).at(0, HC, 0).color(C.paper).pbr(0.95).bump(0.006, 26, 'ridges').tint(0.18, 14),
+    S.ellipsoid(0.085, 0.09, 0.085).at(0, HC + 0.12, 0).color(tone(C.paper, 0, 0, -0.06)).pbr(0.95).bump(0.005, 30, 'ridges').blend(0.05),
+    S.capsule([0, HC + 0.17, 0], [0, HC + 0.26, 0.01], 0.014, 0.01).color(0x5a4a34).pbr(0.9).blend(0.02),
+    S.sphere(0.038).at(0, HC - 0.15, 0.01).cut(0.012),
+    S.torus(0.11, 0.008).at(0, HC - 0.02, 0).color(tone(C.paper, 0, 0, -0.12)).paint(0.004, 0.004),
+    S.torus(0.115, 0.007).at(0, HC + 0.06, 0).color(tone(C.paper, 0, 0, -0.12)).paint(0.004, 0.004),
+  ]);
+  const n = 12;
+  for (let i = 0; i < n; i++) {
+    const r = 0.27 + rnd() * 0.22 + (i % 2) * 0.06, dy = (rnd() - 0.5) * 0.5, a0 = (i / n) * 360 + rnd() * 18, tilt = (rnd() - 0.5) * 44;
+    const dir = Math.sign(swarmSpin(i));
+    N(`orbit${i}`, 'root', [0, 0, 0], { pos: [0, HC, 0], rot: [tilt, a0, 0], rig: 'orbits' });
+    const w = N(`wasp${i}`, `orbit${i}`, [0, 0, 0], { pos: [r, dy, 0], rot: [(rnd() - 0.5) * 16, dir > 0 ? 180 : 0, dir * 14], rig: 'wasps', detail: 1.15, minRes: 44 });
+    const parts = waspParts(C, K);
+    put(w, [parts.prims, parts.hard]);
+    for (const sx of [1, -1]) {
+      const wg = N(`wing${sx > 0 ? 'L' : 'R'}${i}`, `wasp${i}`, [0, 0, 0], { pos: [sx * 0.011 * K, 0.019 * K, 0.004 * K], rig: 'wings' });
+      const parts2 = waspWing(C, K);
+      wg.hard.push(...(sx > 0 ? parts2 : parts2.map((h) => h.mirrorX())));
+    }
+  }
+  return { kind: 'fringe.swarm', attack: 'bite', cloudY: HC, nodes: finish(N.nodes) };
+}
+
+// =====================================================================================
+//  Poison-dart tree-frog: dog-sized, glossy, bright, black-spotted, with great dark eyes and sticky toe pads
+// =====================================================================================
+function dartFrog(def, o = {}) {
+  const skinC = col(o.skin, 0xe83a3a), spotC = col(o.spots, 0x1a1a2a);
+  const rnd = rng(hashStr((def?.id || 'frog') + ':frog'));
+  const C = { skin: skinC, spot: spotC, belly: mix(skinC, spotC, 0.45), pad: tone(skinC, 0, -0.1, 0.12), tongue: 0xe8789a };
+  const sk = (q, c = C.skin) => q.color(c).pbr(0.2).tint(0.06, 16);
+  const N = rigOf();
+  N('root', null, [0, 0, 0]);
+  const torso = N('torso', 'root', [0, 0.12, 0], { rig: 'torso', detail: 1.15, minRes: 22 });
+  const body = [
+    sk(S.ellipsoid(0.11, 0.085, 0.14).rot(-14, 0, 0).at(0, 0.12, -0.04)),
+    sk(S.ellipsoid(0.1, 0.066, 0.09).at(0, 0.15, 0.075).blend(0.05)),
+    sk(S.ellipsoid(0.072, 0.046, 0.05).at(0, 0.142, 0.135).blend(0.04)),
+    sk(S.ellipsoid(0.1, 0.075, 0.08).at(0, 0.11, -0.14).blend(0.05)),
+    ...S.mirrorX([sk(S.sphere(0.036).at(0.062, 0.186, 0.085).blend(0.022))]),
+  ];
+  const dfB = distanceField(body);
+  const paint = [
+    S.ellipsoid(0.1, 0.05, 0.2).at(0, 0.06, -0.02).color(C.belly).pbr(0.3).paint(0.03),
+    S.ellipsoid(0.08, 0.004, 0.06).at(0, 0.128, 0.13).cut(0.003),
+  ];
+  for (let k = 0; k < 26; k++) {
+    const z = lerp(0.12, -0.2, rnd()), a = (rnd() - 0.5) * 200 * DEG;
+    const p = hitFrom(dfB, [0, 0.12, z], [Math.sin(a), Math.cos(a), 0]);
+    if (p[2] > 0.05 && Math.abs(p[0]) > 0.035 && p[1] > 0.16) continue;              // keep the eyes clear
+    paint.push(S.sphere(0.011 + rnd() * 0.016).scale(1).at(...p).color(C.spot).pbr(0.2).paint(0.003));
+  }
+  put(torso, [...body, ...paint]);
+  put(torso, H.mirrorX([eyeAt([0.07, 0.192, 0.095], [0.85, 0.35, 0.45], 0.03, { iris: 0x101014, white: 0x0a0a0c, pupil: 0x020204, rim: 0x2a2018, irisSize: 1.3 })]));
+  // throat sac and tongue (the tongue rests inside the mouth; the animator shoots it out)
+  const throat = N('throat', 'torso', [0, 0.09, 0.08], { rig: 'throat', detail: 1.2, minRes: 22 });
+  put(throat, [S.ellipsoid(0.058, 0.032, 0.055).at(0, 0.09, 0.095).color(C.belly).pbr(0.3)]);
+  const tongue = N('tongue', 'torso', [0, 0.13, 0.1], { rig: 'tongue', detail: 1.4, minRes: 24 });
+  put(tongue, [S.capsule([0, 0.13, 0.1], [0, 0.13, 0.15], 0.01, 0.014).color(C.tongue).pbr(0.25), S.sphere(0.018).at(0, 0.13, 0.155).color(tone(C.tongue, 0, 0, -0.05)).pbr(0.2).blend(0.008)]);
+
+  // ---- legs: slim arms with splayed fingers, folded haunches, long-toed feet; every digit ends in a pad ----
+  const JF = [[0.07, 0.1, 0.08], [0.1, 0.066, 0.1], [0.1, 0.022, 0.125]];
+  const JB = [[0.075, 0.1, -0.13], [0.14, 0.075, -0.03], [0.115, 0.03, -0.15]];
+  const spots = (a, b, n) => { const out = []; for (let k = 0; k < n; k++) out.push(S.sphere(0.008 + (k % 2) * 0.004).at(...add3(lerp3(a, b, 0.25 + k * 0.4), [0.012, 0.008, 0])).color(C.spot).paint(0.002)); return out; };
+  const digits = (from, dirs, len, r) => {
+    const out = [];
+    for (const d of dirs) {
+      const tip = add3(from, mul3(norm3(d), len));
+      out.push(sk(bone(from, tip, r, r * 0.8).blend(0.006)));
+      out.push(sk(S.ellipsoid(r * 1.9, r * 1.1, r * 1.9).at(tip[0], tip[1] - r * 0.3, tip[2]).blend(0.004), C.pad));
+    }
+    return out;
+  };
+  legPair(N, 'F', JF, {
+    up: [sk(bone(JF[0], JF[1], 0.022, 0.017)), sk(S.sphere(0.022).at(...JF[0])), ...spots(JF[0], JF[1], 1)],
+    lo: [sk(bone(JF[1], JF[2], 0.017, 0.013)), sk(S.sphere(0.017).at(...JF[1]))],
+    paw: [sk(S.sphere(0.014).at(...JF[2])), ...digits(add3(JF[2], [0, -0.008, 0.006]), [[-0.5, -0.35, 1], [-0.12, -0.3, 1], [0.25, -0.3, 1], [0.7, -0.3, 0.6]], 0.042, 0.0055)],
+  }, [1.1, 1.3, 1.6]);
+  legPair(N, 'B', JB, {
+    up: [sk(bone(JB[0], JB[1], 0.036, 0.024)), sk(S.sphere(0.034).at(...JB[0])), ...spots(JB[0], JB[1], 2)],
+    lo: [sk(bone(JB[1], JB[2], 0.024, 0.015)), sk(S.sphere(0.024).at(...JB[1])), ...spots(JB[1], JB[2], 1)],
+    paw: [sk(S.sphere(0.015).at(...JB[2])), sk(bone(JB[2], [0.13, 0.014, -0.075], 0.013, 0.009)),
+      ...digits([0.13, 0.014, -0.075], [[-0.35, -0.2, 1], [-0.05, -0.15, 1], [0.3, -0.15, 1], [0.65, -0.15, 0.8], [0.95, -0.1, 0.2]], 0.052, 0.0055)],
+  }, [1.1, 1.3, 1.6]);
+  return { kind: 'fringe.frog', attack: 'bite', nodes: finish(N.nodes) };
+}
+
+// =====================================================================================
+//  Animators
+// =====================================================================================
+/** the clockwork badger: the badger's walk, and its key and gears turning */
+function clockQuadAnim(rig, inner, c, base) {
+  (beastAnimators['beast.quad'] || base.quad)(rig, inner, c, base);
+  const { R } = base, dead = c.dead > 0;
+  const t = dead ? c.t - c.dead : c.t;
+  const spin = t * (c.moving ? 5 : 1.6) + (c.atk >= 0 ? c.atk * 5 : 0) + (c.phase || 0);
+  R(rig.key?.[0], 0, t * 1.3 + (c.phase || 0));
+  (rig.gears || []).forEach((g, i) => { const j = i % 3; R(g, (j === 0 ? 1 : -(j === 1 ? 1.7 : 2.1)) * spin); });
+}
+
+/** the swarm: every wasp circles on its own tilted orbit, wings a blur; it surges forward to sting; dead, they fall */
+function swarmAnim(rig, inner, c, base) {
+  const { R, P } = base, s = inner.scale.y || 1, ph = c.phase || 0;
+  const f = c.dead > 0 ? smooth(Math.min(1, c.dead * 1.6)) : 0;
+  const t = c.dead > 0 ? c.t - c.dead : c.t;
+  const atk = c.atk >= 0 ? Math.sin(Math.PI * c.atk) : 0, mv = c.moving ? 1 : 0, HC = rig.cloudY || SWARM_Y;
+  (rig.orbits || []).forEach((o, i) => {
+    R(o, 0, swarmSpin(i) * (t + ph * 0.3), 0);
+    P(o, 0, (Math.sin(c.t * 2.1 + i * 1.7 + ph) * 0.05 + Math.sin(c.t * 3.3 + i) * 0.02) * (1 - f) - f * HC * 0.15, 0);
+  });
+  (rig.wasps || []).forEach((w, i) => {
+    const r = w.userData.rest || [0, 0, 0, 0, 0, 0];
+    const fall = (HC + r[4]) * f * 0.9;
+    P(w, -r[3] * (0.45 * atk + 0.12 * mv) + f * r[3] * 0.4, -fall + Math.sin(c.t * 9 + i * 2.3) * 0.008 * (1 - f), Math.sin(c.t * 7 + i) * 0.015 * (1 - f));
+    R(w, Math.sin(c.t * 6 + i * 1.3) * 0.12 * (1 - f) + f * (1.2 + (i % 3) * 0.6), 0, Math.sin(c.t * 5 + i * 2) * 0.2 * (1 - f) + f * (i % 2 ? 2.4 : -2.4));
+  });
+  (rig.wings || []).forEach((g, i) => {
+    const sg = (g.userData.rest?.[3] ?? 1) >= 0 ? 1 : -1;
+    R(g, 0, 0, sg * ((1 - f) * (0.3 + 0.55 * Math.sin(c.t * 62 + i * 0.9)) - f * 0.3));
+  });
+  if (rig.core) { P(rig.core, 0, Math.sin(c.t * 1.3 + ph) * 0.015 - f * (HC - 0.15), 0); R(rig.core, 0, Math.sin(c.t * 0.6 + ph) * 0.15, f * 1.3); }
+  inner.position.z = atk * 0.42 * s;
+  inner.position.y = 0;
+  inner.rotation.x = (mv * 0.08 + atk * 0.15) * (1 - f);
+  inner.rotation.z = 0;
+}
+
+/** the frog: sits, throat pulsing; hops when it moves; strikes with its tongue; dies belly-up */
+function frogAnim(rig, inner, c, base) {
+  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0;
+  const L = rig.legs || [], Sn = rig.shins || [], Pw = rig.paws || [];
+  let py = 0, pitch = 0, pz = 0, hind = 0, front = 0, crouch = 0, tongue = 0;
+  if (c.moving && !(c.dead > 0)) {
+    const u = ((t * 1.7 + ph * 0.37) % 1 + 1) % 1;
+    crouch = keys(u, [[0, 0.2], [0.1, 1], [0.18, 0], [0.72, 0], [0.84, 0.7], [1, 0.2]]);
+    const air = u > 0.15 && u < 0.72 ? Math.sin(Math.PI * (u - 0.15) / 0.57) : 0;
+    py = air * 0.14 - crouch * 0.01;
+    hind = keys(u, [[0, 0], [0.13, 0], [0.24, 1], [0.42, 0.85], [0.68, 0.05], [1, 0]]);
+    front = keys(u, [[0, 0], [0.2, -0.2], [0.5, 0.85], [0.74, 0.4], [1, 0]]);
+    pitch = keys(u, [[0, 0], [0.12, 0.06], [0.24, -0.38], [0.48, -0.05], [0.68, 0.2], [0.82, 0.02], [1, 0]]);
+  }
+  if (c.atk >= 0 && !(c.dead > 0)) {
+    const a = c.atk;
+    tongue = keys(a, [[0, 0], [0.32, 0], [0.44, 1], [0.58, 1], [0.7, 0], [1, 0]]);
+    pitch += keys(a, [[0, 0], [0.3, 0.08], [0.44, -0.12], [0.6, -0.05], [1, 0]]);
+    pz = keys(a, [[0, 0], [0.3, -0.02], [0.44, 0.06], [0.7, 0.02], [1, 0]]);
+    crouch = Math.max(crouch, keys(a, [[0, 0], [0.3, 0.8], [0.44, 0], [1, 0]]));
+  }
+  for (let i = 2; i < 4 && i < L.length; i++) { R(L[i], hind * 1.7 - crouch * 0.12); R(Sn[i], -hind * 2.3 + crouch * 0.2); R(Pw[i], hind * 1.1); }
+  for (let i = 0; i < 2 && i < L.length; i++) { R(L[i], -front * 0.8 + crouch * 0.15); R(Sn[i], front * 0.2); R(Pw[i], front * 0.5); }
+  if (rig.tongue) rig.tongue.scale.set(1, 1, 1 + tongue * 7);
+  if (rig.throat) { const b = c.dead > 0 ? 0 : Math.max(0, Math.sin(t * 4.2 + ph)); rig.throat.scale.set(1 + b * 0.12, 1 + b * 0.35, 1 + b * 0.1); }
+  if (c.dead > 0) {
+    const f = smooth(Math.min(1, c.dead * 2));
+    inner.rotation.x = 0; inner.rotation.z = f * Math.PI * (Math.floor(ph * 10) % 2 ? 1 : -1);
+    inner.position.y = f * 0.19 * s - Math.max(0, c.dead - 0.8) * 0.2 * s;
+    inner.position.z = 0;
+    for (let i = 0; i < L.length; i++) { R(L[i], (i < 2 ? -0.6 : 0.9) * f, 0, (i % 2 ? -0.5 : 0.5) * f); R(Sn[i], (i < 2 ? 0.3 : -1.2) * f); }
+    return;
+  }
+  inner.rotation.z = 0;
+  inner.rotation.x = pitch;
+  inner.position.y = py * s;
+  inner.position.z = pz * s;
+}
+
+export const bodies = { pangolin, porcupine, badger, riverOtter, waspSwarm, dartFrog };
+export const animators = { 'fringe.clockquad': clockQuadAnim, 'fringe.swarm': swarmAnim, 'fringe.frog': frogAnim };

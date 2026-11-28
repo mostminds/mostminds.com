@@ -329,13 +329,12 @@ function chain(a, b, r = 0.02, color = 0x3a3c40, lod = 3) {
   return out;
 }
 
-/**
- * A small crew figure, about `h` tall, standing with its feet at `at`. style: 'lizard' | 'bone' | 'man'.
- * Adds nodes `${p}body`, `${p}head`, `${p}armL`, `${p}armR` (rig lists `crew`, `crewHeads`, `crewArms`).
 
 // ---------- animation helpers ----------
 const sgn = (w, i) => ((w.userData.rest?.[3] ?? (i ? -1 : 1)) >= 0 ? 1 : -1);
 const bellK = (k) => Math.sin(clamp(k) * Math.PI);
+/** a rig key outside animate's single set is filed as a list: its first node */
+const one = (x) => (Array.isArray(x) ? x[0] : x);
 /** four-legged walk; returns the gait phase. amp = stride, bend = knee lift */
 function walk4(rig, c, base, rate = 7.5, amp = 0.42, bend = 0.6, front = -0.5) {
   const { R } = base, L = rig.legs || [], Sh = rig.shins || [], k = c.moving && !c.flying ? 1 : 0, gait = c.t * rate + (c.phase || 0);
@@ -619,13 +618,13 @@ function rhinoAnim(rig, inner, c, base) {
     hy = 0;
   }
   R(rig.body, bx + idle * 0.006, Math.sin(gait) * 0.03 * k, Math.sin(gait) * 0.02 * k);
-  R(rig.mhead, hx, hy); R(rig.mjaw, jaw);
+  R(one((rig.mhead)), hx, hy); R(one((rig.mjaw)), jaw);
   tailWave(rig, c, base, 0.25, 2.2, -0.1);
   (rig.vents || []).forEach((v, i) => { const f = 1 + 0.35 * Math.sin(t * 13 + i * 2.1 + ph) + 0.2 * Math.sin(t * 23 + i); v.scale.set(1, f, 1); });
   const dead = dieSide(inner, c, base, 0.3);
   poseRider(rig, c, base, dead, 0.14);
   inner.position.z = pz * s;
-  if (dead) { const f = Math.min(1, c.dead * 2); R(rig.mhead, 0.3 * f); R(rig.mjaw, 0.35 * f); return; }
+  if (dead) { const f = Math.min(1, c.dead * 2); R(one((rig.mhead)), 0.3 * f); R(one((rig.mjaw)), 0.35 * f); return; }
   inner.position.y = k * Math.abs(Math.sin(gait)) * 0.02 * s;
 }
 
@@ -879,8 +878,300 @@ function bruteAnim(rig, inner, c, base) {
   fiendAnim(rig, inner, c, base);
   const { R } = base, t = c.t, ph = c.phase || 0;
   if (c.dead > 0) return;
-  R(rig.torso, (rig.torso ? 0 : 0) + 0.05 + Math.sin(t * 1.2 + ph) * 0.02, rig.torso ? rig.torso.rotation.y - (rig.torso.userData.rest?.[1] || 0) : 0, 0);
+  if (rig.torso) rig.torso.rotation.x += 0.04 + Math.sin(t * 1.2 + ph) * 0.02;
   R(rig.jaw, c.atk >= 0 ? 0.5 * bellK(c.atk) : 0.04 + 0.04 * Math.max(0, Math.sin(t * 0.9 + ph)));
   (rig.vents || []).forEach((v, i) => { const f = 1 + 0.35 * Math.sin(t * 13 + i * 2.1 + ph) + 0.2 * Math.sin(t * 23 + i); v.scale.set(1, f, 1); });
   if (rig.core) rig.core.scale.setScalar(1 + Math.sin(t * 3.1 + ph) * 0.07 + Math.sin(t * 11 + ph) * 0.03 + (c.atk >= 0 ? 0.25 * bellK(c.atk) : 0));
 }
+
+// =====================================================================================
+//  PLAGUE-TOAD: a gigantic bloated swamp-toad, warty and boil-studded, its back a bed of moss and mushrooms
+// =====================================================================================
+// rig: torso, head (upper skull), jaw, throat, tongue, legs[4] (FL FR BL BR), shins[4], bells[]
+function plagueToad(def, o = {}) {
+  const skin = col(o.skin, 0x6a8a3a), belly = col(o.belly, 0xc8c070), rnd = rng(hashStr((def.id || 'toad') + ':toad'));
+  const skinD = tone(skin, 0.02, -0.05, -0.12), skinL = tone(skin, -0.02, 0.05, 0.08), moss = tone(skin, 0.03, 0.05, -0.06), mud = 0x4a3a22, wart = tone(skin, -0.04, 0.1, -0.04);
+  const rust = 0x8a4a22, boilC = 0xd8c048, boilR = 0x9a3a2a;
+  const sk = (q) => q.color(skin).bump(0.006, 18, 'scales').tint(0.18, 9).pbr(0.42, 0);
+  const N = rigOf();
+  N('root', null, [0, 0, 0]);
+  const TO = [0, 0.36, 0];
+  const torso = N('torso', 'root', TO, { rig: 'torso', detail: 0.7 });
+  // points on the back surface: an ellipsoid shell approximating the body
+  const onBack = (u, v, lift = 0) => {      // u: around (-1 left .. 1 right), v: along (-1 rear .. 1 front)
+    const a = u * 1.25, cz = -0.06 + v * 0.38;
+    const rr = Math.sqrt(Math.max(0.05, 1 - v * v * 0.75));
+    return [Math.sin(a) * 0.42 * rr * (1 + lift), 0.42 + Math.cos(a) * 0.3 * rr * (1 + lift), cz];
+  };
+  const nrmAt = (u, v) => norm3([Math.sin(u * 1.25) / 0.42, Math.cos(u * 1.25) / 0.3, v * 0.6]);
+  {
+    const p = torso.prims;
+    p.push(sk(S.ellipsoid(0.42, 0.3, 0.44).at(0, 0.42, -0.06)));
+    p.push(sk(S.ellipsoid(0.4, 0.22, 0.38).at(0, 0.28, 0.0).blend(0.08)));
+    p.push(...S.mirrorX([sk(S.ellipsoid(0.17, 0.18, 0.22).at(0.28, 0.34, -0.3).blend(0.08))]));          // haunches
+    p.push(S.ellipsoid(0.36, 0.16, 0.36).at(0, 0.16, 0.02).color(belly).tint(0.15, 12).paint(0.05));
+    // moss over the back, and mud stains low on the flanks
+    p.push(S.ellipsoid(0.36, 0.14, 0.38).at(0, 0.68, -0.1).color(moss).bump(0.012, 40, 'fur').tint(0.35, 18).pbr(0.95).paint(0.05, 0.01));
+    p.push(S.ellipsoid(0.18, 0.1, 0.2).at(0.12, 0.66, 0.1).color(tone(moss, 0.04, 0.05, 0.06)).bump(0.01, 46, 'fur').pbr(0.95).paint(0.04, 0.008));
+    for (const sx of [1, -1]) p.push(S.ellipsoid(0.1, 0.1, 0.3).at(sx * 0.42, 0.24, -0.08).color(mud).tint(0.3, 20).paint(0.06));
+    // warts
+    for (let i = 0; i < 46; i++) {
+      const u = (rnd() * 2 - 1) * 0.95, v = rnd() * 1.6 - 0.85, q = onBack(u, v), r = 0.012 + rnd() * 0.022;
+      p.push(S.sphere(r).at(...q).color(i % 3 ? wart : skinD).tint(0.2, 60).pbr(0.5).blend(0.012));
+    }
+    // boils: glossy, yellow, angry rims
+    for (let i = 0; i < 9; i++) {
+      const u = (rnd() * 2 - 1) * 0.9, v = rnd() * 1.4 - 0.8, q = onBack(u, v, 0.02), r = 0.025 + rnd() * 0.022, n = nrmAt(u, v);
+      p.push(S.sphere(r * 1.5).at(...q).color(boilR).paint(r * 0.5));
+      p.push(S.sphere(r).at(...add3(q, mul3(n, r * 0.4))).color(boilC).pbr(0.15).blend(0.01));
+      torso.hard.push(H.sphere(r * 0.35, 6).at(...add3(q, mul3(n, r * 1.25))).color(0xf0e0a0).pbr(0.1).lod(0));
+    }
+    // a mouldering harness: a girth strap and a breast strap, rusted rings, bells hung from both sides
+    p.push(S.torus(0.4, 0.022).rot(90, 0, 0).scale(1).at(0, 0.38, -0.04).color(LEATHER).pbr(0.75).paint(0.004, 0.012));
+    p.push(S.torus(0.33, 0.02).rot(90, 0, 0).at(0, 0.38, 0.18).color(LEATHER).pbr(0.75).paint(0.004, 0.012));
+    p.push(S.box(0.06, 0.5, 0.4, 0.01).at(0, 0.7, 0.07).color(LEATHER).pbr(0.75).paint(0.004, 0.012));
+    torso.hard.push(H.torus(0.04, 0.01, 10, 5).rot(90, 0, 0).at(0, 0.73, 0.07).color(rust).pbr(0.7, 0.5));
+  }
+  // mushrooms sprouting from the moss
+  for (let i = 0; i < 11; i++) {
+    const u = (rnd() * 2 - 1) * 0.75, v = rnd() * 1.2 - 0.75, q = onBack(u, v, -0.04), n = nrmAt(u, v), h = 0.04 + rnd() * 0.08, cr = 0.025 + rnd() * 0.04;
+    const capC = [0xb85a2a, 0xc8b8a0, 0x8a5a9a, 0xd8a040][i % 4], spot = i % 4 === 0 ? 0xf0e8d0 : null;
+    const dirn = norm3(add3(n, [(rnd() - 0.5) * 0.4, 0.3, (rnd() - 0.5) * 0.4]));
+    torso.hard.push(orient(H.cyl(cr * 0.28, cr * 0.36, h, 7).at(0, h / 2, 0).color(0xe0d8c0).pbr(0.8), q, dirn).lod(1));
+    torso.hard.push(orient(H.lathe([[0.001, h + cr * 0.55], [cr * 0.5, h + cr * 0.5], [cr * 0.9, h + cr * 0.2], [cr, h - cr * 0.05], [cr * 0.3, h], [0.001, h]], 10).color(capC).pbr(0.6)
+      .shade(spot ? (x, y, z) => (noise3(x * 120, y * 120, z * 120) > 0.68 ? spot : null) : null), q, dirn).lod(i % 3 ? 1 : 2));
+  }
+  // bells on the harness
+  const bells = [];
+  for (const sx of [1, -1]) for (const z of [-0.04, 0.18]) {
+    const at = [sx * (z > 0 ? 0.33 : 0.41), 0.34, z];
+    const b = N(`bell${bells.length}`, 'torso', at, { rig: 'bells', detail: 1 });
+    b.hard.push(...bell(at, 0.035, rust));
+    bells.push(b);
+  }
+  // the head: a broad flat skull, the eyes up on turrets, a wide mouth line
+  const HO = [0, 0.42, 0.24];
+  const head = N('head', 'torso', HO, { rig: 'head', detail: 0.85 });
+  {
+    const p = head.prims;
+    p.push(sk(S.ellipsoid(0.36, 0.14, 0.24).at(0, 0.45, 0.36)));
+    p.push(sk(S.ellipsoid(0.3, 0.1, 0.12).at(0, 0.44, 0.52).blend(0.06)));
+    for (const sx of [1, -1]) {
+      p.push(sk(S.ellipsoid(0.09, 0.08, 0.09).at(sx * 0.2, 0.56, 0.38).blend(0.05)));
+      p.push(S.ellipsoid(0.06, 0.05, 0.03).at(sx * 0.27, 0.48, 0.28).color(skinD).paint(0.01, 0.006));            // eardrum
+      head.hard.push(orient(eyeball(0.06, { iris: 0xd8a020, rim: 0x6a4a08, white: 0x2a2a0a, pupil: 0x060604 }).rot(-90, 0, 0).rot(0, 90, 0), [sx * 0.21, 0.6, 0.41], [sx * 0.6, 0.35, 0.75]));
+      p.push(sk(S.torus(0.06, 0.014).rot(70, sx * 30, 0).at(sx * 0.21, 0.6, 0.41).blend(0.02)));             // lids
+      p.push(S.sphere(0.012).at(sx * 0.05, 0.5, 0.6).color(0x1a1408).cut(0.005));                               // nostril
+    }
+    p.push(S.ellipsoid(0.36, 0.02, 0.26).at(0, 0.37, 0.4).color(0x3a2a14).paint(0.01, -0.006));                   // the lip line
+  }
+  const JO = [0, 0.36, 0.2];
+  const jaw = N('jaw', 'head', JO, { rig: 'jaw', detail: 0.8 });
+  {
+    jaw.prims.push(sk(S.ellipsoid(0.34, 0.08, 0.26).at(0, 0.32, 0.38)));
+    jaw.prims.push(S.ellipsoid(0.3, 0.06, 0.22).at(0, 0.28, 0.38).color(belly).paint(0.03));
+    jaw.prims.push(S.ellipsoid(0.3, 0.02, 0.22).at(0, 0.37, 0.38).color(0x8a3a3a).pbr(0.3).blend(0.006));
+    // drool strings
+    for (let i = 0; i < 5; i++) { const x = (i - 2) * 0.12 + (rnd() - 0.5) * 0.04, z = 0.55 - Math.abs(i - 2) * 0.05, d = 0.1 + rnd() * 0.16; jaw.hard.push(H.tube([[x, 0.33, z], [x + 0.005, 0.33 - d * 0.5, z + 0.01], [x, 0.33 - d, z + 0.005]], [0.008, 0.005, 0.009], 6, 5).color(0xc8d89a).pbr(0.1).lod(1)); }
+  }
+  const throat = N('throat', 'jaw', [0, 0.25, 0.32], { rig: 'throat', detail: 0.9 });
+  throat.prims.push(S.ellipsoid(0.2, 0.08, 0.16).at(0, 0.25, 0.32).color(belly).tint(0.1, 20).pbr(0.35));
+  const tongue = N('tongue', 'jaw', [0, 0.35, 0.3], { rig: 'tongue', detail: 1 });
+  tongue.hard.push(H.capsule(0.035, 0.2, 10).rot(90, 0, 0).scale(1, 0.55, 1).at(0, 0.35, 0.38).color(0xc85a6a).pbr(0.25));
+  tongue.hard.push(H.sphere(0.05, 10).scale(1, 0.6, 1).at(0, 0.35, 0.49).color(0xd86a7a).pbr(0.2));
+  // legs: short splayed arms, huge folded hind legs with webbed feet
+  const fFoot = { kind: 'claw', len: 0.13, w: 0.05, toes: 4, clawLen: 0.0001, claw: skinL, spread: 0.55 };
+  const bFoot = { kind: 'claw', len: 0.24, w: 0.06, toes: 4, clawLen: 0.0001, claw: skinL, spread: 0.4 };
+  const legs = [
+    ['FL', 1, [[0.26, 0.3, 0.26], [0.36, 0.16, 0.32], [0.36, 0.06, 0.4], [0.38, 0, 0.42]], [0.08, 0.055, 0.04], fFoot],
+    ['FR', -1, [[0.26, 0.3, 0.26], [0.36, 0.16, 0.32], [0.36, 0.06, 0.4], [0.38, 0, 0.42]], [0.08, 0.055, 0.04], fFoot],
+    ['BL', 1, [[0.3, 0.34, -0.28], [0.5, 0.26, -0.02], [0.44, 0.08, -0.3], [0.46, 0, -0.18]], [0.14, 0.08, 0.05], bFoot],
+    ['BR', -1, [[0.3, 0.34, -0.28], [0.5, 0.26, -0.02], [0.44, 0.08, -0.3], [0.46, 0, -0.18]], [0.14, 0.08, 0.05], bFoot],
+  ];
+  for (const [nm, sx, pts, radii, foot] of legs) {
+    const lg = addLeg(N, nm, 'torso', sx, pts, radii, sk, { detail: 0.8, foot, muscle: 1.25, clawLod: 0 });
+    lg.up.prims.push(S.ellipsoid(radii[0], radii[0] * 0.5, radii[0] * 1.4).at(...lerp3(lg.J, lg.K, 0.5)).color(skinD).paint(0.02));
+  }
+  return { kind: 'chaos.toad', attack: 'bite', nodes: finish(N.nodes) };
+}
+
+function toadAnim(rig, inner, c, base) {
+  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk;
+  const k = c.moving ? 1 : 0, gait = walk4(rig, c, base, 4.2, 0.28, 0.4, -0.5);
+  const breathe = Math.sin(t * 2.2 + ph);
+  let jaw = 0.02 + 0.02 * Math.max(0, breathe), lash = 0, hx = 0, pz = 0, tx = 0;
+  if (a >= 0) {
+    jaw = keys(a, [[0, 0.02], [0.25, 0.45], [0.6, 0.45], [0.8, 0.05], [1, 0.02]]);
+    lash = keys(a, [[0, 0], [0.25, 0], [0.42, 1], [0.6, 0.9], [0.8, 0], [1, 0]]);
+    hx = keys(a, [[0, 0], [0.25, -0.2], [0.6, -0.15], [1, 0]]);
+    pz = keys(a, [[0, 0], [0.25, -0.04], [0.42, 0.12], [1, 0]]);
+    tx = keys(a, [[0, 0], [0.25, 0.08], [0.42, -0.06], [1, 0]]);
+  }
+  R(rig.torso, tx + breathe * 0.01, Math.sin(gait) * 0.05 * k, Math.sin(gait) * 0.07 * k);
+  R(rig.head, hx); R(rig.jaw, jaw);
+  if (one(rig.throat)) { const f = a >= 0 ? 1 : 1 + 0.35 * Math.max(0, Math.sin(t * 2.6 + ph)); one(rig.throat).scale.set(f, f * 1.1, f); }
+  if (one(rig.tongue)) { R(one((rig.tongue)), -0.12 * lash); one(rig.tongue).scale.set(1, 1, 1 + lash * 6); }
+  (rig.bells || []).forEach((b, i) => R(b, Math.sin(t * (k ? 8 : 2) + i * 1.3 + ph) * (0.08 + 0.18 * k), 0, Math.sin(t * (k ? 7 : 1.7) + i + ph) * (0.06 + 0.15 * k)));
+  if (c.dead > 0) {                                      // rolls onto its back, legs in the air
+    const f = Math.min(1, c.dead * 1.6), e = f * f * (3 - 2 * f);
+    inner.rotation.z = e * Math.PI; inner.rotation.x = 0;
+    inner.position.y = (e * 0.62 - Math.max(0, c.dead - 0.8) * 0.5) * s;
+    (rig.legs || []).forEach((l, i) => R(l, 0, 0, (i % 2 ? -1 : 1) * 0.4 * e));
+    R(rig.jaw, 0.3 * e);
+    return;
+  }
+  inner.rotation.z = 0; inner.rotation.x = 0;
+  inner.position.z = pz * s;
+  inner.position.y = (k * Math.abs(Math.sin(gait)) * 0.03 + Math.max(0, breathe) * 0.004) * s;
+}
+
+// =====================================================================================
+//  CARRION-FLY: a fly the size of a warhorse, ridden
+// =====================================================================================
+// rig: body (thorax), mhead, abdomen, wings[2], legs[6], shins[6]; the rider's stock keys
+function veinWing(len, wid, colA, sx) {
+  // leading edge along +X (sx mirrors), trailing edge behind; membrane with vein colours, crisp veins as tubes
+  const A = (u) => [sx * len * u, 0.04 * Math.sin(u * Math.PI) - 0.02 * u, -0.02 * u * u];
+  const B = (u) => [sx * len * (0.08 + 0.9 * u), -0.01 * u, -wid * Math.sin(Math.min(1, 0.15 + u) * Math.PI * 0.9) - 0.03];
+  const cA = rgb(colA), cV = rgb(tone(colA, 0.02, 0.1, -0.35)), cT = rgb(tone(colA, 0.08, 0.15, 0.1));
+  const out = [membrane(A, B, { nu: 14, nv: 6, scallop: 0.04, billow: 0.008, col: (u, v) => {
+    const vein = Math.min(Math.abs(Math.sin(v * Math.PI * 2.5)), Math.abs(Math.sin(u * Math.PI * 3.2 + v)));
+    let c3 = mixRgb(cA, cT, 0.4 * smooth(v) * (0.5 + 0.5 * Math.sin(u * 7)));
+    if (vein < 0.22) c3 = mixRgb(c3, cV, 0.8 * (1 - vein / 0.22));
+    if (u > 0.92) c3 = mixRgb(c3, cV, 0.5);
+    return c3;
+  } }).pbr(0.25, 0.1)];
+  const lead = []; for (let i = 0; i <= 6; i++) lead.push(A(i / 6));
+  out.push(H.tube(lead, [0.012, 0.009, 0.006, 0.004], 18, 5).color(0x2a2418).pbr(0.4));
+  for (const vv of [0.35, 0.65]) { const pts = []; for (let i = 0; i <= 6; i++) { const u = i / 6, a = A(u), b = B(u); pts.push(lerp3(a, b, vv)); } out.push(H.tube(pts, 0.004, 14, 4).color(0x3a3020).pbr(0.4).lod(1)); }
+  return out;
+}
+
+function carrionFly(def, o = {}) {
+  const shell = col(o.body2, 0x3a4a2a), wingC = col(o.wing, 0xb8c0a0), rnd = rng(hashStr((def.id || 'fly') + ':fly'));
+  const shellD = tone(shell, 0, 0, -0.1), stripe = mix(shell, 0x9a9a8a, 0.55), sheen = tone(shell, 0.08, 0.15, 0.05);
+  const ch = (q, c = shell) => q.color(c).tint(0.18, 26).pbr(0.32, 0.25);
+  const hairy = (q, c = shellD) => q.color(c).bump(0.006, 60, 'fur').tint(0.2, 30).pbr(0.8);
+  const ridden = !!(o.rider && typeof o.rider === 'object');
+  const N = rigOf();
+  N('root', null, [0, 0, 0]);
+  const BO = [0, 0.56, 0.04];
+  const body = N('body', 'root', BO, { rig: 'body', detail: 0.85 });
+  {
+    const p = body.prims;
+    p.push(ch(S.ellipsoid(0.21, 0.19, 0.25).at(0, 0.56, 0.06)));
+    p.push(hairy(S.ellipsoid(0.17, 0.12, 0.2).at(0, 0.47, 0.05).blend(0.05)));
+    for (const sx of [-1, 0, 1]) p.push(S.ellipsoid(0.03, 0.2, 0.24).at(sx * 0.08, 0.6, 0.06).color(sx ? stripe : shellD).paint(0.02));
+    p.push(ch(S.capsule([0, 0.55, 0.26], [0, 0.55, 0.3], 0.08, 0.07).blend(0.03)));
+    // bristles over the thorax
+    for (let i = 0; i < 28; i++) {
+      const a = (rnd() - 0.5) * 2.6, z = 0.06 + (rnd() - 0.5) * 0.36, q = [Math.sin(a) * 0.21, 0.56 + Math.cos(a) * 0.19, z];
+      if (ridden && Math.abs(a) < 0.7 && z > -0.12 && z < 0.2) continue;
+      body.hard.push(spike(q, [Math.sin(a), Math.cos(a), -0.6], 0.05 + rnd() * 0.04, 0.005, 0x161210, [0, 1, 0], 0.4).lod(1));
+    }
+    if (ridden) {
+      // a rotten saddle strapped round the thorax, a rusted bell on a pole behind it
+      p.push(S.ellipsoid(0.16, 0.05, 0.18).at(0, 0.75, 0.04).color(0x4a3a22).pbr(0.8).tint(0.2, 20).blend(0.01));
+      p.push(S.torus(0.2, 0.016).rot(90, 0, 90).at(0, 0.56, 0.05).color(LEATHER).pbr(0.8).paint(0.004, 0.01));
+      body.hard.push(H.lathe([[0.001, 0], [0.1, 0], [0.12, 0.04], [0.11, 0.1], [0.001, 0.1]], 10).scale(1.1, 1, 0.3).at(0, 0.76, -0.11).color(0x5a4a2a).pbr(0.7, 0.3));
+      body.hard.push(H.tube([[0, 0.78, -0.13], [0, 0.98, -0.18], [0.03, 1.08, -0.15]], 0.01, 8, 5).color(0x5a3a22).pbr(0.8));
+      body.hard.push(...bell([0.03, 1.07, -0.12], 0.03, 0x8a4a22));
+    }
+  }
+  // head: huge red compound eyes, a sucking proboscis
+  const head = N('mhead', 'body', [0, 0.55, 0.3], { rig: 'mhead', detail: 1.1 });
+  {
+    const p = head.prims;
+    p.push(ch(S.ellipsoid(0.13, 0.12, 0.09).at(0, 0.55, 0.36)));
+    for (const sx of [1, -1]) p.push(S.ellipsoid(0.1, 0.12, 0.1).rot(0, sx * 20, 0).at(sx * 0.085, 0.57, 0.38).color(0x8a1a10).bump(0.004, 70, 'scales').tint(0.12, 50).pbr(0.2, 0.1).blend(0.01));
+    p.push(S.ellipsoid(0.05, 0.08, 0.04).at(0, 0.53, 0.45).color(stripe).pbr(0.5).blend(0.02));
+    head.hard.push(H.tube([[0, 0.48, 0.42], [0, 0.4, 0.46], [0, 0.33, 0.47]], [0.03, 0.022, 0.02], 10, 7).color(shellD).pbr(0.5));
+    head.hard.push(H.sphere(0.04, 10).scale(1.3, 0.5, 1).at(0, 0.32, 0.48).color(0x5a4a3a).pbr(0.4));
+    head.hard.push(H.tube([[0, 0.31, 0.48], [0.01, 0.22, 0.49], [0, 0.14, 0.48]], [0.008, 0.005, 0.01], 6, 5).color(0xb8c888).pbr(0.1).lod(1));       // drool
+    for (const sx of [1, -1]) head.hard.push(H.tube([[sx * 0.02, 0.6, 0.44], [sx * 0.04, 0.66, 0.48], [sx * 0.06, 0.68, 0.5]], [0.008, 0.006, 0.003], 6, 4).color(0x1a1610).pbr(0.5).lod(1));
+  }
+  // abdomen: bloated, banded, bristly, hanging behind
+  const ab = N('abdomen', 'body', [0, 0.55, -0.16], { rig: 'abdomen', detail: 0.8 });
+  {
+    const p = ab.prims;
+    p.push(ch(S.ellipsoid(0.24, 0.2, 0.34).rot(12, 0, 0).at(0, 0.5, -0.44), shell));
+    p.push(ch(S.capsule([0, 0.54, -0.18], [0, 0.52, -0.3], 0.12, 0.18).blend(0.05)));
+    for (let i = 0; i < 4; i++) p.push(S.ellipsoid(0.27, 0.23, 0.02).rot(12, 0, 0).at(0, 0.5 - i * 0.01, -0.28 - i * 0.12).color(shellD).paint(0.015, 0.006));
+    for (let i = 0; i < 5; i++) for (const sx of [1, -1]) p.push(S.ellipsoid(0.07, 0.06, 0.05).at(sx * 0.1, 0.65 - i * 0.012, -0.3 - i * 0.1).color(i % 2 ? stripe : sheen).paint(0.03));
+    p.push(S.ellipsoid(0.17, 0.1, 0.24).at(0, 0.35, -0.42).color(mix(shell, 0x8a8a4a, 0.5)).paint(0.04));        // pale distended belly
+    for (let i = 0; i < 4; i++) { const q = [(rnd() - 0.5) * 0.3, 0.42 + rnd() * 0.2, -0.3 - rnd() * 0.3]; p.push(S.sphere(0.022).at(...q).color(0x9a6a3a).pbr(0.2).blend(0.006)); }
+    for (let i = 0; i < 22; i++) {
+      const a = (rnd() - 0.5) * 3.4, z = -0.24 - rnd() * 0.42, q = [Math.sin(a) * 0.22, 0.5 + Math.cos(a) * 0.19, z];
+      ab.hard.push(spike(q, [Math.sin(a), Math.cos(a), -0.8], 0.04 + rnd() * 0.03, 0.004, 0x161210, [0, 1, 0], 0.3).lod(1));
+    }
+    ab.hard.push(H.cone(0.04, 0.08, 7).rot(-100, 0, 0).at(0, 0.44, -0.78).color(shellD).pbr(0.4));
+  }
+  // six legs: jointed, bristled, feet on the ground
+  const LEGS = [[0.13, 0.17], [0.15, 0.04], [0.13, -0.08]];
+  LEGS.forEach(([x0, z0], li) => {
+    for (const sx of [1, -1]) {
+      const X = sideX(sx), nm = `${li}${sx > 0 ? 'L' : 'R'}`;
+      const J = X([x0, 0.42, z0]), K = X([x0 + 0.2, 0.52, z0 + (li - 1) * 0.12 + 0.02]), F = X([x0 + 0.3, 0.0, z0 + (li - 1) * 0.3 + 0.04]);
+      const up = N(`leg${nm}`, 'body', J, { rig: 'legs', detail: 1 });
+      const lo = N(`shin${nm}`, `leg${nm}`, K, { rig: 'shins', detail: 1 });
+      up.hard.push(H.tube([J, lerp3(J, K, 0.5), K], [0.026, 0.024, 0.02], 8, 7).color(shellD).pbr(0.45, 0.15));
+      up.hard.push(H.sphere(0.022, 8).at(...K).color(shellD).pbr(0.45));
+      const M = add3(lerp3(K, F, 0.55), X([0.02, 0, 0]));
+      lo.hard.push(H.tube([K, M, F], [0.019, 0.014, 0.008], 12, 6).color(0x1e1a14).pbr(0.5, 0.15));
+      for (let i = 0; i < 4; i++) lo.hard.push(spike(lerp3(K, M, 0.2 + i * 0.25), X([0.3, 0.3, -1]), 0.03, 0.004, 0x0e0c0a, [0, 1, 0], 0.2).lod(0));
+      lo.hard.push(spike(F, X([0.6, -0.1, 0.5]), 0.03, 0.006, 0x0e0c0a, [0, 1, 0], 0.4).lod(1), spike(F, X([-0.3, -0.1, 0.6]), 0.03, 0.006, 0x0e0c0a, [0, 1, 0], 0.4).lod(1));
+    }
+  });
+  // wings, spread to the sides (the animator buzzes them in flight and lays them back on the ground)
+  for (const sx of [1, -1]) {
+    const W0 = [sx * 0.09, 0.7, 0.12];
+    const w = N(`wing${sx > 0 ? 'L' : 'R'}`, 'body', W0, { rig: 'wings', detail: 1 });
+    w.hard.push(...veinWing(0.72, 0.26, wingC, sx).map((q) => q.at(W0[0], W0[1], W0[2])));
+    w.hard.push(H.sphere(0.025, 8).scale(1, 0.7, 1).at(...W0).color(shellD).pbr(0.4));
+  }
+  const nodes = finish(N.nodes);
+  let extra = { attack: 'bite' };
+  if (ridden) {
+    const R = makeRider(def, o.rider, 0.85);
+    extra = seatRider(nodes, R, 'body', BO, [0, 0.78, 0.04], { legL: [-55, 0, 40], legR: [-55, 0, -40], shinL: [70, 0, -10], shinR: [70, 0, 10] });
+  }
+  return { ...extra, kind: 'chaos.fly', mounted: ridden, nodes };
+}
+
+function flyAnim(rig, inner, c, base) {
+  const { R, keys } = base, s = inner.scale.y || 1, t = c.t, ph = c.phase || 0, a = c.atk, dead = c.dead > 0;
+  const fl = c.flying && !dead, k = c.moving ? 1 : 0;
+  (rig.wings || []).forEach((w, i) => {
+    const sg = sgn(w, i);
+    if (fl) R(w, 0, sg * 0.15, sg * Math.sin(t * 38 + ph) * 0.55);
+    else if (dead) R(w, 0, sg * 0.6, sg * 0.3);
+    else R(w, 0.05, sg * -1.2, sg * -0.12 + sg * Math.sin(t * 1.3 + ph) * 0.02);      // laid back over the abdomen
+  });
+  (rig.legs || []).forEach((l, i) => {
+    const sg = i % 2 ? -1 : 1;
+    if (fl) { R(l, 0.15 * (Math.floor(i / 2) - 1), 0, sg * -0.35 + Math.sin(t * 2 + i) * 0.05); R(rig.shins[i], 0, 0, sg * 0.5); }
+    else { const g = t * 9 + ph + (i % 2) * Math.PI + Math.floor(i / 2) * 2.1; R(l, k * Math.sin(g) * 0.25, 0, -sg * Math.max(0, Math.cos(g)) * 0.2 * k); R(rig.shins[i]); }
+  });
+  let hx = Math.sin(t * 1.7 + ph) * 0.05, pz = 0, bx = 0;
+  if (a >= 0 && !rig.mounted) { hx = keys(a, [[0, 0], [0.4, -0.3], [0.6, 0.3], [1, 0]]); pz = keys(a, [[0, 0], [0.4, -0.06], [0.6, 0.15], [1, 0]]); }
+  else if (a >= 0) { pz = keys(a, [[0, 0], [0.4, -0.04], [0.6, 0.1], [1, 0]]); bx = keys(a, [[0, 0], [0.4, -0.06], [0.6, 0.1], [1, 0]]); }
+  R(rig.body, bx + (fl && k ? 0.12 : 0), 0, fl ? Math.sin(t * 1.4 + ph) * 0.05 : 0);
+  R(one((rig.mhead)), hx, Math.sin(t * 0.9 + ph) * 0.15);
+  R(one((rig.abdomen)), (fl ? 0.12 : 0) + Math.sin(t * 2.4 + ph) * 0.04, 0, 0);
+  if (one(rig.abdomen)) one(rig.abdomen).scale.setScalar(1 + Math.sin(t * 2.4 + ph) * 0.03);
+  poseRider(rig, c, base, dead, 0.1);
+  if (dead) {                                          // drops and rolls onto its back
+    const f = Math.min(1, c.dead * 1.6), e = f * f * (3 - 2 * f);
+    inner.rotation.z = e * Math.PI; inner.position.y = (e * 0.9 - Math.max(0, c.dead - 0.8) * 0.5) * s;
+    return;
+  }
+  inner.rotation.z = 0; inner.rotation.x = 0;
+  inner.position.z = pz * s;
+  inner.position.y = (fl ? Math.sin(t * 3 + ph) * 0.03 : 0) * s;
+}
+
+// =====================================================================================
+const guard = (fn) => (def, o) => fn(def || {}, o && typeof o === 'object' ? o : {});
+const ALL = { brassRhino, bloodReaper, slaughterBrute, plagueToad, carrionFly };
+export const bodies = Object.fromEntries(Object.entries(ALL).map(([k, f]) => [k, guard(f)]));
+export const animators = { 'chaos.rhino': rhinoAnim, 'chaos.fiend': fiendAnim, 'chaos.brute': bruteAnim, 'chaos.toad': toadAnim, 'chaos.fly': flyAnim };
