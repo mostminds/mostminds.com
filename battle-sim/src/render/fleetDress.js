@@ -42,7 +42,7 @@ export function dressRole(m, def, sideColor, deckY) {
       for (const sz of [-1, 1]) put(g, box(fl, 0.05, 0.04), 0xe8e0c8, fx, fy + 0.05, sz * fw * 0.48); // deck edge stripes
       const style = def.squadrons?.flier || 'glider';
       for (let k = 0; k < 2; k++) {
-        const a = buildFlier(style, sideColor);
+        const a = buildFlier(style, sideColor, def.squadrons?.color);
         a.scale.setScalar(1.5); a.position.set(fx - fl * 0.28 + k * fl * 0.5, fy + 0.12, (k ? -1 : 1) * fw * 0.18);
         a.traverse((o) => { o.userData.noCrew = true; }); g.add(a);
       }
