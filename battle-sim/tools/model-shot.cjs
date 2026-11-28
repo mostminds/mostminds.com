@@ -26,7 +26,7 @@ const server = http.createServer((req, res) => {
 server.listen(0, async () => {
   const port = server.address().port;
   const qs = new URLSearchParams();
-  for (const k of ['kind', 'id', 'pose', 't', 'lod', 'detail', 'view', 'ref', 'len', 'cam', 'water', 'ground', 'opts', 'bbox']) if (args[k] !== undefined) qs.set(k, args[k]);
+  for (const k of ['kind', 'id', 'spec', 'pose', 't', 'lod', 'detail', 'view', 'ref', 'len', 'cam', 'water', 'ground', 'opts', 'bbox']) if (args[k] !== undefined) qs.set(k, args[k]);
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   let code = 0;
   try {
