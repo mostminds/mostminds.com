@@ -6,9 +6,11 @@
 import { buildSkyShip } from './sky/ships.js';
 import { buildSkyBeast } from './sky/beasts.js';
 import { animateRig } from './animate.js';
+import { buildBehemoth } from './behemoth/index.js';
 
 /** returns a model for def (an AIRSHIPS entry with def.sky), or null to use the plain airship */
 export function buildSkyModel(def, sideColor) {
+  if (def && def.behemoth) { try { return buildBehemoth(def, sideColor); } catch (err) { console.error(`[skyParts] behemoth ${def.id} failed`, err); } }
   const D = def && def.sky;
   if (!D) return null;
   try {

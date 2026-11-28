@@ -473,7 +473,7 @@ function ribHulk(X) {
     piece(X, deckGeo(`ribhull|${X.fid}|${i}`, sp, 0.02), g, [0, 0, 0], [0, 0, 0], 1);
     for (let k = 0; k < 2; k++) piece(X, tubeGeo(`rmast|${k}`, [[0, 0, 0], [0, 6 - k, 0]], (t) => 0.2 * (1 - t * 0.5), lin(X.pal.wood), { sides: 8, bark: true }), g, [sp.HL * (0.2 - k * 0.4), 0, 0], [0, 0, 0], 1);
     // tattered sails
-    for (let k = 0; k < 2; k++) piece(X, flagGeo(X, k), g, [sp.HL * (0.2 - k * 0.4) + 0.1, 5 - k, 0], [0, PI / 2, 0], 1, flowMat(X, 'mist', X.pal.env, 0.0) && X.mats.paint);
+    for (let k = 0; k < 2; k++) piece(X, flagGeo(X, k), g, [sp.HL * (0.2 - k * 0.4) + 0.1, 5 - k, 0], [0, PI / 2, 0], 1);
     for (let k = 0; k < 7; k++) X.muzzleHint = [...(X.muzzleHint || []), [x - sp.HL * 0.35 + k * sp.HL * 0.11, y - sp.HD * 0.35, z + (z >= 0 ? 1 : -1) * sp.HB * 0.5]];
     slotsIn(X, x - sp.HL * 0.3, x + sp.HL * 0.3, z - sp.HB * 0.3, z + sp.HB * 0.3, y, 1.2);
     X.hullDecks = [...(X.hullDecks || []), g];

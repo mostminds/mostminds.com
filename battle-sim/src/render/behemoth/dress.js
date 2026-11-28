@@ -9,7 +9,7 @@ import {
   PI, TAU, lin, clamp, lerp, h1, hexMix, hexShade, piece, place, building, take, reserve, waterfall, mist, vortex,
   lightPillar, bannerAt, astrolabe, glowMat, flowMat, chainGeo, rigging,
 } from './build.js';
-import { prismGeo, ringGeo, tubeGeo, flowShell, cutAfter, cap } from './surf.js';
+import { prismGeo, ringGeo, tubeGeo, flowShell, cutAfter, cap, hullHalfBeam } from './surf.js';
 import * as PC from './pieces.js';
 import * as PK from '../parts/kit.js';
 
@@ -251,7 +251,7 @@ export function fixtures(X) {
     for (const s of [-1, 1]) {
       const g = grp(X, [0, 0, 0]);
       let spots;
-      if (X.hullSpec) { const sp = X.hullSpec, rows = sp.ports.length || 1, per = Math.floor((sp.HL * 0.72) / 1.35); spots = []; for (let r = 0; r < rows; r++) for (let i = 0; i < per; i++) { const x = -sp.HL / 2 + sp.HL * 0.12 + (i + 0.5) * 1.35, t = (x + sp.HL / 2) / sp.HL, y = -(sp.ports[r]?.y ?? 0.3) * sp.HD, b = X.hullBeamAt ? X.hullBeamAt(t) : sp.HB / 2 * (t > 0.6 ? Math.sqrt(Math.max(0, 1 - ((t - 0.6) / 0.4) ** 2)) : 1); spots.push([x, y, s * (b - 0.25), s]); } }
+      if (X.hullSpec) { const sp = X.hullSpec, rows = sp.ports.length || 1, per = Math.floor((sp.HL * 0.72) / 1.35); spots = []; for (let r = 0; r < rows; r++) for (let i = 0; i < per; i++) { const x = -sp.HL / 2 + sp.HL * 0.12 + (i + 0.5) * 1.35, t = (x + sp.HL / 2) / sp.HL, y = -(sp.ports[r]?.y ?? 0.3) * sp.HD, b = hullHalfBeam(sp, t); spots.push([x, y, s * (b - 0.25), s]); } }
       else if (X.muzzleHint) spots = X.muzzleHint.filter((p) => Math.sign(p[2]) === s).map((p) => [p[0], p[1], p[2] - s * 0.3, s]);
       else spots = rimSide(X, s, 7).map((r) => [r[0] - r[3] * 0.35, r[1] - 0.6, r[2] - r[4] * 0.35, s]);
       for (const p of spots) { place(X, geo, [p[0], p[1] - 0.3, p[2]], [0, s > 0 ? -PI / 2 : PI / 2, 0], 1.35, g); X.muzzles.push([+p[0].toFixed(2), +(p[1] + 0.12).toFixed(2), +(p[2] + s * 1.3).toFixed(2)]); }
