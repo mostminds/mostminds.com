@@ -18,7 +18,9 @@ import * as THREE from 'three';
 import { Kit, G, C, shade, blend, loftL, taper, clothPanel, EMPTY_GEO } from './parts/kit.js';
 import { emblem } from './parts/realmStyle.js';
 import { sculptMaterial } from './sculpt.js';
-import { realmLook } from './crews.js';
+import { realmLook, riderFigure, riderDress } from './crews.js';
+import { buildUnitModel, animateUnit, setLod } from './models.js';
+import { DETAIL, getDetail, setDetail } from './rigkit.js';
 
 const PI = Math.PI;
 const f3 = (v) => (typeof v === 'number' ? v.toFixed(3) : String(v));
@@ -39,7 +41,7 @@ function rotorDiscMat() { return discMat || (discMat = new THREE.MeshBasicMateri
 // ------------------------------------------------------------------ building blocks
 /** a part: a group at (x, y, z) with one merged kit mesh, registered on the flier for its LOD */
 class Build {
-  constructor(key, side, color, look) { this.key = key; this.side = side; this.color = color; this.look = look; this.lods = []; this.root = new THREE.Group(); }
+  constructor(key, side, color, look) { this.key = key; this.side = side; this.color = color; this.look = look; this.lods = []; this.units = []; this.root = new THREE.Group(); }
   /** fn(K) draws into a fresh kit; the mesh goes into parent (a group) and is cached by name */
   part(parent, name, fn, material = sculptMaterial()) {
     const K = new Kit();
@@ -267,9 +269,20 @@ function weaponKit(K, B) {
   }
 }
 
-/** puts a rider (and its weapon) on a flier at (x, y) in the parent's space */
+/** the realm's own soldier, baked in a riding pose (crews.riderFigure), as a mesh facing +z with six LOD geometries */
+function riderMesh(B, pose) {
+  const R = riderFigure(B.look.id || 'kingdom', pose, B.side);
+  if (!R) return null;
+  const mesh = new THREE.Mesh(R.geos[0], sculptMaterial());
+  mesh.castShadow = true;
+  B.lods.push({ mesh, geos: [R.geos[0], R.geos[0], R.geos[1], R.geos[1], R.geos[2], R.geos[2]] });
+  return mesh;
+}
+/** puts a rider on a flier at (x, y) in the parent's space: the realm's sculpted soldier, armed as on land (falls back to the kit rider) */
 function mount(B, parent, x, y, pose = 'sit') {
   const g = B.group(parent, x, y, 0, { k: 'rider' });
+  const mesh = riderMesh(B, pose);
+  if (mesh) { mesh.rotation.y = PI / 2; g.add(mesh); return g; } // units face +z, fliers +x
   B.part(g, `rider${pose}`, (K) => riderKit(K, B, pose));
   if (pose === 'sit' || pose === 'cross') {
     const w = B.group(g, pose === 'sit' ? 0.13 : 0.06, pose === 'sit' ? 0.1 : pose === 'stand' ? 0.24 : 0.1, 0, { k: 'lance' });
@@ -277,6 +290,64 @@ function mount(B, parent, x, y, pose = 'sit') {
     B.part(w, `weapon${pose}`, (K) => weaponKit(K, B));
   }
   return g;
+}
+
+// ------------------------------------------------------------------ mounts that are the game's own sculpted flying units
+// Where the game has a sculpted flying beast (pegasus and griffon riders, eagles, giant bats, drakes, carpets, carrion
+// flies), the flier IS that unit model, built at the flier detail (DETAIL.flier), turned to face +x and fitted to the
+// style's length / span. Its wings beat through its own rig (animateUnit, flying); a dive folds them back. Beasts that
+// seat no rider of their own get the realm's baked rider on their back.
+DETAIL.flier = [60, 26, 11];
+const UNIT_MOUNT = {
+  pegasus: { len: 1.15, span: 2.0, model: (c, R) => ({ body: 'rider', ...R, mountType: 'pegasus', mount: c, wings: true }) },
+  griffon: { len: 1.35, span: 2.1, model: (c, R) => ({ body: 'rider', ...R, mountType: 'griffon', mount: c, wings: true }) },
+  bird: { len: 1.0, span: 2.1, seat: 'sit', model: (c) => ({ body: 'bird', kind: 'eagle', color: c, scale: 1.4 }) },
+  bat: { len: 0.9, span: 2.3, seat: 'sit', model: (c) => ({ body: 'bat', fur: c, scale: 1.5 }) },
+  dragon: { len: 1.7, span: 2.4, seat: 'sit', model: (c) => ({ body: 'dragon', scales: c, scale: 0.8 }) },
+  beast: { len: 1.5, span: 2.3, seat: 'sit', model: (c) => ({ body: 'dragon', scales: c, scale: 0.95 }) },
+  carpet: { len: 1.35, span: 0.9, model: (c, R, st) => ({ body: 'carpet', color: c, trim: st.metal, rider: R }) },
+  insect: { len: 1.4, span: 1.8, model: (c, R) => ({ body: 'carrionFly', body2: c, wing: 0xc8d8d0, rider: R, scale: 1.0 }) },
+};
+const UNIT_LOD = [0, 0, 1, 2, 3, 3]; // flier level -> unit level (the last is the unit's merged far mesh)
+const _bx = new THREE.Box3(), _bv = new THREE.Vector3();
+function unitMount(B, style, c) {
+  const U = UNIT_MOUNT[style];
+  if (!U) return false;
+  const def = { id: `flier_${style}`, name: style, size: 1, model: U.model(c, riderDress(B.look.id || 'kingdom'), B.look.st) };
+  let m = null;
+  const prev = getDetail();
+  setDetail('flier');
+  try { m = buildUnitModel(def); } catch (err) { m = null; } finally { setDetail(prev); }
+  if (!m || !m.userData.lod || !m.userData.rig) return false;
+  animateUnit(m, 0, true, -1, 0, 0, true);
+  const wrap = new THREE.Group();
+  wrap.rotation.y = PI / 2; // +z (units) -> +x (fliers)
+  wrap.add(m);
+  B.root.add(wrap);
+  B.root.updateMatrixWorld(true);
+  _bx.setFromObject(m);
+  const size = _bx.getSize(_bv), k = Math.min(U.len / Math.max(0.1, size.x), U.span / Math.max(0.1, size.z));
+  wrap.scale.setScalar(k);
+  wrap.position.y = -_bx.min.y * k;
+  B.root.updateMatrixWorld(true);
+  if (U.seat) {
+    // the realm's rider on its back: on top of the trunk's own mesh, about its middle
+    const rig = m.userData.rig, node = rig.body || rig.torso || rig.core || m.userData.inner;
+    const part = node.children.find((o) => o.isMesh && o.name === 'part');
+    const mesh = riderMesh(B, U.seat);
+    if (mesh && part) {
+      part.geometry.computeBoundingBox();
+      const bb = part.geometry.boundingBox;
+      node.add(mesh);
+      mesh.position.set((bb.min.x + bb.max.x) / 2, bb.max.y - (bb.max.y - bb.min.y) * 0.12, (bb.min.z + bb.max.z) / 2 + (bb.max.z - bb.min.z) * 0.05);
+      node.getWorldScale(_bv);
+      mesh.scale.setScalar(1 / Math.max(1e-3, _bv.x));
+      mesh.userData.fx = null;
+    }
+  }
+  B.units.push(m);
+  B.root.userData.unitMount = m;
+  return true;
 }
 
 // ------------------------------------------------------------------ the styles
@@ -639,7 +710,9 @@ export function flierLod(f, n) {
   L.level = n;
   for (const { mesh, geos } of L.meshes) { const geo = geos[Math.min(n, geos.length - 1)]; mesh.visible = geo !== EMPTY_GEO; if (mesh.visible) mesh.geometry = geo; }
   for (const o of L.extra) o.visible = n < 4; // the rotor's blur and such
+  for (const m of L.units || []) setLod(m, UNIT_LOD[n]);
 }
+let probeMat = null;
 function selfLod(f, hook) {
   // the body mesh is always drawn: before it is, measure how far the camera is and pick the level for the next frame
   hook.onBeforeRender = (r, s, cam) => {
@@ -658,19 +731,39 @@ export function makeFlier(style, sideColor, color, realm) {
   const look = realmLook(realm || null);
   const B = new Build(`${st}|${col}|${sideColor}|${look.id}`, sideColor, col, look);
   B.root.userData.flier = st;
-  BUILD[st](B, col);
+  if (!unitMount(B, st, col)) BUILD[st](B, col);
   const g = B.root;
   g.traverse((o) => { if (o.isMesh) o.userData.noCrew = true; });
   const extra = [];
   g.traverse((o) => { if (o.isMesh && !o.userData.lodGeos && o.material === discMat) extra.push(o); });
-  g.userData.flierLod = { meshes: B.lods, extra, level: 0 };
-  if (B.lods[0]) selfLod(g, B.lods[0].mesh);
+  g.userData.flierLod = { meshes: B.lods, extra, units: B.units, level: -1 };
+  // a drawless probe that is always rendered picks the level from the camera's distance
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+  const probe = new THREE.Mesh(pg, probeMat || (probeMat = new THREE.MeshBasicMaterial()));
+  probe.frustumCulled = false; probe.userData.noCrew = true;
+  g.add(probe);
+  selfLod(g, probe);
+  flierLod(g, 0);
   g.userData.realm = look.id;
   return g;
 }
 
 /** moves a flier's tagged parts; p staggers one flier from the next; dive 0..1 folds into a stoop, -1..0 pulls up */
 export function animateFlier(f, t, p = 0, dive = 0) {
+  const um = f.userData.unitMount;
+  if (um) {
+    // a sculpted unit: its own flying animation, the wings folded back into a stoop
+    const d = Math.max(0, dive), up = Math.max(0, -dive);
+    animateUnit(um, t * (1 + up * 0.6), true, -1, 0, p, true);
+    if (d > 0) for (const w of um.userData.rig.wings || []) {
+      const r = w.userData.rest;
+      if (!r) continue;
+      const sg = r[3] >= 0 ? 1 : -1;
+      w.rotation.z = r[2] + (w.rotation.z - r[2]) * (1 - d * 0.85);
+      w.rotation.y += sg * d * 0.7;
+    }
+  }
   if (!f.__fx) { f.__fx = []; f.traverse((o) => { if (o.userData.fx) f.__fx.push(o); }); }
   const d = Math.max(0, dive), up = Math.max(0, -dive), quick = 1 + up * 0.8;
   for (const o of f.__fx) {

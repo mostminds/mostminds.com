@@ -19,8 +19,10 @@ export const nativeSail = (kind) => NATIVE[kind] || [];
 export const OAR_KINDS = ['longship', 'curragh', 'solarBarque', 'warGalley', 'razorGalley', 'dreadGalley', 'swanBarge', 'swanGalley', 'atakebune', 'oxBarge', 'hideRaft'];
 
 const f2 = (v) => v.toFixed(2);
+/** a straight barked log along x, centred */
+const logL = (l, r) => loftL(`blog${f2(l)},${f2(r)}`, [[-l / 2, 0, 0, r * 0.97, r * 0.97], [0, 0, 0, r, r], [l / 2, 0, 0, r * 0.95, r * 0.95]], { radial: 36, sub: 10, col: 0xffffff, disp: bark(l, r) });
 /** bark relief for a lofted log: long furrows broken by knots */
-const bark = (l, r) => (t, a) => 1 + 0.045 * (noise3(t * l * 2.2, Math.cos(a) * 2.5, Math.sin(a) * 2.5) - 0.5) * 2 - 0.035 * Math.max(0, Math.sin(a * 11 + noise3(t * l * 0.7, a, 1) * 5)) + 0.08 * Math.max(0, noise3(t * l * 0.9 + 9, Math.cos(a) * 1.2, Math.sin(a) * 1.2) - 0.78) * 4;
+const bark = (l, r) => (t, a) => 1 + 0.07 * (noise3(t * l * 2.2, Math.cos(a) * 2.5, Math.sin(a) * 2.5) - 0.5) * 2 - 0.09 * Math.pow(Math.max(0, Math.sin(a * 7 + noise3(t * l * 0.7, Math.cos(a), 1) * 4)), 3) + 0.1 * Math.max(0, noise3(t * l * 0.9 + 9, Math.cos(a) * 1.2, Math.sin(a) * 1.2) - 0.78) * 4;
 
 /** a float hull at z (bow +x), keel at y0: a planked boat with rail, wales, a painted band and the realm's carving */
 function floatHull(c, z, l, w, h, y0, o = {}) {
@@ -149,14 +151,14 @@ export const HULL_PARTS = {
     for (let i = 0; i < n; i++) {
       const z = -W + ((2 * W) * (i + 0.5)) / n, l = c.L * (0.92 + hash(i) * 0.14), dx = (hash(i + 9) - 0.5) * c.L * 0.06, col = shade(C.wood, 0.78 + hash(i + 3) * 0.35);
       const bend = (hash(i + 21) - 0.5) * r * 0.6;
-      c.kit.add(loftL(`rlog2${f2(l)},${f2(r)},${f2(bend)}`, [[-l / 2, 0, 0, r * 0.96, r * 0.96], [-l / 6, bend * 0.6, 0, r, r], [l / 6, bend, 0, r * 0.97, r * 0.97], [l / 2, 0, 0, r * 0.92, r * 0.92]], { radial: 20, sub: 10, col: 0xffffff, disp: bark(l, r) }), col, dx - c.L * 0.02, r * 0.3, z, { r: 0.92, grain: 0 });
+      c.kit.add(loftL(`rlog2${f2(l)},${f2(r)},${f2(bend)}`, [[-l / 2, 0, 0, r * 0.96, r * 0.96], [-l / 6, bend * 0.6, 0, r, r], [l / 6, bend, 0, r * 0.97, r * 0.97], [l / 2, 0, 0, r * 0.92, r * 0.92]], { radial: 40, sub: 12, col: 0xffffff, disp: bark(l, r) }), col, dx - c.L * 0.02, r * 0.3, z, { r: 0.92, grain: 0 });
       c.kit.detail(2, () => { for (const e of [-1, 1]) { c.kit.add(G.cyl(r * 0.9, r * 0.9, 0.02, 10), 0xc8a878, dx - c.L * 0.02 + e * (l / 2 + 0.005), r * 0.3, z, { rz: PI / 2 }); c.kit.detail(1, () => c.kit.add(G.tor(r * 0.5, 0.008, 3, 10), 0x9a7a4a, dx - c.L * 0.02 + e * (l / 2 + 0.012), r * 0.3, z, { ry: PI / 2 })); } });
     }
     for (const x of [-0.36, -0.1, 0.14, 0.38].map((f) => f * c.L)) {
-      c.kit.add(G.cyl(r * 0.7, r * 0.7, 2 * W + 0.35, 9), shade(C.wood, 0.7), x, r * 1.3, 0, { rx: PI / 2, r: 0.9 });
+      c.kit.add(logL(2 * W + 0.35, r * 0.7), shade(C.wood, 0.7), x, r * 1.3, 0, { ry: PI / 2, r: 0.9, grain: 0 });
       c.kit.detail(1, () => { for (let i = 0; i < n; i += 2) { const z = -W + ((2 * W) * (i + 0.5)) / n; c.kit.add(G.tor(r * 0.95, 0.024, 3, 10), C.rope, x, r * 0.95, z, { rx: 0, ry: 0, rz: 0, sx: 0.7, sy: 1.3 }); } });
     }
-    for (const s of [-1, 1]) c.kit.add(G.cyl(r * 0.8, r * 0.8, c.L * 0.9, 9), shade(C.wood, 0.85), -c.L * 0.02, r * 0.7, s * (W + r * 0.5), { rz: PI / 2 });
+    for (const s of [-1, 1]) c.kit.add(logL(c.L * 0.9, r * 0.8), shade(C.wood, 0.85), -c.L * 0.02, r * 0.7, s * (W + r * 0.5), { r: 0.9, grain: 0 });
   },
   lowHull(c) {
     // a low, sleek line: a sloped armour skirt hugging the waterline (riveted plates), a spray rail and a knife forefoot
