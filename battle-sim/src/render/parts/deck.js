@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { Kit, G, C, shade, blend, clamp, lerp } from './kit.js';
 import { glowMat } from './hull.js';
+import { buildFlier } from '../fleetDress.js';
 
 const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 const PI = Math.PI;
@@ -12,6 +13,13 @@ function along(c, n, a = 0.1, b = 0.86) { return Array.from({ length: n }, (_, i
 const railY = (c, x, s) => c.deckAt(x, s * c.B * 0.28) + 0.22;
 const railZ = (c, x, s) => s * (c.hw(x) + 0.02);
 const hullH = (c, x) => Math.min(c.dy, c.deckAt(x, c.B * 0.28));
+
+/** one of her own squadron's fliers, parked (the same mount and rider the carrier launches) */
+function parkFlier(c, x, y, z, ry = 0, s = 1) {
+  const f = buildFlier(c.def.squadrons?.flier || 'glider', c.side, c.def.squadrons?.color);
+  f.scale.setScalar(s); f.position.set(x, y, z); f.rotation.y = ry;
+  c.addMoving(f);
+}
 
 function glowColor(c, fallback) { const t = c.trimC; const col = new THREE.Color(t); const hsl = {}; col.getHSL(hsl); return hsl.s > 0.3 ? new THREE.Color().setHSL(hsl.h, 0.9, 0.62).getHex() : fallback; }
 
@@ -189,6 +197,8 @@ export const DECK_PARTS = {
     for (let i = 0; i < 5; i++) K.add(G.box(fl * 0.08, 0.03, 0.12), 0xe8e0c8, fx - fl * 0.4 + (fl * 0.8 * i) / 4, fy + 0.07, 0);
     for (const sx of [-1, 0, 1]) for (const sz of [-1, 1]) K.add(G.box(0.14, fy - c.deckAt(fx + sx * fl * 0.42), 0.14), C.dark, fx + sx * fl * 0.42, (fy + c.deckAt(fx + sx * fl * 0.42)) / 2, sz * fw * 0.38);
     for (let i = 0; i < 6; i++) for (const s of [-1, 1]) K.add(G.sph(0.05, 5, 3), i % 2 ? 0xff4a2a : 0x4aff6a, fx - fl / 2 + (fl * i) / 5, fy + 0.1, s * fw * 0.5, { g: 3 });
+    parkFlier(c, fx - fl * 0.22, fy + 0.08, fw * 0.18, 0, 1.1);
+    parkFlier(c, fx + fl * 0.2, fy + 0.08, -fw * 0.18, 0.3, 1.1);
     c.topAt = Math.max(c.topAt || 0, fy + 0.5);
   } },
   pad: { size: 2.5, fn(c) {
@@ -198,6 +208,7 @@ export const DECK_PARTS = {
     K.add(G.tor(r * 0.45, 0.04, 3, 16), 0xf0e8d0, at.x, y + 0.06, 0, { rx: PI / 2 });
     for (let i = 0; i < 4; i++) { const a = (i / 4) * PI * 2 + PI / 4; K.add(G.box(0.1, 0.9, 0.1), C.iron, at.x + Math.cos(a) * r * 0.7, at.y + 0.45, Math.sin(a) * r * 0.7, { m: 0.5 }); }
     for (let i = 0; i < 6; i++) { const a = (i / 6) * PI * 2; K.add(G.sph(0.05, 5, 3), 0xffd23a, at.x + Math.cos(a) * r, y + 0.08, Math.sin(a) * r, { g: 3 }); }
+    parkFlier(c, at.x, y + 0.08, 0, 0.6, 0.95);
     c.topAt = Math.max(c.topAt || 0, y + 0.3);
   } },
   yurt: { size: 2.6, fn(c) {
