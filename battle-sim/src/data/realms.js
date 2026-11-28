@@ -43,6 +43,7 @@ const PLACES = { village: 'village', fort: 'fort', castle: 'castle', city: 'city
 
 import { FLEET_DESIGNS } from './fleets/index.js';
 import { SKY } from './fleets/sky.js';
+import { AIRWINGS, AIR_ROLES } from './air/index.js';
 
 export const REALM_GROUPS = ['The Realms of Order', 'The Forces of Destruction', 'The Undead Legions', 'Outcasts and Distant Lands', 'The Realms of Chaos', 'The Hidden and Fringe Races'];
 
@@ -1160,3 +1161,106 @@ export const LANDMARKS = {
 export const landmarksOf = (realm) => (LANDMARK_REALMS.has(realm) ? Object.keys(LANDMARKS).filter((k) => LANDMARKS[k].realm === realm) : []);
 /** the landmark definitions that can be built now, for the structure table */
 export const readyLandmarks = () => Object.fromEntries(Object.entries(LANDMARKS).filter(([, d]) => LANDMARK_REALMS.has(d.realm)));
+
+// ------------------------------------------------------------------------------------------
+// Air wings (src/data/air): eight aircraft per faction, built from a role template and a tier, and the
+// faction's sky-behemoth. Every realm above and the seven original factions.
+// ------------------------------------------------------------------------------------------
+// the original factions are not in REALMS: their names, line troops and palettes
+const ORIGINAL_AIR = {
+  kingdom: { name: 'Kingdom', adj: 'Royal', troop: 'footman', P: { species: 'human', skin: HUMAN, cloth: 0x2f5aa8, cloth2: 0xd8c07a, armor: 0x9aa3ad, trim: 0xd8c07a } },
+  goblin: { name: 'Goblin Horde', adj: 'Goblin', troop: 'hobgoblin', P: { species: 'goblin', skin: 0x6f9a3a, cloth: 0x5a4630, cloth2: 0x8a2c2c, armor: 0x6b6b6b, trim: 0xb8862a } },
+  undead: { name: 'Undead', adj: 'Undead', troop: 'skeleton', P: { species: 'human', skin: 0xb8b8a8, cloth: 0x2a1f3a, cloth2: 0x5a5a4a, armor: 0x6a6a70, trim: 0x8aa88a } },
+  infernal: { name: 'Infernal', adj: 'Infernal', troop: 'hellknight', P: { species: 'human', skin: 0x8a2a1a, cloth: 0x2a1a1a, cloth2: 0xd84a1a, armor: 0x3a2a2a, trim: 0xff8a2a } },
+  beasts: { name: 'Beasts', adj: 'Wild', troop: 'wolf', P: { species: 'human', skin: TAN, cloth: 0x6b4a2e, cloth2: 0xb89a6a, armor: 0x5a4a3a, trim: 0xc8a050 } },
+  elemental: { name: 'Elemental', adj: 'Elemental', troop: 'golem', P: { species: 'human', skin: 0x8a8a92, cloth: 0x6a8aa8, cloth2: 0x9ad8ff, armor: 0x7a7a82, trim: 0x9ad8ff } },
+  dragons: { name: 'Dragons', adj: 'Dragon', troop: 'kobold', P: { species: 'human', skin: 0xb8862a, cloth: 0x5a2a22, cloth2: 0x8a3a2a, armor: 0x7a2a22, trim: 0xd8a040 } },
+};
+/** name, adjective, palette and line troop of any faction that has an air wing */
+export function airFaction(id) {
+  if (ORIGINAL_AIR[id]) return { id, ...ORIGINAL_AIR[id] };
+  const f = REALMS.find((r) => r.id === id);
+  if (!f) return null;
+  let troop = null, bw = -1;
+  for (const [rid, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w && !mods.as && mods.w > bw) { bw = mods.w; troop = uid(f, rid); }
+  return { id, name: f.name, adj: f.adj, troop, P: f.P };
+}
+
+// the role templates at medium tier; tiers scale them (hit points by k, the rest by its root)
+const AIR_T = {
+  transport: { hp: 95, def: 50, rng: 30, style: 'ranged', range: 5, speed: 5, move: 2, stamina: 600, projectile: 'bolt', priceMul: 1.25, bonus: { rngAtt: 20, rngStr: 15, defMelee: 50, defRanged: 45, defMagic: 15 } },
+  bomber: { hp: 105, def: 50, rng: 40, style: 'ranged', range: 4, speed: 6, move: 2, stamina: 500, projectile: 'fire', priceMul: 1.35, bonus: { rngAtt: 30, rngStr: 30, defMelee: 45, defRanged: 45, defMagic: 10 } },
+  fighter: { hp: 60, def: 40, rng: 55, style: 'ranged', range: 6, speed: 3, move: 3, stamina: 380, projectile: 'bolt', priceMul: 1.1, bonus: { rngAtt: 55, rngStr: 35, defMelee: 35, defRanged: 40, defMagic: 10 } },
+  cas: { hp: 75, def: 45, rng: 50, style: 'ranged', range: 5, speed: 4, move: 2, stamina: 420, projectile: 'bolt', priceMul: 1.25, bonus: { rngAtt: 45, rngStr: 40, defMelee: 40, defRanged: 40, defMagic: 10 } },
+  hunter: { hp: 85, att: 62, str: 64, def: 50, style: 'melee', speed: 4, move: 2, stamina: 400, priceMul: 1.15, abilities: [{ type: 'charge', mult: 1.4 }], bonus: { att: 55, str: 55, defMelee: 60, defRanged: 45, defMagic: 15 } },
+  naval: { hp: 75, def: 45, rng: 48, style: 'ranged', range: 6, speed: 5, move: 2, stamina: 450, projectile: 'bolt', priceMul: 1.1, bonus: { rngAtt: 40, rngStr: 35, defMelee: 40, defRanged: 40, defMagic: 10 } },
+  assault: { hp: 90, att: 60, str: 62, def: 55, style: 'melee', speed: 4, move: 2, stamina: 380, priceMul: 1.2, abilities: [{ type: 'charge', mult: 1.5 }], bonus: { att: 55, str: 55, defMelee: 65, defRanged: 50, defMagic: 10 } },
+  escort: { hp: 70, def: 50, rng: 50, style: 'ranged', range: 6, speed: 3, move: 2, stamina: 600, projectile: 'arrow', priceMul: 1.05, bonus: { rngAtt: 45, rngStr: 30, defMelee: 45, defRanged: 50, defMagic: 15 } },
+};
+const AIR_TIER = { light: { k: 0.65, size: 1, count: 4 }, medium: { k: 1, size: 1, count: 3 }, heavy: { k: 1.6, size: 2, count: 2 } };
+const BREATH_PROJ = { fire: 'fire', frost: 'frost', acid: 'poison', plague: 'poison', lightning: 'lightning', light: 'holy', warp: 'shadow', sound: 'shadow' };
+const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+const fillModel = (model, f) => {
+  const m = { ...(model || { body: 'aircraft', kind: 'gyro' }) };
+  for (const k of ['skin', 'cloth', 'cloth2', 'armor', 'trim']) if (m[k] === undefined && f.P[k] !== undefined) m[k] = f.P[k];
+  if (m.body === 'rider' && m.species === undefined) m.species = f.P.species;
+  if (m.mount === undefined) m.mount = f.P.cloth2 ?? f.P.armor;
+  if (m.style === undefined) m.style = f.id;
+  return m;
+};
+
+/** the flying units of every air wing: { `${faction}_air_${role}`: def } */
+export function realmAirwings(BASE) {
+  const out = {};
+  for (const [fid, W] of Object.entries(AIRWINGS)) {
+    const f = airFaction(fid);
+    if (!f || !W) continue;
+    for (const role of AIR_ROLES) {
+      const D = W[role];
+      if (!D) continue;
+      const T = AIR_T[role], tier = AIR_TIER[D.tier] ? D.tier : 'medium', { k, size, count } = AIR_TIER[tier], r = Math.sqrt(k);
+      const arts = { ...(D.arts || {}) };
+      const u = { name: `${f.adj} ${D.name || role}`, category: f.name, realm: fid, fly: true, airRole: role, airArts: arts, airTier: tier, note: D.note || '',
+        hp: Math.round(T.hp * k), att: 1, str: 1, def: Math.round(T.def * r), rng: 1, mag: 1, style: T.style, speed: T.speed, move: T.move, stamina: T.stamina, size,
+        count: Math.round(num(D.count, 1, 8, count)), priceMul: T.priceMul, bonus: Object.fromEntries(Object.entries(T.bonus).map(([key, v]) => [key, Math.round(v * r)])),
+        abilities: (T.abilities || []).map((a) => ({ ...a })), model: fillModel(D.model, f) };
+      if (T.style === 'melee') { u.att = Math.round(T.att * r); u.str = Math.round(T.str * r); } else { u.rng = Math.round(T.rng * r); u.range = T.range; u.projectile = T.projectile; }
+      if (role === 'cas' && arts.arrows) u.projectile = 'arrow';
+      // arts any role may have
+      if (arts.armour) { const a = arts.armour <= 10 ? arts.armour * 12 : Math.min(150, arts.armour); u.bonus.defMelee += a; u.bonus.defRanged += a; }
+      if (arts.magicWard) u.abilities.push({ type: 'protect', style: 'magic', reduction: num(arts.magicWard, 0, 0.8, 0.3) });
+      if (arts.regen) u.abilities.push({ type: 'regen', amount: Math.round(num(arts.regen, 1, 10, 2)), every: 4 });
+      if (arts.poison) u.abilities.push({ type: 'poison', damage: Math.round(num(arts.poison, 1, 12, 3)), chance: 0.35 });
+      if (arts.speed) { const s = num(arts.speed, 0.7, 1.4, 1); u.move = Math.max(1, Math.round(u.move * s)); u.stamina = Math.round(u.stamina * s); u.speed = Math.max(2, Math.round(u.speed / Math.sqrt(s))); }
+      if (arts.breath) { u.abilities.push({ type: 'breath', every: 4, maxHit: Math.round(10 * r + 4), radius: 1 }); if (u.style !== 'melee') u.projectile = BREATH_PROJ[arts.breath] || u.projectile; u.breath = arts.breath; }
+      if (role === 'transport') arts.troop = arts.troop && BASE[arts.troop] ? arts.troop : f.troop;
+      if (role === 'assault' && arts.dropTroops && !BASE[arts.dropTroops]) arts.dropTroops = f.troop;
+      out[`${fid}_air_${role}`] = u;
+    }
+  }
+  return out;
+}
+
+// behemoth forms: length, hull, crew and how slow
+const FORM = { airship: [24, 3200, 44, 0.34], citadel: [28, 4600, 60, 0.26], island: [30, 5000, 56, 0.22], hulk: [26, 4200, 52, 0.28], pyramid: [26, 4600, 48, 0.24],
+  cathedral: [26, 4000, 50, 0.28], spire: [22, 3600, 42, 0.3], palace: [26, 4000, 54, 0.28], beast: [22, 3400, 40, 0.4], crag: [28, 4800, 50, 0.24] };
+/** every air wing's sky-behemoth: { `${faction}Behemoth`: def }. `make` is the airship table's own constructor. */
+export function realmBehemoths(make) {
+  const out = {};
+  for (const [fid, W] of Object.entries(AIRWINGS)) {
+    const D = W && W.behemoth, f = D && airFaction(fid);
+    if (!f) continue;
+    const [len, hull, crew, speed] = FORM[D.form] || FORM.airship, look = D.look || {};
+    const abilities = (D.abilities || []).filter((a) => a && a.kind).map((a) => ({ ...a }));
+    const has = (k) => abilities.some((a) => a.kind === k);
+    const hang = W.escort ? `${fid}_air_escort` : W.fighter ? `${fid}_air_fighter` : 'gyrocopter';
+    out[`${fid}Behemoth`] = make({ name: `${f.adj} ${D.name || 'Behemoth'}`, faction: fid, style: fid, behemoth: true, note: D.note || '', form: D.form || 'airship', parts: D.parts || [], look,
+      abilities, len, hull, crew, speed, turn: 6, armour: 60, altitude: 7.4, level: 99, marines: 1.6, priceMul: 1,
+      color: look.hull ?? f.P.armor, envelope: look.envelope ?? look.trim ?? f.P.cloth, trim: look.trim ?? f.P.trim, glow: look.glow,
+      cannons: { perSide: 8, dmg: [12, 32], range: 12, reload: 6, acc: 0.6 }, bombs: { maxHit: 60, radius: 3, reload: 11 },
+      // the ability list does the launching and the dropping; the plain bays stay small when it does
+      hangar: { unit: hang, count: has('hangar') ? 0 : 6, every: 30 }, pods: { unit: f.troop, pods: has('dropPods') ? 0 : 3, perPod: 4 },
+      ladders: { capacity: 12, every: 50 } });
+  }
+  return out;
+}

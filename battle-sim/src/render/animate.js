@@ -179,6 +179,10 @@ export function ram(rig, inner, c) {
 
 const BASE = { R, P, keys, upperBody, flap, wagTail, die, biped, quad, spider, float, ram };
 Object.assign(ANIMATORS, { biped, quad, spider, float, ram });
+/** the shared helpers every animator is handed (for composite models that drive other bodies' animators) */
+export const ANIM_BASE = BASE;
+/** run the animator registered for `kind` (biped if none) on a rig: lets one model drive another body's motion */
+export function runAnimator(kind, rig, inner, ctx) { (ANIMATORS[kind] || biped)(rig, inner, ctx, BASE); }
 
 /** ctx: { t (s), moving, atk (-1 or 0..1), dead (0 or 0..1.5), phase, flying } */
 export function animateRig(model, ctx) {

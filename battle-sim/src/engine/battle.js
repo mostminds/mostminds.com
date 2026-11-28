@@ -9,6 +9,8 @@ const SCENERY = new Set(['tree', 'pine', 'rock']);
 import { STRUCTURES } from '../data/structures.js';
 import { initSupport, supportTick, unitVsShip, resolveSupportHit, gunDuty, onGunRing } from './support.js';
 import { initAirships, airTick, airAlive, resolveAirHit, unitVsAirship, flierVsAirship } from './airship.js';
+import { airwingDuty } from './airwing.js';
+import { wardMul, camouflaged } from './behemoth.js';
 import { initCommand, commandTick, specDuty, fallbackFor, onUnitDeath } from './command.js';
 import { initCtf, ctfTick, ctfDuty, ctfDeath, ctfWinner, ctfSpawnTiles } from './ctf.js';
 import { initFronts, frontsTick, frontDuty, frontsWinner, maybeDown } from './fronts.js';
@@ -998,6 +1000,7 @@ function unitTick(b, u) {
   }
 
   if (b.ctf && u.flag && ctfDuty(b, u)) return; // the flag carrier has one job
+  if (u.def.airRole && airwingDuty(b, u)) return; // an aircraft's role: bomb, strafe, intercept, drop troops (airwing.js)
   if ((u.spec !== 'line' || u.ammo !== undefined) && specDuty(b, u)) return;
   const mend = ability(u, 'repair') || (u.spec === 'engineer' ? { amount: 22 } : null);
   if (mend && repairDuty(b, u, mend)) return;
@@ -1123,6 +1126,7 @@ function face(u, tx, ty) {
 }
 
 export function walk(b, u, f, range, stop = null) {
+  if (u.pinUntil > b.tick && (b.tick & 1)) return; // pinned by strafing or a harpoon: half pace
   const steps = u.def.move;
   for (let s = 0; s < steps; s++) {
     const hi = u.y * b.W + u.x;
@@ -1173,6 +1177,7 @@ export function attack(b, u, t) {
   const th = t.aboard < 0 && !isAirborne(b, t) ? b.level[t.y * b.W + t.x] : 0;
   if (th) dRoll *= 1 + 0.06 * th;
   if (style !== 'melee' && dist > 1 && sees(b, u, t) === 2) dRoll *= 1.35;
+  if (style !== 'melee' && b.skyFx && camouflaged(b, t, u)) dRoll *= 1.6; // veiled by a behemoth overhead
   if (style === 'melee' && isAirborne(b, u)) u.landedUntil = b.tick + 3; // swoops down to strike
 
   let mult = 1;
@@ -1195,7 +1200,7 @@ export function attack(b, u, t) {
     return;
   }
 
-  const hit = b.rng.next() < hitChance(u.def.aRoll, dRoll);
+  const hit = b.rng.next() < hitChance(u.def.aRoll, dRoll) * (u.blindUntil > b.tick ? 0.6 : 1); // a swarm in the eyes
   let dmg = hit ? b.rng.int(0, Math.floor(u.def.max * mult)) : 0;
   // out of ammunition: scavenged shafts and thrown stones, slower and weaker
   const spent = u.ammo !== undefined && u.ammo <= 0;
@@ -1227,6 +1232,7 @@ export function attack(b, u, t) {
 export function queueHit(b, u, t, dmg, delay, style, hit = dmg > 0, src = null) {
   const prot = t.def.abilities.find((a) => a.type === 'protect' && a.style === style);
   if (prot) dmg = Math.floor(dmg * (1 - prot.reduction));
+  if (b.skyFx && dmg > 0 && b.skyFx.ward.length) dmg = Math.floor(dmg * wardMul(b, t)); // a behemoth's ward overhead
   t.pending += dmg;
   b.pending.push({ tick: b.tick + delay, from: u.id, to: t.id, dmg, style, hit, src });
 }

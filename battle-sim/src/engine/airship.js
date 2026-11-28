@@ -5,6 +5,7 @@ import { isWater } from './terrain.js';
 import { STRUCTURES } from '../data/structures.js';
 import { addCrate } from './command.js';
 import { hitChance, defenceRoll } from './combat.js';
+import { behemothTick, skyFxTick, skyZonesTick, airHitMul, skyBlind } from './behemoth.js';
 import { near, queueHit, damageStructure, hitStructuresAt, unitHeight, spawnUnit, addSquad, freeTileNear, occupy, canStandAir, damage, stepAir } from './battle.js';
 
 const NOBODY = { id: -1 };
@@ -45,7 +46,9 @@ export function airAlive(b, side) {
 export function airTick(b) {
   if (!b.airships || !b.airships.length) return;
   for (const a of b.airships) { a.px = a.x; a.py = a.y; a.ph = a.heading; }
+  skyFxTick(b); // behemoths' wards, flares, veils and auras (src/engine/behemoth.js)
   for (const a of b.airships) if (a.alive) shipTick(b, a);
+  skyZonesTick(b);
   // pods in the air come down
   const keep = [];
   for (const q of b.airQueue) {
@@ -73,7 +76,7 @@ function capture(b, a, side, crew) {
   a.side = side; a.crew = Math.max(1, crew); a.mode = 'hunt'; a.grapple = -1; a.run = false; a.pick = a.drop = null;
   b.events.push({ type: 'airCaptured', air: a.id, side });
 }
-function crewLoss(b, a, n, bySide, prize = 3) {
+export function crewLoss(b, a, n, bySide, prize = 3) {
   if (n <= 0 || !a.alive) return;
   a.crew = Math.max(0, a.crew - n);
   if (a.crew === 0 && a.def.arts?.wild) { if (!a.wild) { a.wild = true; b.events.push({ type: 'airWild', air: a.id }); } return; } // a beast whose riders fall fights on by itself
@@ -122,6 +125,7 @@ function shipTick(b, a) {
   const carry = () => { for (const id of a.cargo) { const u = b.units[id]; u.x = u.px = clamp(Math.round(a.x), 0, b.W - 1); u.y = u.py = clamp(Math.round(a.y), 0, b.H - 1); } };
   skyArts(b, a);
   if (!a.alive) return;
+  if (a.def.behemoth) behemothTick(b, a); // its eight abilities
   if (a.crew <= 0 && !a.wild) { // nobody at the helm: she drifts on the wind
     a.heading += 0.01; a.x = clamp(a.x + Math.cos(a.heading) * 0.05, 1, b.W - 2); a.y = clamp(a.y + Math.sin(a.heading) * 0.05, 1, b.H - 2);
     carry(); return;
@@ -385,6 +389,7 @@ function fireAtGround(b, a, C) {
 export function resolveAirHit(b, p) {
   const a = b.airships[p.air];
   if (!a || !a.alive) return;
+  if (b.skyFx && p.dmg > 0) { const m = airHitMul(b, a, p); if (m < 1) { p.dmg = Math.round(p.dmg * m); if (!p.dmg) p.hit = false; } } // phase, wards
   a.hp -= p.dmg;
   b.events.push({ type: 'airHit', air: a.id, dmg: p.dmg, hit: p.hit });
   // shot and splinters find the crew too
@@ -419,6 +424,7 @@ export function unitVsAirship(b, u, range) {
   // fog round it, flares in the fliers' eyes
   let blind = ar.fog || 0;
   if (u.def.fly) for (const o of b.airships) if (o.alive && o.side === best.side && o.def.arts?.flares && Math.hypot(o.x - ucx(u), o.y - ucy(u)) < 10) { blind = Math.max(blind, o.def.arts.flares); break; }
+  if (b.skyFx) { const sb = skyBlind(b, u.side, ucx(u), ucy(u), best); if (sb > blind) { blind = sb; if ((best.flareSaid ?? -99) < b.tick - 10) { best.flareSaid = b.tick; b.events.push({ type: 'behemoth', air: best.id, kind: 'flares', name: 'flares', x: ucx(u), y: ucy(u), dodge: true }); } } }
   const hit = b.rng.next() < hitChance(u.def.aRoll, (30 + 9) * (best.def.armour * 2 + 64)) * (1 - blind);
   const dmg = hit ? Math.round(b.rng.int(0, u.def.max) * (100 / (100 + best.def.armour)) * (1 - (ar.bulwark || 0))) : 0;
   const delay = 1 + Math.floor(Math.max(0, bd) / 6);

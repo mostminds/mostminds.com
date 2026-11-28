@@ -19,7 +19,7 @@
 // fly: true puts a unit in the air. Ground melee cannot reach it except in the
 // moment it swoops down to strike; archers, mages, ballistae and harpoons can.
 
-import { realmUnits } from './realms.js';
+import { realmUnits, realmAirwings } from './realms.js';
 
 const H = (o) => ({ body: 'humanoid', ...o });
 
@@ -286,6 +286,8 @@ function tradesFor(u) {
 
 // the twenty-seven realms (see realms.js) muster troops built on the roster above
 Object.assign(UNITS, realmUnits(UNITS));
+// every faction's air wing: eight flying units `${faction}_air_${role}` (src/data/air, built in realms.js)
+Object.assign(UNITS, realmAirwings(UNITS));
 
 // ---- Generals. Every faction has one: a king, warlord or high priest who stands no taller than the troops of
 // his kind but is worth a company of them. He keeps to his headquarters; to win, the enemy must kill him and

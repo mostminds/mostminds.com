@@ -1,4 +1,4 @@
-import { realmAirships } from './realms.js';
+import { realmAirships, realmBehemoths } from './realms.js';
 // War zeppelins: one per faction. They fly above the battle, fire broadsides, drop bombs,
 // launch aircraft from a stern hangar, drop pods of shock troops and lower ladders to lift
 // hard-pressed troops out of a fight. Each needs a crew: without one it drifts, and enemy
@@ -32,4 +32,6 @@ export const AIRSHIPS = {
     hangar: { unit: 'wyrmling', count: 3, every: 40 }, pods: { unit: 'cyclops', pods: 2, perPod: 1 }, ladders: { capacity: 6, every: 70 } }),
 };
 Object.assign(AIRSHIPS, realmAirships(ship)); // see realms.js
+// every air wing's colossal sky-behemoth, `${faction}Behemoth` (behemoth: true; its abilities run in src/engine/behemoth.js)
+Object.assign(AIRSHIPS, realmBehemoths(ship));
 for (const [id, a] of Object.entries(AIRSHIPS)) a.id = id;
