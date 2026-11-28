@@ -372,7 +372,7 @@ The rules are in `src/engine/ctf.js`; the map comes from `generateScenario({ sit
 
 ## The realms
 
-Twenty-seven further factions, in four groups, each with its own troops, beasts, ships, airship (where it
+Forty-four further factions, in six groups, each with its own troops, beasts, ships, airship (where it
 flies one) and way of building. They are described in `src/data/realms.js`: one entry per realm, expanded
 into units, ship classes and map-generator factions. Pick them under *Generate a scenario* or add their
 troops from the army list.
@@ -402,6 +402,36 @@ factor, so the realms stay in balance with it. Where a body, costume, weapon, hu
 not been sculpted yet, the descriptor names a stand-in (`alt`) and the game uses that.
 
 `docs/TACTICS.md` describes the squad AI and the published frameworks it draws on.
+
+
+### The Realms of Chaos and the Hidden and Fringe Races
+
+Seventeen more factions, each with troops, beasts, two ship classes, a diving boat (or a beast that does its work),
+a general, two landmark buildings and a great sea monster that sails with its fleets. Where a faction was named
+after another game's gods or places, it was renamed:
+
+| Faction | Its sea monster |
+|---|---|
+| The Crimson Brass-Hordes of Kharnak | Brass Leviathan: boils the sea, tail-sweeps, shears weakened hulls |
+| The Festering Gardens of Morbus | Sump-Kraken: crushes, rots holes in hulls, snares |
+| The Iridescent Labyrinth of Ysh-Keth | Astral Nautilus: gravity waves that hurl ships, whirlpools, hypnosis |
+| The Velvet Courts of Vel-Ishara | Siren-Scolopendra: lures ships to a standstill, coils, snares |
+| The Forges of Mal-Vash | Ironclad Leviathan: a lure, a swallowing maw, a ram; shrugs off shot |
+| The Ash-Hordes of the Riven Abyss | Abyssal Ouroboros: coils and drags flagships under |
+| The Bog-Lords of Balor | Balor-Maw: a burning glare from long range |
+| The Steppe-Wolves of the Great Kurgan | Steppe-Kraken: smashes through ice, holes hulls, snatches crews |
+| The Shire-Wardens of Hearthmoot | Old Man of the River: swallows barges whole |
+| The Baobab-Kin of the Sun-Savanna | Nyami-Nyami: flash-flood waves |
+| The Blood-Pagodas of Nagavar | Vasuki-Leviathan: crushes whole ships, sweeps, spits fire |
+| The Pearl-Fleets of the Coral Reaches | Cetus-Primeval: great waves and a ram |
+| The Clockwork Burrows of Glimmer-Hill | Mirage-Leviathan: an illusion; terrifying, nearly harmless, shot passes through it |
+| The Khanates of the Eastern Steppes | Wolf-Eel of the Black Gulf: hunts in packs, tears out rudders |
+| The Sisterhood of the Emerald River | Matriarch-Caiman: snaps weakened galleons in two |
+| The Deep-Root Folk of the Whispering Canopy | Mangrove-Hydra: entangles ships that come near, crushes |
+| The Sun-Empires of the Golden Sands | Zaratan, with its Bahamut: a ram and waves; whirlpools |
+
+The Labyrinth's shard-horrors break into two smaller shardlings when they are slain (an ability any unit can
+have: `{ type: 'split', into, count }`).
 
 ## Graphics
 
