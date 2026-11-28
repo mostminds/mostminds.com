@@ -129,7 +129,7 @@ function siege(D, g, L, B, y, acts, anchors, keep) {
       K.detail(1, () => { K.add(G.box(r * 1.2, r * 0.3, r * 1.4), shade(fl.wood, 0.8), -s * r * 0.9, 0.18, 0, { rz: s * 0.2 }); }); // the quoin
       K.push(s * B * 0.2, 0.3, B * 0.17); deco(K, D, B * 0.18); K.pop();
       // shells and a powder keg beside her
-      K.push(-s * B * 0.05, 0, B * 0.36); shotPile(K, r * 0.55, 7); K.pop();
+      K.push(-s * B * 0.05, 0, B * 0.34); shotPile(K, 0.11, 7); K.pop();
       K.detail(2, () => { K.push(s * B * 0.12, 0, -B * 0.33); cask(K, r * 0.6, r * 1.3, 0x5a3a22); K.pop(); K.bar([-s * r, 0.05, -B * 0.25], [s * r * 2.5, 0.05, -B * 0.25], 0.025, C.wood); K.add(G.cyl(0.05, 0.05, 0.1, 8), 0x2a2a2a, s * r * 2.5, 0.05, -B * 0.25, { rz: PI / 2 }); });
     });
     const piv = D.group(bed, 0, 0.1 + r * 1.75, 0);
