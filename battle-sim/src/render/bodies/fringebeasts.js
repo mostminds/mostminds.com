@@ -436,7 +436,7 @@ function porcupine(def, o = {}) {
     neck.hard.push(quill(add3(p, [0, -0.008, 0]), jit([sx * 0.35, 1, -0.35 - f * 0.4], rnd, 0.25), L, 0.0048, [[0.22, C.qdark], [1, C.pale]]).near());
   }
   neck.hard.push(quill([0, 0.37, 0.24], [0, 1, -0.5], 0.26, 0.04, [[0.2, C.qdark], [1, C.pale]]).far());
-  const head = N('head', 'neck', [0, 0.28, 0.32], { rig: 'head', detail: 0.85, minRes: 18 });
+  const head = N('head', 'neck', [0, 0.28, 0.32], { rig: 'head', detail: 0.65, minRes: 18 });
   const hp = [
     fur(S.ellipsoid(0.085, 0.085, 0.1).at(0, 0.28, 0.37)),
     fur(S.ellipsoid(0.062, 0.062, 0.07).at(0, 0.255, 0.44).blend(0.05), C.dark),
@@ -460,12 +460,12 @@ function porcupine(def, o = {}) {
     up: [leg(bone(JF[0], JF[1], 0.07, 0.05)), leg(S.sphere(0.07).at(...JF[0]))],
     lo: [leg(bone(JF[1], JF[2], 0.048, 0.036)), leg(S.sphere(0.048).at(...JF[1]))],
     paw: [leg(S.sphere(0.036).at(...JF[2])), leg(S.ellipsoid(0.042, 0.024, 0.055).at(0.13, 0.024, 0.215).blend(0.02)), ...toes(0.13, 0.255, 4, 0.016, 0.035)],
-  }, [0.45, 0.55, 0.7]);
+  }, [0.4, 0.48, 0.6]);
   legPair(N, 'B', JB, {
     up: [leg(bone(JB[0], JB[1], 0.085, 0.055)), leg(S.sphere(0.085).at(...JB[0]))],
     lo: [leg(bone(JB[1], JB[2], 0.05, 0.036)), leg(S.sphere(0.05).at(...JB[1]))],
     paw: [leg(S.sphere(0.036).at(...JB[2])), leg(S.ellipsoid(0.045, 0.022, 0.075).at(0.13, 0.022, -0.215).blend(0.02)), ...toes(0.13, -0.15, 5, 0.014, 0.03)],
-  }, [0.45, 0.55, 0.7]);
+  }, [0.4, 0.48, 0.6]);
 
   // ---- tail: a stub carrying the hollow rattle quills ----
   const tail = N('tail0', 'torso', [0, 0.27, -0.38], { rig: 'tail', detail: 0.6, minRes: 16 });
@@ -489,7 +489,7 @@ function badger(def, o = {}) {
   const rnd = rng(hashStr((def?.id || 'badger') + (clock ? ':clock' : honey ? ':honey' : ':badger')));
   const black = honey ? mix(furC, 0x0a0a0a, 0.3) : mix(furC, 0x0c0c0e, 0.65);
   const C = {
-    fur: honey ? black : furC, leg: black, face: honey ? black : stripe, mask: black, mantle: stripe,
+    fur: honey ? black : furC, leg: black, face: honey ? black : clock ? furC : stripe, mask: clock ? stripe : black, mantle: stripe,
     claw: 0x2a2420, nose: 0x141214, brass: furC, iron: stripe, glow: 0x5af0d8,
   };
   const furP = (q, c = C.fur, amp = 0.006) => (clock ? q.color(c).pbr(0.32, 1).tint(0.06, 9) : q.color(c).pbr(0.9).tint(0.14, 26).bump(amp, 40, 'fur'));
@@ -498,7 +498,7 @@ function badger(def, o = {}) {
   N('root', null, [0, 0, 0]);
 
   // ---- body: low, broad, wedge-shaped ----
-  const torso = N('torso', 'root', [0, 0.27, 0], { rig: 'torso', detail: clock ? 0.36 : 0.3, minRes: 10 });
+  const torso = N('torso', 'root', [0, 0.27, 0], { rig: 'torso', detail: clock ? 0.24 : 0.27, minRes: 10 });
   const tp = [
     furP(S.ellipsoid(0.19, 0.15, 0.3).at(0, 0.27, -0.05)),
     furP(S.ellipsoid(0.17, 0.14, 0.15).at(0, 0.265, 0.17).blend(0.08)),
@@ -509,7 +509,7 @@ function badger(def, o = {}) {
   if (honey) tp.push(S.capsule([0, 0.39, 0.22], [0, 0.4, -0.36], 0.15, 0.14).at(0, 0.0, 0).color(C.mantle).pbr(0.9).tint(0.1, 20).paint(0.035));
   const gearO = [0.178, 0.285, -0.06];
   if (clock) {
-    for (const z of [0.16, 0.02, -0.12, -0.27]) tp.push(S.torus(0.17, 0.004).rot(90, 0, 0).scale(1).at(0, 0.27, z).cut(0.003));   // plate seams
+    for (const z of [0.16, 0.02, -0.12, -0.27]) tp.push(S.torus(0.17, 0.008).rot(90, 0, 0).at(0, 0.27, z).cut(0.004));   // plate seams
     tp.push(S.box(0.006, 0.02, 0.62).at(0, 0.42, -0.05).cut(0.003));
     for (const sx of [1, -1]) tp.push(S.cyl(0.085, 0.12).rot(0, 0, 90).at(sx * 0.19, gearO[1], gearO[2]).cut(0.01));                  // the gear wells
     for (const sx of [1, -1]) tp.push(S.cyl(0.02, 0.2).rot(0, 0, 90).at(sx * 0.1, gearO[1], gearO[2]).color(C.iron).pbr(0.45, 0.8));  // axle hubs
@@ -549,7 +549,7 @@ function badger(def, o = {}) {
     neck.hard.push(H.cyl(0.016, 0.016, 0.004, 12).rot(90, 0, 0).at(0, 0.14, 0.305).color(0xd8b040).pbr(0.3, 1));
   }
   if (clock) neck.hard.push(orient(H.torus(0.105, 0.012, 24, 8).rot(90, 0, 0), [0, 0.275, 0.3], [0, 0, 1], [0, 1, 0]).color(C.iron).pbr(0.4, 0.9));
-  const head = N('head', 'neck', [0, 0.275, 0.34], { rig: 'head', detail: 0.85, minRes: 18 });
+  const head = N('head', 'neck', [0, 0.275, 0.34], { rig: 'head', detail: 0.7, minRes: 18 });
   const hp = [
     furP(S.ellipsoid(0.088, 0.078, 0.1).at(0, 0.28, 0.38), C.face),
     furP(bone([0, 0.262, 0.42], [0, 0.232, 0.53], 0.062, 0.03).blend(0.05), C.face),
@@ -557,12 +557,12 @@ function badger(def, o = {}) {
     furP(S.ellipsoid(0.06, 0.04, 0.07).at(0, 0.235, 0.43).blend(0.04), C.mask),                      // dark throat and chin
   ];
   if (honey) hp.push(S.ellipsoid(0.09, 0.05, 0.12).at(0, 0.335, 0.37).color(C.mantle).pbr(0.9).paint(0.025));
-  else for (const sx of [1, -1]) hp.push((clock ? iron : (q) => q.color(C.mask).pbr(0.9))(S.capsule([sx * 0.03, 0.258, 0.51], [sx * 0.058, 0.318, 0.33], 0.016, 0.03)).paint(0.008, clock ? 0.004 : 0));
+  else for (const sx of [1, -1]) hp.push((clock ? iron : (q) => q.color(C.mask).pbr(0.9))(S.capsule([sx * 0.034, 0.262, 0.52], [sx * 0.07, 0.33, 0.33], 0.024, 0.04)).paint(0.006, clock ? 0.004 : 0));
   hp.push(...S.mirrorX([furP(S.ellipsoid(0.026, 0.02, 0.012).rot(0, 20, 0).at(0.074, 0.33, 0.34).blend(0.02), honey ? C.mask : clock ? C.brass : C.mask)]));
   if (!clock && !honey) hp.push(...S.mirrorX([S.sphere(0.014).at(0.084, 0.348, 0.338).color(C.face).paint(0.006)]));
   put(head, hp);
   if (clock) {
-    put(head, H.mirrorX([H.sphere(0.013, 12).at(0.052, 0.3, 0.452).color(C.glow).glow(1.8).pbr(0.3)]));
+    put(head, H.mirrorX([H.sphere(0.017, 12).at(0.056, 0.3, 0.45).color(C.glow).glow(2).pbr(0.3)]));
     head.hard.push(...H.mirrorX([H.sphere(0.006, 6).at(0.04, 0.33, 0.42).color(tone(C.brass, 0, 0, 0.08)).pbr(0.3, 1).lod(1)]));
   } else put(head, H.mirrorX([eyeAt([0.05, 0.296, 0.452], [0.6, 0.25, 0.75], 0.0105)]));
   const jaw = N('jaw', 'head', [0, 0.235, 0.4], { rig: 'jaw', detail: 0.85, minRes: 18 });
@@ -580,12 +580,12 @@ function badger(def, o = {}) {
     up: [L(bone(JF[0], JF[1], 0.075, 0.055)), L(S.sphere(0.075).at(...JF[0]))],
     lo: [L(bone(JF[1], JF[2], 0.05, 0.04)), J(JF[1], 0.054)],
     paw: [J(JF[2], 0.04), L(S.ellipsoid(0.05, 0.026, 0.055).at(0.14, 0.026, 0.235).blend(0.02)), ...toes(0.14, 0.275, 5, 0.017, 0.055, 0.008)],
-  }, [0.5, 0.6, 0.75]);
+  }, [0.42, 0.5, 0.62]);
   legPair(N, 'B', JB, {
     up: [L(bone(JB[0], JB[1], 0.085, 0.058)), L(S.sphere(0.085).at(...JB[0]))],
     lo: [L(bone(JB[1], JB[2], 0.05, 0.04)), J(JB[1], 0.054)],
     paw: [J(JB[2], 0.04), L(S.ellipsoid(0.05, 0.024, 0.075).at(0.14, 0.024, -0.225).blend(0.02)), ...toes(0.14, -0.16, 5, 0.015, 0.03, 0.007)],
-  }, [0.5, 0.6, 0.75]);
+  }, [0.42, 0.5, 0.62]);
   if (clock) {
     // pistons up the back of each upper leg
     for (const n of N.nodes.filter((q) => /^leg/.test(q.name))) {
@@ -630,7 +630,7 @@ function riverOtter(def, o = {}) {
   const goldH = (h) => h.color(gold).pbr(0.3, 1);
   const N = rigOf();
   N('root', null, [0, 0, 0]);
-  const torso = N('torso', 'root', [0, 0.24, 0], { rig: 'torso', detail: 0.42, minRes: 10 });
+  const torso = N('torso', 'root', [0, 0.24, 0], { rig: 'torso', detail: 0.3, minRes: 10 });
   const tp = [
     fur(S.ellipsoid(0.14, 0.13, 0.34).at(0, 0.25, -0.05)),
     fur(S.ellipsoid(0.13, 0.12, 0.14).at(0, 0.24, 0.2).blend(0.08)),
@@ -642,18 +642,17 @@ function riverOtter(def, o = {}) {
   // hammered gold: a ridge of overlapping back plates with side lappets, a breastplate
   const sp = [];
   for (const [i, z] of [0.17, 0.05, -0.07, -0.19, -0.31].entries()) {
-    sp.push({ c: [0, 0.25, z], dir: [0, 1, 0], flow: [0, -0.1, -1], w: 0.2 - i * 0.01, l: 0.17, tilt: 5, lift: 0.008 });
-    for (const sx of [1, -1]) sp.push({ c: [0, 0.25, z - 0.03], dir: [sx * 0.95, 0.55, 0], flow: [sx * 0.3, -0.6, -0.7], w: 0.12, l: 0.12, tilt: 4, lift: 0.006 });
+    sp.push({ c: [0, 0.25, z], dir: [0, 1, 0], flow: [0, -0.1, -1], w: 0.27 - i * 0.012, l: 0.18, tilt: 2, lift: 0.004 });
   }
   layPlates(dfT, torso.hard, sp, pg, { rnd, rough: 0.3, metal: 1, vary: 0.1, keep: true });
   layPlates(dfT, torso.hard, [{ c: [0, 0.22, 0.2], dir: [0, -0.15, 1], flow: [0, -1, -0.1], w: 0.19, l: 0.18, tilt: 3, lift: 0.006 }], pg, { rough: 0.3, metal: 1, keep: true });
-  for (const [i, z] of [0.17, 0.05, -0.07, -0.19].entries()) torso.hard.push(H.sphere(0.011, 8).at(0, hitFrom(dfT, [0, 0.25, z], [0, 1, 0])[1] + 0.03 + i * 0.0, z + 0.02).color(C.gem).pbr(0.15).lod(1));
+  for (const [i, z] of [0.17, 0.05, -0.07, -0.19].entries()) torso.hard.push(H.sphere(0.011, 8).at(0, hitFrom(dfT, [0, 0.25, z], [0, 1, 0])[1] + 0.017, z + 0.03).color(C.gem).pbr(0.15).lod(1));
 
   // ---- neck and head with the feathered crown ----
   const neck = N('neck', 'torso', [0, 0.26, 0.3], { rig: 'neck', detail: 0.55, minRes: 14 });
   put(neck, [fur(bone([0, 0.255, 0.27], [0, 0.29, 0.43], 0.1, 0.08)), S.ellipsoid(0.07, 0.05, 0.1).at(0, 0.22, 0.36).color(C.belly).pbr(0.6).paint(0.03)]);
   neck.hard.push(orient(H.torus(0.09, 0.012, 24, 8).rot(90, 0, 0), [0, 0.272, 0.35], [0, 0.35, 1], [0, 1, 0]).color(gold).pbr(0.28, 1));
-  const head = N('head', 'neck', [0, 0.3, 0.43], { rig: 'head', detail: 0.85, minRes: 18 });
+  const head = N('head', 'neck', [0, 0.3, 0.43], { rig: 'head', detail: 0.7, minRes: 18 });
   const hp = [
     fur(S.ellipsoid(0.085, 0.062, 0.09).at(0, 0.31, 0.48)),
     fur(S.ellipsoid(0.066, 0.045, 0.06).at(0, 0.292, 0.55).blend(0.04)),
@@ -695,12 +694,12 @@ function riverOtter(def, o = {}) {
     up: [L(bone(JF[0], JF[1], 0.06, 0.042)), L(S.sphere(0.06).at(...JF[0]))],
     lo: [L(bone(JF[1], JF[2], 0.042, 0.032)), L(S.sphere(0.042).at(...JF[1])), bracer(JF[1], JF[2], 0.042)],
     paw: [L(S.sphere(0.032).at(...JF[2])), L(S.ellipsoid(0.04, 0.02, 0.045).at(0.115, 0.02, 0.255).blend(0.02)), ...webbed(0.115, 0.018, 0.265, 5, 0.012, 0.04)],
-  }, [0.5, 0.6, 0.8]);
+  }, [0.42, 0.5, 0.66]);
   legPair(N, 'B', JB, {
     up: [L(bone(JB[0], JB[1], 0.075, 0.05)), L(S.sphere(0.075).at(...JB[0]))],
     lo: [L(bone(JB[1], JB[2], 0.048, 0.034)), L(S.sphere(0.048).at(...JB[1]))],
     paw: [L(S.sphere(0.034).at(...JB[2])), L(S.ellipsoid(0.042, 0.02, 0.06).at(0.12, 0.02, -0.29).blend(0.02)), ...webbed(0.12, 0.018, -0.27, 5, 0.014, 0.06)],
-  }, [0.5, 0.6, 0.8]);
+  }, [0.42, 0.5, 0.66]);
 
   // ---- tail: thick at the root, tapering like a rudder ----
   const TL = [[0, 0.26, -0.42], [0, 0.23, -0.58], [0, 0.17, -0.73], [0, 0.1, -0.86], [0, 0.05, -0.97]];
@@ -744,8 +743,8 @@ function waspParts(C, k) {
 function waspWing(C, k) {
   const sh = (x, y, z) => mixRgb(rgb(C.wing), rgb(C.vein), clamp(Math.abs(z) * 30));
   return [
-    H.sphere(1, 10).scale(0.052, 0.0022, 0.013).at(0.05, 0, -0.004).rot(0, 16, 8).color(C.wing).shade(sh).pbr(0.18).glow(0.12),
-    H.sphere(1, 8).scale(0.034, 0.002, 0.01).at(0.033, -0.002, -0.022).rot(0, 26, 4).color(C.wing).pbr(0.18).glow(0.12),
+    H.sphere(1, 8).scale(0.052, 0.0022, 0.013).at(0.05, 0, -0.004).rot(0, 16, 8).color(C.wing).shade(sh).pbr(0.18).glow(0.12),
+    H.sphere(1, 6).scale(0.034, 0.002, 0.01).at(0.033, -0.002, -0.022).rot(0, 26, 4).color(C.wing).pbr(0.18).glow(0.12).near(),
   ].map((h) => h.scale(k));
 }
 function waspSwarm(def, o = {}) {
@@ -755,7 +754,7 @@ function waspSwarm(def, o = {}) {
   const N = rigOf();
   N('root', null, [0, 0, 0]);
   const HC = SWARM_Y, K = 1.3;
-  const nest = N('nest', 'root', [0, HC, 0], { rig: 'core', detail: 0.8, minRes: 16 });
+  const nest = N('nest', 'root', [0, HC, 0], { rig: 'core', detail: 0.6, minRes: 14 });
   put(nest, [
     S.ellipsoid(0.12, 0.16, 0.12).at(0, HC, 0).color(C.paper).pbr(0.95).bump(0.006, 26, 'ridges').tint(0.18, 14),
     S.ellipsoid(0.085, 0.09, 0.085).at(0, HC + 0.12, 0).color(tone(C.paper, 0, 0, -0.06)).pbr(0.95).bump(0.005, 30, 'ridges').blend(0.05),
@@ -769,7 +768,7 @@ function waspSwarm(def, o = {}) {
     const r = 0.27 + rnd() * 0.22 + (i % 2) * 0.06, dy = (rnd() - 0.5) * 0.5, a0 = (i / n) * 360 + rnd() * 18, tilt = (rnd() - 0.5) * 44;
     const dir = Math.sign(swarmSpin(i));
     N(`orbit${i}`, 'root', [0, 0, 0], { pos: [0, HC, 0], rot: [tilt, a0, 0], rig: 'orbits' });
-    const w = N(`wasp${i}`, `orbit${i}`, [0, 0, 0], { pos: [r, dy, 0], rot: [(rnd() - 0.5) * 16, dir > 0 ? 180 : 0, dir * 14], rig: 'wasps', detail: 1.15, minRes: 44 });
+    const w = N(`wasp${i}`, `orbit${i}`, [0, 0, 0], { pos: [r, dy, 0], rot: [(rnd() - 0.5) * 16, dir > 0 ? 180 : 0, dir * 14], rig: 'wasps', detail: 0.78, minRes: 26 });
     const parts = waspParts(C, K);
     put(w, [parts.prims, parts.hard]);
     for (const sx of [1, -1]) {
@@ -791,7 +790,7 @@ function dartFrog(def, o = {}) {
   const sk = (q, c = C.skin) => q.color(c).pbr(0.2).tint(0.06, 16);
   const N = rigOf();
   N('root', null, [0, 0, 0]);
-  const torso = N('torso', 'root', [0, 0.12, 0], { rig: 'torso', detail: 1.15, minRes: 22 });
+  const torso = N('torso', 'root', [0, 0.12, 0], { rig: 'torso', detail: 0.78, minRes: 20 });
   const body = [
     sk(S.ellipsoid(0.11, 0.085, 0.14).rot(-14, 0, 0).at(0, 0.12, -0.04)),
     sk(S.ellipsoid(0.1, 0.066, 0.09).at(0, 0.15, 0.075).blend(0.05)),
@@ -835,13 +834,13 @@ function dartFrog(def, o = {}) {
     up: [sk(bone(JF[0], JF[1], 0.022, 0.017)), sk(S.sphere(0.022).at(...JF[0])), ...spots(JF[0], JF[1], 1)],
     lo: [sk(bone(JF[1], JF[2], 0.017, 0.013)), sk(S.sphere(0.017).at(...JF[1]))],
     paw: [sk(S.sphere(0.014).at(...JF[2])), ...digits(add3(JF[2], [0, -0.008, 0.006]), [[-0.5, -0.35, 1], [-0.12, -0.3, 1], [0.25, -0.3, 1], [0.7, -0.3, 0.6]], 0.042, 0.0055)],
-  }, [1.1, 1.3, 1.6]);
+  }, [0.75, 0.9, 1.1]);
   legPair(N, 'B', JB, {
     up: [sk(bone(JB[0], JB[1], 0.036, 0.024)), sk(S.sphere(0.034).at(...JB[0])), ...spots(JB[0], JB[1], 2)],
     lo: [sk(bone(JB[1], JB[2], 0.024, 0.015)), sk(S.sphere(0.024).at(...JB[1])), ...spots(JB[1], JB[2], 1)],
     paw: [sk(S.sphere(0.015).at(...JB[2])), sk(bone(JB[2], [0.13, 0.014, -0.075], 0.013, 0.009)),
       ...digits([0.13, 0.014, -0.075], [[-0.35, -0.2, 1], [-0.05, -0.15, 1], [0.3, -0.15, 1], [0.65, -0.15, 0.8], [0.95, -0.1, 0.2]], 0.052, 0.0055)],
-  }, [1.1, 1.3, 1.6]);
+  }, [0.75, 0.9, 1.1]);
   return { kind: 'fringe.frog', attack: 'bite', nodes: finish(N.nodes) };
 }
 
@@ -909,7 +908,7 @@ function frogAnim(rig, inner, c, base) {
   for (let i = 2; i < 4 && i < L.length; i++) { R(L[i], hind * 1.7 - crouch * 0.12); R(Sn[i], -hind * 2.3 + crouch * 0.2); R(Pw[i], hind * 1.1); }
   for (let i = 0; i < 2 && i < L.length; i++) { R(L[i], -front * 0.8 + crouch * 0.15); R(Sn[i], front * 0.2); R(Pw[i], front * 0.5); }
   const tg = rig.tongue?.[0], th = rig.throat?.[0];
-  if (tg) tg.scale.set(1, 1, 1 + tongue * 7);
+  if (tg) tg.scale.set(1, 1, 1 + tongue * 5);
   if (th) { const b = c.dead > 0 ? 0 : Math.max(0, Math.sin(t * 4.2 + ph)); th.scale.set(1 + b * 0.12, 1 + b * 0.35, 1 + b * 0.1); }
   if (c.dead > 0) {
     const f = smooth(Math.min(1, c.dead * 2));

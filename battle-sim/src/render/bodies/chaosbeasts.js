@@ -528,6 +528,8 @@ function brassRhino(def, o = {}) {
         for (const dz of [-0.08, 0.08]) body.hard.push(H.sphere(0.014, 6).at(...X([0.415, 0.72, z + dz])).color(brassL).pbr(0.3, 0.9).lod(0));
       });
     }
+    // a toothed crupper-plate over the rump, a brass skull at its crown
+    { const cp = jagPlate(0.4, 0.2, 5, 1, brass); body.hard.push(orient(cp.iron, [0, 0.9, -0.69], [0, 1, 0.55], [0, 0.4, -1]), orient(cp.brass, [0, 0.905, -0.7], [0, 1, 0.55], [0, 0.4, -1])); p.push(...skull([0, 0.96, -0.72], 0.04, [0, 0.4, -1], [0, 1, 0.3], brassL)); }
     // peytral: the brass breastplate with an iron boss
     p.push(br(S.ellipsoid(0.3, 0.25, 0.14).rot(-8, 0, 0).at(0, 0.6, 0.62).blend(0.004)));
     p.push(S.ellipsoid(0.305, 0.255, 0.142).rot(-8, 0, 0).at(0, 0.598, 0.618).color(IRON).pbr(0.5, 0.7).paint(0.006, 0.004));
@@ -1040,7 +1042,7 @@ function toadAnim(rig, inner, c, base) {
   R(rig.torso, tx + breathe * 0.01, Math.sin(gait) * 0.05 * k, Math.sin(gait) * 0.07 * k);
   R(rig.head, hx); R(rig.jaw, jaw);
   if (one(rig.throat)) { const f = a >= 0 ? 1 : 1 + 0.35 * Math.max(0, Math.sin(t * 2.6 + ph)); one(rig.throat).scale.set(f, f * 1.1, f); }
-  if (one(rig.tongue)) { R(one((rig.tongue)), -0.12 * lash); one(rig.tongue).scale.set(1, 1, 1 + lash * 6); }
+  if (one(rig.tongue)) { R(one((rig.tongue)), -0.3 * lash); one(rig.tongue).scale.set(1, 1, 1 + lash * 6); }
   (rig.bells || []).forEach((b, i) => R(b, Math.sin(t * (k ? 8 : 2) + i * 1.3 + ph) * (0.08 + 0.18 * k), 0, Math.sin(t * (k ? 7 : 1.7) + i + ph) * (0.06 + 0.15 * k)));
   if (c.dead > 0) {                                      // rolls onto its back, legs in the air
     const f = Math.min(1, c.dead * 1.6), e = f * f * (3 - 2 * f);
@@ -1175,7 +1177,7 @@ function flyAnim(rig, inner, c, base) {
     const sg = sgn(w, i);
     if (fl) R(w, 0, sg * 0.15, sg * Math.sin(t * 38 + ph) * 0.55);
     else if (dead) R(w, 0, sg * 0.6, sg * 0.3);
-    else R(w, 0.05, sg * 1.25, sg * -0.2 + sg * Math.sin(t * 1.3 + ph) * 0.02);      // laid back over the abdomen
+    else R(w, 0.32, sg * 1.2, sg * 0.05 + sg * Math.sin(t * 1.3 + ph) * 0.02);      // laid back over the abdomen
   });
   (rig.legs || []).forEach((l, i) => {
     const sg = i % 2 ? -1 : 1;
