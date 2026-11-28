@@ -2770,8 +2770,111 @@ function riverCitadel(g) {
   // flowering trees on the corners of the middle tier
   for (const [x, z] of [[-1, -1], [1, -1]]) g.in(M(x * 1.35, T[1][3], CZ + z * 1.1), () => { g.surf(K_WOOD, 0.9); limb(g, [[0, 0, 0], [0.05, 0.4, 0], [0, 0.7, 0.05]], [0.06, 0.05, 0.04], { nu: 6, nv: 6, col: rgb(0x5a4a34) }); g.in(M(0, 0.85, 0), () => leafClump(g, 0.42, 1550 + x, sw(0x2f6a2a, 0x3a7a32, 0xe84a6a), 5)); });
 }
-function nestTree(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
-function spiritTotem(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
+
+// =====================================================================================================
+// Deeproot: titanic rainforest trees, woven nests, poison colours
+// =====================================================================================================
+const RF_LEAF = sw(0x2f5a22, 0x3a6a2a, 0x4a7a2e, 0x284e1e), RF_BARK = rgb(0x5a4c3a), VINE_W = rgb(0xa08a58);
+const rfBark = (seed = 0) => (x, y, z) => mix(mul(RF_BARK, 0.65 + 0.45 * noise3(x * 5 + seed, y * 1.5, z * 5)), [0.2, 0.32, 0.12], smooth(0.55, 0.75, noise3(x * 2 + seed, y * 1.2 + 4, z * 2)) * 0.6);
+/** a woven nest-hut sitting on the local origin: a basket ball, a door hole toward +Z, a cone of leaf thatch */
+function nestHut(g, r, seed, o = {}) {
+  g.surf(K_WOOD, 0.9);
+  g.in(M(0, -0.04, 0), () => g.cyl(r * 1.05, r * 1.15, 0.06, nq(14), woodTint(VINE_W, seed), true, true));
+  const door = (a, y) => Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2))) < 0.4 && y > 0.04 && y < r * 1.0;
+  g.surf(K_CLOTH, 0.95);
+  g.sheet(nq(28), nq(10), (u, v) => { const a = u * TAU, t = v * Math.PI * 0.82, rr = Math.sin(t + 0.25) * r * (1 + 0.04 * Math.sin(a * 9)), y = (1 - Math.cos(t + 0.25)) * r * 0.82; const d = door(a, y) ? 0.75 : 1; return [Math.cos(a) * rr * d, y, Math.sin(a) * rr * d]; }, (x, y, z) => { const a = Math.atan2(z, x); if (door(a, y)) return [0.04, 0.03, 0.02]; const band = Math.abs(y - r * 0.6) < r * 0.08; return band ? (Math.floor(a * 8 / Math.PI) % 2 ? P.poison : P.yellow) : weaveCol(VINE_W, 20)(x, y, z); }, true, true);
+  g.surf(K_LEAF, 0.85);
+  g.sheet(nq(24), nq(6), (u, v) => { const a = u * TAU, rr = lerp(r * 1.25, 0.02, v) * (1 + 0.1 * Math.abs(Math.sin(a * 7 + v * 3))), y = r * 1.25 + v * r * 1.1 - 0.12 * (1 - v) * Math.abs(Math.sin(a * 7)); return [Math.cos(a) * rr, y, Math.sin(a) * rr]; }, (x, y, z) => mul(RF_LEAF[Math.floor(Math.abs(Math.atan2(z, x)) * 4.5 + y * 7) % 4], 0.8 + 0.35 * noise3(x * 9, y * 9, z * 9)), true, true);
+  if (o.lamp) g.in(M(r * 0.7, r * 1.15, r * 0.6), () => lamp(g, 0.6, [1.0, 0.85, 0.3], { shape: 'paper', frame: VINE_W, tassel: P.poison }));
+  g.in(M(0, r * 2.35, 0), () => { g.surf(K_WOOD, 0.8); g.cyl(0.015, 0.012, 0.35, 5, woodTint(VINE_W, seed), false, true); g.in(M(0, 0.33, 0), () => { g.surf(K_CLOTH, 0.9); pennon(g, 0.02, 0.3, seed % 2 ? P.poison : P.yellow, rgb(0x1a1a1a), { knob: false, pole: VINE_W }); }); });
+}
+/** a rope-and-plank walkway slung from a to b */
+function walkway(g, a, b, sag = 0.25, seed = 0) {
+  const n = Math.max(4, Math.round(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.12)), at = (t, dy = 0, side = 0) => { const d = [b[0] - a[0], 0, b[2] - a[2]], l = Math.hypot(d[0], d[2]) || 1, sx = -d[2] / l, sz = d[0] / l; return [lerp(a[0], b[0], t) + sx * side, lerp(a[1], b[1], t) - sag * Math.sin(t * Math.PI) + dy, lerp(a[2], b[2], t) + sz * side]; };
+  g.surf(K_WOOD, 0.9);
+  for (let i = 0; i < n; i++) { const t = (i + 0.5) / n, p = at(t), q = at(t + 0.01), ang = Math.atan2(b[0] - a[0], b[2] - a[2]) / DEG; g.in(M(p[0], p[1], p[2], 0, ang, 0).multiply(M(0, 0, 0, -Math.atan2(q[1] - p[1], 0.01 * Math.hypot(b[0] - a[0], b[2] - a[2])) / DEG, 0, (hash1(i, seed) - 0.5) * 8)), () => g.cbox(0.3, 0.025, 0.08, 0.006, woodTint(mul(VINE_W, 0.6 + 0.3 * hash1(i, seed + 1)), i))); }
+  for (const side of [-0.17, 0.17]) { const pts = []; for (let i = 0; i <= 12; i++) pts.push(at(i / 12, 0.36, side)); rope(g, pts, 0.012, rgb(0x8a7a50), 4); for (let i = 1; i < 12; i += 2) rope(g, [at(i / 12, 0.36, side), at(i / 12, 0.0, side)], 0.006, rgb(0x8a7a50), 3); }
+  for (const side of [-0.15, 0.15]) { const pts = []; for (let i = 0; i <= 12; i++) pts.push(at(i / 12, -0.02, side)); rope(g, pts, 0.01, rgb(0x7a6a40), 4); }
+}
+function nestTree(g, fog) {
+  g.moss = 1.3;
+  pad(g, 3, 3, 0.04, (x, y, z) => mix(mul(rgb(0x3a2e22), 0.7 + 0.4 * fbm3(x * 3, y * 3, z * 3, 2)), RF_LEAF[1], smooth(0.35, 0.65, noise3(x * 1.6, 2, z * 1.6)) * 0.7), 1601, { sq: 3 });
+  // the trunk and its great plank buttresses
+  const trunk = [[0, -0.1, 0], [0.05, 1.5, -0.05], [-0.05, 3.2, 0.05], [0.08, 4.8, -0.02], [0, 6.0, 0]];
+  g.surf(K_WOOD, 0.95);
+  limb(g, trunk, [0.62, 0.48, 0.42, 0.34, 0.18], { nu: nq(14), nv: nq(24), amp: 0.12, seed: 2, nf: 1.8, col: rfBark(2), capB: true });
+  for (let k = 0; k < 7; k++) { const a = (k / 7) * TAU + 0.3, L = 1.25 + 0.15 * hash1(k, 3); limb(g, [[Math.cos(a) * 0.2, 1.7, Math.sin(a) * 0.2], [Math.cos(a) * 0.55, 0.8, Math.sin(a) * 0.55], [Math.cos(a) * 0.95, 0.25, Math.sin(a) * 0.95], [Math.cos(a) * L, -0.08, Math.sin(a) * L]], [0.32, 0.26, 0.16, 0.08], { nu: nq(8), nv: nq(10), flat: [1, 0.28], up: [-Math.sin(a), 0, Math.cos(a)], amp: 0.08, seed: k, col: rfBark(k), capB: true }); }
+  // branches
+  const br = [[0.4, 2.4, 1.3, 3.0], [2.2, 3.3, 1.35, 4.0], [4.1, 4.1, 1.3, 4.8], [5.4, 3.0, 1.2, 3.6], [1.2, 4.8, 1.0, 5.9], [3.3, 5.2, 0.9, 6.3]], tips = [];
+  br.forEach(([a, y, L, ye], k) => { const p0 = [Math.cos(a) * 0.25, y, Math.sin(a) * 0.25], p1 = [Math.cos(a) * L * 0.55, (y + ye) / 2 + 0.1, Math.sin(a) * L * 0.55], p2 = [Math.cos(a + 0.2) * L, ye, Math.sin(a + 0.2) * L]; limb(g, [p0, p1, p2], [0.2, 0.13, 0.06], { nu: nq(8), nv: nq(10), amp: 0.08, seed: k + 10, col: rfBark(k + 10), capB: true }); tips.push(p2); });
+  // the canopy: heavy clumps of leaves over the branch ends and the crown
+  for (const [i, t] of tips.entries()) g.in(M(t[0], t[1] + 0.25, t[2]), () => leafClump(g, 0.95, 1610 + i, RF_LEAF, 5, { flat: 0.55 }));
+  g.in(M(0, 6.3, 0), () => leafClump(g, 1.3, 1620, RF_LEAF, 6, { flat: 0.6 }));
+  // the nest-huts: on platforms in the forks, joined by walkways to each other and to the trunk
+  const huts = [[0.75, 2.5, 0.75, 0.36], [-0.88, 3.4, -0.3, 0.34], [0.3, 4.4, -0.85, 0.3]];
+  huts.forEach(([x, y, z, r], k) => {
+    g.in(M(x, y, z), () => { g.surf(K_WOOD, 0.9); g.cyl(r + 0.2, r + 0.18, 0.06, nq(14), woodTint(rgb(0x6a5032), k), true, true); for (let q = 0; q < 4; q++) { const a = q * 1.57 + k; logTo(g, [Math.cos(a) * (r + 0.1), -0.02, Math.sin(a) * (r + 0.1)], [-x * 0.7, -0.5, -z * 0.7], 0.035, 0.03, k * 4 + q, { seg: 5 }); } });
+    g.in(M(x, y + 0.06, z, 0, Math.atan2(x, z) / DEG, 0), () => nestHut(g, r, 1630 + k, { lamp: k !== 1 }));
+  });
+  walkway(g, [huts[0][0] - 0.25, huts[0][1] + 0.06, huts[0][2] - 0.2], [-0.25, 2.9, 0.38], 0.12, 1);
+  walkway(g, [huts[1][0] + 0.32, huts[1][1] + 0.06, huts[1][2] + 0.1], [0.65, 2.6, 0.55], 0.35, 2);
+  walkway(g, [huts[2][0] - 0.2, huts[2][1] + 0.06, huts[2][2] + 0.25], [huts[1][0] + 0.25, huts[1][1] + 0.08, huts[1][2] - 0.25], 0.28, 3);
+  // a rope ladder from the ground to the lowest hut, vines hanging off every branch, painted frog shields on the trunk
+  g.in(M(huts[0][0] + 0.2, huts[0][1], huts[0][2] + 0.45), () => { for (const e of [-1, 1]) rope(g, [[e * 0.14, 0, 0], [e * 0.14, -huts[0][1] * 0.5, 0.05], [e * 0.14, -huts[0][1] + 0.05, 0.02]], 0.012, rgb(0x8a7a50), 4); g.surf(K_WOOD, 0.9); for (let i = 1; i < 11; i++) { const t = i / 11; g.in(M(0, -t * (huts[0][1] - 0.05), 0.05 * Math.sin(t * Math.PI)), () => g.cbox(0.32, 0.025, 0.04, 0.006, woodTint(VINE_W, i))); } });
+  for (const [i, t] of tips.entries()) g.in(M(t[0] * 0.8, t[1] - 0.05, t[2] * 0.8), () => vines(g, 0.5, 1.0 + 0.8 * hash1(i, 5), 1640 + i, { leaf: RF_LEAF, n: 3, leaves: 6, bloom: P.poison, bloomP: 0.15 }));
+  for (const [a, y] of [[30, 1.5], [150, 1.9], [260, 1.3]]) g.in(M(0, y, 0, 0, a, 0).multiply(M(0, 0, 0.5)), () => { g.surf(K_PLAIN, 0.6); g.in(M(0, 0, 0.02, 90, 0, 0), () => g.cyl(0.16, 0.16, 0.04, nq(12), P.yellow, true, true)); g.in(M(0, 0, 0.045), () => { g.surf(K_PLAIN, 0.5); g.add(new THREE.SphereGeometry(0.1, 8, 6).scale(1, 0.75, 0.3), P.poison); for (const e of [-1, 1]) g.in(M(e * 0.05, 0.05, 0.02), () => g.add(new THREE.SphereGeometry(0.03, 6, 4), [0.05, 0.05, 0.05])); }); });
+  // mist in the undergrowth
+  fog.in(M(0, 0, 0), () => fogBank(fog, 1.4, 0.35, 1.4, 5, 7, [0.66, 0.74, 0.66], 0.1));
+  for (const [x, z, r, sd] of [[1.2, -0.9, 0.32, 1], [-1.15, 1.05, 0.3, 2], [-0.2, 1.3, 0.26, 3]]) g.in(M(x, 0.06, z), () => leafClump(g, r, 1650 + sd, RF_LEAF, 4));
+}
+function spiritTotem(g) {
+  g.moss = 0.6;
+  pad(g, 1, 1, 0.03, (x, y, z) => mix(mul(rgb(0x3a2e22), 0.7 + 0.4 * fbm3(x * 3, y * 3, z * 3, 2)), RF_LEAF[1], 0.4), 1701, { sq: 3 });
+  const geo = geoOnce('spiritTotem', () => {
+    const W = 0x7a5a3a, G = 0x3a6a2a, R = 0xe83a3a, Y = 0xe8d83a, K = 0x141414, Wh = 0xe8e0d0, Pp = [];
+    // the pole
+    Pp.push(S.cyl(0.2, 2.9, 0.03).at(0, 1.45, 0).color(W).bump(0.004, 14).tint(0.1, 10));
+    // the frog at the foot: a squat green head, bulging yellow eyes, a wide red mouth
+    Pp.push(S.ellipsoid(0.3, 0.28, 0.27).at(0, 0.42, 0.03).color(G).blend(0.06));
+    Pp.push(...S.mirrorX([S.sphere(0.1).at(0.15, 0.66, 0.15).color(Y).blend(0.03), S.sphere(0.045).at(0.17, 0.69, 0.23).color(K).blend(0.005)]));
+    Pp.push(S.box(0.42, 0.04, 0.1, 0.02).at(0, 0.36, 0.27).color(R).blend(0.02));
+    Pp.push(...S.mirrorX([S.capsule([0.22, 0.18, 0.12], [0.3, 0.05, 0.24], 0.06, 0.05).color(G).blend(0.04), S.ellipsoid(0.08, 0.03, 0.07).at(0.32, 0.03, 0.28).color(Y).blend(0.02)]));
+    for (let i = 0; i < 4; i++) Pp.push(S.sphere(0.035).at(-0.18 + i * 0.12, 0.55 + (i % 2) * 0.05, 0.27).color(K).blend(0.01));
+    // the jaguar in the middle: a yellow head with black rosettes, ears, a muzzle and white fangs
+    Pp.push(S.ellipsoid(0.27, 0.3, 0.25).at(0, 1.22, 0.04).color(Y).blend(0.06));
+    Pp.push(...S.mirrorX([S.cone(0.08, 0.02, 0.14, 0.02).rot(0, 0, -20).at(0.18, 1.5, 0.02).color(Y).blend(0.03), S.ellipsoid(0.07, 0.05, 0.03).at(0.11, 1.28, 0.24).color(Wh).blend(0.02), S.sphere(0.03).at(0.11, 1.28, 0.27).color(K).blend(0.005)]));
+    Pp.push(S.ellipsoid(0.15, 0.1, 0.12).at(0, 1.12, 0.22).color(0xd8b870).blend(0.04));
+    Pp.push(S.ellipsoid(0.05, 0.035, 0.03).at(0, 1.17, 0.33).color(K).blend(0.01));
+    Pp.push(...S.mirrorX([S.cone(0.025, 0.004, 0.09, 0.004).rot(180, 0, 0).at(0.06, 1.02, 0.3).color(Wh).blend(0.006)]));
+    Pp.push(S.box(0.18, 0.02, 0.06, 0.01).at(0, 1.05, 0.28).color(R).blend(0.01));
+    for (let i = 0; i < 7; i++) { const a = i * 0.9 - 2.7, y = 1.05 + (i % 3) * 0.14; Pp.push(S.sphere(0.035).at(Math.sin(a) * 0.26, y + 0.12, Math.cos(a) * 0.23).color(K).blend(0.006)); }
+    // a band of red and black chevrons between the beasts
+    Pp.push(S.cyl(0.215, 0.1, 0.02).at(0, 0.82, 0).color(R).blend(0.02));
+    Pp.push(S.cyl(0.215, 0.1, 0.02).at(0, 1.66, 0).color(R).blend(0.02));
+    // the bird at the top: a hooked yellow beak, eyes ringed white, a crest of feathers
+    Pp.push(S.ellipsoid(0.24, 0.3, 0.24).at(0, 2.05, 0.02).color(G).blend(0.06));
+    Pp.push(S.capsule([0, 2.08, 0.18], [0, 1.92, 0.42], 0.1, 0.03).color(Y).blend(0.03));
+    Pp.push(S.capsule([0, 1.92, 0.42], [0, 1.8, 0.4], 0.03, 0.01).color(Y).blend(0.02));
+    Pp.push(...S.mirrorX([S.sphere(0.06).at(0.12, 2.16, 0.18).color(Wh).blend(0.01), S.sphere(0.03).at(0.13, 2.17, 0.23).color(K).blend(0.004)]));
+    Pp.push(S.ellipsoid(0.22, 0.12, 0.22).at(0, 2.35, 0).color(R).blend(0.04));
+    return buildPartGeometry({ prims: Pp }, { res: 72 * qual(), ao: 0.75 });
+  });
+  g.surf(K_WOOD, 0.75);
+  g.add(geo);
+  // the bird's wings: carved planks spread wide, painted in bands, feathers hanging from their tips
+  for (const e of [-1, 1]) g.in(M(e * 0.16, 1.98, -0.02, 0, 0, e * -12), () => {
+    g.surf(K_WOOD, 0.75);
+    const pts = [[0, -0.12], [0.18, -0.1], [0.36, -0.04], [0.48, 0.06], [0.52, 0.2], [0.4, 0.18], [0.22, 0.14], [0, 0.12]].map(([x, y]) => [e * x, y]);
+    prism(g, pts, 0.06, (x, y) => { const t = Math.abs(x) / 0.52; return t > 0.75 ? P.yellow : t > 0.45 ? P.poison : P.leaf; }, [e * 0.2, 0.02]);
+    for (let k = 0; k < 4; k++) g.in(M(e * (0.22 + k * 0.08), -0.08 + k * 0.03, 0.0), () => { g.surf(K_PLAIN, 0.8); rag(g, 0.035, 0.22 + 0.04 * k, [P.poison, P.yellow, P.leaf, rgb(0x2a6aa8)][k], k + (e > 0 ? 4 : 0), 0.15); });
+  });
+  // the crest: long feathers fanned up out of the bird's head
+  for (let k = 0; k < 7; k++) { const a = (k - 3) * 14; g.in(M(0, 2.4, -0.05, -10, 0, a), () => { g.surf(K_PLAIN, 0.8); g.sheet(2, 6, (u, v) => [(u - 0.5) * 0.07 * Math.sin(v * Math.PI + 0.2), v * (0.55 + 0.12 * (3 - Math.abs(k - 3)) / 3), 0.03 * Math.sin(v * 3)], (x, y, z, nx, ny, nz, u, v) => (v > 0.75 ? rgb(0x1a1a1a) : [P.poison, P.yellow, rgb(0x2aa860), rgb(0x2a6aa8)][k % 4])); }); }
+  // the foot: a ring of stones, offerings of fruit and little clay bowls
+  for (let k = 0; k < 9; k++) { const a = (k / 9) * TAU; g.in(M(Math.cos(a) * 0.36, 0.02, Math.sin(a) * 0.36), () => boulder(g, 0.07, 0.05, 0.06, 1710 + k, rgb(0x6a6a5a), 10)); }
+  for (const [x, z, c] of [[0.24, 0.22, P.poison], [-0.22, 0.24, P.yellow], [0.05, 0.32, rgb(0xe87a2a)]]) g.in(M(x, 0.05, z), () => { g.surf(K_PLAIN, 0.5); g.add(new THREE.SphereGeometry(0.045, 8, 6), c); });
+  g.in(M(-0.3, 0, -0.05), () => jar(g, 0.12, rgb(0x9a5a32), { stripe: P.yellow }));
+}
 function palace(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
 function souk(g) { g.cbox(1, 1, 1, 0.05, [0.5, 0.5, 0.5]); }
 
