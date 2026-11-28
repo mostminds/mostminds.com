@@ -8,6 +8,7 @@ import { ARCTIC, SCENERY, animateScenery } from './registry.js';
 import { SEA_LOOK, DOME, dressIslands } from './seaset.js';
 import { Crews } from './crews.js';
 import { dressRole, buildSquadron, animateSquadron } from './fleetDress.js';
+import { dressDesign, animateDesign } from './shipParts.js';
 
 // plain stand-ins for the ice and its birds, used until the sculpted ones are there
 const ICE = { top: 0xf4f8fc, edge: 0xbfe0f0, deep: 0x7fb8d8 };
@@ -171,7 +172,7 @@ export class NavalView {
       const n = this.crews.track(m, `ship:${e.def.id}`);
       const slots = m.userData.crewSlots, ys = slots.map((p) => p[1]).sort((a, c) => a - c);
       const deckY = n ? ys[Math.floor(n / 2)] : e.def.beam * 0.25;
-      const keep = dressRole(m, e.def, SIDE_COLORS[e.side], deckY);
+      const keep = e.def.dress ? dressDesign(m, e.def, SIDE_COLORS[e.side], deckY) : dressRole(m, e.def, SIDE_COLORS[e.side], deckY);
       if (keep.length) m.userData.crewSlots = slots.filter((p) => !keep.some(([x, z, r]) => Math.hypot(p[0] - x, p[2] - z) < r));
     }
     const bar = makeBar(0x4fd36a);
@@ -205,7 +206,7 @@ export class NavalView {
         const fa = b.ents[e.from]?.air, ta = b.ents[e.to]?.air;
         const from = new THREE.Vector3(e.x0, fa ? AIR_Y : 0.8, e.y0), to = new THREE.Vector3(e.x1, ta ? (e.hit ? AIR_Y : AIR_Y + 2) : e.hit ? 0.8 : 0, e.y1);
         // a broadside comes from the gun ports facing the target, a few guns at a time
-        const gun = e.kind === 'cannon' || e.kind === 'heavy' || e.kind === 'chain';
+        const gun = e.kind === 'cannon' || e.kind === 'heavy' || e.kind === 'chain' || e.kind === 'beam';
         const gm = gun && b.ents[e.from]?.ship ? this.models[e.from] : null;
         const n0 = gm ? (gm.userData.gunTurn = (gm.userData.gunTurn || 0) + 3) : 0;
         if (gm && shipMuzzle(gm, e.x1, e.y1, n0, from)) {
@@ -220,11 +221,17 @@ export class NavalView {
           // flak bursts in grey puffs round the fliers
           st.projectile(from, to, 'flak', (e.flight * TICK_MS) / 1000 / this.speed, 0.05);
           if (Math.random() < 0.5) st.puff(to.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, Math.random(), (Math.random() - 0.5) * 2)), 0x5a5a5a, 0.4, 0.8);
+        } else if (e.kind === 'beam' || (e.kind === 'mortar' && ['beam', 'lightning', 'sound'].includes(b.ents[e.from]?.def.arts?.shot))) {
+          // a beam of light, warp-fire, lightning or sound: straight and at once
+          const look = b.ents[e.from]?.def.arts?.shot, col = look === 'lightning' ? 0xd8e8ff : look === 'sound' ? 0xe0c0ff : (typeof b.ents[e.from]?.def.arts?.beam === 'number' ? b.ents[e.from].def.arts.beam : 0x9affc0);
+          from.y = 1.4; this.flash(from, to, col);
+          if (e.hit) st.puff(to.clone(), col, 0.5, 0.6);
         } else if (e.kind === 'mortar') {
-          // a mortar lobs its shell high over masts and islands
+          // a mortar lobs its shell high over masts and islands; some realms throw rockets, boulders, skulls or pots
+          const look = b.ents[e.from]?.def.arts?.shot;
           from.y = 1.4;
-          st.projectile(from, to, 'mortar', (e.flight * TICK_MS) / 1000 / this.speed, 3.2);
-          st.puff(from.clone().add(new THREE.Vector3(0, 0.6, 0)), 0xcfc4b4, 0.7, 1.2);
+          st.projectile(from, to, look === 'rocket' ? 'flak' : look === 'acid' || look === 'pot' ? 'poison' : look === 'skull' ? 'fire' : 'mortar', (e.flight * TICK_MS) / 1000 / this.speed, look === 'rocket' ? 1.6 : 3.2);
+          st.puff(from.clone().add(new THREE.Vector3(0, 0.6, 0)), look === 'rocket' ? 0xffb060 : 0xcfc4b4, 0.7, 1.2);
         } else if (e.kind === 'depth') {
           from.y = 0.3; to.y = -0.2;
           st.projectile(from, to, 'depth', (e.flight * TICK_MS) / 1000 / this.speed, 0.8);
@@ -317,6 +324,26 @@ export class NavalView {
         const x = b.ents[e.id], m = b.ents[e.by];
         for (let k = 0; k < 3; k++) st.ring(new THREE.Vector3(x.x, 0, x.y), 1.5 + k, 0xffffff, 0.9 + k * 0.3);
         msgs.push({ side: m ? m.side : 0, text: `${x.def.name} is dragged beneath the waves` });
+      } else if (e.type === 'art') {
+        const x = b.ents[e.id], by = e.by !== undefined ? b.ents[e.by] : null, at = new THREE.Vector3(e.x ?? x.x, 0.5, e.y ?? x.y);
+        const say = (side, text, gap = 25) => { const k = `art:${e.name}`; if (b.tick - (this[k] || -999) > gap) { this[k] = b.tick; msgs.push({ side, text }); } };
+        switch (e.name) {
+          case 'pierce': st.puff(at, 0xffffff, 0.5, 0.7); say(by.side, `${by.def.name}'s shot punches clean through into ${x.def.name}`); break;
+          case 'grapple': st.ring(at, 2.5, 0x9a7a4a, 0.9); say(by.side, `${by.def.name} locks onto ${x.def.name}: boarders over the rail`); break;
+          case 'snare': say(by.side, `${by.def.name} fouls ${x.def.name}'s rudder`); break;
+          case 'misfire': st.puff(at, 0xffa040, 0.8, 1); say(1 - x.side, `A gun bursts aboard ${x.def.name}`); break;
+          case 'plague': st.puff(new THREE.Vector3(x.x, 1.2, x.y), 0x8a9a40, 0.8, 1.4); say(by.side, `Sickness spreads through ${x.def.name}'s crew`); break;
+          case 'stun': st.ring(at, 2, 0xffffff, 0.5); say(by.side, `${x.def.name}'s gun crews are stunned`); break;
+          case 'paralyze': case 'freeze': st.ring(at, 2.4, e.name === 'freeze' ? 0xd8f0ff : 0xc0ff80, 1); say(by.side, `${x.def.name} is ${e.name === 'freeze' ? 'frozen in the water' : 'held fast, unable to move'}`); break;
+          case 'scare': say(by.side, `${x.def.name} turns tail and flees the fleet`); break;
+          case 'dominate': st.ring(at, 3, 0xb040ff, 1.2); say(by.side, `${x.def.name} is turned against its own side`, 5); break;
+          case 'reanimate': st.puff(new THREE.Vector3(x.x, 1, x.y), 0x7aff9a, 0.9, 1.4); say(x.side, `The drowned rise to crew ${x.def.name}'s fleet`); break;
+          case 'blast': for (let k = 0; k < 10; k++) st.puff(at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 6, Math.random() * 3, (Math.random() - 0.5) * 6)), [0xff7a1a, 0xffc040, 0x3a2e2a][k % 3], 1.1, 1.5); st.ring(at, 5, 0xffa040, 1); say(1 - x.side, `${x.def.name} explodes as she goes down`, 5); break;
+          case 'fireship': for (let k = 0; k < 12; k++) st.puff(at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4)), [0xff7a1a, 0xffc040, 0x3a2e2a][k % 3], 1.1, 1.6); say(x.side, `${x.def.name} rams home and bursts into flame`, 5); break;
+          case 'intercept': say(1 - x.side, `${x.def.name}'s run is broken up by interceptors`); break;
+          case 'beach': say(x.side, `${x.def.name} hits the beach and storms ashore`, 5); break;
+          default: break;
+        }
       } else if (e.type === 'tether') {
         const x = b.ents[e.id], h = b.ents[e.by];
         this.tether(e.by, e.id, x.tether?.until ?? b.tick + 15);
@@ -454,6 +481,7 @@ export class NavalView {
       if (!e.ship && died === undefined) animateCreature(m, t, m.userData.phase);
       else if (m.userData.beast && died === undefined) animateCreature(m.userData.beast, t, i * 1.3);
       m.userData.rig?.mixer?.update(dt * speed);
+      if (m.userData.designAnim) animateDesign(m, t);
       // creatures sound; a diving boat goes down until only her wake shows
       const sub = !e.fort && b.tick < e.subUntil;
       const depth = sub ? (e.ship ? (m.userData.top || 1.6) + 0.5 : 1.2) : 0;
@@ -493,6 +521,14 @@ export class NavalView {
       arr[3] = mc.position.x; arr[4] = mc.position.y + 0.5; arr[5] = mc.position.z;
       L.line.geometry.attributes.position.needsUpdate = true;
     }
+  }
+
+  /** a straight beam from a to c that fades in a moment */
+  flash(a, c, color) {
+    const geo = new THREE.BufferGeometry().setFromPoints([a.clone(), c.clone()]);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1 }));
+    this.stage.scene.add(line);
+    this.stage.fx.push({ obj: line, t: 0, life: 0.35, update: (f) => { line.material.opacity = Math.max(0, 1 - f.t / f.life); } });
   }
 
   tether(by, to, until) {

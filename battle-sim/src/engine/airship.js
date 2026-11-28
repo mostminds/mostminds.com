@@ -38,7 +38,7 @@ export function initAirships(b, scn) {
 
 export function airAlive(b, side) {
   let n = 0;
-  if (b.airships) for (const a of b.airships) if (a.alive && a.side === side && a.crew > 0) n++;
+  if (b.airships) for (const a of b.airships) if (a.alive && a.side === side && (a.crew > 0 || a.wild)) n++;
   return n;
 }
 
@@ -76,6 +76,7 @@ function capture(b, a, side, crew) {
 function crewLoss(b, a, n, bySide, prize = 3) {
   if (n <= 0 || !a.alive) return;
   a.crew = Math.max(0, a.crew - n);
+  if (a.crew === 0 && a.def.arts?.wild) { if (!a.wild) { a.wild = true; b.events.push({ type: 'airWild', air: a.id }); } return; } // a beast whose riders fall fights on by itself
   if (a.crew === 0) {
     if (bySide !== undefined && bySide !== a.side) capture(b, a, bySide, prize);
     else b.events.push({ type: 'airAdrift', air: a.id });
@@ -119,7 +120,9 @@ function shipTick(b, a) {
   for (const k of ['cd', 'bombCd', 'hangarCd', 'podCd', 'ladderCd']) if (a[k] > 0) a[k]--;
   if (a.ladder > 0) a.ladder--;
   const carry = () => { for (const id of a.cargo) { const u = b.units[id]; u.x = u.px = clamp(Math.round(a.x), 0, b.W - 1); u.y = u.py = clamp(Math.round(a.y), 0, b.H - 1); } };
-  if (a.crew <= 0) { // nobody at the helm: she drifts on the wind
+  skyArts(b, a);
+  if (!a.alive) return;
+  if (a.crew <= 0 && !a.wild) { // nobody at the helm: she drifts on the wind
     a.heading += 0.01; a.x = clamp(a.x + Math.cos(a.heading) * 0.05, 1, b.W - 2); a.y = clamp(a.y + Math.sin(a.heading) * 0.05, 1, b.H - 2);
     carry(); return;
   }
@@ -155,7 +158,7 @@ function shipTick(b, a) {
       // lie alongside
       const diff = Math.atan2(Math.sin(foe.heading - a.heading), Math.cos(foe.heading - a.heading));
       a.heading += clamp(diff, -0.15, 0.15);
-      if (foe.crew <= 0) capture(b, foe, a.side, Math.max(2, Math.floor(a.crew / 3)));
+      if (foe.crew <= 0 && !foe.wild) capture(b, foe, a.side, Math.max(2, Math.floor(a.crew / 3)));
       else if (b.tick % 2 === 0) {
         const kill = b.rng.next() < 0.5 + 0.03 * a.crew * a.def.marines ? 1 + (b.rng.chance(0.25 * a.def.marines) ? 1 : 0) : 0;
         if (kill) {
@@ -172,7 +175,7 @@ function shipTick(b, a) {
       const delay = 1 + Math.floor(fd / 8);
       b.events.push({ type: 'airFire', air: a.id, x1: foe.x, y1: foe.y, h1: foe.def.altitude, delay, guns: C.perSide });
       let dmg = 0, hits = 0;
-      for (let i = 0; i < C.perSide; i++) if (b.rng.next() < C.acc * (1 - 0.35 * (fd / C.range)) * 1.2) { dmg += Math.round(b.rng.int(C.dmg[0], C.dmg[1]) * (100 / (100 + foe.def.armour))); hits++; }
+      for (let i = 0; i < C.perSide; i++) if (b.rng.next() < C.acc * (1 - 0.35 * (fd / C.range)) * 1.2 * (1 - (foe.def.arts?.fog || 0))) { dmg += Math.round(b.rng.int(C.dmg[0], C.dmg[1]) * (100 / (100 + foe.def.armour))); hits++; }
       b.pending.push({ tick: b.tick + delay, air: foe.id, dmg, hit: hits > 0, by: a.side });
     }
     carry(); return;
@@ -285,6 +288,7 @@ function shipTick(b, a) {
         queueHit(b, NOBODY, v, Math.round(b.rng.int(Math.floor(B.maxHit / 4), B.maxHit) * (1 - 0.5 * (dd / (B.radius + 0.5)))), delay, 'ranged', true, { x: bx, y: by, blast: true });
       });
       b.airQueue.push({ tick: b.tick + delay, bomb: true, x: bx, y: by, r: B.radius, dmg: B.maxHit * 3, side: a.side, unit: null, n: 0 });
+      skyBombExtras(b, a, bx, by, delay);
     } else if (a.run && d < 0.8) a.run = false;
   }
 
@@ -358,7 +362,7 @@ function fireAtGround(b, a, C) {
   const tx = kind === 'unit' ? ucx(best) : kind === 'gun' ? best.cx : best.x, ty = kind === 'unit' ? ucy(best) : kind === 'gun' ? best.cy : best.y;
   const d = Math.hypot(tx - a.x, ty - a.y), delay = 1 + Math.floor(d / 7);
   a.cd = C.reload; a.lastFire = b.tick;
-  b.events.push({ type: 'airFire', air: a.id, x1: tx, y1: ty, h1: kind === 'unit' && unitHeight(b, best) === 4 ? 2.6 : 0.3, delay, guns: C.perSide });
+  b.events.push({ type: 'airFire', air: a.id, x1: tx, y1: ty, h1: kind === 'unit' && unitHeight(b, best) === 4 ? 2.6 : 0.3, delay, guns: C.perSide, breath: a.def.arts?.breath });
   const acc = (k) => C.acc * (1 - 0.35 * (d / C.range)) * k;
   let stray = 0;
   for (let i = 0; i < C.perSide; i++) {
@@ -367,7 +371,8 @@ function fireAtGround(b, a, C) {
       const hit = b.rng.next() < acc(0.45) && b.rng.next() < hitChance((60 + 9) * (60 + 64), defenceRoll(best.def, 'ranged')) + 0.25;
       queueHit(b, NOBODY, best, hit ? roll : 0, delay, 'ranged', hit, { x: a.x, y: a.y });
       if (!hit) stray += Math.round(roll * 0.6);
-      near(b, best.x, best.y, 3, (v) => { if (v !== best && v.alive && v.side !== a.side && v.aboard < 0 && Math.max(Math.abs(v.x - best.x), Math.abs(v.y - best.y)) <= 1 && b.rng.chance(0.15)) queueHit(b, NOBODY, v, Math.floor(roll * 0.5), delay, 'ranged', true); });
+      const spread = a.def.arts?.breath ? 0.5 : 0.15; // breath washes over the ranks round the mark
+      near(b, best.x, best.y, 3, (v) => { if (v !== best && v.alive && v.side !== a.side && v.aboard < 0 && Math.max(Math.abs(v.x - best.x), Math.abs(v.y - best.y)) <= 1 && b.rng.chance(spread)) queueHit(b, NOBODY, v, Math.floor(roll * 0.5), delay, 'ranged', true); });
     } else if (kind === 'gun') { const hit = b.rng.next() < acc(1.1); b.pending.push({ tick: b.tick + delay, gun: best.id, dmg: hit ? roll : 0, hit }); }
     else if (kind === 'ship') { const hit = b.rng.next() < acc(1.1); b.pending.push({ tick: b.tick + delay, ship: best.id, dmg: hit ? Math.round(roll * (100 / (100 + best.def.armour))) : 0, hit }); }
     else if (kind === 'craft') { const hit = b.rng.next() < acc(0.9); const dmg = hit ? roll : 0; best.pending += dmg; b.pending.push({ tick: b.tick + delay, from: -1, craft: best.id, dmg, hit, style: 'ranged' }); }
@@ -384,7 +389,14 @@ export function resolveAirHit(b, p) {
   b.events.push({ type: 'airHit', air: a.id, dmg: p.dmg, hit: p.hit });
   // shot and splinters find the crew too
   if (p.dmg > 0 && a.crew > 0 && b.rng.next() < p.dmg / (a.maxHp / a.def.crew) * 0.6) crewLoss(b, a, 1, p.by);
+  const vol = a.def.arts?.volatile;
+  if (vol && a.hp > 0 && p.dmg > a.maxHp * 0.12 && b.rng.chance(0.15)) a.hp = 0; // the gasbag goes up
   if (a.hp > 0) return;
+  if (vol) {
+    b.events.push({ type: 'airArt', air: a.id, name: 'volatile', x: a.x, y: a.y });
+    near(b, a.x, a.y, 5, (v) => { if (v.alive && v.aboard < 0 && Math.hypot(ucx(v) - a.x, ucy(v) - a.y) <= 4) queueHit(b, NOBODY, v, b.rng.int(Math.floor(vol / 3), vol), 2, 'ranged', true, { x: a.x, y: a.y, blast: true }); });
+    for (const o of b.airships) if (o !== a && o.alive && Math.hypot(o.x - a.x, o.y - a.y) < 6) b.pending.push({ tick: b.tick + 1, air: o.id, dmg: Math.round(vol * 0.6), hit: true, by: -1 });
+  }
   a.hp = 0; a.alive = false; a.crew = 0;
   b.events.push({ type: 'airDown', air: a.id, x: a.x, y: a.y, side: a.side });
   for (const id of a.cargo) { const u = b.units[id]; if (u.alive) { u.alive = false; u.hp = 0; u.aboard = -1; u.x = clamp(Math.round(a.x), 0, b.W - 1); u.y = clamp(Math.round(a.y), 0, b.H - 1); b.events.push({ type: 'death', id, by: -1 }); } }
@@ -403,8 +415,12 @@ export function unitVsAirship(b, u, range) {
     if (d <= range + 1 && d < bd) { bd = d; best = a; }
   }
   if (!best) return false;
-  const hit = b.rng.next() < hitChance(u.def.aRoll, (30 + 9) * (best.def.armour * 2 + 64));
-  const dmg = hit ? Math.round(b.rng.int(0, u.def.max) * (100 / (100 + best.def.armour))) : 0;
+  const ar = best.def.arts || {};
+  // fog round it, flares in the fliers' eyes
+  let blind = ar.fog || 0;
+  if (u.def.fly) for (const o of b.airships) if (o.alive && o.side === best.side && o.def.arts?.flares && Math.hypot(o.x - ucx(u), o.y - ucy(u)) < 10) { blind = Math.max(blind, o.def.arts.flares); break; }
+  const hit = b.rng.next() < hitChance(u.def.aRoll, (30 + 9) * (best.def.armour * 2 + 64)) * (1 - blind);
+  const dmg = hit ? Math.round(b.rng.int(0, u.def.max) * (100 / (100 + best.def.armour)) * (1 - (ar.bulwark || 0))) : 0;
   const delay = 1 + Math.floor(Math.max(0, bd) / 6);
   b.pending.push({ tick: b.tick + delay, air: best.id, dmg, hit, from: u.id, by: u.side });
   b.events.push({ type: 'attack', from: u.id, air: best.id, style: u.def.style, delay, proj: u.def.projectile || u.def.style });
@@ -428,7 +444,9 @@ export function flierVsAirship(b, u) {
   u.cd = u.def.speed; u.lastAttack = b.tick;
   u.face = Math.atan2(best.y - ucy(u), best.x - ucx(u));
   b.events.push({ type: 'attack', from: u.id, air: best.id, style: 'melee', delay: 0 });
-  if (best.crew <= 0) { capture(b, best, u.side, 3); return true; }
+  if (best.crew <= 0 && !best.wild) { capture(b, best, u.side, 3); return true; }
+  // a petrifying gaze: the flier that strikes may fall as stone
+  if (best.def.arts?.petrify && b.rng.chance(best.def.arts.petrify)) { damage(b, u, u.hp + 1, null, 'melee'); b.events.push({ type: 'airArt', air: best.id, name: 'petrify', x: u.x, y: u.y }); return true; }
   // a boarder against the deck crew: sometimes a crewman falls, sometimes the boarder is thrown back
   if (b.rng.next() < 0.3 + u.def.max / 80) crewLoss(b, best, 1, u.side, 3);
   if (best.side !== u.side && b.rng.next() < 0.5) damage(b, u, b.rng.int(0, Math.round(8 * best.def.marines)), null, 'melee');
@@ -445,4 +463,33 @@ export function airTargetFor(b, side, x, y, range) {
     if (d <= range && d < bd) { bd = d; best = a; }
   }
   return best;
+}
+
+// ---------- sky arts (src/data/fleets/skyschema.js) ----------
+function skyArts(b, a) {
+  const ar = a.def.arts;
+  if (!ar) return;
+  if (ar.regen && b.tick % 4 === 0 && a.hp < a.maxHp) a.hp = Math.min(a.maxHp, a.hp + ar.regen);
+  // a shriek that unnerves crews and fliers near it
+  if (ar.shriek && b.tick % 8 === (a.id % 8)) {
+    let any = false;
+    for (const o of b.airships) if (o.alive && o.side !== a.side && Math.hypot(o.x - a.x, o.y - a.y) < 8 && b.rng.chance(ar.shriek)) { crewLoss(b, o, 1, a.side, 2); any = true; }
+    near(b, a.x, a.y, 9, (v) => { if (v.alive && v.side !== a.side && v.def.fly && Math.hypot(ucx(v) - a.x, ucy(v) - a.y) < 8 && b.rng.chance(ar.shriek)) { queueHit(b, NOBODY, v, b.rng.int(2, 8), 0, 'ranged', true); any = true; } });
+    if (any) b.events.push({ type: 'airArt', air: a.id, name: 'shriek', x: a.x, y: a.y });
+  }
+}
+function skyBombExtras(b, a, bx, by, delay) {
+  const ar = a.def.arts;
+  if (!ar) return;
+  // a rack of rockets or pots: scattered strikes round the mark
+  if (ar.rockets) for (let i = 1; i < ar.rockets; i++) {
+    const rx = clamp(bx + (b.rng.next() - 0.5) * 6, 1, b.W - 2), ry = clamp(by + (b.rng.next() - 0.5) * 6, 1, b.H - 2);
+    b.events.push({ type: 'bomb', air: a.id, x: rx, y: ry, delay: delay + i, radius: 1.2, rocket: true });
+    near(b, rx, ry, 3, (v) => { if (v.alive && v.side !== a.side && v.aboard < 0 && unitHeight(b, v) < 4 && Math.hypot(ucx(v) - rx, ucy(v) - ry) <= 1.4) queueHit(b, NOBODY, v, b.rng.int(6, Math.round(a.def.bombs.maxHit * 0.6)), delay + i, 'ranged', true, { x: rx, y: ry, blast: true }); });
+  }
+  // talons: soldiers plucked up and dropped from on high
+  if (ar.snatch) {
+    let n = ar.snatch;
+    near(b, bx, by, 3, (v) => { if (n > 0 && v.alive && v.side !== a.side && v.aboard < 0 && !v.def.fly && v.def.size === 1 && Math.hypot(ucx(v) - bx, ucy(v) - by) <= 2) { n--; queueHit(b, NOBODY, v, v.hp + 20, delay + 3, 'melee', true); b.events.push({ type: 'airArt', air: a.id, name: 'snatch', x: v.x, y: v.y, unit: v.id }); } });
+  }
 }

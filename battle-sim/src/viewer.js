@@ -78,6 +78,7 @@ for (const spec of ids) {
       m = buildStructure(def, w, h); width = Math.max(w, h) + 1;
     } else if (kind === 'ship') {
       const def = SHIPS[id]; m = buildShip(def, 0x3d7bd9); width = def.len + 1;
+      if (def.dress) { const sp = await import('./render/shipParts.js'); sp.dressDesign(m, def, 0x3d7bd9); if (m.userData.designAnim) anim = () => sp.animateDesign(m, T); }
       // triangles per detail tier (each is built on first use, so count them after the build time is taken)
       const tiers = m.userData.lod?.meshes?.[0]?.geos;
       if (tiers) late = () => { stats.models[spec].triangles = [0, 1, 2, 3, 4, 5].map((n) => { const g = tiers[Math.min(n, tiers.length - 1)]; return g ? Math.round((g.index ? g.index.count : g.attributes.position.count) / 3) : 0; }); };
@@ -85,6 +86,12 @@ for (const spec of ids) {
     else if (kind === 'creature') { const def = CREATURES[id]; m = buildCreature(def); width = (def.size || 1) * 2.4 + 1; anim = () => animateCreature(m, T, 0); stats.models[spec] = { triangles: triangleStats(m) }; }
     else if (kind === 'fort') { const def = FORTS[id]; const mod = await import('./render/models.js'); m = mod.buildFortModel(def); width = def.size * 2.6 + 1; }
     else if (kind === 'craft') { m = buildCraft(0x3d7bd9); width = 3; }
+    else if (kind === 'air') {
+      // an airship or sky-beast from AIRSHIPS, e.g. ?kind=air&id=gromZeppelin
+      const { AIRSHIPS } = await import('./data/airships.js'); const mod = await import('./render/models.js'); const sp = await import('./render/skyParts.js');
+      const def = AIRSHIPS[id]; m = sp.buildSkyModel(def, 0x3d7bd9) || mod.buildAirship(def, 0x3d7bd9); width = def.len * 1.2 + 2;
+      if (m.userData.skyAnim) anim = () => sp.animateSky(m, T);
+    }
     else if (kind === 'weapon') {
       // id "sword", or "shield" / "shield:round" / "shield:tower"; shown standing on its grip, +Y up
       const [name, variant] = id.split(':');

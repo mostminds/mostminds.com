@@ -352,6 +352,7 @@ function unitOptions(sel, withLevels = true, withShips = false) {
       const o = document.createElement('option');
       o.value = u.id;
       o.textContent = withLevels ? `${u.name} (lvl ${levelOf(u)})` : u.name;
+      if (u.note) o.title = u.note;
       og.append(o);
     }
     sel.append(og);
@@ -425,6 +426,7 @@ function renderSides() {
       if (ship) li.className = air ? 'ship air' : 'ship';
       const nm = document.createElement('span'); nm.className = 'nm';
       nm.innerHTML = `${def?.name || g.unit} <span class="lv">lvl ${def ? levelOf(def) : '?'}</span>`;
+      if (def?.note) nm.title = def.note; // a designed ship or sky-beast says what it does
       nm.onclick = () => { const old = el.querySelector('.unitcard'); old?.replaceWith(unitCard(def)); };
       const qty = document.createElement('input');
       qty.type = 'number'; qty.min = 0; qty.max = air ? 6 : isNaval() || ship ? (ship ? 30 : 60) : 500; qty.value = g.count;

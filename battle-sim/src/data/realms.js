@@ -42,6 +42,7 @@ const TOWN = {
 const PLACES = { village: 'village', fort: 'fort', castle: 'castle', city: 'city', coast: 'coastal town', harbor: 'harbour', island: 'island hold' };
 
 import { FLEET_DESIGNS } from './fleets/index.js';
+import { SKY } from './fleets/sky.js';
 
 export const REALM_GROUPS = ['The Realms of Order', 'The Forces of Destruction', 'The Undead Legions', 'Outcasts and Distant Lands', 'The Realms of Chaos', 'The Hidden and Fringe Races'];
 
@@ -957,7 +958,7 @@ export function realmFactions() {
     for (const [id, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w) (mods.as ? assault : army)[uid(f, id)] = mods.w;
     const { civic, ...build } = t;
     out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, cost: COST[f.id] || 1, ...build, civic: [...civic, ...landmarksOf(f.id)], look: f.look, army, assault,
-      ships: [...(FLEET_DESIGNS[f.id]?.line ? [`${f.id}_line`] : []), ...f.ships.map((s) => uid(f, s[0]))], roleShips: Object.fromEntries(['siege', 'carrier', 'flak', 'troop', 'hunter', 'landing'].map((k) => [k, `${f.id}_${k}`])), undersea: underseaOf(f), seaMonster: f.sea || null, airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
+      ships: [...(FLEET_DESIGNS[f.id]?.line ? [`${f.id}_line`] : []), ...f.ships.map((s) => uid(f, s[0]))], roleShips: Object.fromEntries(['siege', 'carrier', 'flak', 'troop', 'hunter', 'landing'].map((k) => [k, `${f.id}_${k}`])), undersea: underseaOf(f), seaMonster: f.sea || null, airship: f.air || SKY[f.id] ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
   }
   return out;
 }
@@ -1022,11 +1023,35 @@ export function realmShips(BASE, SUB = null) {
 export function realmAirships(make) {
   const out = {};
   for (const f of REALMS) {
-    if (!f.air) continue;
-    const a = f.air, k = a.bombs || 1;
-    out[`${f.id}Zeppelin`] = make({ name: a.name, faction: f.id, style: a.style, color: a.color, envelope: a.envelope, hull: 820, crew: 14, marines: 1,
+    const D = SKY[f.id];
+    if (!f.air && !D) continue;
+    const a = f.air || {}, k = a.bombs || 1, beast = D && D.kind === 'beast';
+    // who rides down: the airship's own boarders, or the realm's most numerous troops
+    let pods = a.pods ? uid(f, a.pods) : null;
+    if (!pods) { let bw = -1; for (const [id, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w && !mods.as && mods.w > bw) { bw = mods.w; pods = uid(f, id); } }
+    const hang = D && D.hangar ? D.hangar : a.hangar;
+    const hangUnit = !hang ? (beast ? 'harpy' : 'gyrocopter') : hang[0] === '!' ? hang.slice(1) : uid(f, hang);
+    const look = (D && D.look) || {};
+    const def = make({ name: D ? D.name : a.name, faction: f.id, style: a.style || (f.group >= 4 ? 'infernal' : 'kingdom'),
+      color: look.hull ?? look.body ?? a.color ?? f.P.armor, envelope: look.envelope ?? look.wing ?? a.envelope ?? f.P.cloth, hull: 820, crew: 14, marines: 1,
       cannons: { perSide: 4, dmg: [8, 24], range: 10, reload: 7, acc: 0.55 }, bombs: { maxHit: Math.round(34 * k), radius: 2, reload: 9 },
-      hangar: { unit: !a.hangar ? 'gyrocopter' : a.hangar[0] === '!' ? a.hangar.slice(1) : uid(f, a.hangar), count: 6, every: 26 }, pods: { unit: uid(f, a.pods), pods: 4, perPod: 3 }, ladders: { capacity: 8, every: 60 } });
+      hangar: { unit: hangUnit, count: beast && !hang ? 0 : 6, every: 26 }, pods: { unit: pods, pods: 4, perPod: 3 }, ladders: { capacity: 8, every: 60 } });
+    if (D) {
+      def.name = `${f.adj} ${D.name}`;
+      def.note = D.note; def.sky = D; def.arts = { ...(D.arts || {}) };
+      if (beast) {
+        // a great flying beast: lower and quicker than a gasbag, its riders on its back, its breath for a gun deck
+        Object.assign(def, { beast: D.creature, len: 8, altitude: 4.6, speed: 0.62, turn: 20, armour: 22, hull: 760, crew: Math.max(4, (D.riders || 4) * 2), marines: 1.3,
+          cannons: { perSide: 2, dmg: [10, 26], range: 7, reload: 6, acc: 0.6 }, ladders: { capacity: 4, every: 80 } });
+        def.pods = { ...def.pods, pods: 3, perPod: 2 };
+      }
+      const m = D.mul || {};
+      for (const key of ['hull', 'speed', 'crew', 'armour']) if (m[key]) def[key] = key === 'speed' ? +(def[key] * m[key]).toFixed(3) : Math.round(def[key] * m[key]);
+      if (def.arts.swarm) def.hangar = { ...def.hangar, count: def.hangar.count * 2 || 8, every: Math.round(def.hangar.every * 0.6) };
+      if (def.arts.dive) def.bombs = { ...def.bombs, maxHit: Math.round(def.bombs.maxHit * 1.5) };
+      if (def.arts.steady) def.cannons = { ...def.cannons, acc: +(def.cannons.acc * 1.2).toFixed(2) };
+    }
+    out[`${f.id}Zeppelin`] = def;
   }
   return out;
 }
