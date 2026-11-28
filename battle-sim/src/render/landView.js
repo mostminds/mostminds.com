@@ -18,6 +18,7 @@ import { SCENERY, animateScenery } from './registry.js';
 import { REALMS } from '../data/realms.js';
 import { getDetail } from './rigkit.js';
 import { TICK_MS } from '../engine/combat.js';
+import { FleetFx, P, G, toWorld } from './fleetFx.js';
 
 export const SIDE_COLORS = [0x3d7bd9, 0xd9463d];
 // camera distance (in unit sizes) beyond which a model drops to the next detail level
@@ -41,7 +42,7 @@ export class LandView {
     loadFracture();
   }
 
-  dispose() { this.stage.scene.remove(this.root); this.crews?.dispose(); }
+  dispose() { this.stage.scene.remove(this.root); this.crews?.dispose(); this.fx?.dispose(); this.fx = null; }
 
   buildTerrain(b) {
     const key = `${b.mode}:${b.W}:${b.shape}:${b.biome}:${hashTerrain(b.terrain)}:${b.height ? hashRelief(b.height, b.cliff) : 0}`;
@@ -217,6 +218,12 @@ export class LandView {
     this.models = b.units.map((u) => this.addUnitModel(u));
     this.crews?.dispose();
     this.crews = new Crews(this.stage.scene);
+    // the effects of airship fights: smoke, shot, boarders, breath, struck colours
+    this.fx ||= new FleetFx(this.stage, {
+      sea: false, floor: (x, z) => Math.max(0, this.groundY(Math.floor(x), Math.floor(z))),
+      water: (x, z) => { const bb = this.b, X = Math.floor(x), Y = Math.floor(z); if (X < 0 || Y < 0 || X >= bb.W || Y >= bb.H) return false; const tt = bb.terrain[Y * bb.W + X]; return tt === DEEP || tt === SHALLOW; },
+    });
+    this.fx.reset(); this.fx.colors = SIDE_COLORS;
     this.shipModels = b.ships.map((sh) => {
       const m = buildShip(sh.def, SIDE_COLORS[sh.side]);
       if (!sh.def.beast) this.crews.track(m, `ship:${sh.def.id}`);
@@ -889,46 +896,91 @@ export class LandView {
       } else if (e.type === 'craftCrew') {
         if (e.crew === 0) msgs.push({ side: b.crafts[e.craft].side, text: 'A landing craft loses its last crewman' });
       } else if (e.type === 'airFire' && e.breath) {
-        // a great beast breathes on what lies below
-        const a = b.airships[e.air], am = this.airModels[e.air].m;
-        const col = { fire: [0xff7a1a, 0xffc040, 0x3a2e2a], acid: [0x9ad040, 0x6a9a20, 0xd8f080], frost: [0xd8f0ff, 0xffffff, 0x9ad0f0], warp: [0x7a3aff, 0x40e0a0, 0xff40c0], plague: [0x8a9a40, 0x5a6a2a, 0xb0b060], light: [0xfff0a0, 0xffffff, 0xffd060], sound: [0xe0c0ff, 0xffffff, 0xc0a0e0] }[e.breath] || [0xff7a1a, 0xffc040, 0x3a2e2a];
-        const from = am.position.clone(); from.x += Math.cos(-am.rotation.y) * a.radius * 0.9; from.z += Math.sin(-am.rotation.y) * a.radius * 0.9;
-        for (let k = 1; k <= 8; k++) { const p = from.clone().lerp(new THREE.Vector3(e.x1, e.h1 ?? 0.3, e.y1), k / 8); p.x += (Math.random() - 0.5) * k * 0.25; p.z += (Math.random() - 0.5) * k * 0.25; this.later(Math.floor(k / 3), () => st.puff(p, col[k % 3], 0.4 + k * 0.07, 0.9)); }
+        // a great beast breathes on what lies below: from its mouth, a stream that rolls out over the mark
+        const a = b.airships[e.air], am = this.airModels[e.air].m, fx = this.fx;
+        const col = { fire: [0xffe0a0, 0xc02a08], acid: [0xc8f060, 0x5a8a20], frost: [0xffffff, 0x8ac8f0], warp: [0xc080ff, 0x30d0a0], plague: [0xb0b060, 0x4a5a2a], light: [0xfff8c0, 0xffc040], sound: [0xf0e0ff, 0xb090e0] }[e.breath] || [0xffe0a0, 0xc02a08];
+        fx.act(am, 'breath', 1.1);
+        const D = fx.dims(am, a), mo = D.mouth;
+        const from = mo ? toWorld(am, mo[0], mo[1], mo[2], new THREE.Vector3()) : toWorld(am, D.hx * 1.05, D.deckY + 0.3, 0, new THREE.Vector3());
+        const to = new THREE.Vector3(e.x1 + 0.5, e.h1 ?? 0.3, e.y1 + 0.5), d = to.clone().sub(from), len = d.length(); d.normalize();
+        const kind = e.breath === 'fire' ? 'fire' : e.breath === 'frost' ? 'frost' : e.breath === 'acid' || e.breath === 'plague' ? 'gas' : e.breath === 'sound' ? 'sound' : 'light';
+        fx.emitter(0.9, (k, dt) => {
+          // the mouth moves with the beast: follow it
+          if (mo) toWorld(am, mo[0], mo[1], mo[2], from); else toWorld(am, D.hx * 1.05, D.deckY + 0.3, 0, from);
+          d.subVectors(to, from).normalize();
+          const n = Math.ceil(dt * 80);
+          if (kind === 'fire') { fx.emit(P.FIRE, from.x, from.y, from.z, n, d.x, d.y, d.z, len * 1.5, 1.6, col[0], col[1]); if (Math.random() < 0.4) fx.emit(P.BLACK, from.x, from.y, from.z, 1, d.x, d.y, d.z, len * 0.8, 0.8); }
+          else if (kind === 'frost') { fx.emit(P.MIST, from.x, from.y, from.z, n, d.x, d.y, d.z, len * 1.3, 1, col[0], col[1]); if (Math.random() < 0.5) fx.emit(P.GLYPH, from.x, from.y, from.z, 1, d.x, d.y, d.z, len, 0.7, 0xffffff, 0xd8f0ff, G.snow); }
+          else if (kind === 'gas') fx.emit(P.POISON, from.x, from.y, from.z, Math.ceil(n * 0.6), d.x, d.y, d.z, len * 1.1, 1.2, col[0], col[1]);
+          else if (kind === 'sound') { if (Math.random() < dt * 12) fx.ring(from.clone().addScaledVector(d, len * k), d.clone(), 0.2, 1.2, col[0], 0.5); }
+          else fx.emit(P.MOTE, from.x, from.y, from.z, n, d.x, d.y, d.z, len * 1.4, 1.4, col[0], col[1]);
+        });
+        this.later(e.delay ?? 1, () => { fx.emit(kind === 'gas' ? P.POISON : kind === 'frost' ? P.MIST : P.FIREBALL, to.x, to.y + 0.2, to.z, 10, 0, 0.5, 0, 1.5, 1.4, col[0], col[1]); fx.ring(to.clone().setY(this.fx.floor(to.x, to.z) + 0.06), null, 0.3, 2.4, col[0], 0.8); });
       } else if (e.type === 'airArt') {
-        const a = b.airships[e.air];
-        const p = new THREE.Vector3(e.x, (this.airModels[e.air]?.m.position.y) || 4, e.y);
-        if (e.name === 'volatile') { for (let k = 0; k < 14; k++) st.puff(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 5)), [0x7aff4a, 0xffc040, 0x3a2e2a][k % 3], 1.2, 1.6); msgs.push({ side: 1 - a.side, text: `${a.def.name} goes up in a ball of fire` }); }
-        else if (e.name === 'shriek') { st.ring(p, 6, 0xe0d0ff, 0.9); if (b.tick - (this.shriekSaid || -99) > 30) { this.shriekSaid = b.tick; msgs.push({ side: a.side, text: `${a.def.name} shrieks: crews and fliers reel` }); } }
-        else if (e.name === 'snatch') { if (b.tick - (this.snatchSaid || -99) > 30) { this.snatchSaid = b.tick; msgs.push({ side: a.side, text: `${a.def.name} plucks soldiers from the ranks and drops them from on high` }); } }
-        else if (e.name === 'petrify') { st.puff(new THREE.Vector3(e.x, 3, e.y), 0x9a9a92, 0.6, 1.2); msgs.push({ side: a.side, text: `${a.def.name}'s gaze turns a flier to stone` }); }
+        const a = b.airships[e.air], am = this.airModels[e.air]?.m, fx = this.fx;
+        const p = new THREE.Vector3(e.x, (am?.position.y) || 4, e.y);
+        if (e.name === 'volatile') {
+          fx.explode(p, 2.8, { c0: 0xe8ffa0, c1: 0xff4a10, debris: 22, ring: 0x9aff6a });
+          fx.emit(P.BLACK, p.x, p.y, p.z, 14, 0, 1, 0, 2, 2.4);
+          msgs.push({ side: 1 - a.side, text: `${a.def.name} goes up in a ball of fire` });
+        } else if (e.name === 'shriek') {
+          // waves of sound roll out from its throat
+          if (am) fx.act(am, 'shriek', 1);
+          const D = am ? fx.dims(am, a) : null, src = D && D.mouth ? toWorld(am, D.mouth[0], D.mouth[1], D.mouth[2], new THREE.Vector3()) : p.clone();
+          for (let k = 0; k < 5; k++) fx.after(k * 0.12, () => { fx.ring(src, null, 0.3, 4 + k * 1.2, k % 2 ? 0xffffff : 0xe0d0ff, 0.8); fx.ring(src, new THREE.Vector3(0, 0.3, 1).normalize(), 0.3, 2 + k, 0xe0d0ff, 0.6); });
+          fx.emit(P.GLYPH, src.x, src.y, src.z, 4, 0, 0.3, 0, 2, 1.1, 0xf0e0ff, 0xb090e0, G.notes);
+          if (b.tick - (this.shriekSaid || -99) > 30) { this.shriekSaid = b.tick; msgs.push({ side: a.side, text: `${a.def.name} shrieks: crews and fliers reel` }); }
+        } else if (e.name === 'snatch') {
+          // it stoops, takes a soldier in its talons, climbs and lets go
+          if (am) {
+            const am2 = this.airModels[e.air];
+            fx.act(am, 'dive', 1.4); fx.act(am, 'snatch', 1.4); am2.dive = { t0: fx.time, dur: 1.4 };
+            const D = fx.dims(am, a), tl = D.talons || [0, D.box.min.y + 0.1, 0];
+            const g = new THREE.Object3D(); g.position.set(e.x + 0.5, fx.floor(e.x + 0.5, e.y + 0.5), e.y + 0.5);
+            fx.boarder(g, new THREE.Vector3(), am, new THREE.Vector3(tl[0], tl[1] - 0.6, tl[2]), SIDE_COLORS[1 - a.side], { style: 'climb', delay: 0.5, dur: 0.35, fight: 1.5, lose: true });
+            fx.after(0.5, () => fx.dust(g.position, 0.8));
+          }
+          if (b.tick - (this.snatchSaid || -99) > 30) { this.snatchSaid = b.tick; msgs.push({ side: a.side, text: `${a.def.name} plucks soldiers from the ranks and drops them from on high` }); }
+        } else if (e.name === 'petrify') {
+          // the flier goes grey and falls to pieces
+          const q = new THREE.Vector3(e.x + 0.5, 3, e.y + 0.5);
+          fx.emit(P.DUST, q.x, q.y, q.z, 10, 0, 0.3, 0, 1, 1, 0x8a8a84, 0xb8b8b0); fx.splinters(q, new THREE.Vector3(0, 0.2, 0), 14, 1, 0x9a9a92); fx.emit(P.GLINT, q.x, q.y, q.z, 2);
+          if (am) { const D = fx.dims(am, a), eye = D.mouth ? toWorld(am, D.mouth[0], D.mouth[1], D.mouth[2], new THREE.Vector3()) : am.position.clone(); fx.beam(eye, q, 0xd8d0a0, 0.03, 0.4); }
+          msgs.push({ side: a.side, text: `${a.def.name}'s gaze turns a flier to stone` });
+        }
       } else if (e.type === 'airWild') {
-        const a = b.airships[e.air];
+        const a = b.airships[e.air], am = this.airModels[e.air];
+        am.wild = true;
+        if (am.m) { this.fx.act(am.m, 'shriek', 1.2); this.fx.emit(P.EMBER, am.m.position.x, am.m.position.y, am.m.position.z, 30, 0, 1, 0, 3, 1.5, 0xff5030, 0x801010); }
         msgs.push({ side: 1 - a.side, text: `${a.def.name}'s riders are all slain: the beast fights on alone` });
       } else if (e.type === 'bomb' && e.rocket) {
-        const a = b.airships[e.air], am = this.airModels[e.air].m;
-        st.projectile(am.position.clone(), new THREE.Vector3(e.x, 0.2, e.y), 'flak', (e.delay * TICK_MS) / 1000 / this.speed, 0.2);
-        this.later(e.delay, () => { st.ring(new THREE.Vector3(e.x, 0.2, e.y), 1.4, 0xffa040, 0.6); st.puff(new THREE.Vector3(e.x, 0.5, e.y), 0x8a7a6a, 0.6, 0.9); });
+        const a = b.airships[e.air], am = this.airModels[e.air].m, fx = this.fx;
+        fx.act(am, 'mortar', 0.8);
+        const from = am.position.clone(); from.y -= 0.6;
+        fx.emit(P.FIRE, from.x, from.y, from.z, 4, 0, -0.5, 0, 1.5, 0.8);
+        fx.shot('rocket', from, new THREE.Vector3(e.x + 0.5, fx.floor(e.x + 0.5, e.y + 0.5) + 0.1, e.y + 0.5), (e.delay * TICK_MS) / 1000 / this.speed, { arc: 0.2 });
         void a;
       } else if (e.type === 'airFire') {
-        const a = b.airships[e.air], am = this.airModels[e.air].m;
-        w.set(e.x1, e.h1 ?? 0.3, e.y1);
+        const a = b.airships[e.air], am = this.airModels[e.air].m, fx = this.fx;
+        if (!fx.act(am, 'fire', 0.7)) fx.rock(am, 0.03);
+        w.set(e.x1 + 0.5, e.h1 ?? 0.3, e.y1 + 0.5);
+        const high = (e.h1 ?? 0) > 1.5, dur = (e.delay * TICK_MS) / 1000 / this.speed;
         for (let i = 0; i < e.guns; i++) {
           if (!shipMuzzle(am, e.x1, e.y1, i, v)) this.airPos(a, 1, v);
-          const to = w.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, 0, (Math.random() - 0.5) * 1.4));
-          st.projectile(v.clone(), to, 'cannon', (e.delay * TICK_MS) / 1000 / this.speed, 0.15);
-          st.puff(v.clone(), 0xeeeeee, 0.3, 0.8);
+          const to = w.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, high ? (Math.random() - 0.5) * 0.8 : 0, (Math.random() - 0.5) * 1.4));
+          const dir = to.clone().sub(v).normalize();
+          fx.shot('cannon', v.clone(), to, dur, { arc: 0.15, hit: high });
+          fx.muzzle(v.clone(), dir, 0.8);
         }
-        this.later(e.delay, () => st.puff(w.clone(), 0x8a7a6a, 0.45, 0.8));
       } else if (e.type === 'bomb') {
-        const a = b.airships[e.air];
-        this.airPos(a, 1, v); v.y -= 0.9;
-        w.set(e.x, 0.1, e.y);
-        st.projectile(v.clone(), w.clone(), 'shell', (e.delay * TICK_MS) / 1000 / this.speed, 0);
-        const at = w.clone();
-        this.later(e.delay, () => {
-          st.ring(at.clone(), e.radius, 0xffa040, 0.7);
-          st.puff(at.clone().setY(0.5), 0xff8a30, 0.9, 0.5); st.puff(at.clone().setY(0.9), 0x4a4640, 1.1, 1.6);
-        });
+        // the bay opens and the bomb tumbles out; a beast that dives drops on its mark first
+        const a = b.airships[e.air], am2 = this.airModels[e.air], am = am2.m, fx = this.fx;
+        fx.act(am, 'bomb', 1.4); fx.act(am, 'mortar', 0.9);
+        if (a.def.beast || a.def.arts?.dive) { fx.act(am, 'dive', 1.4); am2.dive = { t0: fx.time, dur: 1.3 }; }
+        const D = fx.dims(am, a);
+        toWorld(am, 0, D.box.min.y, 0, v);
+        const to = new THREE.Vector3(e.x + 0.5, fx.floor(e.x + 0.5, e.y + 0.5) + 0.1, e.y + 0.5), R0 = e.radius;
+        fx.shot('bomb', v.clone(), to, (e.delay * TICK_MS) / 1000 / this.speed, { arc: 0, onLand: (p) => fx.ring(p.clone().setY(p.y + 0.05), null, 0.3, R0 * 1.2, 0xffa040, 0.8) });
       } else if (e.type === 'podDrop') {
         const a = b.airships[e.air];
         const pod = buildDropPod(a.def.style, SIDE_COLORS[a.side]);
@@ -940,18 +992,41 @@ export class LandView {
         st.ring(v.clone(), 1.4, 0xd8c8a0, 0.6); st.puff(v.clone().setY(0.4), 0xb0a898, 0.8, 1.1);
         msgs.push({ side: e.side, text: `Drop pod lands: ${e.n} shock troops storm out` });
       } else if (e.type === 'airLaunch') {
-        const a = b.airships[e.air];
-        this.airPos(a, 1, v); st.puff(v.clone(), 0xffffff, 0.3, 0.6);
+        const a = b.airships[e.air], am = this.airModels[e.air].m;
+        if (!this.fx.act(am, 'launch', 1.2)) { this.airPos(a, 1, v); this.fx.emit(P.GUN, v.x, v.y, v.z, 5, 0, 0.3, 0, 1, 0.8); }
         if (b.tick % 3 === 0) msgs.push({ side: a.side, text: `${a.def.name} launches ${b.units[e.ids[0]].def.name}s` });
       } else if (e.type === 'airHit') {
-        if (e.dmg > 0) { this.airPos(b.airships[e.air], 1, v); v.x += (Math.random() - 0.5) * 3; st.splat(v.clone(), e.dmg); st.puff(v.clone(), 0x55504a, 0.35, 0.8); }
+        if (e.dmg > 0) {
+          const a = b.airships[e.air], am = this.airModels[e.air].m, fx = this.fx;
+          this.airPos(a, 1, v); v.x += (Math.random() - 0.5) * 3; st.splat(v.clone(), e.dmg);
+          fx.emit(P.SMOKE, v.x, v.y, v.z, 3, 0, 0.5, 0, 0.6, 0.8); fx.emit(P.SPARK, v.x, v.y, v.z, 6, 0, 0.3, 0, 2.5);
+          fx.splinters(v.clone(), new THREE.Vector3(0, 0.3, 0), Math.min(10, 2 + Math.round(e.dmg / 8)), 0.9);
+          if (!fx.act(am, 'hit', 0.5)) fx.rock(am, Math.min(0.06, 0.01 + e.dmg * 0.001));
+        }
       } else if (e.type === 'airCaptured') {
-        const a = b.airships[e.air];
+        const a = b.airships[e.air], am = this.airModels[e.air].m;
+        // her colours are struck and the boarders' run up over the gondola
+        this.fx.strike(am, SIDE_COLORS[1 - e.side], SIDE_COLORS[e.side]);
+        this.fx.emit(P.MOTE, am.position.x, am.position.y + 2, am.position.z, 16, 0, 1, 0, 1.6, 1, SIDE_COLORS[e.side], 0xffffff);
         msgs.push({ side: e.side, text: `${a.def.name} is boarded and taken!` });
       } else if (e.type === 'airGrapple') {
+        const am = this.airModels[e.air].m;
+        this.fx.act(am, 'grapple', 1);
+        this.airModels[e.air].grabAt = this.fx.time;
         msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} grapples ${b.airships[e.other].def.name}` });
       } else if (e.type === 'airBoard') {
-        this.airPos(b.airships[e.other], 1, v); st.puff(v.clone(), 0xd8d0c0, 0.3, 0.5);
+        // boarders swing across on lines between the gondolas; those cut down fall to the ground
+        const a = b.airships[e.air], o = b.airships[e.other], ma = this.airModels[e.air].m, mo = this.airModels[e.other].m, fx = this.fx;
+        fx.act(ma, 'board', 1.2);
+        const Da = fx.dims(ma, a), Do = fx.dims(mo, o);
+        let lost = e.lost || 0;
+        const n = 1 + Math.floor(Math.random() * 3);
+        for (let k = 0; k < n; k++) {
+          const u = (Math.random() - 0.5) * 1.2;
+          const pa = fx.railToward(ma, Da, mo.position, u, new THREE.Vector3()), pb = fx.railToward(mo, Do, ma.position, u * 0.8, new THREE.Vector3());
+          const foeLose = lost > 0; if (foeLose) lost--;
+          fx.boarder(ma, pa, mo, pb, SIDE_COLORS[a.side], { style: Math.random() < 0.7 ? 'swing' : 'leap', delay: k * 0.2, dur: 0.9, fight: 0.5 + Math.random() * 0.5, lose: !foeLose && Math.random() < 0.3, foeColor: SIDE_COLORS[o.side], foeLose });
+        }
       } else if (e.type === 'airAdrift') {
         msgs.push({ side: b.airships[e.air].side, text: `${b.airships[e.air].def.name} drifts with no crew` });
       } else if (e.type === 'airRescue') {
@@ -966,6 +1041,7 @@ export class LandView {
         const a = b.airships[e.air];
         this.airModels[e.air].downAt = this.time;
         this.airPos(a, 1, v);
+        this.fx.explode(v.clone(), 1.4, { debris: 14 });
         for (let k = 0; k < 6; k++) st.puff(v.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 2, (Math.random() - 0.5) * 2)), k % 2 ? 0xff8a30 : 0x3a3632, 1.1, 1.8);
         msgs.push({ side: 1 - a.side, text: `${a.def.name} is shot down!` });
       } else if (e.type === 'flank') {
@@ -1303,7 +1379,7 @@ export class LandView {
   }
 
   updateAir(alpha, t, dt, speed) {
-    const b = this.b, v = new THREE.Vector3();
+    const b = this.b, v = new THREE.Vector3(), fx = this.fx, ga = (this._ga ||= new THREE.Vector3()), gb = (this._gb ||= new THREE.Vector3());
     b.airships.forEach((a, i) => {
       const am = this.airModels[i], m = am.m;
       const x = a.px + (a.x - a.px) * alpha, y = a.py + (a.y - a.py) * alpha;
@@ -1312,6 +1388,7 @@ export class LandView {
       let alt = a.def.altitude + Math.sin(t * 0.9 + i * 2) * 0.12;
       if (a.mode === 'rescue' || a.mode === 'ferry' || a.ladder > 0) alt -= 0.8;
       am.alt = am.alt === undefined ? alt : am.alt + (alt - am.alt) * Math.min(1, dt * 1.5);
+      if (m.rotation.order !== 'YXZ') m.rotation.order = 'YXZ'; // a jolt rolls her about her own length
       m.rotation.set(0, -(a.ph + dh * alpha), Math.sin(t * 0.7 + i) * 0.015);
       const level = !a.alive ? 3 : a.hp > a.maxHp * 0.66 ? 0 : a.hp > a.maxHp * 0.33 ? 1 : 2;
       if (level !== am.dmg) { am.dmg = level; m.userData.setDamage?.(level); }
@@ -1327,6 +1404,9 @@ export class LandView {
         return;
       }
       m.position.set(x, ground * 0.3 + am.alt, y);
+      // a stoop on its mark: down, nose first, and up again
+      if (am.dive) { const u = (fx.time - am.dive.t0) / am.dive.dur; if (u >= 1) am.dive = null; else { m.position.y -= 2.2 * Math.sin(u * Math.PI); m.rotation.z -= 0.45 * Math.sin(u * Math.PI * 2); } }
+      fx.pose(m);
       am.mark.position.set(x, ground + 0.06, y);
       for (const p of m.userData.props || []) p.rotation.x = t * (a.crew > 0 ? 22 : 2);
       if (m.userData.skyAnim) animateSky(m, t);
@@ -1339,6 +1419,21 @@ export class LandView {
         am.smoke = 0;
         this.stage.puff(v.set(x + (Math.random() - 0.5) * a.radius, m.position.y + 1.5 + Math.random() * 1.5, y + (Math.random() - 0.5) * 1.5).clone(), level === 2 && Math.random() < 0.35 ? 0xff7a28 : 0x35312e, 0.45, 1.5);
       }
+      // grapnel lines thrown across to the ship she has grappled, hauled taut
+      const o = a.grapple >= 0 ? b.airships[a.grapple] : null;
+      if (o && o.alive && a.alive && this.airModels[a.grapple]?.downAt === undefined) {
+        const mo = this.airModels[a.grapple].m, Da = fx.dims(m, a), Do = fx.dims(mo, o), age = fx.time - (am.grabAt ?? -9);
+        for (let k = 0; k < 3; k++) {
+          const u = -0.5 + k * 0.5, th = Math.min(1, Math.max(0, (age - k * 0.12) / 0.5));
+          if (th <= 0) continue;
+          fx.railToward(m, Da, mo.position, u, ga); toWorld(m, ga.x, ga.y, ga.z, ga);
+          fx.railToward(mo, Do, m.position, u * 0.8, gb); toWorld(mo, gb.x, gb.y, gb.z, gb);
+          if (th < 1) { gb.lerpVectors(ga, gb, th); gb.y += Math.sin(th * Math.PI) * 0.9; }
+          fx.lay(fx.rope(`ag${k}:${i}`, 'rope', 7), ga, gb, th < 1 ? 0.3 : 0.12 + Math.sin(t * 2 + k) * 0.03, 0xc8b48a, 0.025);
+        }
+      }
+      // a beast whose riders are gone fights on in a red fury
+      if (am.wild && a.alive && Math.random() < dt * 8 * fx.near(m.position)) { const D = fx.dims(m, a), mo2 = D.mouth; if (mo2) toWorld(m, mo2[0], mo2[1], mo2[2], ga); else ga.copy(m.position); fx.emit(P.EMBER, ga.x, ga.y, ga.z, 2, 0, 1, 0, 1, 1.4, 0xff5030, 0x801010); }
     });
     // drop pods on their way down, then standing where they landed
     this.falling = this.falling.filter((f) => {
@@ -1347,6 +1442,7 @@ export class LandView {
       f.obj.rotation.y = k * 2;
       return true;
     });
+    fx.update(dt);
   }
 
   // ---- editor helpers ----
