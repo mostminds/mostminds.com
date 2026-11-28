@@ -566,6 +566,13 @@ function headQuat(out, T, lay, x = 0, y = 0, z = 0) {
   out.copy(lay.abs[0]).invert().multiply(_hq2.setFromEuler(_he));
   return out.multiply(_hq2.setFromEuler(_he.set(x, y, z, 'XYZ')));
 }
+/** lay the chain along T and turn the head to look along it, then by (hx, hy, hz) radians */
+function laySerpent(rig, T, lay, Ls, hx = 0, hy = 0, hz = 0) {
+  layChain((p, o) => pathAt(T, p, o), Ls, lay);
+  const segs = [rig.body, ...(rig.tail || [])];
+  if (segs.every(Boolean)) poseChain(segs, lay);
+  if (rig.head) headQuat(rig.head.quaternion, T, lay, hx, hy, hz);
+}
 /** a dorsal / anal membrane along the segments of K between z0 and z1 (straight space) */
 function strip(K, z0, z1, base, top, colA, colB, o = {}) {
   for (const [n, a0, a1] of K.segs) {
@@ -699,7 +706,7 @@ function vasukiPath(t, phase, rear = 0, strike = 0) {
   return trace(VASU.T, [0, 0, 0.5 + strike * 0.12, y0],
     (p) => 2.5 * Math.sin((p - 0.9) * 1.85 - w * 0.5) * smooth((p - 0.7) / 0.5) - (p > 0.45 && p < 0.85 ? y0 / 0.4 : 0),
     (p) => up * (smooth(p / 0.08) - smooth((p - 0.48) / 0.4)) + Math.sin(p * 4.6 - w * 2.2) * 0.62 * smooth((p - 1.1) / 0.5) * (1 - smooth((p - 4.0) / 0.4)),
-    [1.0, -0.03]);
+    [1.0, 0.015]);
 }
 function vasukiDesc(def) {
   const em = num(def.color, 0x2a8a5a), back = mix(tone(em, 0.02, 0.05, -0.12), 0x062a1c, 0.25), lite = tone(em, -0.03, 0.08, 0.1), teal = mix(em, 0x2ab8b0, 0.5), blue = mix(em, 0x2a5ab8, 0.45);
@@ -740,10 +747,10 @@ function vasukiDesc(def) {
   // ---- the hood: a broad flap round the reared neck, spectacled on the back in black and gold ----
   const HL = 0.4, hw = (u) => 0.07 + 0.26 * Math.pow(Math.sin(PI * Math.pow(u, 0.72)), 1.15);
   const rings = [];
-  for (let r = 0; r <= 14; r++) {
-    const u = 0.02 + (r / 14) * 0.96, z = -u * HL, w = hw(u), ring = [];
-    for (let k = 0; k < 20; k++) {
-      const a = (k / 20) * PI * 2, x = w * Math.cos(a), s = Math.sin(a), th = 0.01 + 0.045 * Math.max(0, 1 - (x / 0.085) ** 2);
+  for (let r = 0; r <= 26; r++) {
+    const u = 0.02 + (r / 26) * 0.96, z = -u * HL, w = hw(u), ring = [];
+    for (let k = 0; k < 40; k++) {
+      const a = (k / 40) * PI * 2, x = w * Math.cos(a), s = Math.sin(a), th = 0.01 + 0.045 * Math.max(0, 1 - (x / 0.085) ** 2);
       ring.push([x, Math.sign(s) * th * Math.sqrt(Math.abs(s)) - 0.07 * (x / 0.33) ** 2 + 0.01, z]);
     }
     rings.push(ring);
@@ -794,13 +801,13 @@ let _mirageMat = null;
 function mirageMat() {
   if (!_mirageMat) {
     _mirageMat = sculptMaterial().clone();
-    Object.assign(_mirageMat, { transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    Object.assign(_mirageMat, { transparent: true, opacity: 0.5, depthWrite: false, side: THREE.FrontSide });
   }
   return _mirageMat;
 }
 function mirageDesc(def) {
-  const base = num(def.color, 0xb8d8f0), pale = mix(base, 0xffffff, 0.35), cyan = mix(base, 0x40e0ff, 0.5), violet = mix(base, 0x9a70f0, 0.55), goldL = 0xffd890, deep = mix(base, 0x2a50c0, 0.5);
-  const brass = 0xb8862e, brassDk = 0x6a4a18, verd = 0x4a8a6a, G = 0.85;
+  const base = num(def.color, 0xb8d8f0), pale = mix(base, 0xffffff, 0.3), cyan = mix(base, 0x30b8e8, 0.55), violet = mix(base, 0x7a50d8, 0.6), goldL = 0xf0c870, deep = mix(base, 0x2a48b0, 0.6);
+  const brass = 0xb8862e, brassDk = 0x6a4a18, verd = 0x4a8a6a, G = 0.45;
   const TAB = [
     { z: 0.44, w: 0.016, h: 0.014, y: -0.012 }, { z: 0.41, w: 0.032, h: 0.028, y: -0.01 }, { z: 0.32, w: 0.05, h: 0.044, y: -0.006 }, { z: 0.2, w: 0.066, h: 0.06, y: 0 },
     { z: 0.09, w: 0.078, h: 0.076, y: 0.004 }, { z: 0.0, w: 0.068, h: 0.074, y: 0 }, { z: -0.4, w: 0.07, h: 0.078, y: 0 }, { z: -1.1, w: 0.098, h: 0.104, y: 0 },
@@ -815,15 +822,15 @@ function mirageDesc(def) {
   prims.head.push(...S.mirrorX([sk(S.capsule([0.024, 0.046, 0.34], [0.05, 0.07, 0.17], 0.012, 0.02).blend(0.03), 'top'), sk(S.ellipsoid(0.03, 0.036, 0.055).at(0.06, 0.004, 0.09).blend(0.03), 'core')]));
   const headHull = prims.head.slice();
   // bands of brighter light run down the body like the rings of a lantern-slide
-  for (let z = -0.3; z > -3.1; z -= 0.22) prims[K.nodeOf(z)].push(S.box(0.7, 0.7, 0.03, 0.01).at(0, 0, z).color(goldL).glow(1.2).paint(0.012, 0));
-  K.stripe(0.3, -3.2, 0, (z) => at(z).h * 0.25, (p) => p.color(0xffffff).glow(1.3).paint(0.02, 0), 0.14);
-  eyes(K, 'head', surfer(headHull), 0.24, 0.035, 0.018, { iris: 0xffffff, rim: 0xffe0a0, white: 0xfff4d0, shape: 'none', irisDeg: 60, rough: 0.1, glow: 1.6 }, { socket: 0x6080c0 });
+  for (let z = -0.3; z > -3.1; z -= 0.22) prims[K.nodeOf(z)].push(S.box(0.7, 0.7, 0.03, 0.01).at(0, 0, z).color(goldL).glow(0.6).paint(0.012, 0));
+  K.stripe(0.3, -3.2, 0, (z) => at(z).h * 0.25, (p) => p.color(mix(pale, 0xffffff, 0.2)).glow(0.5).paint(0.02, 0), 0.14);
+  eyes(K, 'head', surfer(headHull), 0.24, 0.035, 0.018, { iris: 0xd0c090, rim: 0x806030, white: 0xc0b080, shape: 'none', irisDeg: 60, rough: 0.1, glow: 1.2 }, { socket: 0x6080c0 });
   const JW = addJaw(K, 'head', { tip: MIRA.tip, hinge: 0.1, yT: -0.014, yH: -0.028, mouth: 0x3040a0, sk, palate: 0.02, back: 0.04, jawTip: MIRA.tip - 0.02 });
   const sfH = surfer(headHull), sfJ = surfer(JW.jawHull);
   teeth(hard.head, sfH, { z0: 0.16, z1: 0.4, n: 7, mY: JW.mY, up: 1, r: 0.005, len: 0.024, col: 0xffffff, hook: 0.2, rake: 6, inset: 0.4 });
   const jawHard = [];
   teeth(jawHard, sfJ, { z0: 0.18, z1: 0.39, n: 6, mY: JW.mY, up: -1, r: 0.005, len: 0.022, col: 0xffffff, hook: 0.2, rake: -6, inset: 0.4 });
-  for (const h of [...hard.head, ...jawHard]) h.glow(1.2);
+  for (const h of [...hard.head, ...jawHard]) h.color(0x8090a0).glow(0.5);
   // horns and frills of light
   const fr = (sd) => place(fan([{ a: -20, len: 0.12 }, { a: 10, len: 0.2 }, { a: 40, len: 0.24 }, { a: 70, len: 0.24 }, { a: 100, len: 0.19 }, { a: 130, len: 0.12 }], cyan, goldL, 0xffffff, { dip: 0.25, cup: -0.05 * sd, spineR: 0.005 }), 0, sd * -38, sd * -14, sd * 0.07, 0.01, 0.05);
   hard.head.push(...fr(1), ...fr(-1), ...H.mirrorX([horn([[0.04, 0.06, 0.18], [0.06, 0.1, 0.1], [0.075, 0.16, 0.02], [0.07, 0.22, -0.04]], 0.014, 0.004, goldL, 0xffffff)]));
@@ -833,7 +840,7 @@ function mirageDesc(def) {
   const last = `tail${MIRA.n - 2}`;
   hard[last].push(...place(fan([{ a: 30, len: 0.12 }, { a: 55, len: 0.22 }, { a: 80, len: 0.28 }, { a: 100, len: 0.28 }, { a: 125, len: 0.22 }, { a: 150, len: 0.12 }], violet, goldL, 0xffffff, { dip: 0.2 }), 0, 0, 0, 0, 0, -MIRA.len + 0.12));
   // motes of glimmer drifting about the body
-  const mote = (r, x, y, z, i) => H.geo(octaGeo()).scale(r, r * 1.6, r).rot(0, i * 37, 0).at(x, y, z).color(i % 3 ? 0xffffff : i % 2 ? goldL : cyan).glow(2).lod(1);
+  const mote = (r, x, y, z, i) => H.geo(octaGeo()).scale(r, r * 1.6, r).rot(0, i * 37, 0).at(x, y, z).color(i % 3 ? 0xc0c8d0 : i % 2 ? 0xd0b060 : 0x60b0e0).glow(1.5).lod(1);
   for (const [n, z0, z1] of K.segs) {
     const k = n === 'head' ? 6 : 5;
     for (let j = 0; j < k; j++) {
@@ -841,12 +848,12 @@ function mirageDesc(def) {
       hard[n].push(mote(0.007 + rnd(i, 4) * 0.008, Math.cos(a) * q.w * d, Math.sin(a) * q.h * d, z, i));
     }
   }
-  for (const h of Object.values(hard).flat()) if (h.glowV < 0.5) h.glow(0.9);
+  for (const h of Object.values(hard).flat()) if (h.glowV < 0.3) h.glow(0.35);
   const lay = layChain((p, o) => pathAt(miragePath(0, 0), p, o), MIRA.Ls, MIRA.lay);
   const nodes = serpentNodes(K, lay, { detail: { default: 0.55, head: 0.95 } }, MIRA.T);
   nodes.push(JW.node(jawHard, 10, 0.95));
   // ---- the give-away: a brass buoy where the neck meets the water, a lens in its crown throwing the light ----
-  const nb = pathAt(MIRA.T, 1.5, [0, 0, 0]), BZ = nb[2] + 0.2, by = 0.0;
+  const nb = pathAt(MIRA.T, 1.1, [0, 0, 0]), BZ = nb[2] + 0.34, by = 0.0;
   const buoy = [
     H.lathe([[0.0, -0.09], [0.05, -0.085], [0.08, -0.05], [0.088, 0.0], [0.08, 0.03], [0.05, 0.05], [0.036, 0.055], [0.036, 0.1], [0.044, 0.105], [0.044, 0.118], [0.0, 0.12]], 18)
       .shade((x, y) => (y < -0.02 ? mix(verd, brassDk, 0.4) : Math.abs(y - 0.0) < 0.006 || Math.abs(y - 0.104) < 0.004 ? brassDk : brass)).pbr(0.3, 0.85),
@@ -856,7 +863,7 @@ function mirageDesc(def) {
     ...Array.from({ length: 10 }, (_, k) => H.sphere(0.006, 6).at(Math.cos(k * 0.628) * 0.087, 0.0, Math.sin(k * 0.628) * 0.087).color(brassDk).pbr(0.3, 0.9).lod(1)),
   ];
   const lens0 = [0, 0.13, BZ], head0 = pathAt(MIRA.T, 0.15, [0, 0, 0]), dir = sub(head0, lens0);
-  const beam = [aim(H.cyl(0.16, 0.012, 1, 16, true).at(0, 0.5, 0).scale(1, Math.hypot(dir[0], dir[1], dir[2]) * 0.92, 1), lens0, dir).color(0x8090a0).pbr(1, 0).glow(1)];
+  const beam = [aim(H.cyl(0.16, 0.012, 1, 16, true).at(0, 0.5, 0).scale(1, Math.hypot(dir[0], dir[1], dir[2]) * 0.92, 1), lens0, dir).color(0x403828).pbr(1, 0).glow(0.6)];
   nodes.push({ name: 'buoy', parent: 'root', rig: 'buoy', pos: [0, by, BZ], hard: buoy, detail: 1 });
   nodes.push({ name: 'beam', parent: 'root', rig: 'beam', pos: [0, 0, 0], hard: beam });
   return { kind: 'mirageLeviathan', nodes };
@@ -875,16 +882,15 @@ function animMirage(model, ctx) {
   const t = fin0(ctx?.t), phase = fin0(ctx?.phase);
   const c = frac(t * 0.17 + phase * 0.23), rear = pulse(c, 0.0, 0.35), lunge = pulse(c, 0.25, 0.45);
   miragePath(t, phase, rear - lunge);
-  laySerpent(rig, MIRA.T, MIRA.lay, MIRA.Ls);
   // now and then the picture slips, as a projection does when the buoy rolls
   const g = frac(t * 0.37 + phase * 0.31), slip = g > 0.9 ? Math.sin(g * 120) * 0.04 : 0;
+  laySerpent(rig, MIRA.T, MIRA.lay, MIRA.Ls, -rear * 0.3 + lunge * 0.35 + Math.sin(t * 1.1 + phase) * 0.05, Math.sin(t * 0.75 + phase) * 0.12, slip * 3);
   if (rig.body) rig.body.position.x += slip;
-  R(rig.head, -rear * 0.3 + lunge * 0.35 + Math.sin(t * 1.1 + phase) * 0.05, Math.sin(t * 0.75 + phase) * 0.12, slip * 3);
   R(rig.jaw, 0.06 + rear * 0.6 - lunge * 0.5 + Math.max(0, Math.sin(t * 1.5 + phase)) * 0.06);
   const b = rig.buoy?.[0];
   if (b) { P(b, 0, Math.sin(t * 1.7 + phase) * 0.012, 0); R(b, Math.sin(t * 1.3 + phase) * 0.12, t * 0.6, Math.sin(t * 1.1 + phase + 1) * 0.1); }
   const m = _mirageMat;
-  if (m) m.opacity = 0.46 + Math.sin(t * 2.7) * 0.06 + (frac(t * 0.37) > 0.9 ? -0.15 : 0);
+  if (m) m.opacity = 0.5 + Math.sin(t * 2.7) * 0.07 + (frac(t * 0.37) > 0.9 ? -0.18 : 0);
 }
 
 // =====================================================================================
@@ -906,7 +912,7 @@ function wolfEelDesc(def) {
   const spot = mix(base, 0x101012, 0.5), nose = 0x0a0a0a, mouth = 0x6a2028, tooth = 0xf2ecdc, wet = 0.34;
   const TAB = [
     { z: 0.42, w: 0.02, h: 0.022, y: -0.01 }, { z: 0.39, w: 0.03, h: 0.032, y: -0.006 }, { z: 0.3, w: 0.04, h: 0.042, y: -0.002 }, { z: 0.21, w: 0.054, h: 0.052, y: 0.004 },
-    { z: 0.14, w: 0.074, h: 0.07, y: 0.016 }, { z: 0.06, w: 0.086, h: 0.08, y: 0.016 }, { z: 0.0, w: 0.08, h: 0.084, y: 0 }, { z: -0.25, w: 0.078, h: 0.096, y: 0 },
+    { z: 0.15, w: 0.08, h: 0.074, y: 0.018 }, { z: 0.07, w: 0.094, h: 0.084, y: 0.016 }, { z: 0.0, w: 0.084, h: 0.086, y: 0 }, { z: -0.25, w: 0.078, h: 0.096, y: 0 },
     { z: -0.9, w: 0.084, h: 0.108, y: 0 }, { z: -1.7, w: 0.064, h: 0.09, y: 0 }, { z: -2.3, w: 0.04, h: 0.062, y: 0 }, { z: -2.6, w: 0.018, h: 0.032, y: 0 }, { z: -WOLF.len, w: 0.008, h: 0.012, y: 0 },
   ];
   const sk = (p, part) => p.color(part === 'top' ? back : part === 'bottom' ? belly : grey).pbr(wet).bump(0.003, 40).tint(0.12, 14);
@@ -940,7 +946,7 @@ function wolfEelDesc(def) {
   teeth(jawHard, sfJ, { z0: 0.16, z1: 0.39, n: 6, mY: JW.mY, up: -1, r: 0.005, len: (i) => (i === 4 ? 0.036 : 0.015), col: tooth, hook: 0.25, rake: -6, splay: 8, inset: 0.5 });
   jawHard.push(...H.mirrorX([H.tube([[0.02, -0.06, 0.12], [0.05, -0.08, 0.04], [0.06, -0.09, -0.04]], [0.016, 0.012, 0.004], 8, 6).color(mane).pbr(0.85).lod(1)]));
   // ---- ears ----
-  const ear = (sd) => spike(0.085, 0.034, 0, 6, 0.42).shade((x, y) => (x < -0.1 && y < 0.8 ? 0x5a3a3a : y > 0.85 ? mane : null)).rot(0, 90, 0).rot(-22, 0, sd * 24).rot(0, sd * -16, 0).at(sd * 0.048, 0.08, 0.075).color(mix(back, grey, 0.3)).pbr(0.8);
+  const ear = (sd) => spike(0.12, 0.05, 0, 6, 0.4).shade((x, y) => (x < -0.1 && y < 0.8 ? 0x5a3a3a : y > 0.85 ? mane : null)).rot(0, 90, 0).rot(-14, 0, sd * 18).rot(0, sd * -12, 0).at(sd * 0.05, 0.078, 0.07).color(mix(back, grey, 0.3)).pbr(0.8);
   hard.head.push(ear(1), ear(-1));
   // ---- the mane: a shaggy ridge from the crown down the neck, strands standing out of it ----
   const maneLen = 0.75;
@@ -950,18 +956,18 @@ function wolfEelDesc(def) {
     const m = Math.max(1, Math.round((a - b) / 0.05));
     for (let i = 0; i < m; i++) {
       const z = lerp(a, b, (i + 0.5) / m), q = at(z), k = 1 - smooth((-z - 0.1) / (maneLen - 0.1)) * 0.75;
-      prims[n].push(fur(S.ellipsoid(q.w * 0.75, 0.035 * k + 0.01, 0.05).at(0, q.y + q.h * 0.92, z).blend(0.025)));
-      for (const sd of [-1, 1]) for (let j = 0; j < 3; j++) {
-        const ii = (Math.round(z * 1000) + 500) * 3 + j + (sd > 0 ? 7 : 0), th = sd * (10 + j * 26 + rnd(ii, 3) * 12) * DEG;
-        const p0 = [Math.sin(th) * q.w * 0.95, q.y + Math.cos(th) * q.h * 0.95, z];
-        hard[n].push(aim(spike((0.05 + rnd(ii, 4) * 0.04) * (0.5 + 0.5 * k), 0.011, 0, 5, 0.6), p0, [Math.sin(th) * 0.8, Math.cos(th) * 0.6, -1]).shade((x, y) => (y > 0.6 ? maneTip : null)).color(mane).pbr(0.85).lod(1));
+      prims[n].push(fur(S.ellipsoid(q.w * 0.85, 0.05 * k + 0.012, 0.055).at(0, q.y + q.h * 0.9, z).blend(0.025)));
+      for (const sd of [-1, 1]) for (let j = 0; j < 4; j++) {
+        const ii = (Math.round(z * 1000) + 500) * 4 + j + (sd > 0 ? 7 : 0), th = sd * (4 + j * 20 + rnd(ii, 3) * 10) * DEG;
+        const p0 = [Math.sin(th) * q.w * 0.9, q.y + Math.cos(th) * q.h * 0.9, z + (rnd(ii, 5) - 0.5) * 0.03];
+        hard[n].push(aim(spike((0.08 + rnd(ii, 4) * 0.06) * (0.45 + 0.55 * k), 0.02, 0, 5, 0.3), p0, [Math.sin(th) * 0.7, 0.3 + Math.cos(th) * 0.35, -1], 90).shade((x, y) => (y > 0.55 ? maneTip : null)).color(mane).pbr(0.85).lod(1));
       }
     }
   }
   // ---- fins: a dark crest running from the mane to the tail tip, and an anal fin ----
-  const finH = (z) => 0.05 * smooth((-0.7 - z) / 0.3) * (z < -2.35 ? lerp(1, 0.6, (-2.35 - z) / 0.35) : 1);
-  strip(K, -0.7, -2.68, (z) => at(z).h - 0.02, (z) => at(z).h + finH(z), mix(back, grey, 0.2), mane);
-  strip(K, -1.2, -2.68, (z) => -at(z).h + 0.02, (z) => -at(z).h - 0.04 * smooth((-1.2 - z) / 0.3), mix(belly, grey, 0.6), back);
+  const finH = (z) => 0.05 * smooth((-0.7 - z) / 0.3) * (1 - smooth((-2.3 - z) / 0.3));
+  strip(K, -0.7, -2.6, (z) => at(z).h - 0.02, (z) => at(z).h + finH(z), mix(back, grey, 0.2), mane);
+  strip(K, -1.2, -2.6, (z) => -at(z).h + 0.02, (z) => -at(z).h - 0.04 * smooth((-1.2 - z) / 0.3) * (1 - smooth((-2.3 - z) / 0.3)), mix(belly, grey, 0.6), back);
   const lay = layChain((p, o) => pathAt(wolfPath(0, 0), p, o), WOLF.Ls, WOLF.lay);
   const nodes = serpentNodes(K, lay, { detail: { default: 0.58, head: 0.95, body: 0.7 } }, WOLF.T);
   nodes.push(JW.node(jawHard, 10, 0.95));

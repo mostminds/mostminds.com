@@ -630,7 +630,7 @@ function brassLeviathanDesc(def) {
     for (let k = 0; k < 3; k++) out.push(spike(0.07, 0.014, 0.6, 5).rot(0, 0, 0).at(0, sp * 0.97, sp * 0.5 * 0.2 - k * sp * 0.13 - sp * 0.03).color(iron).pbr(0.35, 0.7));
     return out;
   };
-  const nodes = K.nodes({ detail: { default: 0.36, head: 0.5, neck0: 0.42, body: 0.34 }, minRes: { tail3: 30 } });
+  const nodes = K.nodes({ detail: { default: 0.35, head: 0.48, neck0: 0.42, body: 0.33 }, minRes: { tail3: 30 } });
   BRASS.az.forEach((az, i) => {
     const AX = [0, at(0.95).y, 0.93], pt = petal(i), c = Math.cos(az * DEG), s = Math.sin(az * DEG), hw = [AX[0] - pt.hinge[1] * s, AX[1] + pt.hinge[1] * c, AX[2]];
     nodes.push({ name: `maw${i}`, parent: 'head', pos: sub(hw, ORG.head), rot: [0, 0, az] });
@@ -745,7 +745,7 @@ function ouroCurve(p, t, phase, o) {
   pathAt(ouroPath(), p, o);
   const body = smooth((p - 0.45) / 0.5), tip = smooth((p - (OURO.len - 0.6)) / 0.6);
   o[0] += Math.sin(p * 3.1 - t * 1.1 - phase) * 0.025 * body;
-  o[1] = 0.44 * (1 - smooth(p / 0.7)) + Math.sin(t * 0.9 + phase) * 0.02 * (1 - body) + body * (0.05 * Math.sin(p * 4.3 - t * 1.7 - phase * 1.3) + 0.045) + tip * 0.03;
+  o[1] = 0.44 * (1 - smooth(p / 0.7)) + Math.sin(t * 0.9 + phase) * 0.02 * (1 - body) + body * (0.05 * Math.sin(p * 4.3 - t * 1.7 - phase * 1.3) + 0.085) + tip * 0.03;
 }
 function abyssalOuroborosDesc(def) {
   const black = num(def.color, 0x1a1a24), scale = mix(black, 0x2a2438, 0.5), sheen = mix(black, 0x5a3a6a, 0.35), belly = 0x3a2a2a, ember = 0xd81e10, emberHot = 0xff7a2a, bone = 0x2a2226, boneLt = 0x6a5a50, mouth = 0x6a0e14, tooth = 0xe8dcc0;
@@ -837,7 +837,7 @@ BALOR.n = BALOR.Ls.length; BALOR.len = sumLs(BALOR.Ls); BALOR.lay = newLay(BALOR
 function balorCurve(p, t, phase, o) {
   const u = clamp(p / BALOR.len, 0, 1.1), w = p * 2.9 - t * 2.4 - phase;
   o[0] = Math.sin(w) * (0.05 + 0.2 * Math.pow(u, 1.1));
-  o[1] = 0.075 + 0.16 * Math.exp(-Math.max(0, p) * 2.4) + Math.sin(p * 2.6 - t * 1.6 - phase * 0.7) * 0.03 * clamp(p * 2, 0, 1);
+  o[1] = 0.11 + 0.16 * Math.exp(-Math.max(0, p) * 2.4) + Math.sin(p * 2.6 - t * 1.6 - phase * 0.7) * 0.03 * clamp(p * 2, 0, 1);
   o[2] = 1.0 - p * 0.92;
 }
 function balorMawDesc(def) {
@@ -853,7 +853,7 @@ function balorMawDesc(def) {
     for (let k = 0; k < n; k++) { const z = lerp(z0, z1, rnd(i * 17 + k, 5)), q = at(z), a = (rnd(i * 17 + k, 6) - 0.5) * 2.4, nrm = [Math.sin(a) / q.w, Math.cos(a) / q.h, 0], r = 0.012 + rnd(i * 17 + k, 7) * 0.016;
       hard.push(barnacle(r, [Math.sin(a) * q.w * 0.97, q.y + Math.cos(a) * q.h * 0.97, z], vnorm(nrm), mix(crust, 0xd8d0b8, rnd(i, k))).lod(k % 3 ? lod : 2)); }
   };
-  const nodes = [ROOT, ...serpentSegs({ Ls: BALOR.Ls, TAB, sk, curve: balorCurve, lay: BALOR.lay, detail: 0.42, minRes: 26, core: skin,
+  const nodes = [ROOT, ...serpentSegs({ Ls: BALOR.Ls, TAB, sk, curve: balorCurve, lay: BALOR.lay, detail: 0.37, minRes: 24, core: skin,
     deco: (i, z0, z1, p, hard) => {
       const L = z0 - z1, mid = at((z0 + z1) / 2);
       p.push(under(z0 + 0.05, -mid.h * 0.4, z1 - 0.05, -at(z1).h * 0.4, belly, 0.025, wet));
@@ -938,7 +938,7 @@ function sirenScolopendraDesc(def) {
     return H.geo(ribbonGeo(pts, (u) => 0.035 * Math.sin(Math.min(1, u * 1.2 + 0.1) * PI) + 0.005, [0, 1, 0], 0.3, 12))
       .shade((x) => { const u = clamp((Math.abs(x) - 0.06) / (len * 0.9), 0, 1); return u < 0.5 ? mix(violet, pearl, u * 2) : mix(pearl, gold, (u - 0.5) * 2); }).pbr(0.3, 0.3).glow(0.35);
   };
-  const nodes = [ROOT, ...serpentSegs({ Ls: SCOLO.Ls, TAB, sk, curve: scoloCurve, lay: SCOLO.lay, detail: 0.5, minRes: 28, core: deep, k: 0.012,
+  const nodes = [ROOT, ...serpentSegs({ Ls: SCOLO.Ls, TAB, sk, curve: scoloCurve, lay: SCOLO.lay, detail: 0.45, minRes: 26, core: deep, k: 0.012,
     deco: (i, z0, z1, p, hard) => {
       const L = z0 - z1, zm = (z0 + z1) / 2, q = at(zm);
       // a pearl-rimmed back plate on each segment, a pale belly, glowing spots along the flanks
@@ -990,7 +990,7 @@ function sirenScolopendraDesc(def) {
   const lay = layChain((p, o) => scoloCurve(p, 0, 0, o), SCOLO.Ls, SCOLO.lay);
   const WP = lay.pos.slice();
   nodes.push(
-    { name: 'torso', parent: 'root', rig: 'torso', pos: WP, prims: body, detail: 1.05 },
+    { name: 'torso', parent: 'root', rig: 'torso', pos: WP, prims: body, detail: 0.95 },
     { name: 'head', parent: 'torso', rig: 'head', pos: [0, 0.32, 0], prims: into([0, 0.32, 0], headP), hard: into([0, 0.32, 0], headH), detail: 1.7 },
     { name: 'wingL', parent: 'torso', rig: 'wings', pos: [0.04, 0.27, -0.06], rot: [10, -30, -32], hard: wing(1) },
     { name: 'wingR', parent: 'torso', rig: 'wings', pos: [-0.04, 0.27, -0.06], rot: [10, 30, 32], hard: wing(-1) },
@@ -1096,9 +1096,9 @@ function sumpKrakenDesc(def) {
   };
   const nodes = [
     ROOT,
-    { name: 'body', parent: 'root', rig: 'body', pos: [0, 0.13, 0.18], prims: head, hard: headHard, detail: 0.52 },
+    { name: 'body', parent: 'root', rig: 'body', pos: [0, 0.13, 0.18], prims: head, hard: headHard, detail: 0.33 },
     { name: 'jaw', parent: 'body', rig: 'jaw', pos: [0, 0.04, 0.32], rot: [10, 0, 0], hard: jawHard },
-    { name: 'mantle', parent: 'body', rig: 'core', pos: [0, 0.06, -0.06], rot: [-48, 0, 0], prims: mantle, hard: mantleHard, detail: 0.42 },
+    { name: 'mantle', parent: 'body', rig: 'core', pos: [0, 0.06, -0.06], rot: [-48, 0, 0], prims: mantle, hard: mantleHard, detail: 0.28 },
     { name: 'slick', parent: 'root', pos: [0, 0, -0.1], hard: slick },
   ];
   SUMP.armYaw.forEach((yaw, a) => {
@@ -1106,7 +1106,7 @@ function sumpKrakenDesc(def) {
     nodes.push({ name: `armBase${a}`, parent: 'body', pos: [Math.sin(y) * 0.25, -0.03, 0.07 + Math.cos(y) * 0.25], rot: [0, yaw, sd * 16] });
     for (let j = 0; j < SUMP.NA; j++) {
       const g = limbSeg(SUMP.armR[j], SUMP.armR[j + 1], SUMP.armLen[j], a * 10 + j);
-      nodes.push({ name: `arm${a}_${j}`, parent: j ? `arm${a}_${j - 1}` : `armBase${a}`, rig: 'arms', pos: j ? [0, 0, SUMP.armLen[j - 1]] : [0, 0, 0], rot: [SUMP.armRest[j] + (rnd(a, j) - 0.5) * 10, (rnd(a, j + 9) - 0.5) * 16, 0], prims: g.prims, hard: g.hard, detail: 0.4, minRes: 18 });
+      nodes.push({ name: `arm${a}_${j}`, parent: j ? `arm${a}_${j - 1}` : `armBase${a}`, rig: 'arms', pos: j ? [0, 0, SUMP.armLen[j - 1]] : [0, 0, 0], rot: [SUMP.armRest[j] + (rnd(a, j) - 0.5) * 10, (rnd(a, j + 9) - 0.5) * 16, 0], prims: g.prims, hard: g.hard, detail: 0.3, minRes: 16 });
     }
   });
   // the stinging skirt: long glassy tentacles beaded with venom, trailing behind
@@ -1143,12 +1143,351 @@ function animSumpKraken(model, ctx) {
   }
 }
 
+
+// =====================================================================================
+// ASTRAL NAUTILUS (Labyrinth): a gargantuan ammonite in a spiralling shell of shimmering blue, gold and magenta,
+// crested with crystal, whose crown of tentacles ends each in a glowing, staring eye
+// =====================================================================================
+const NAUT = { C: [0, 0.62, -0.2], RE: 0.52, turns: 2.4, NT: 14, NS: 4, len: [0.17, 0.16, 0.15, 0.13], rad: [0.034, 0.027, 0.02, 0.014, 0.01] };
+NAUT.b = Math.log(3) / (2 * PI);
+/** the shell's centre line and section at angle phi (0 = the aperture, at the bottom, opening toward +Z) */
+function nautAt(phi) {
+  const r = NAUT.RE * Math.exp(NAUT.b * phi), u = [0, -Math.cos(phi), Math.sin(phi)];
+  return { r, u, p: vadd(NAUT.C, u, r), ar: r * 0.5, ax: r * 0.68 };
+}
+function astralNautilusDesc(def) {
+  const blue = num(def.color, 0x7a9ae8), gold = 0xf0c858, magenta = 0xd858c8, deep = 0x1a1a4a, nacre = 0xf4eefa, flesh = 0x3a2a6a, fleshLt = 0x8a6ad0;
+  const hue = (v) => { const k = frac(v) * 3, i = Math.floor(k), f = smooth(k - i), c = [blue, gold, magenta, blue]; return mix(c[i], c[i + 1], f); };
+  // ---- the shell: a lofted logarithmic spiral, ribbed, its colour running through blue, gold and magenta ----
+  const rings = [], cols = [], n = 20, steps = 120, phi0 = -NAUT.turns * 2 * PI, c = new THREE.Color();
+  for (let i = 0; i <= steps; i++) {
+    const phi = lerp(phi0, 0, i / steps), q = nautAt(phi), rib = 1 + 0.045 * Math.max(0, Math.sin(phi * 9)) ** 3, ring = [];
+    for (let k = 0; k < n; k++) {
+      const s0 = (k / n) * PI * 2, cr = Math.cos(s0), sx = Math.sin(s0);
+      ring.push([sx * q.ax * rib * (1 - 0.15 * Math.max(0, -cr)), q.p[1] + q.u[1] * (cr * q.ar * rib + q.ar * 0.05), q.p[2] + q.u[2] * (cr * q.ar * rib + q.ar * 0.05)]);
+      const ridge = Math.sin(phi * 9) > 0.55 ? 0.35 : 0;
+      c.set(mix(hue(phi / (2 * PI) * 0.8 + sx * 0.18 + cr * 0.08), deep, ridge + (i < 8 ? 0.4 : 0))); cols.push(c.r, c.g, c.b);
+    }
+    rings.push(ring);
+  }
+  const shellG = loft(rings, true, false);
+  const shell = H.geo(shellG).shade((x, y, z, nx, ny, nz, i) => (i < cols.length / 3 ? [cols[i * 3], cols[i * 3 + 1], cols[i * 3 + 2]] : nacre)).pbr(0.18, 0.55);
+  const body = [shell];
+  // nacre lining the lip, and a crest of crystals down the keel, glowing
+  body.push(H.torus(1, 0.05, 30, 8).scale(nautAt(0).ax, nautAt(0).ar, 1).rot(0, 0, 0).at(0, nautAt(0).p[1], nautAt(0).p[2]).color(nacre).pbr(0.15, 0.6));
+  for (let k = 0; k < 15; k++) {
+    const phi = -0.25 - k * 0.42, q = nautAt(phi), at3 = vadd(q.p, q.u, q.ar * 1.02), col = [0x8ad8ff, gold, magenta][k % 3];
+    body.push(aim(shard(q.r * (0.5 + rnd(k, 3) * 0.25), q.r * 0.13, 5, 0.4), at3, vadd(q.u, [0, 0, 0], 1)).color(col).pbr(0.1, 0.2).glow(0.9));
+    if (k % 2 === 0 && k < 11) for (const sd of [-1, 1]) body.push(aim(shard(q.r * 0.3, q.r * 0.08, 5, 0.3), vadd(vadd(q.p, q.u, q.ar * 0.6), [sd * q.ax * 0.8, 0, 0]), vadd(q.u, [sd * 0.9, 0, 0])).color(k % 4 ? 0x8ad8ff : magenta).pbr(0.1, 0.2).glow(0.7).lod(1));
+  }
+  // ---- the animal in the aperture: a leathery hood striped like the shell, the funnel, and a mass of flesh ----
+  const A = nautAt(0), AP = A.p;
+  const fl = (p, col = flesh) => p.color(col).pbr(0.35).bump(0.004, 24).tint(0.15, 9);
+  const hood = [
+    fl(S.ellipsoid(A.ax * 0.92, A.ar * 0.85, 0.16).at(0, AP[1], AP[2] + 0.04)),
+    fl(S.ellipsoid(A.ax * 0.95, 0.07, 0.17).at(0, AP[1] + A.ar * 0.55, AP[2] + 0.06).blend(0.04), mix(flesh, deep, 0.4)).bump(0.008, 18, 'rock'),
+    fl(S.capsule([0, AP[1] - A.ar * 0.6, AP[2] + 0.05], [0, AP[1] - A.ar * 0.75, AP[2] + 0.18], 0.05, 0.04).blend(0.03), fleshLt),
+  ];
+  for (let k = 0; k < 6; k++) hood.push(S.capsule([-A.ax, AP[1] + A.ar * 0.6, AP[2] - 0.05 + k * 0.04], [A.ax, AP[1] + A.ar * 0.6, AP[2] - 0.05 + k * 0.04], 0.008).color(k % 2 ? gold : magenta).glow(0.4).paint(0.008, 0));
+  hood.push(...S.mirrorX([S.sphere(0.05).at(A.ax * 0.7, AP[1] + 0.06, AP[2] + 0.13).cut(0.008).color(0x0a0a1a)]));
+  const hoodHard = [...H.mirrorX([eye(0.045, { iris: gold, rim: 0x8a5a10, white: 0xfff0b0, shape: 'bar', pupilDeg: 20, irisDeg: 60, glow: 1.0, seg: 18 }).rot(-6, 50, 0).at(A.ax * 0.7, AP[1] + 0.06, AP[2] + 0.125)])];
+  const nodes = [ROOT, { name: 'body', parent: 'root', rig: 'body', pos: [0, 0, 0], prims: hood, hard: [...body, ...hoodHard], detail: 0.7 }];
+  // ---- the crown of tentacles, each tipped with a glowing eye ----
+  const eyeCols = [[0x8ad8ff, 0x1a3a8a], [gold, 0x8a4a10], [magenta, 0x5a1050]];
+  for (let a = 0; a < NAUT.NT; a++) {
+    const ang = (a / NAUT.NT) * PI * 2, rx = Math.sin(ang) * A.ax * 0.7, ry = Math.cos(ang) * A.ar * 0.6, out = [Math.sin(ang), Math.cos(ang)];
+    const yaw = out[0] * (48 + (a % 2) * 14), pitch = -out[1] * 30 + 18 + (a % 2) * 8;
+    nodes.push({ name: `tentB${a}`, parent: 'body', pos: [rx, AP[1] + ry * 0.8, AP[2] + 0.17], rot: [pitch, yaw, 0] });
+    for (let j = 0; j < NAUT.NS; j++) {
+      const L = NAUT.len[j] * (a % 2 ? 1.12 : 1), r0 = NAUT.rad[j], r1 = NAUT.rad[j + 1];
+      const hard = [H.cyl(r1, r0, L, 8).rot(90, 0, 0).at(0, 0, L / 2).shade((x, y) => (y < -r0 * 0.3 ? fleshLt : flesh)).pbr(0.35), H.torus(lerp(r0, r1, 0.5) * 1.02, 0.004, 10, 4).at(0, 0, L * 0.5).rot(0, 0, 0).color(gold).glow(0.4).lod(1)];
+      hard[1].rot(0, 0, 0);
+      if (j === NAUT.NS - 1) { const ec = eyeCols[a % 3]; hard.push(H.sphere(0.034, 12).at(0, 0, L + 0.01).color(fleshLt).pbr(0.3), eye(0.03, { iris: ec[0], rim: ec[1], white: 0xf8f0ff, shape: a % 2 ? 'slit' : 'round', pupilDeg: 14, irisDeg: 62, glow: 1.3, seg: 16 }).rot(-90, 0, 0).at(0, 0, L + 0.028)); }
+      nodes.push({ name: `tent${a}_${j}`, parent: j ? `tent${a}_${j - 1}` : `tentB${a}`, rig: 'tentacles', pos: j ? [0, 0, NAUT.len[j - 1] * (a % 2 ? 1.12 : 1)] : [0, 0, 0], rot: [(j === 3 ? -25 : 6) + (rnd(a, j) - 0.5) * 10, (rnd(a, j + 7) - 0.5) * 14, 0], hard });
+    }
+  }
+  return { kind: 'astralNautilus', nodes };
+}
+function animAstralNautilus(model, ctx) {
+  const rig = model.userData.rig, t = fin0(ctx?.t), phase = fin0(ctx?.phase);
+  // it rocks on the swell; the eyes weave in slow hypnotic circles, and now and then every one of them
+  // turns on its prey at once and the crown flares wide
+  const c = frac(t * 0.12 + phase * 0.19), stare = pulse(c, 0.0, 0.4), jet = pulse(c, 0.55, 0.7);
+  R(rig.body, Math.sin(t * 0.8 + phase) * 0.05 - stare * 0.08 + jet * 0.06, Math.sin(t * 0.5 + phase) * 0.06, Math.sin(t * 0.65 + phase * 2) * 0.06);
+  P(rig.body, 0, Math.sin(t * 1.1 + phase) * 0.02 + stare * 0.03, jet * 0.05);
+  const T = rig.tentacles || [];
+  for (let i = 0; i < T.length; i++) {
+    const a = Math.floor(i / NAUT.NS), j = i % NAUT.NS, w = t * 1.3 + a * (PI * 2 / NAUT.NT) * 2 + phase;
+    const calm = 1 - stare;
+    R(T[i], Math.sin(w - j * 0.7) * (0.12 + j * 0.05) * calm - stare * (j === 0 ? 0.35 : j === 3 ? -0.4 : 0.05) + jet * (j < 2 ? 0.3 : 0.1),
+      Math.cos(w - j * 0.7) * (0.12 + j * 0.05) * calm + stare * Math.sin(a * 2.4) * 0.05, 0);
+  }
+}
+
+
+// =====================================================================================
+// IRONCLAD LEVIATHAN (Mal-Vash): an anglerfish grown into the wreck of a warship: hull plates and rivets for hide,
+// gun-ports along its flanks, a soul-lantern on a jointed iron stalk, and a maw lined with propeller blades
+// =====================================================================================
+/** a three-bladed screw, its shaft along +Y from the origin, blades of radius r */
+function propeller(r, col, hub = 0x2a2420) {
+  const blade = [[0, -0.18], [0.35, -0.3], [0.85, -0.22], [1, 0], [0.8, 0.22], [0.3, 0.2], [0, 0.14]].map(([x, y]) => [x * r, y * r]);
+  const out = [H.cyl(r * 0.16, r * 0.2, r * 0.36, 10).color(hub).pbr(0.4, 0.8)];
+  for (let k = 0; k < 3; k++) out.push(H.extrude(blade, r * 0.05, r * 0.02).rot(90, 0, 0).rot(0, 0, 0).rot(0, k * 120 + 15, 0).rot(0, 0, 0).at(0, 0, 0).color(col).pbr(0.3, 0.85));
+  for (const h of out.slice(1)) h.rot(0, 0, 0);
+  return out;
+}
+function ironcladLeviathanDesc(def) {
+  const iron = num(def.color, 0x3a3a40), ironDk = mix(iron, 0x101014, 0.5), ironLt = mix(iron, 0x8a8a90, 0.35), rust = 0x7a3e1c, rustLt = 0xa85a26, brass = 0xa8843a, wood = 0x4a3420;
+  const soul = 0x7affd0, soulDk = 0x1a6a5a, mouth = 0x2a1416, flesh = 0x4a3a40, blade = 0x9a9890, MET = 0.7;
+  const CY = 0.13;
+  const TAB = [
+    { z: 1.12, w: 0.24, h: 0.13, y: CY - 0.02 }, { z: 1.04, w: 0.33, h: 0.22, y: CY }, { z: 0.86, w: 0.41, h: 0.31, y: CY + 0.01 }, { z: 0.58, w: 0.43, h: 0.35, y: CY + 0.01 },
+    { z: 0.32, w: 0.39, h: 0.32, y: CY }, { z: 0.02, w: 0.3, h: 0.26, y: CY }, { z: -0.3, w: 0.2, h: 0.19, y: CY + 0.01 }, { z: -0.6, w: 0.13, h: 0.12, y: CY + 0.02 },
+    { z: -0.85, w: 0.08, h: 0.08, y: CY + 0.025 }, { z: -1.02, w: 0.05, h: 0.055, y: CY + 0.03 },
+  ];
+  const sk = (p, part) => p.color(part === 'top' ? ironDk : part === 'bottom' ? mix(iron, rust, 0.5) : iron).pbr(0.5, MET).bump(0.006, 16, 'rock').tint(0.25, 6);
+  const K = carcass(TAB, [['head', 1.12, 0.4], ['body', 0.4, -0.32], ['tail0', -0.32, -0.62], ['tail1', -0.62, -0.84], ['tail2', -0.84, -1.02]], 'body', sk, { pivot: 0.1, core: iron, kOf: { head: 0.03, body: 0.03 } });
+  const { at, skin, prims, hard, ORG } = K;
+  prims.head.push(sk(S.ellipsoid(0.3, 0.12, 0.24).at(0, CY + 0.2, 0.8).blend(0.08), 'top'));   // the brow, where the stalk grows
+  const headHull = prims.head.slice();
+  // hull plating: riveted iron plates laid in strakes, streaked with rust
+  const plate = (z, th, rw, rz, col) => { const q = skin(z, th, 0.004), n = K.nodeOf(z); prims[n].push(S.box(rw * 2, 0.16, rz * 2, 0.008).rot(0, 0, -th).at(q.p[0], q.p[1], q.p[2]).color(col).pbr(0.45, MET).bump(0.004, 26, 'rock').tint(0.2, 14).paint(0.01, 0.008)); return q; };
+  const rivets = [];
+  for (let row = 0; row < 4; row++) for (let k = 0; k < 7; k++) for (const sd of [-1, 1]) {
+    const th = sd * (25 + row * 30), z = 0.72 - k * 0.19 - (row % 2) * 0.09; if (z < -0.75) continue;
+    const q = plate(z, th, 0.085 * clamp(at(z).w / 0.35, 0.4, 1.1), 0.085, rnd(row * 10 + k, sd + 2) > 0.7 ? mix(iron, rust, 0.6) : row % 2 ? iron : ironLt);
+    if (k % 2 === 0) for (const e of [-1, 1]) { const r2 = skin(z + e * 0.07, th + 9, 0.006); rivets.push([K.nodeOf(z), r2.p, r2.n]); }
+  }
+  for (const [n, p, nr] of rivets) hard[n].push(H.sphere(0.011, 6).at(p[0] + nr[0] * 0.002, p[1] + nr[1] * 0.002, p[2]).color(ironLt).pbr(0.35, 0.85).lod(1));
+  K.stripe(1.0, -0.95, 0, (z) => Math.max(0.012, at(z).w * 0.12), (p) => p.color(ironDk).pbr(0.4, 0.8).paint(0.01, 0.012), 0.1);
+  K.dapple({ n: 40, z0: 0.9, z1: -0.9, th0: 20, th1: 120, r0: 0.02, r1: 0.06, seed: 41, wref: 0.3, stretch: 2.5, make: (p, i) => p.color(i % 3 ? rust : rustLt).pbr(0.8, 0.2).paint(0.012, 0) });
+  K.belly((z) => at(z).y - at(z).h * 0.6, mix(rust, ironDk, 0.4), 0.03, 0.7, 0.3);
+  // gun-ports: a row of square ports down each flank, soul-fire burning in each, a few barrels run out
+  for (let k = 0; k < 5; k++) for (const sd of [-1, 1]) {
+    const z = 0.42 - k * 0.16, q = skin(z, sd * 72, 0), n = K.nodeOf(z), s = clamp(at(z).w / 0.35, 0.5, 1);
+    prims[n].push(S.box(0.2, 0.065 * s, 0.065 * s, 0.006).rot(0, 0, -sd * 72).at(q.p[0], q.p[1], q.p[2]).cut(0.006).color(soulDk).glow(0.8));
+    prims[n].push(S.box(0.06, 0.09 * s, 0.09 * s, 0.008).rot(0, 0, -sd * 72).at(q.p[0], q.p[1], q.p[2]).color(brass).pbr(0.35, 0.8).paint(0.01, 0.006));
+    if (k % 2 === 0) hard[n].push(aim(H.cyl(0.018 * s, 0.022 * s, 0.1, 10), vadd(q.p, q.n, 0.02), q.n).color(ironDk).pbr(0.35, 0.85));
+  }
+  // the deck on its back: planking, a broken mast and stays, a rail
+  const dz0 = 0.3, dz1 = -0.28;
+  prims.body.push(S.box(0.26, 0.05, dz0 - dz1, 0.01).at(0, at(0.05).y + at(0.05).h - 0.005, (dz0 + dz1) / 2).color(wood).pbr(0.85).bump(0.004, 40, 'weave').blend(0.03));
+  for (let k = 0; k < 6; k++) prims.body.push(S.box(0.27, 0.06, 0.006, 0.002).at(0, at(0.05).y + at(0.05).h + 0.005, dz1 + 0.04 + k * 0.1).color(0x2a1c10).paint(0.003, -0.002));
+  const deckY = at(0.05).y + at(0.05).h + 0.02;
+  hard.body.push(H.cyl(0.024, 0.03, 0.34, 10).at(0, deckY + 0.17, 0.02).color(wood).pbr(0.85), H.cyl(0.026, 0.026, 0.05, 8).rot(30, 0, 20).at(0.01, deckY + 0.35, 0.04).color(0x6a4a2a).pbr(0.9),
+    H.box(0.22, 0.016, 0.016).at(0, deckY + 0.26, 0.02).color(wood).pbr(0.85),
+    ...H.mirrorX([H.tube([[0.1, deckY + 0.26, 0.02], [0.15, deckY + 0.1, -0.1], [0.17, deckY - 0.02, -0.2]], 0.004, 8, 4).color(0x8a7a5a).pbr(0.95).lod(1)]));
+  for (let k = 0; k < 7; k++) for (const sd of [-1, 1]) hard.body.push(H.cyl(0.006, 0.006, 0.05, 5).at(sd * 0.12, deckY + 0.02, dz1 + 0.03 + k * 0.088).color(ironDk).pbr(0.4, 0.8).lod(1));
+  hard.body.push(...H.mirrorX([H.box(0.008, 0.008, dz0 - dz1 - 0.02).at(0.12, deckY + 0.045, (dz0 + dz1) / 2).color(ironDk).pbr(0.4, 0.8).lod(1)]));
+  // a funnel aft of the mast, glowing at the mouth
+  hard.body.push(H.cyl(0.05, 0.06, 0.18, 12, true).rot(-8, 0, 0).at(0, deckY + 0.07, -0.18).color(ironDk).pbr(0.45, 0.8), H.cyl(0.045, 0.045, 0.01, 12).rot(-8, 0, 0).at(0, deckY + 0.15, -0.19).color(soul).glow(1.4));
+  eyes(K, 'head', surfer(headHull), 0.84, CY + 0.2, 0.028, { iris: soul, rim: soulDk, white: soul, pupilDeg: 12, irisDeg: 60, glow: 1.4 }, { socket: 0x0a0a0a, yaw: 70, pitch: -20 });
+
+  // ---- the maw: a wide undershot jaw; propeller blades and iron fangs for teeth ----
+  const JW = addJaw(K, 'head', { tip: 1.12, hinge: 0.56, yT: CY + 0.02, yH: CY - 0.05, mouth, sk, palate: 0.12, back: 0.08, wk: 1.02, jawTip: 1.16 });
+  const sfH = surfer(headHull), sfJ = surfer(JW.jawHull);
+  const lipX = (sf, z, y) => sf([1.6, y, z], [-1, 0, 0])[0];
+  const jawHard = [];
+  for (let k = 0; k < 4; k++) for (const sd of [-1, 1]) {
+    const z = 0.66 + k * 0.12, yU = JW.mY(z) + 0.02, yL = JW.mY(z) - 0.02, x0 = lipX(sfH, z, yU) - 0.06, x1 = lipX(sfJ, z, yL) - 0.06, r = 0.07 - k * 0.006;
+    hard.head.push(...place(propeller(r, blade), 0, 0, sd * 90, sd * x0, yU, z).map((h) => h.lod(k > 2 ? 1 : 0)));
+    jawHard.push(...place(propeller(r * 0.95, blade), 0, 0, sd * 90, sd * x1, yL, z + 0.05).map((h) => h.lod(k > 2 ? 1 : 0)));
+  }
+  teeth(hard.head, sfH, { z0: 0.6, z1: 1.08, n: 7, mY: JW.mY, up: 1, r: 0.014, len: (i) => 0.06 + (i % 2) * 0.03, col: ironLt, hook: 0.35, rake: 10, splay: 16 });
+  teeth(jawHard, sfJ, { z0: 0.62, z1: 1.12, n: 7, mY: JW.mY, up: -1, r: 0.016, len: (i) => 0.08 + (i % 2) * 0.04, col: ironLt, hook: -0.4, rake: -14, splay: 22, xk: 1.02 });
+  JW.jaw.push(S.capsule([0, JW.mY(1.1) - 0.03, 1.12], [0, JW.mY(0.6) - 0.12, 0.6], 0.03).color(ironDk).pbr(0.4, 0.8).paint(0.01, 0.01));
+  // the lure: a jointed iron stalk from the brow, and on its end an iron lantern with a soul burning in it
+  const lureLen = [0.2, 0.2, 0.18], lureRest = [-62, 48, 52];
+  // tail: a fish's fan, and over it the iron rudder of the old ship
+  hard.tail2.push(...[-1, 1].map((e) => fin({ span: 0.3, chord: 0.18, tip: 0.3, sweep: 0.35, thick: 0.08, rows: 8 }).shade((x, y) => mix(iron, rust, clamp(y / 0.3, 0, 1))).pbr(0.5, 0.6).rot(0, 0, e > 0 ? 0 : 180).rot(e * -40, 0, 0).at(0, at(-0.98).y, -0.98)),
+    fin({ span: 0.16, chord: 0.2, tip: 0.8, sweep: 0.1, thick: 0.06, rows: 4 }).color(ironDk).pbr(0.4, 0.8).at(0, at(-0.88).y + 0.03, -0.86));
+  const nodes = K.nodes({ detail: { default: 0.31, head: 0.33, body: 0.29 } });
+  nodes.push(JW.node(jawHard, 8, 0.33));
+  const fz = 0.4;
+  const pec = (sd) => [fin({ span: 0.34, chord: 0.24, peak: 0.3, root: 0.7, tip: 0.5, sweep: 0.4, thick: 0.1, rows: 8 }).shade((x, y, z) => mix(flipShade(ironDk, rust, iron, 0.34, sd)(x, y), ironLt, Math.sin(z * 60) > 0.8 ? 0.6 : 0)).pbr(0.45, 0.7)];
+  nodes.push(finNode(K, 'finL', 'body', [at(fz).w - 0.04, CY - 0.1, fz - 0.02], [-25, -20, -105], pec(1)), finNode(K, 'finR', 'body', [-(at(fz).w - 0.04), CY - 0.1, fz - 0.02], [-25, 20, 105], pec(-1)));
+  const brow = [0, at(0.85).y + at(0.85).h + 0.12, 0.82];
+  nodes.push({ name: 'lureB', parent: 'head', pos: sub(brow, ORG.head), rot: [0, 0, 0] });
+  lureLen.forEach((L, j) => {
+    const hd = [H.cyl(0.016 - j * 0.003, 0.022 - j * 0.003, L, 8).rot(90, 0, 0).at(0, 0, L / 2).color(ironDk).pbr(0.4, 0.8), H.sphere(0.03 - j * 0.004, 10).color(ironLt).pbr(0.35, 0.85)];
+    hd.push(H.torus(0.02, 0.005, 10, 4).at(0, 0, L * 0.5).color(brass).pbr(0.35, 0.85).lod(1));
+    if (j === lureLen.length - 1) {
+      const lp = [0, -0.07, L + 0.02];
+      hd.push(H.sphere(0.045, 14).at(lp[0], lp[1], lp[2]).color(soul).glow(1.1));
+      hd.push(H.torus(0.055, 0.007, 16, 5).rot(90, 0, 0).at(lp[0], lp[1] + 0.055, lp[2]).color(ironDk).pbr(0.4, 0.8), H.torus(0.055, 0.007, 16, 5).rot(90, 0, 0).at(lp[0], lp[1] - 0.055, lp[2]).color(ironDk).pbr(0.4, 0.8),
+        H.cone(0.06, 0.05, 8).at(lp[0], lp[1] + 0.085, lp[2]).color(ironDk).pbr(0.4, 0.8), H.cyl(0.006, 0.006, 0.07, 5).at(lp[0], lp[1] + 0.03, L).color(ironDk).pbr(0.4, 0.8));
+      for (let k = 0; k < 5; k++) { const a = (k / 5) * PI * 2; hd.push(H.cyl(0.005, 0.005, 0.11, 4).at(lp[0] + Math.sin(a) * 0.055, lp[1], lp[2] + Math.cos(a) * 0.055).color(ironDk).pbr(0.4, 0.8)); }
+    }
+    nodes.push({ name: `lure${j}`, parent: j ? `lure${j - 1}` : 'lureB', rig: 'lure', pos: j ? [0, 0, lureLen[j - 1]] : [0, 0, 0], rot: [lureRest[j], 0, 0], hard: hd });
+  });
+  return { kind: 'ironcladLeviathan', nodes };
+}
+function animIroncladLeviathan(model, ctx) {
+  const rig = model.userData.rig, t = fin0(ctx?.t), phase = fin0(ctx?.phase);
+  const w = t * 1.6 + phase;
+  // the lantern sways before the maw; then the whole wreck lunges and the jaw drops to swallow
+  const c = frac(t * 0.13 + phase * 0.17), lunge = pulse(c, 0.05, 0.4), gape = pulse(c, 0.0, 0.32), snap = pulse(c, 0.26, 0.38);
+  R(rig.body, Math.sin(w * 2) * 0.01 - lunge * 0.08, Math.sin(t * 0.45 + phase) * 0.03, Math.sin(w) * 0.035);
+  P(rig.body, 0, Math.sin(w * 2 + 0.6) * 0.012 + lunge * 0.04, lunge * 0.1);
+  R(rig.head, -gape * 0.18 + snap * 0.1, Math.sin(t * 0.55 + phase * 2) * 0.04 * (1 - gape), 0);
+  R(rig.jaw, 0.03 + Math.max(0, Math.sin(t * 0.9 + phase)) * 0.05 + gape * 0.8 - snap * 0.7);
+  (rig.tail || []).forEach((n, i) => R(n, 0, Math.sin(w - i * 0.8) * (0.08 + i * 0.06), 0));
+  (rig.fins || []).forEach((n, i) => { const sg = i ? -1 : 1; R(n, Math.sin(w * 0.8 + i * 2) * 0.15, 0, sg * (Math.sin(w * 0.8 + i * 2 + 0.9) * 0.2 + lunge * 0.2)); });
+  (rig.lure || []).forEach((n, j) => R(n, Math.sin(t * 1.1 + phase - j * 0.7) * 0.1 + gape * (j === 0 ? 0.25 : -0.15), Math.sin(t * 0.8 + phase - j * 0.9) * 0.14, 0));
+}
+
+// =====================================================================================
+// BAIKAL WYRM (Kurgan): a pale seal-dragon armoured in blubber, sabre-tusked and whiskered, crusted with the ice
+// of the frozen seas it hunts in
+// =====================================================================================
+function baikalWyrmDesc(def) {
+  const pale = num(def.color, 0xc8c0b0), back = mix(tone(pale, 0, -0.05, -0.2), 0x5a6068, 0.35), spot = mix(back, 0x2a3038, 0.5), belly = 0xeee8dc, frost = 0xf4f8ff, ice = 0xbfe6ff, iceDk = 0x7ab8e0, ivory = 0xf0e6c8, ivoryDk = 0xb8a070, mouth = 0x8a3a44, wet = 0.4;
+  const CY = 0.08;
+  const TAB = [
+    { z: 1.2, w: 0.04, h: 0.035, y: CY + 0.2 }, { z: 1.12, w: 0.07, h: 0.06, y: CY + 0.2 }, { z: 0.98, w: 0.1, h: 0.085, y: CY + 0.2 }, { z: 0.86, w: 0.11, h: 0.1, y: CY + 0.19 },
+    { z: 0.72, w: 0.12, h: 0.12, y: CY + 0.15 }, { z: 0.56, w: 0.17, h: 0.17, y: CY + 0.08 }, { z: 0.36, w: 0.27, h: 0.24, y: CY + 0.02 }, { z: 0.06, w: 0.31, h: 0.27, y: CY },
+    { z: -0.24, w: 0.27, h: 0.23, y: CY }, { z: -0.52, w: 0.17, h: 0.15, y: CY + 0.01 }, { z: -0.78, w: 0.09, h: 0.08, y: CY + 0.01 }, { z: -0.95, w: 0.05, h: 0.045, y: CY + 0.01 },
+  ];
+  const sk = (p, part) => p.color(part === 'top' ? back : part === 'bottom' ? belly : pale).pbr(wet).bump(0.004, 20).tint(0.12, 8);
+  const K = carcass(TAB, [['head', 1.2, 0.8], ['neck0', 0.8, 0.56], ['body', 0.56, -0.4], ['tail0', -0.4, -0.66], ['tail1', -0.66, -0.95]], 'body', sk, { pivot: 0.05, core: pale, kOf: { body: 0.04 } });
+  const { at, skin, prims, hard, ORG } = K;
+  // a dragon's skull on a seal's head: brows, cheek muscle, nostril mounds
+  prims.head.push(...S.mirrorX([sk(S.ellipsoid(0.05, 0.05, 0.08).at(0.08, CY + 0.2, 0.86).blend(0.04)), sk(S.capsule([0.04, CY + 0.28, 1.0], [0.07, CY + 0.3, 0.88], 0.02, 0.028).blend(0.03), 'top'), sk(S.ellipsoid(0.025, 0.02, 0.03).at(0.03, CY + 0.25, 1.16).blend(0.02))]));
+  const headHull = prims.head.slice();
+  // blubber folds round the neck and shoulders
+  for (const z of [0.7, 0.62, 0.52]) ring(K, z, -150, 150, 0.022, (p) => sk(p.blend(0.02), 'core'), 30);
+  K.stripe(1.15, -0.9, 0, (z) => at(z).h * 0.55, (p) => p.color(back).pbr(wet).paint(0.03, 0), 0.12);
+  K.dapple({ n: 90, z0: 1.0, z1: -0.9, th0: 0, th1: 110, r0: 0.012, r1: 0.04, seed: 81, wref: 0.25, make: (p, i) => p.color(i % 4 ? spot : back).pbr(wet).paint(0.008, 0) });
+  K.dapple({ n: 30, z0: 0.6, z1: -0.7, th0: 0, th1: 70, r0: 0.03, r1: 0.07, seed: 83, wref: 0.25, make: (p) => p.color(frost).pbr(0.6).bump(0.005, 30, 'rock').paint(0.012, 0.004) });
+  K.belly((z) => at(z).y - at(z).h * 0.4, belly, 0.03, wet);
+  eyes(K, 'head', surfer(headHull), 0.94, CY + 0.24, 0.022, { iris: 0x4ab8ff, rim: 0x0a2a4a, white: 0x101820, pupilDeg: 18, irisDeg: 60, glow: 0.8 }, { socket: 0x0a0c10, yaw: 70 });
+  // ice: crusts of faceted ice down the spine and over the shoulders, frost on the brow
+  for (let i = 0; i < 26; i++) {
+    const z = 0.9 - rnd(i, 91) * 1.7, th = (rnd(i, 92) - 0.5) * 120, q = skin(z, th, -0.01), sc = clamp(at(z).w / 0.25, 0.35, 1.1);
+    hard[K.nodeOf(z)].push(aim(shard(0.05 + rnd(i, 93) * 0.07 * sc, (0.02 + rnd(i, 94) * 0.02) * sc, 5, 0.5), q.p, vadd(q.n, [rnd(i, 95) - 0.5, 0.5, -0.4])).color(i % 3 ? ice : frost).pbr(0.1, 0.3).glow(0.25).lod(i % 2 ? 1 : 3));
+  }
+  for (let i = 0; i < 9; i++) { const z = 0.5 - i * 0.14, q = skin(z, 0, 0); hard[K.nodeOf(z)].push(aim(spike(0.05 + 0.03 * Math.sin((i / 8) * PI), 0.016, -0.4, 5), q.p, [0, 1, -0.6]).color(iceDk).pbr(0.2, 0.2).glow(0.2)); }
+  // ---- jaws, sabre tusks, whiskers ----
+  const JW = addJaw(K, 'head', { tip: 1.2, hinge: 0.88, yT: CY + 0.19, yH: CY + 0.17, mouth, sk, palate: 0.03, back: 0.05, jawTip: 1.17, belly, bellyLine: (z) => at(z).y - at(z).h * 0.4 });
+  const sfH = surfer(headHull), sfJ = surfer(JW.jawHull);
+  teeth(hard.head, sfH, { z0: 0.95, z1: 1.16, n: 6, mY: JW.mY, up: 1, r: 0.008, len: 0.025, col: ivory, hook: 0.2 });
+  const jawHard = [];
+  teeth(jawHard, sfJ, { z0: 0.95, z1: 1.14, n: 5, mY: JW.mY, up: -1, r: 0.008, len: 0.025, col: ivory, hook: 0.2 });
+  const tx = sfH([1, JW.mY(1.08) + 0.01, 1.08], [-1, 0, 0])[0] - 0.012;
+  hard.head.push(...H.mirrorX([horn([[tx, JW.mY(1.08) + 0.01, 1.08], [tx + 0.015, JW.mY(1.08) - 0.08, 1.11], [tx + 0.02, JW.mY(1.08) - 0.2, 1.1], [tx + 0.01, JW.mY(1.08) - 0.32, 1.04], [tx - 0.005, JW.mY(1.08) - 0.4, 0.97]], 0.022, 0.006, ivory, ivoryDk).pbr(0.3)]));
+  for (let k = 0; k < 4; k++) hard.head.push(...H.mirrorX([H.tube([[0.05, CY + 0.2 + k * 0.012, 1.12 - k * 0.02], [0.13, CY + 0.19 + k * 0.02, 1.08 - k * 0.03], [0.22, CY + 0.15 + k * 0.03, 1.0 - k * 0.05]], [0.004, 0.003, 0.0012], 10, 4).color(frost).pbr(0.6).lod(1)]));
+  hard.head.push(...H.mirrorX([horn([[0.06, CY + 0.29, 0.86], [0.09, CY + 0.33, 0.78], [0.1, CY + 0.35, 0.7]], 0.02, 0.005, iceDk, frost).lod(1)]));
+  // ---- flippers: broad fore-flippers, and the seal's paired hind flippers spread as a tail ----
+  const flip = (sd, sp) => [fin({ span: sp, chord: sp * 0.42, peak: 0.4, root: 0.6, tip: 0.35, pw: 1.3, sweep: 0.4, thick: 0.13, rows: 9 }).shade(flipShade(back, belly, spot, sp, sd)).pbr(wet)];
+  const nodes = K.nodes({ detail: { default: 0.48, head: 0.75, neck0: 0.5, body: 0.4 } });
+  nodes.push(JW.node(jawHard, 10, 0.75));
+  const fx = at(0.3).w - 0.05;
+  nodes.push(finNode(K, 'finFL', 'body', [fx, CY - 0.12, 0.3], [-14, -16, -104], flip(1, 0.42)), finNode(K, 'finFR', 'body', [-fx, CY - 0.12, 0.3], [-14, 16, 104], flip(-1, 0.42)));
+  const hind = (sd) => [fin({ span: 0.32, chord: 0.2, peak: 0.6, root: 0.5, tip: 0.9, pw: 2, sweep: 0.15, thick: 0.1, rows: 8 }).shade((x, y) => mix(back, spot, clamp(y / 0.32, 0, 1) * 0.6 + (Math.sin(y * 70) > 0.6 ? 0.2 : 0))).pbr(wet)];
+  nodes.push(finNode(K, 'finRL', 'tail1', [0.03, CY, -0.92], [90 + 10, 0, -28], hind(1)), finNode(K, 'finRR', 'tail1', [-0.03, CY, -0.92], [90 + 10, 0, 28], hind(-1)));
+  return { kind: 'baikalWyrm', nodes };
+}
+function animBaikalWyrm(model, ctx) {
+  const rig = model.userData.rig, t = fin0(ctx?.t), phase = fin0(ctx?.phase);
+  const w = t * 2.2 + phase;
+  // it surges like a seal, body flexing up and down; the strike is a heave out of the water and a stab of the tusks
+  const c = frac(t * 0.16 + phase * 0.21), heave = pulse(c, 0.0, 0.4), stab = pulse(c, 0.2, 0.38);
+  R(rig.body, -Math.cos(w) * 0.04 - heave * 0.16, Math.sin(t * 0.5 + phase) * 0.03, Math.sin(w * 0.5) * 0.04);
+  P(rig.body, 0, Math.sin(w) * 0.02 + heave * 0.08, heave * 0.04);
+  (rig.necks || []).forEach((n) => R(n, -heave * 0.1 + stab * 0.25 + Math.sin(w + 0.5) * 0.04, Math.sin(t * 0.7 + phase) * 0.1 * (1 - heave), 0));
+  R(rig.head, -heave * 0.2 + stab * 0.45 + Math.sin(t * 1.1 + phase) * 0.03, Math.sin(t * 0.9 + phase * 2) * 0.08 * (1 - heave), 0);
+  R(rig.jaw, Math.max(0, Math.sin(t * 1.4 + phase)) * 0.12 + heave * 0.45 - stab * 0.3);
+  (rig.tail || []).forEach((n, i) => R(n, Math.sin(w - i * 0.9 - 1) * (0.12 + i * 0.06), Math.sin(w * 0.5 - i) * 0.05, 0));
+  (rig.fins || []).forEach((n, i) => { const sg = i % 2 ? -1 : 1; if (i < 2) R(n, Math.cos(w) * 0.25, 0, sg * (Math.sin(w) * 0.3 + heave * 0.2)); else R(n, Math.sin(w - 1.5) * 0.25, sg * Math.sin(w * 0.5) * 0.1, 0); });
+}
+
+// =====================================================================================
+// THE OLD MAN OF THE RIVER (Hearthmoot): a house-sized pike with a snapping turtle's hooked beak, its back roofed
+// in moss-grown shell, weed trailing from every fin and the hooks of a hundred years of anglers in its lip
+// =====================================================================================
+function riverPikeDesc(def) {
+  const olive = num(def.color, 0x5a6a3a), back = mix(tone(olive, 0.01, -0.05, -0.12), 0x1e2414, 0.3), flank = tone(olive, -0.01, 0.05, 0.06), spotC = 0xd8d098, belly = 0xe8dcb0;
+  const shellC = 0x5a4a2a, shellDk = 0x2e2414, moss = 0x4a6a2a, mossLt = 0x7a9a3a, weed = 0x3a5a22, beakC = 0x2a261c, mouth = 0x8a5048, wet = 0.36;
+  const CY = 0.12;
+  const TAB = [
+    { z: 1.18, w: 0.045, h: 0.04, y: CY + 0.03 }, { z: 1.1, w: 0.08, h: 0.07, y: CY + 0.035 }, { z: 0.95, w: 0.12, h: 0.11, y: CY + 0.04 }, { z: 0.78, w: 0.16, h: 0.15, y: CY + 0.045 },
+    { z: 0.6, w: 0.19, h: 0.19, y: CY + 0.04 }, { z: 0.3, w: 0.21, h: 0.22, y: CY + 0.03 }, { z: 0.0, w: 0.2, h: 0.21, y: CY + 0.03 }, { z: -0.3, w: 0.16, h: 0.17, y: CY + 0.03 },
+    { z: -0.6, w: 0.11, h: 0.12, y: CY + 0.03 }, { z: -0.82, w: 0.07, h: 0.08, y: CY + 0.035 }, { z: -0.96, w: 0.045, h: 0.06, y: CY + 0.035 },
+  ];
+  const sk = (p, part) => p.color(part === 'top' ? back : part === 'bottom' ? belly : flank).pbr(wet).bump(0.003, 34, 'scales').tint(0.14, 9);
+  const K = carcass(TAB, [['head', 1.18, 0.66], ['body', 0.66, -0.3], ['tail0', -0.3, -0.58], ['tail1', -0.58, -0.8], ['tail2', -0.8, -0.96]], 'body', sk, { pivot: 0.2, core: flank, kOf: { body: 0.03 } });
+  const { at, skin, prims, hard } = K;
+  // a turtle's head: a heavy, horny skull with a hooked beak
+  const hs = (p, part) => p.color(part === 'top' ? shellDk : mix(back, 0x4a4a30, 0.4)).pbr(0.5).bump(0.007, 18, 'rock').tint(0.2, 7);
+  prims.head.push(...S.mirrorX([hs(S.ellipsoid(0.06, 0.07, 0.1).at(0.11, CY + 0.06, 0.78).blend(0.05)), hs(S.capsule([0.06, CY + 0.15, 0.98], [0.1, CY + 0.17, 0.82], 0.02, 0.03).blend(0.04), 'top')]),
+    hs(S.ellipsoid(0.11, 0.07, 0.2).at(0, CY + 0.1, 0.9).blend(0.08), 'core'));
+  const headHull = prims.head.slice();
+  // the carapace: rows of moss-grown scutes over the back
+  for (let r = 0; r < 6; r++) for (let k = -1; k <= 1; k++) {
+    const z = 0.6 - r * 0.15, th = k * 42, q = skin(z, th, 0.02), n = K.nodeOf(z), sc = clamp(at(z).w / 0.2, 0.5, 1.1);
+    const q0 = skin(z, th, 0);
+    prims[n].push(S.box(0.13 * sc, 0.06, 0.13, 0.03).rot(0, 45, 0).scale(1).rot(0, 0, -th).at(q0.p[0], q0.p[1], q0.p[2]).color(rnd(r * 3 + k, 3) > 0.5 ? shellC : mix(shellC, moss, 0.35)).pbr(0.6).bump(0.007, 18, 'rock').tint(0.25, 9).paint(0.006, 0.022));
+    const m = skin(z + 0.03, th + 10, 0);
+    prims[n].push(S.sphere(0.035 * sc).at(m.p[0], m.p[1], m.p[2]).color(rnd(r, k + 5) > 0.5 ? moss : mossLt).pbr(0.95).bump(0.006, 40, 'fur').paint(0.015, 0.008));
+  }
+  
+  // pike markings: rows of pale bean-shaped spots on the flank
+  K.dapple({ n: 90, z0: 0.55, z1: -0.9, th0: 60, th1: 115, r0: 0.014, r1: 0.026, seed: 101, wref: 0.2, stretch: 1.8, make: (p) => p.color(spotC).pbr(wet).paint(0.006, 0) });
+  K.belly((z) => at(z).y - at(z).h * 0.5, belly, 0.02, wet);
+  eyes(K, 'head', surfer(headHull), 0.9, CY + 0.1, 0.026, { iris: 0xd8b040, rim: 0x5a4010, white: 0xc8b070, pupilDeg: 18, irisDeg: 56, glow: 0.3 }, { socket: 0x1a1408, yaw: 66, pitch: -10 });
+  // ---- the beak: a hooked horny upper bill over a scooped lower one ----
+  const JW = addJaw(K, 'head', { tip: 1.18, hinge: 0.8, yT: CY + 0.02, yH: CY - 0.01, mouth, sk: hs, palate: 0.04, back: 0.06, belly, bellyLine: (z) => at(z).y - at(z).h * 0.45 });
+  hard.head.push(spike(0.14, 0.055, 1.1, 7, 0.75).rot(122, 0, 0).at(0, CY + 0.055, 1.15).color(beakC).pbr(0.3).shade((x, y) => (y > 0.6 ? 0x6a6050 : null)));
+  const jawHard = [spike(0.07, 0.04, -0.5, 7, 0.75).rot(-60, 0, 0).at(0, JW.mY(1.12) - 0.03, 1.12).color(beakC).pbr(0.3)];
+  JW.jaw.push(...S.mirrorX([S.capsule([0.05, JW.mY(1.1) - 0.005, 1.1], [0.12, JW.mY(0.85) - 0.005, 0.85], 0.012).color(beakC).pbr(0.3).paint(0.008, 0.004)]));
+  prims.head.push(...S.mirrorX([S.capsule([0.05, JW.mY(1.1) + 0.006, 1.1], [0.13, JW.mY(0.85) + 0.006, 0.85], 0.012).color(beakC).pbr(0.3).paint(0.008, 0.004)]));
+  // old hooks and broken line in its lip
+  const hook = (p, yaw, k) => {
+    const g = H.torus(0.026, 0.004, 14, 5, PI * 1.25).rot(0, 0, 0).rot(0, yaw, 0).at(p[0], p[1], p[2]).color(k % 2 ? 0x8a8a8a : 0x7a5a3a).pbr(0.35, 0.85);
+    const line = H.tube([[p[0], p[1] + 0.026, p[2]], [p[0] * 1.3, p[1] + 0.06, p[2] - 0.04], [p[0] * 1.6, p[1] + 0.02, p[2] - 0.12]], 0.0025, 8, 4).color(0xd8d0b8).pbr(0.9);
+    return [g.lod(1), line.lod(1)];
+  };
+  const sfH = surfer(headHull);
+  for (const [z, sd, k] of [[0.95, 1, 0], [1.02, -1, 1], [0.88, -1, 2], [0.99, 1, 3]]) { const x = sfH([1, JW.mY(z) + 0.012, z], [-1, 0, 0])[0]; (k < 2 ? hard.head : jawHard).push(...hook([sd * x, JW.mY(z) + (k < 2 ? 0.005 : -0.02), z], sd * 80, k)); }
+  // ---- fins: dorsal and anal set far back, a forked tail; weed trailing off them and off the shell ----
+  const fcol = (sp) => (x, y) => mix(mix(back, 0x6a5a2a, 0.3), 0x2a1c0c, clamp(y / sp, 0, 1) * 0.5 + (Math.sin(y * 90) > 0.7 ? 0.2 : 0));
+  hard.tail0.push(fin({ span: 0.2, chord: 0.3, tip: 0.4, sweep: 0.5, thick: 0.08 }).shade(fcol(0.2)).pbr(wet).at(0, at(-0.45).y + at(-0.45).h - 0.02, -0.38));
+  hard.tail0.push(fin({ span: 0.16, chord: 0.24, tip: 0.4, sweep: 0.5, thick: 0.08 }).shade(fcol(0.16)).pbr(wet).rot(0, 0, 180).at(0, at(-0.45).y - at(-0.45).h + 0.02, -0.42));
+  const lobe = (ang, down) => fin({ span: 0.3, chord: 0.16, tip: 0.2, sweep: 0.4, thick: 0.08, pw: 0.9, rows: 9 }).shade(fcol(0.3)).pbr(wet).rot(0, 0, down ? 180 : 0).rot(ang, 0, 0).at(0, at(-0.94).y, -0.93);
+  hard.tail2.push(lobe(-44, false), lobe(44, true));
+  const weedRib = (pts, w) => H.geo(ribbonGeo(pts, (u) => w * (1 - u * 0.7), [1, 0, 0], 0.5, 12)).shade((x, y, z) => mix(weed, mossLt, clamp(noise3(x * 30, y * 30, z * 30) + 0.2, 0, 1) * 0.6)).pbr(0.8);
+  for (let k = 0; k < 7; k++) { const z = 0.55 - k * 0.14, th = (k % 2 ? 1 : -1) * (30 + k * 6), q = skin(z, th, 0.03), L = 0.25 + rnd(k, 111) * 0.2; hard[K.nodeOf(z)].push(weedRib([q.p, [q.p[0] * 1.2, q.p[1] - 0.02, q.p[2] - L * 0.35], [q.p[0] * 1.35, q.p[1] - 0.06, q.p[2] - L * 0.7], [q.p[0] * 1.4, q.p[1] - 0.1, q.p[2] - L]], 0.025).lod(k % 2 ? 1 : 3)); }
+  hard.tail2.push(weedRib([[0, at(-0.9).y + 0.05, -0.9], [0.03, at(-0.9).y + 0.02, -1.05], [-0.02, at(-0.9).y - 0.02, -1.2], [0.02, at(-0.9).y - 0.04, -1.32]], 0.022).lod(1));
+  const pec = (sd) => [fin({ span: 0.2, chord: 0.12, tip: 0.4, sweep: 0.5, thick: 0.1, rows: 8 }).shade(flipShade(back, belly, 0x4a3a1a, 0.2, sd)).pbr(wet), weedRib([[0, 0.02, 0], [0.01, 0.14, -0.06], [0, 0.24, -0.14], [0.01, 0.32, -0.24]], 0.016).lod(1)];
+  const nodes = K.nodes({ detail: { default: 0.5, head: 0.65, body: 0.44 } });
+  nodes.push(JW.node(jawHard, 8, 0.65));
+  nodes.push(finNode(K, 'finL', 'body', [at(0.5).w - 0.03, CY - 0.12, 0.5], [-30, -14, -120], pec(1)), finNode(K, 'finR', 'body', [-(at(0.5).w - 0.03), CY - 0.12, 0.5], [-30, 14, 120], pec(-1)));
+  return { kind: 'riverPike', nodes };
+}
+function animRiverPike(model, ctx) {
+  const rig = model.userData.rig, t = fin0(ctx?.t), phase = fin0(ctx?.phase);
+  // it lies still as a log, the tail barely stirring; then a sudden S-strike and the beak snaps shut
+  const c = frac(t * 0.17 + phase * 0.19), coil = pulse(c, 0.0, 0.22), strike = pulse(c, 0.18, 0.36), snap = pulse(c, 0.28, 0.38);
+  const w = t * 2.4 + phase;
+  R(rig.body, -strike * 0.06, coil * 0.12 - strike * 0.1 + Math.sin(w * 0.5) * 0.02, Math.sin(w * 0.5) * 0.025);
+  P(rig.body, 0, Math.sin(w * 0.5 + 1) * 0.01 + strike * 0.03, strike * 0.16 - coil * 0.04);
+  R(rig.head, -strike * 0.1 + snap * 0.05, -coil * 0.2 + strike * 0.12, 0);
+  R(rig.jaw, 0.02 + strike * 0.55 - snap * 0.55 + Math.max(0, Math.sin(t * 0.8 + phase)) * 0.04);
+  (rig.tail || []).forEach((n, i) => R(n, 0, Math.sin(w - i * 0.8) * (0.05 + i * 0.03) * (1 + coil * 2) - coil * 0.25 + strike * 0.2, 0));
+  (rig.fins || []).forEach((n, i) => { const sg = i ? -1 : 1; R(n, Math.sin(w + i * 2) * 0.12, 0, sg * (Math.sin(w + i * 2 + 0.9) * 0.15 - strike * 0.3)); });
+}
+
 export const creatures = {
   brassLeviathan: (def) => rigged(def, brassLeviathanDesc),
   abyssalOuroboros: (def) => rigged(def, abyssalOuroborosDesc),
   balorMaw: (def) => rigged(def, balorMawDesc),
   sirenScolopendra: (def) => rigged(def, sirenScolopendraDesc),
-  sumpKraken: (def) => rigged(def, sumpKrakenDesc),
+  sumpKraken: (def) => rigged(def, sumpKrakenDesc, 1.3),
+  astralNautilus: (def) => rigged(def, astralNautilusDesc, 1.45),
+  ironcladLeviathan: (def) => rigged(def, ironcladLeviathanDesc),
+  baikalWyrm: (def) => rigged(def, baikalWyrmDesc),
+  riverPike: (def) => rigged(def, riverPikeDesc),
 };
 export const animators = {
   brassLeviathan: animBrassLeviathan,
@@ -1156,4 +1495,8 @@ export const animators = {
   balorMaw: animBalorMaw,
   sirenScolopendra: animSirenScolopendra,
   sumpKraken: animSumpKraken,
+  astralNautilus: animAstralNautilus,
+  ironcladLeviathan: animIroncladLeviathan,
+  baikalWyrm: animBaikalWyrm,
+  riverPike: animRiverPike,
 };
