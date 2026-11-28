@@ -25,6 +25,7 @@ export const FACTIONS = {
     places: { village: 'village', fort: 'border fort', castle: 'castle', city: 'walled city', coast: 'fishing town', harbor: 'harbour city', island: 'island keep' },
   },
   goblin: {
+    cost: 0.35, // price correction from trials against the Kingdom (twenty battles a step)
     undersea: 'goblinSub', name: 'Goblin Horde', adj: 'Goblin', biomes: ['swamp', 'desert', 'jungle', 'temperate'],
     wall: 'palisade', strongWall: 'palisade', layout: 'warren', homes: 'hut', small: 'tent', camp: 'tent', lookout: 'tower',
     deco: ['crates', 'barricade', 'crates'], trees: ['tree', 'pine'], guns: ['ballista', 'ballista', 'cannon'], shoreGun: 'harpoon',
@@ -33,6 +34,7 @@ export const FACTIONS = {
     places: { village: 'warren', fort: 'stockade', castle: 'great stockade', city: 'shanty city', coast: 'wreckers\' cove', harbor: 'corsair haven', island: 'reef stockade' },
   },
   undead: {
+    cost: 0.79, // price correction from trials against the Kingdom (twenty battles a step)
     undersea: 'undeadSub', name: 'Undead', adj: 'Undead', biomes: ['swamp', 'snow', 'temperate'],
     wall: 'ruin', strongWall: 'rampart', layout: 'necropolis', homes: 'keep', small: 'statue', camp: 'pillar', lookout: 'pillar',
     deco: ['statue', 'pillar', 'pillar'], trees: ['pine'], guns: ['mortar', 'ballista'], shoreGun: 'battery',
@@ -41,6 +43,7 @@ export const FACTIONS = {
     places: { village: 'graveyard', fort: 'barrow fort', castle: 'black keep', city: 'necropolis', coast: 'drowned chapel', harbor: 'ghost harbour', island: 'crypt isle' },
   },
   infernal: {
+    cost: 2.15, // price correction from trials against the Kingdom (twenty battles a step)
     undersea: 'infernalSub', name: 'Infernal', adj: 'Infernal', biomes: ['volcanic'],
     wall: 'bastions', strongWall: 'rampart', layout: 'rings', homes: 'bastion', small: 'pillar', camp: 'rock', lookout: 'pillar',
     deco: ['pillar', 'statue', 'rock'], trees: [], guns: ['mortar', 'cannon'], shoreGun: 'battery',
@@ -49,6 +52,7 @@ export const FACTIONS = {
     places: { village: 'ash shrine', fort: 'brimstone redoubt', castle: 'obsidian citadel', city: 'infernal city', coast: 'cinder shore', harbor: 'burning harbour', island: 'ember isle' },
   },
   beasts: {
+    cost: 0.63, // price correction from trials against the Kingdom (twenty battles a step)
     undersea: 'megalodon', name: 'Beasts', adj: 'Wild', biomes: ['jungle', 'temperate', 'desert'],
     wall: 'ring', strongWall: 'palisade', layout: 'wild', homes: 'rock', small: 'tent', camp: 'tent', lookout: 'tower',
     deco: ['rock', 'barricade', 'crates'], trees: ['tree', 'tree', 'pine'], guns: [], shoreGun: null,
@@ -57,6 +61,7 @@ export const FACTIONS = {
     places: { village: 'den', fort: 'ogre camp', castle: 'giants\' hold', city: 'great lair', coast: 'troll shore', harbor: 'harpy cove', island: 'cyclops isle' },
   },
   elemental: {
+    cost: 1.60, // price correction from trials against the Kingdom (twenty battles a step)
     undersea: 'seaElemental', name: 'Elemental', adj: 'Elemental', biomes: ['snow', 'volcanic', 'desert'],
     wall: 'ring', strongWall: 'ring', layout: 'rings', homes: 'pillar', small: 'statue', camp: 'rock', lookout: 'pillar',
     deco: ['pillar', 'rock', 'statue'], trees: ['pine'], guns: [], shoreGun: null,
@@ -65,6 +70,7 @@ export const FACTIONS = {
     places: { village: 'standing stones', fort: 'rune circle', castle: 'stone sanctum', city: 'city of pillars', coast: 'tide stones', harbor: 'drowned sanctum', island: 'rune isle' },
   },
   dragons: {
+    cost: 1.22, // price correction from trials against the Kingdom (twenty battles a step)
     undersea: 'seaDragon', name: 'Dragons', adj: 'Dragon', biomes: ['volcanic', 'snow'],
     wall: 'ring', strongWall: 'ring', layout: 'wild', homes: 'rock', small: 'rock', camp: 'rock', lookout: 'pillar',
     deco: ['rock', 'pillar', 'statue'], trees: ['pine'], guns: [], shoreGun: null,
