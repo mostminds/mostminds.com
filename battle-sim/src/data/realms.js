@@ -913,7 +913,9 @@ export function realmUnits(BASE) {
 // (eight battles a step): below 1 the realm's troops fought under their price, so it musters more.
 const COST = { aethel: 0.8, ashur: 0.92, aurelia: 0.8, caliphate: 0.89, cloven: 0.6, crimson: 0.8, drowned: 0.8, fimbul: 0.63, gorge: 0.71, graal: 0.71,
   greenhide: 0.63, grom: 0.75, ironbound: 0.82, kaelneth: 0.8, khemet: 0.94, mistisles: 0.56, principalities: 0.63, screaming: 0.71, shogunate: 0.69,
-  skar: 0.75, sunkings: 0.63, thousandgods: 1, tianlong: 1, velikaya: 0.87, verdant: 0.75, westmark: 0.84, xibalba: 0.52 };
+  skar: 0.75, sunkings: 0.63, thousandgods: 1, tianlong: 1, velikaya: 0.87, verdant: 0.75, westmark: 0.84, xibalba: 0.52,
+  kharnak: 0.6, morbus: 0.85, velvet: 0.75, malvash: 0.8, ashhorde: 0.63, balor: 0.55, kurgan: 0.85, hearthmoot: 0.52, baobab: 0.85, nagavar: 0.73,
+  pearlfleet: 0.77, glimmer: 1.1, khanate: 0.55, emerald: 0.8, deeproot: 0.38, goldsands: 1.2, labyrinth: 1.3 };
 
 /** Worldgen factions: how each realm builds and what it musters. */
 export function realmFactions() {

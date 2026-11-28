@@ -777,7 +777,7 @@ function updateSquad(b, sq) {
     }
   }
   if (sq.state === 'fallback') {
-    const pt = sq.rallyPt;
+    const pt = sq.rallyPt || { x: sq.cx, y: sq.cy };
     if (Math.hypot(pt.x - sq.cx, pt.y - sq.cy) < 4 || b.tick > sq.rallyUntil) {
       // steadied at the rally point: reorganise and go back in
       sq.state = sq.prev === 'hold' ? 'hold' : 'advance'; sq.initial = Math.max(1, sq.alive); sq.leaderless = false; sq.steadyUntil = b.tick + 90; // steadied for a while, but it can break again
@@ -1304,7 +1304,7 @@ export function damage(b, t, dmg, from, style, hit = true, src = null) {
       t.split = true;
       const def = b.getDef(sp.into), fresh = [];
       for (let k = 0; k < (sp.count || 2); k++) { const p = freeTileNear(b, t.x, t.y, def.size || 1, t.side); if (p) fresh.push(spawnUnit(b, def, t.side, p[0], p[1])); }
-      if (fresh.length) { const sq = addSquad(b, fresh, b.squads[t.squad]?.state || 'advance'); if (sq && b.squads[t.squad]?.front) sq.front = b.squads[t.squad].front; b.events.push({ type: 'reinforce', side: t.side, ids: fresh.map((u) => u.id), split: true }); }
+      if (fresh.length) { const ps = b.squads[t.squad]?.state, sq = addSquad(b, fresh, ps === 'hold' ? 'hold' : 'advance'); if (sq && b.squads[t.squad]?.front) sq.front = b.squads[t.squad].front; b.events.push({ type: 'reinforce', side: t.side, ids: fresh.map((u) => u.id), split: true }); }
     }
   }
 }
