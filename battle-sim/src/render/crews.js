@@ -256,8 +256,8 @@ function ridOf(def, faction) {
 DETAIL.crew = [56, 22, 9];
 const CREW_DETAIL = 'crew', LEVELS = 3;
 const DECK_H = 0.64, TALL = 1.3;
-const NEAR = 16, MID = 46;                 // camera distance (world units) below which a ship's hands use level 0 / 1
-const LEVEL_CAP = [40, 200];              // most figures drawn at level 0 / level 1 in one frame (the rest drop a level)
+const NEAR = 16, MID = 40;                 // camera distance (world units) below which a ship's hands use level 0 / 1
+const LEVEL_CAP = [40, 120];              // most figures drawn at level 0 / level 1 in one frame (the rest drop a level)
 const BAKES_PER_FRAME = 6;
 const POSES = ['stand', 'stand2', 'walk1', 'walk2', 'haul1', 'haul2', 'gun', 'brace', 'atk1', 'atk2', 'cheer1', 'cheer2', 'look', 'work'];
 // what a pose falls back to on the cheaper levels (so far ships use few buckets)

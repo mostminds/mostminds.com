@@ -781,6 +781,7 @@ export function attachDamage(info) {
           if (WRECK.size > 400) WRECK.delete(WRECK.keys().next().value);
         }
         geos = lv.map((g, i) => (i < 3 ? charGeo(g, level, fire, 5) : charGeo(pristine[i], Math.min(level, 2), false, 5)));
+      }
       swapLod(model, mesh, geos);
     }
     for (const mv of movers) swapLod(model, mv.m, level === 0 ? mv.geos : mv.geos.map((g, i) => charGeo(g, Math.min(level, 3), fire && level >= 2, 7 + i)));
