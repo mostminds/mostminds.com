@@ -170,7 +170,41 @@ Object.assign(SHIPS, {
   undeadSub:   { ...SUBMERSIBLE, name: 'Coffin Diver',       color: 0x2a2630, sail: 0x8a8a78, trim: 0x9a9a8a, crew: 14 },
   infernalSub: { ...SUBMERSIBLE, name: 'Brimstone Lurker',   color: 0x2a1a1a, sail: 0xff5a14, trim: 0xb0782a, hull: 320, armour: 38, speed: 0.48 },
 });
+// ---- Fleet roles (see engine/fleetroles.js). Every hull has a part to play:
+//  line: broadsides of round, heavy and chain shot, swivel guns, and (ram) a ram on a long run in deep water
+//  hunter: harpoons that tether a sea beast to the surface, depth charges, fire barrels; siege: mortars from far off;
+//  carrier: launches squadrons of fliers; flak: guns into the sky; troop: supply, repair, marines for boarding;
+//  landing: flat-bottomed, runs in on forts once the sea is won
+const SWIVEL = { range: 6, dmg: [3, 9], reload: 3, acc: 0.75 };
+Object.assign(SHIPS.raft, { role: 'landing', flat: true });
+Object.assign(SHIPS.skiff, { role: 'hunter', harpoon: { range: 10, dmg: [6, 14], reload: 7, acc: 0.65, tether: 14 }, swivel: SWIVEL, barrels: 2, flat: true });
+Object.assign(SHIPS.sloop, { role: 'hunter', harpoon: { range: 11, dmg: [8, 16], reload: 7, acc: 0.65, tether: 16 }, depth: { range: 6, dmg: [18, 34], reload: 12 }, swivel: SWIVEL, barrels: 3 });
+Object.assign(SHIPS.cutter, { role: 'line', swivel: SWIVEL });
+Object.assign(SHIPS.brigantine, { role: 'line', swivel: SWIVEL });
+Object.assign(SHIPS.frigate, { role: 'line', swivel: SWIVEL, ram: { base: 30, perTile: 3, cooldown: 30 } });
+Object.assign(SHIPS.galleon, { role: 'line', swivel: SWIVEL, heavyShot: 6 });
+Object.assign(SHIPS.manowar, { role: 'line', swivel: SWIVEL, heavyShot: 8, ram: { base: 50, perTile: 4, cooldown: 34 } });
+Object.assign(SHIPS.leviathanArk, { role: 'troop', supply: { radius: 11, repair: 3, every: 4 } });
+Object.assign(SHIPS.siegeCrab, { role: 'landing' });
+Object.assign(SHIPS, {
+  bombKetch:     { name: 'Bomb-Ketch', role: 'siege', level: 55, hull: 340, armour: 18, speed: 0.42, turn: 5, crew: 24, len: 6, beam: 2.4, sails: 2, color: 0x5a3a24, sail: 0xd8cfb5,
+                   cannons: { perSide: 1, dmg: [6, 14], range: 10, reload: 10, acc: 0.5 }, mortar: { range: 34, minRange: 8, dmg: [16, 34], reload: 13, acc: 0.5, splash: 2.5, shells: 18 }, barrels: 6 },
+  skyCarrier:    { name: 'Sky-Carrier', role: 'carrier', level: 80, hull: 760, armour: 26, speed: 0.36, turn: 3.5, crew: 60, len: 9.5, beam: 3.8, sails: 3, color: 0x4a3a2a, sail: 0xe8e2d0,
+                   cannons: { perSide: 2, dmg: [8, 18], range: 12, reload: 10, acc: 0.5 }, squadrons: { max: 3, every: 45 }, swivel: SWIVEL },
+  flakFrigate:   { name: 'Flak Frigate', role: 'flak', level: 60, hull: 440, armour: 22, speed: 0.5, turn: 5.5, crew: 36, len: 7, beam: 2.6, sails: 3, color: 0x3a3a3a, sail: 0xe8e2d0,
+                   cannons: { perSide: 3, dmg: [8, 18], range: 13, reload: 9, acc: 0.5 }, flak: { range: 14, dmg: [10, 18], reload: 2, acc: 0.55, guns: 2 }, swivel: SWIVEL },
+  supplyGalleon: { name: 'Supply Flagship', role: 'troop', level: 85, hull: 900, armour: 30, speed: 0.38, turn: 3.8, crew: 130, len: 9.5, beam: 3.8, sails: 3, color: 0x6b3a1a, sail: 0xd8c07a,
+                   cannons: { perSide: 4, dmg: [8, 20], range: 13, reload: 11, acc: 0.5 }, supply: { radius: 11, repair: 3, every: 4 }, swivel: SWIVEL, barrels: 4 },
+  hunterCutter:  { name: 'Leviathan Hunter', role: 'hunter', level: 45, hull: 240, armour: 14, speed: 0.68, turn: 9, crew: 20, len: 5.2, beam: 2, sails: 2, color: 0x2f4f6f, sail: 0xf0ead8,
+                   cannons: { perSide: 1, dmg: [6, 14], range: 10, reload: 8, acc: 0.55 }, harpoon: { range: 12, dmg: [10, 20], reload: 6, acc: 0.7, tether: 18 }, depth: { range: 6, dmg: [22, 40], reload: 10 }, barrels: 4, swivel: SWIVEL },
+  landingBarge:  { name: 'Landing Barge', role: 'landing', level: 30, hull: 200, armour: 16, speed: 0.5, turn: 7, crew: 34, len: 5, beam: 2.4, sails: 0, oars: true, flat: true, color: 0x6b4a2e, sail: 0xd8cfb5,
+                   cannons: { perSide: 0, dmg: [0, 0], range: 0, reload: 99, acc: 0 }, musket: { range: 7, dmg: [1, 5], reload: 4, acc: 0.55 }, swivel: SWIVEL },
+});
+export const ROLE_SHIPS = { siege: 'bombKetch', carrier: 'skyCarrier', flak: 'flakFrigate', troop: 'supplyGalleon', hunter: 'hunterCutter', landing: 'landingBarge' };
 Object.assign(SHIPS, realmShips(SHIPS, SUBMERSIBLE)); // each realm's own hulls and diving boats (see realms.js)
+// hulls are drawn and fought at a size that shows the hands on deck
+export const SHIP_SCALE = 1.5;
+for (const s of Object.values(SHIPS)) { if (s.scaled) continue; s.scaled = true; s.len = +(s.len * SHIP_SCALE).toFixed(2); s.beam = +(s.beam * SHIP_SCALE).toFixed(2); if (s.beastSize) s.beastSize *= SHIP_SCALE; }
 for (const [id, s] of Object.entries(SHIPS)) s.id = id;
 for (const [id, c] of Object.entries(CREATURES)) c.id = id;
 

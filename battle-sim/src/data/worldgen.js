@@ -7,7 +7,7 @@ import { combatLevel } from '../engine/combat.js';
 import { STRUCTURES } from './structures.js';
 import { UNITS, leaderOf } from './units.js';
 import { AIRSHIPS } from './airships.js';
-import { SHIPS, CREATURES, FORTS } from './naval.js';
+import { SHIPS, CREATURES, FORTS, ROLE_SHIPS } from './naval.js';
 import { realmFactions, LANDMARKS } from './realms.js';
 
 const clampRow = (y, S) => Math.max(3, Math.min(S - 4, y));
@@ -493,7 +493,7 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
     }
   }
   // fleets
-  const fleet = (id, F, budget, foeId) => {
+  const fleet = (id, F, budget, foeId, mySide) => {
     const groups = [], add = (unit, count) => { const g = groups.find((x) => x.unit === unit); if (g) g.count += count; else groups.push({ unit, count }); };
     const hulls = F.ships.map((k) => SHIPS[k]).filter(Boolean).sort((a, c) => (c.level || 0) - (a.level || 0));
     let left = budget;
@@ -513,23 +513,31 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
       const c = r.pick(can), n = PACKS[c.id] ? r.int(2, PACKS[c.id]) : 1;
       buy(c, n); beasts -= seaPrice(c) * n;
     }
-    // ships of the line: a flagship, then whatever the purse still runs to, biggest first with a tail of small craft
-    if (hulls.length) {
-      if (left > seaPrice(hulls[0])) buy(hulls[0]);
+    // a battle group: first the line (half of what is left), then the ships that cover its blind spots,
+    // then more of the line with whatever the purse still runs to
+    const role = (k) => SHIPS[(F.roleShips || ROLE_SHIPS)[k]] || SHIPS[ROLE_SHIPS[k]];
+    const foeForts = forts.some((f) => f.side !== mySide);
+    const lineShips = () => {
       for (let guard = 0; guard < 40 && left > 0; guard++) {
         const can = hulls.filter((h) => seaPrice(h) <= left);
         if (!can.length) break;
         buy(r.chance(0.55) ? can[0] : r.pick(can));
       }
-    }
+    };
+    const keep = left * 0.5;
+    if (hulls.length && left > seaPrice(hulls[0])) buy(hulls[0]); // the flagship of the line
+    for (let guard = 0; guard < 20 && left > keep; guard++) { const can = hulls.filter((h) => seaPrice(h) <= left - keep * 0.6); if (!can.length) break; buy(r.chance(0.55) ? can[0] : r.pick(can)); }
+    const wants = [['troop', 1], ['hunter', 1], ['flak', 1], ['siege', foeForts ? 2 : 1], ['carrier', 1], ['landing', foeForts ? 2 : 0], ['hunter', 1]];
+    for (const [k, n] of wants) { const d = role(k); for (let i = 0; i < n; i++) if (d && left >= seaPrice(d) * 0.9) buy(d); }
+    if (hulls.length) lineShips();
     void foeId;
     return groups;
   };
-  const base = 9500 + r.int(0, 3500);
+  const base = 13500 + r.int(0, 4500);
   const fortWorth = forts.filter((f) => f.side === 1).reduce((n, f) => n + seaPrice(FORTS[f.type]) * 2.4, 0) - forts.filter((f) => f.side === 0).reduce((n, f) => n + seaPrice(FORTS[f.type]) * 2.4, 0);
   const sides = [
-    { name: `${A.adj} fleet`, groups: fleet(attId, A, base + Math.max(0, fortWorth), defId) },
-    { name: `${D.adj} fleet`, groups: fleet(defId, D, base + Math.max(0, -fortWorth), attId) },
+    { name: `${A.adj} fleet`, groups: fleet(attId, A, base + Math.max(0, fortWorth), defId, 0) },
+    { name: `${D.adj} fleet`, groups: fleet(defId, D, base + Math.max(0, -fortWorth), attId, 1) },
   ];
   const place = `${r.pick(NAME_A)}${r.pick(NAME_B)}`;
   return {

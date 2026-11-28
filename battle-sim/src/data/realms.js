@@ -925,7 +925,7 @@ export function realmFactions() {
     for (const [id, , , , mods = {}] of f.roster(mk(f.P))) if (mods.w) (mods.as ? assault : army)[uid(f, id)] = mods.w;
     const { civic, ...build } = t;
     out[f.id] = { name: f.name, adj: f.adj, group: REALM_GROUPS[f.group], biomes: f.biomes, cost: COST[f.id] || 1, ...build, civic: [...civic, ...landmarksOf(f.id)], look: f.look, army, assault,
-      ships: f.ships.map((s) => uid(f, s[0])), undersea: underseaOf(f), seaMonster: f.sea || null, airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
+      ships: f.ships.map((s) => uid(f, s[0])), roleShips: Object.fromEntries(['siege', 'carrier', 'flak', 'troop', 'hunter', 'landing'].map((k) => [k, `${f.id}_${k}`])), undersea: underseaOf(f), seaMonster: f.sea || null, airship: f.air ? `${f.id}Zeppelin` : null, places: { ...PLACES, ...(f.places || {}) } };
   }
   return out;
 }
@@ -955,6 +955,17 @@ export function realmShips(BASE, SUB = null) {
     if (!Array.isArray(u)) continue;
     const first = f.ships[0] && f.ships[0][4] || {};
     out[`${f.id}_diver`] = { ...SUB, name: u[0], realm: f.id, fleet: f.name, color: first.color ?? f.P.armor, sail: f.P.cloth, trim: f.P.trim };
+  }
+  // every realm's fleet has the six supporting roles too, in its own hulls and colours
+  const ROLES = [['siege', 'bombKetch', 'Bomb-Ketch'], ['carrier', 'skyCarrier', 'Sky-Carrier'], ['flak', 'flakFrigate', 'Flak Ship'], ['troop', 'supplyGalleon', 'Supply Flagship'], ['hunter', 'hunterCutter', 'Leviathan Hunter'], ['landing', 'landingBarge', 'Landing Barge']];
+  for (const f of REALMS) {
+    const [, , , kind, look = {}] = f.ships[0];
+    for (const [role, baseId, label] of ROLES) {
+      const b = BASE[baseId];
+      if (!b) continue;
+      const { color, sail, sail2, trim, emblem } = look;
+      out[`${f.id}_${role}`] = { ...b, name: `${f.adj} ${label}`, kind, realm: f.id, fleet: f.name, roleShip: true, ...(color !== undefined ? { color } : {}), ...(sail !== undefined ? { sail } : {}), ...(sail2 !== undefined ? { sail2 } : {}), ...(trim !== undefined ? { trim } : {}), ...(emblem ? { emblem } : {}), ...(role === 'landing' ? { oars: true, sails: 0 } : {}) };
+    }
   }
   for (const f of REALMS) for (const [id, name, baseId, kind, over = {}] of f.ships) {
     const b = BASE[baseId];
