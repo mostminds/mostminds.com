@@ -85,7 +85,7 @@ const KITS = {
     [ball(0.085, 0, 0.64, -0.035, 1, 1.15, 0.9), 'hair'], [box(0.06, 0.2, 0.03, 0, 0.53, -0.07), 'hair'],
     [cyl(0.082, 0.082, 0.022, 0, 0.69, 0, { seg: 8, open: true }), 'trim']],
   dwarf: () => [...biped({ h: 0.62, w: 1.45, head: 0.088, legs: 'dark' }),
-    [cone(0.085, 0.2, 0, 0.27, 0.06, Math.PI + 0.25, 0, 0, 6), 'hair'],
+    [cone(0.1, 0.24, 0, 0.27, 0.075, Math.PI + 0.3, 0, 0, 6), 'hair'],
     [ball(0.095, 0, 0.42, 0, 1, 0.75, 1, { h: 3 }), 'armor'], [cone(0.025, 0.08, 0, 0.5, 0), 'trim'],
     [cyl(0.13, 0.13, 0.04, 0, 0.13, 0, { seg: 6, open: true }), 'trim']],
   brute: (horns) => [...biped({ h: 1, w: 1.45, lean: 0.35, head: 0.088, headY: 0.5, legs: 'dark', arms: 'skin' }),
