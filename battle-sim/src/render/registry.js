@@ -14,7 +14,7 @@ export const BODIES = { example: exampleBody, ...humanoid.bodies, ...undead.bodi
 // great beasts and war machines of the realms: each file is optional, and a unit whose body is not
 // there yet is drawn with the stand-in its descriptor names (see models.js standIn)
 const laterBodies = [];
-for (const f of ['titans', 'machines']) {
+for (const f of ['titans', 'machines', 'chaosbeasts', 'chaosbeasts2', 'fringefolk', 'fringebeasts']) {
   try { const m = await import(`./bodies/${f}.js`); Object.assign(BODIES, m.bodies || {}); laterBodies.push(m); }
   catch (err) { console.info(`${f} models not available yet; stand-ins are used`, err?.message || err); }
 }
@@ -32,7 +32,7 @@ try { fac = await import('./props/factions.js'); } catch (err) { console.info('f
 export const FACTION = fac;
 export const STRUCT = { ...buildings.structures, ...(air.structures || {}), ...(civic.structures || {}), ...(fac.structures || {}) };
 // the realms' own landmark buildings, in three optional files
-for (const f of ['realmsOrder', 'realmsRuin', 'realmsFar']) {
+for (const f of ['realmsOrder', 'realmsRuin', 'realmsFar', 'realmsChaos', 'realmsFringe']) {
   try { const m = await import(`./props/${f}.js`); Object.assign(STRUCT, m.structures || {}); }
   catch (err) { console.info(`${f} buildings not available yet`, err?.message || err); }
 }
@@ -45,6 +45,11 @@ export const CREATURE_ANIM = { ...(sea.animators || {}) };
 // beasts of the ancient seas (optional until sculpted: a creature without a model is drawn as its nearest kin)
 try { const m = await import('./props/ancientseas.js'); Object.assign(CREATURES, m.creatures || {}); Object.assign(CREATURE_ANIM, m.animators || {}); }
 catch (err) { console.info('ancient sea creatures not available yet', err?.message || err); }
+// the great beasts the newer realms bring to sea (optional until sculpted)
+for (const f of ['realmseas', 'realmseas2']) {
+  try { const m = await import(`./props/${f}.js`); Object.assign(CREATURES, m.creatures || {}); Object.assign(CREATURE_ANIM, m.animators || {}); }
+  catch (err) { console.info(`${f} creatures not available yet`, err?.message || err); }
+}
 // the frozen sea: its hunters, and the ice and penguins that dress it (optional until sculpted)
 let arctic = {};
 try { arctic = await import('./props/arctic.js'); Object.assign(CREATURES, arctic.creatures || {}); Object.assign(CREATURE_ANIM, arctic.animators || {}); }

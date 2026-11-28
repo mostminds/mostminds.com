@@ -300,6 +300,11 @@ export const LEADERS = {
   skar: ['Lord of the Warrens', 'skar_stormrat'], crimson: ['Elder Count', 'crimson_vampire'], khemet: ['King of Kings', 'khemet_king'], drowned: ['Dread Admiral', 'drowned_captain'],
   gorge: ['Overtyrant', 'gorge_ironGut'], westmark: ['Stadtholder', 'westmark_marine'], principalities: ['Merchant Prince', 'principalities_legion'], sunkings: ['King of the Sun', 'sunkings_diestro'],
   caliphate: ['Sultan', 'caliphate_guardA'], shogunate: ['Shogun', 'shogunate_samurai'], mistisles: ['High Chieftain', 'mistisles_chariotM'], thousandgods: ['Maharaja', 'thousandgods_rajput'],
+  kharnak: ['Warlord of the Brass Throne', 'kharnak_champion'], morbus: ['Plague-Father of Morbus', 'morbus_bileKnight'], labyrinth: ['Archmage of the Shifting Maze', 'labyrinth_crystalGuard'],
+  velvet: ['Prince of the Velvet Court', 'velvet_duelist'], malvash: ['Grand Artificer', 'malvash_warSmith'], ashhorde: ['Warlord of the Riven Abyss', 'ashhorde_chosen'],
+  balor: ['Bog-Lord', 'balor_brute'], kurgan: ['Great Khagan', 'kurgan_cataphract'], hearthmoot: ['The Thain', 'hearthmoot_militia'], baobab: ['Elder of the Great Baobab', 'baobab_spear'],
+  nagavar: ['Serpent-Raja', 'nagavar_cobraGuard'], pearlfleet: ['Admiral of the Pearl Fleets', 'pearlfleet_tridentGuard'], glimmer: ['Chief Artificer of Glimmer-Hill', 'glimmer_pike'],
+  khanate: ['Great Khan', 'khanate_khanGuard'], emerald: ['River-Queen', 'emerald_blade'], deeproot: ['Elder of the Whispering Canopy', 'deeproot_hunter'], goldsands: ['Sultan of the Golden Sands', 'goldsands_dervish'],
 };
 /** the unit id of a faction's general */
 export const leaderOf = (faction) => (LEADERS[faction] ? `${faction}_leader` : null);

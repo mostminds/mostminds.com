@@ -1298,6 +1298,14 @@ export function damage(b, t, dmg, from, style, hit = true, src = null) {
     b.events.push({ type: 'death', id: t.id, by: from ? from.id : -1, style, ax: o ? o.x : undefined, ay: o ? o.y : undefined, blast: !!(src && src.blast), wounded });
     onUnitDeath(b, t, from);
     ctfDeath(b, t);
+    // a shifting horror struck down breaks into lesser copies of itself
+    const sp = t.def.abilities && t.def.abilities.find((x) => x.type === 'split');
+    if (sp && !t.split && b.getDef && b.getDef(sp.into)) {
+      t.split = true;
+      const def = b.getDef(sp.into), fresh = [];
+      for (let k = 0; k < (sp.count || 2); k++) { const p = freeTileNear(b, t.x, t.y, def.size || 1, t.side); if (p) fresh.push(spawnUnit(b, def, t.side, p[0], p[1])); }
+      if (fresh.length) { const sq = addSquad(b, fresh, b.squads[t.squad]?.state || 'advance'); if (sq && b.squads[t.squad]?.front) sq.front = b.squads[t.squad].front; b.events.push({ type: 'reinforce', side: t.side, ids: fresh.map((u) => u.id), split: true }); }
+    }
   }
 }
 

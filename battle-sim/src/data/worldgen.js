@@ -504,6 +504,9 @@ function generateNaval({ r, seed, defId, attId, D, A, theme }) {
     // monsters bound to the fleet: about a quarter of its strength
     const pool = (WATERS[env] || SEA_BEASTS).map((k) => CREATURES[k]).filter((c) => c && !(c.refuses && c.refuses.some((x) => x === id)));
     let beasts = budget * (0.18 + r() * 0.14);
+    // a realm that keeps its own great beast of the deep brings it (the Zaratan comes with its Bahamut)
+    const own = FACTIONS[id] && FACTIONS[id].seaMonster;
+    if (own && CREATURES[own]) { for (const k of own === 'zaratan' ? ['zaratan', 'bahamut'] : [own]) { buy(CREATURES[k]); beasts -= seaPrice(CREATURES[k]); } }
     for (let k = 0; k < 3 && beasts > 600; k++) {
       const can = pool.filter((c) => seaPrice(c) * (PACKS[c.id] || 1) <= beasts * 1.25);
       if (!can.length) break;
