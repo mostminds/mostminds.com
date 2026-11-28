@@ -558,7 +558,7 @@ export const REALMS = [
     ships: [['swanBarge', 'Royal Swan-Barge', 'brigantine', 'swanBarge', { color: 0x6a4a2a, sail: 0xe87a1a, sail2: 0xc81a5a, oars: true }], ['teakDhow', 'Teak Dhow', 'sloop', 'dhow', { color: 0x6a4a2a, sail: 0xe87a1a, sail2: 0xe8e0d0 }]],
     air: { name: 'Sky Chariot', style: 'kingdom', color: 0x6a4a2a, envelope: 0xe87a1a, pods: 'rajput' } },
   // =========================== The Realms of Chaos ===========================
-  { id: 'kharnak', name: 'The Crimson Brass-Hordes of Kharnak', adj: 'Kharnak', group: 4, town: 'dark', look: 'infernal', biomes: ['volcanic', 'desert'],
+  { id: 'kharnak', name: 'The Crimson Brass-Hordes of Kharnak', adj: 'Kharnak', group: 4, town: 'dark', look: 'ironbound', biomes: ['volcanic', 'desert'],
     P: { species: 'demon', skin: 0xa8281e, cloth: 0x2a0e0a, cloth2: 0x5a1010, armor: 0xb07a2a, trim: 0x1e1c1c },
     over: { civic: ['temple', 'barracks', 'forge', 'obelisk', 'graveyard', 'pitGate'] },
     places: { village: 'skull-camp', fort: 'iron blood-keep', castle: 'brutalist citadel', city: 'city of the great arena', coast: 'slaughter-beach', harbor: 'bronze-ram docks', island: 'altar isle' },
@@ -577,7 +577,7 @@ export const REALMS = [
     ships: [['dreadGalley', 'Ironclad Dread-Galley', 'galleon', 'dreadGalley', { color: 0x2a1e1a, sail: 0xb89a7a, trim: 0xb07a2a, oars: true }], ['ramMonitor', 'Brass Ram-Monitor', 'frigate', 'paddleGalleon', { color: 0x8a5a2a, sail: 0x5a1010, trim: 0xb07a2a }]],
     air: { name: 'Brass Blood-Barge', style: 'infernal', color: 0x3a1a14, envelope: 0x8a1a14, pods: 'reaver', hangar: '!imp' } },
 
-  { id: 'morbus', name: 'The Festering Gardens of Morbus', adj: 'Morbid', group: 4, town: 'necro', look: 'undead', biomes: ['swamp', 'swamp', 'temperate'],
+  { id: 'morbus', name: 'The Festering Gardens of Morbus', adj: 'Morbid', group: 4, town: 'necro', look: 'drowned', biomes: ['swamp', 'swamp', 'temperate'],
     P: { species: 'human', skin: 0x8a9a5a, cloth: 0x4a4a2a, cloth2: 0x6a5a2a, armor: 0x6a5a3a, trim: 0xa08a3a },
     over: { civic: ['temple', 'shrine', 'graveyard', 'alchemist', 'garden', 'garden', 'crypt', 'charnel'] },
     places: { village: 'mire-hamlet', fort: 'sunken manor', castle: 'bell-tower keep', city: 'garden of rot', coast: 'fly-blown shore', harbor: 'moss harbour', island: 'blight isle' },
@@ -596,7 +596,7 @@ export const REALMS = [
     ships: [['ghostGalleon', 'Moss-Hulled Galleon', 'galleon', 'shroudGalleon', { color: 0x3a4a2a, sail: 0x8a8a5a, trim: 0x6a5a3a }], ['bargeM', 'Worm-Eaten Barge', 'brigantine', 'shroudGalleon', { color: 0x4a4a32, sail: 0x9a9a6a, trim: 0x5a5a3a }]],
     air: { name: 'Bloated Gas-Bladder', style: 'undead', color: 0x3a3a22, envelope: 0x7a8a4a, pods: 'warden' } },
 
-  { id: 'labyrinth', name: 'The Iridescent Labyrinth of Ysh-Keth', adj: 'Labyrinthine', group: 4, town: 'dark', look: 'elemental', biomes: ['desert', 'snow', 'temperate'],
+  { id: 'labyrinth', name: 'The Iridescent Labyrinth of Ysh-Keth', adj: 'Labyrinthine', group: 4, town: 'dark', look: 'aethel', biomes: ['desert', 'snow', 'temperate'],
     P: { species: 'harpy', skin: 0x3a6ad8, cloth: 0x2a4ac8, cloth2: 0xd8b03a, armor: 0x8ad8f0, trim: 0xd8b03a },
     over: { civic: ['temple', 'shrine', 'alchemist', 'alchemist', 'crystalSpire', 'monolith', 'palace'] },
     places: { village: 'scriptorium hamlet', fort: 'maze-fort', castle: 'shifting fortress', city: 'city of inverted spires', coast: 'glass shore', harbor: 'starlight quay', island: 'mirror isle' },
@@ -614,7 +614,7 @@ export const REALMS = [
     ships: [['barque', 'Solar Barque', 'frigate', 'solarBarque', { color: 0xd8d0c0, sail: 0x9ad8ff, trim: 0xd8b03a }], ['crescent', 'Crescent Skimmer', 'cutter', 'solarBarque', { color: 0xc0c8d8, sail: 0xe85ac8, trim: 0xd8b03a }]],
     air: { name: 'Floating Prism', style: 'elemental', color: 0x2a4ac8, envelope: 0x9ad8ff, pods: 'crystalGuard', hangar: 'manta' } },
 
-  { id: 'velvet', name: 'The Velvet Courts of Vel-Ishara', adj: 'Velvet', group: 4, town: 'civ', look: 'kingdom', biomes: ['temperate', 'desert'],
+  { id: 'velvet', name: 'The Velvet Courts of Vel-Ishara', adj: 'Velvet', group: 4, town: 'civ', look: 'principalities', biomes: ['temperate', 'desert'],
     P: { species: 'elf', skin: 0xf2e6ea, cloth: 0x6a2a9a, cloth2: 0xd8b03a, armor: 0xe8e4f0, trim: 0xd8b03a },
     over: { civic: ['palace', 'garden', 'garden', 'fountain', 'fountain', 'inn', 'temple', 'marketHall', 'stall', 'bank'] },
     places: { village: 'masquerade villa', fort: 'mirror-maze fort', castle: 'pleasure palace', city: 'city of amphitheatres', coast: 'perfumed strand', harbor: 'yacht harbour', island: 'isle of song' },
@@ -632,7 +632,7 @@ export const REALMS = [
     ships: [['yacht', 'Swan-Necked Yacht', 'frigate', 'swanGalley', { color: 0xe8e0d0, sail: 0xc8a0e8, trim: 0xd8b03a }], ['catamaran', 'Pearl Catamaran', 'cutter', 'swanGalley', { color: 0xf0e8f0, sail: 0x6a2a9a, trim: 0xd8b03a }]],
     air: { name: 'Perfumed Pavilion', style: 'kingdom', color: 0xe8e0d0, envelope: 0x6a2a9a, pods: 'duelist' } },
 
-  { id: 'malvash', name: 'The Forges of Mal-Vash', adj: 'Mal-Vashi', group: 4, town: 'dark', look: 'infernal', biomes: ['volcanic', 'desert', 'snow'],
+  { id: 'malvash', name: 'The Forges of Mal-Vash', adj: 'Mal-Vashi', group: 4, town: 'dark', look: 'ashur', biomes: ['volcanic', 'desert', 'snow'],
     P: { species: 'human', skin: 0xb0806a, cloth: 0x2a2420, cloth2: 0x4a3a2a, armor: 0x3a3a40, trim: 0xb08a3a },
     over: { civic: ['forge', 'forge', 'workshop', 'barracks', 'alchemist', 'obelisk', 'pitGate'] },
     places: { village: 'slag-works', fort: 'piston keep', castle: 'clockwork citadel', city: 'city of smokestacks', coast: 'coaling shore', harbor: 'dreadnought yards', island: 'foundry isle' },
@@ -651,7 +651,7 @@ export const REALMS = [
     ships: [['dreadnought', 'Soul-Fired Dreadnought', 'manowar', 'dreadnought', { color: 0x2a2a30, sail: 0x4a4a4a, trim: 0xb08a3a }], ['clawRam', 'Boarding-Claw Ironclad', 'frigate', 'dreadnought', { color: 0x3a3a40, sail: 0x5a4a3a, trim: 0xb08a3a }]],
     air: { name: 'Smog-Belching Sky-Foundry', style: 'infernal', color: 0x2a2a30, envelope: 0x4a3a2a, pods: 'warSmith', hangar: '!gyrocopter' } },
 
-  { id: 'ashhorde', name: 'The Ash-Hordes of the Riven Abyss', adj: 'Ash-Horde', group: 4, town: 'dark', look: 'infernal', biomes: ['snow', 'volcanic', 'temperate'],
+  { id: 'ashhorde', name: 'The Ash-Hordes of the Riven Abyss', adj: 'Ash-Horde', group: 4, town: 'dark', look: 'ironbound', biomes: ['snow', 'volcanic', 'temperate'],
     P: { species: 'human', skin: 0xc8a888, cloth: 0x1a1a1e, cloth2: 0x6a1a14, armor: 0x1e1e22, trim: 0xb08a3a },
     over: { civic: ['temple', 'barracks', 'obelisk', 'obelisk', 'graveyard', 'forge'] },
     places: { village: 'raider camp', fort: 'chained iron fort', castle: 'black citadel', city: 'city of black cathedrals', coast: 'reaving beach', harbor: 'galley fjord', island: 'brazier peak' },
@@ -672,7 +672,7 @@ export const REALMS = [
     air: { name: 'Black Cathedral Sky-Barge', style: 'infernal', color: 0x1a1a1e, envelope: 0x3a1a14, pods: 'chosen' } },
 
   // =========================== The Hidden and Fringe Races ===========================
-  { id: 'balor', name: 'The Bog-Lords of Balor', adj: 'Balorian', group: 5, town: 'tribal', look: 'elemental', biomes: ['swamp', 'swamp', 'temperate'],
+  { id: 'balor', name: 'The Bog-Lords of Balor', adj: 'Balorian', group: 5, town: 'tribal', look: 'mistisles', biomes: ['swamp', 'swamp', 'temperate'],
     P: { species: 'cyclops', skin: 0x6a7a5a, cloth: 0x3a4a2a, cloth2: 0x5a4a2a, armor: 0x8a6a3a, trim: 0xd8c8a0 },
     over: { wall: 'ruin', strongWall: 'rampart', civic: ['shrine', 'graveyard', 'stoneRing', 'monolith', 'barracks'] },
     places: { village: 'fog-steading', fort: 'basalt crag', castle: 'crag fortress', city: 'drowned crag-city', coast: 'fogbound strand', harbor: 'peat-barge landing', island: 'mist isle' },
@@ -690,7 +690,7 @@ export const REALMS = [
     ships: [['warBarge', 'Peat-Moss War-Barge', 'galleon', 'oxBarge', { color: 0x2a221a, sail: 0x3a4a2a, oars: true }], ['fogBarge', 'Silent Fog-Barge', 'brigantine', 'oxBarge', { color: 0x1e1a16, sail: 0x4a4a3a, oars: true }]],
     air: null },
 
-  { id: 'kurgan', name: 'The Steppe-Wolves of the Great Kurgan', adj: 'Kurgan', group: 5, town: 'wild', look: 'beasts', biomes: ['temperate', 'snow', 'desert'],
+  { id: 'kurgan', name: 'The Steppe-Wolves of the Great Kurgan', adj: 'Kurgan', group: 5, town: 'wild', look: 'gorge', biomes: ['temperate', 'snow', 'desert'],
     P: { species: 'human', skin: 0xc48a5a, cloth: 0x6a4a2a, cloth2: 0x8a2a1a, armor: 0x3a3a3a, trim: 0xc8a060 },
     over: { civic: ['shrine', 'graveyard', 'stall', 'yurt', 'yurt', 'totem'], homes: 'tent' },
     places: { village: 'wagon-camp', fort: 'kurgan mound', castle: 'khagan\'s horde-camp', city: 'great moving city', coast: 'river ford camp', harbor: 'catamaran landing', island: 'burial isle' },
@@ -708,7 +708,7 @@ export const REALMS = [
     ships: [['catamaran', 'Hide River-Catamaran', 'sloop', 'hideRaft', { color: 0x6a4a2a, sail: 0x8a2a1a }], ['junkK', 'Palisaded Junk', 'brigantine', 'junk', { color: 0x5a4030, sail: 0x8a6a4a }]],
     air: null },
 
-  { id: 'hearthmoot', name: 'The Shire-Wardens of Hearthmoot', adj: 'Hearthmoot', group: 5, town: 'civ', look: 'kingdom', biomes: ['temperate', 'temperate'],
+  { id: 'hearthmoot', name: 'The Shire-Wardens of Hearthmoot', adj: 'Hearthmoot', group: 5, town: 'civ', look: 'westmark', biomes: ['temperate', 'temperate'],
     P: { species: 'human', skin: 0xe8b898, cloth: 0x4a7a3a, cloth2: 0xd8b880, armor: 0xa8a8a0, trim: 0xc8a040 },
     over: { homes: 'hut', civic: ['inn', 'inn', 'marketHall', 'stall', 'garden', 'garden', 'fountain', 'shrine', 'barracks'] },
     places: { village: 'burrow-hamlet', fort: 'hedge fort', castle: 'thain\'s great smial', city: 'market town', coast: 'fishing village', harbor: 'punt harbour', island: 'river isle' },
@@ -727,7 +727,7 @@ export const REALMS = [
     ships: [['houseboat', 'Lantern-Lit Houseboat', 'brigantine', 'fluyt', { color: 0x7a5a36, sail: 0xd8c8a0, trim: 0x4a7a3a }], ['punt', 'River Punt', 'sloop', 'curragh', { color: 0x8a6a42, sail: 0xd8c8a0 }]],
     air: { name: 'Picnic Balloon', style: 'kingdom', color: 0x7a5a36, envelope: 0x4a7a3a, pods: 'militia' } },
 
-  { id: 'baobab', name: 'The Baobab-Kin of the Sun-Savanna', adj: 'Baobab-Kin', group: 5, town: 'tribal', look: 'beasts', biomes: ['desert', 'jungle', 'temperate'],
+  { id: 'baobab', name: 'The Baobab-Kin of the Sun-Savanna', adj: 'Baobab-Kin', group: 5, town: 'tribal', look: 'mistisles', biomes: ['desert', 'jungle', 'temperate'],
     P: { species: 'human', skin: 0x9a6a3a, cloth: 0xc8a050, cloth2: 0xe8e0d0, armor: 0x9a6a3a, trim: 0xc87a3a },
     over: { homes: 'hut', civic: ['shrine', 'stall', 'graveyard', 'totem', 'totem'] },
     places: { village: 'grass-dome kraal', fort: 'thorn boma', castle: 'great baobab', city: 'savanna gathering', coast: 'delta camp', harbor: 'canoe landing', island: 'mangrove isle' },
@@ -745,7 +745,7 @@ export const REALMS = [
     ships: [['outrigger', 'Painted Outrigger', 'sloop', 'livingSkiff', { color: 0x8a6a3a, sail: 0xe8e0d0 }], ['warCanoe', 'Papyrus War-Canoe', 'cutter', 'curragh', { color: 0xc8a050, sail: 0xc87a3a }]],
     air: null },
 
-  { id: 'nagavar', name: 'The Blood-Pagodas of Nagavar', adj: 'Nagavari', group: 5, town: 'old', look: 'elemental', biomes: ['jungle', 'jungle', 'swamp'],
+  { id: 'nagavar', name: 'The Blood-Pagodas of Nagavar', adj: 'Nagavari', group: 5, town: 'old', look: 'thousandgods', biomes: ['jungle', 'jungle', 'swamp'],
     P: { species: 'lizard', skin: 0x3a7a4a, cloth: 0x6a1a1a, cloth2: 0xd8b03a, armor: 0x8a6a3a, trim: 0xd8b03a },
     over: { civic: ['temple', 'temple', 'shrine', 'shrine', 'garden', 'graveyard', 'palace'] },
     places: { village: 'jungle shrine-village', fort: 'stupa fort', castle: 'serpent temple-keep', city: 'city of blood pagodas', coast: 'mangrove landing', harbor: 'serpent-galley harbour', island: 'stupa isle' },
@@ -763,7 +763,7 @@ export const REALMS = [
     ships: [['snakeGalley', 'Bronze Sea-Snake Galley', 'galleon', 'serpentBarge', { color: 0x8a6a3a, sail: 0x6a1a1a, trim: 0xd8b03a, oars: true }], ['cobraProw', 'Cobra-Prow Fire-Galley', 'frigate', 'warGalley', { color: 0x5a4a2a, sail: 0xd8b03a, trim: 0x3a7a4a }]],
     air: null },
 
-  { id: 'pearlfleet', name: 'The Pearl-Fleets of the Coral Reaches', adj: 'Pearl-Fleet', group: 5, town: 'civ', look: 'elemental', biomes: ['temperate', 'jungle', 'desert'],
+  { id: 'pearlfleet', name: 'The Pearl-Fleets of the Coral Reaches', adj: 'Pearl-Fleet', group: 5, town: 'civ', look: 'aethel', biomes: ['temperate', 'jungle', 'desert'],
     P: { species: 'elf', skin: 0xc8a07a, cloth: 0x2aa8b8, cloth2: 0xe8f0f0, armor: 0xc0d0d8, trim: 0xf0e8d8 },
     over: { civic: ['marketHall', 'stall', 'inn', 'fountain', 'fountain', 'temple', 'dockhouse', 'dockhouse', 'garden'] },
     places: { village: 'pontoon village', fort: 'lighthouse fort', castle: 'atoll citadel', city: 'floating city', coast: 'pearl beach', harbor: 'pontoon harbour', island: 'coral atoll' },
@@ -781,7 +781,7 @@ export const REALMS = [
     ships: [['trimaran', 'Nacre Trimaran', 'frigate', 'swanGalley', { color: 0xe8f0f0, sail: 0x9ae8f0, trim: 0x2aa8b8 }], ['waveCutter', 'Crystal Wave-Cutter', 'cutter', 'razorGalley', { color: 0xd8e8f0, sail: 0x2aa8b8, trim: 0xf0e8d8 }]],
     air: { name: 'Jellyfish-Silk Skyship', style: 'elemental', color: 0xe8f0f0, envelope: 0x9ae8f0, pods: 'mariner', hangar: 'manta' } },
 
-  { id: 'glimmer', name: 'The Clockwork Burrows of Glimmer-Hill', adj: 'Glimmer-Hill', group: 5, town: 'civ', look: 'kingdom', biomes: ['temperate', 'snow'],
+  { id: 'glimmer', name: 'The Clockwork Burrows of Glimmer-Hill', adj: 'Glimmer-Hill', group: 5, town: 'civ', look: 'grom', biomes: ['temperate', 'snow'],
     P: { species: 'human', skin: 0xe8b898, cloth: 0x6a2a5a, cloth2: 0x2a5a6a, armor: 0xc8a040, trim: 0xc8a040 },
     over: { homes: 'hut', civic: ['workshop', 'workshop', 'alchemist', 'alchemist', 'inn', 'garden', 'marketHall', 'stall'] },
     places: { village: 'boulder burrows', fort: 'hidden workshop', castle: 'great observatory', city: 'city under the hill', coast: 'cove of decoys', harbor: 'clockwork quay', island: 'illusion isle' },
@@ -800,7 +800,7 @@ export const REALMS = [
     ships: [['duckBoat', 'Decoy Duck Paddle-Boat', 'brigantine', 'paddleGalleon', { color: 0xc8a040, sail: 0x6a2a5a, trim: 0x2a5a6a }], ['logBoat', 'Drifting-Log Raider', 'sloop', 'livingSkiff', { color: 0x6a4a2a, sail: 0x5a4030 }]],
     air: { name: 'Brass-Domed Sky-Observatory', style: 'kingdom', color: 0xc8a040, envelope: 0x6a2a5a, pods: 'blunder', hangar: 'owl' } },
 
-  { id: 'khanate', name: 'The Khanates of the Eastern Steppes', adj: 'Khanate', group: 5, town: 'tribal', look: 'goblin', biomes: ['temperate', 'desert', 'snow'],
+  { id: 'khanate', name: 'The Khanates of the Eastern Steppes', adj: 'Khanate', group: 5, town: 'tribal', look: 'gorge', biomes: ['temperate', 'desert', 'snow'],
     P: { species: 'hobgoblin', skin: 0xc8b04a, cloth: 0x2a2a3a, cloth2: 0x8a1a1a, armor: 0x6a2a1a, trim: 0xc8a040 },
     over: { homes: 'tent', civic: ['stall', 'stall', 'barracks', 'shrine', 'graveyard', 'yurt'] },
     places: { village: 'winter camp', fort: 'skull-tower stockade', castle: 'khan\'s palisade', city: 'slave-market city', coast: 'raft landing', harbor: 'barge moorings', island: 'black gulf isle' },
@@ -811,14 +811,14 @@ export const REALMS = [
       ['wolfRider', 'Steppe Wolf-Rider', 'wolfRider', m.r('lamellar', 'wolf', 'scimitar', 0x5a5a5a, { hair: 'topknot' }), { k: 1.3, w: 0.16 }],
       ['mustang', 'Mustang Raider', 'lancer', m.r('lamellar', 'horse', 'scimitar', 0x6a4a2a, { hair: 'topknot' }), { w: 0.1 }],
       ['cutthroat', 'Poisoned Cutthroat', 'scout', m.h('darkHood', 'dagger'), { k: 1.2, w: 0.1, abilities: [{ type: 'poison', damage: 5, chance: 0.5 }] }],
-      ['hyena', 'Armoured War-Hyena', 'hellhound', m.q('hound', 0x8a7a4a, 1.1, { armor: 0x6a2a1a }), { w: 0.1 }],
+      ['hyena', 'Armoured War-Hyena', 'hellhound', m.q('hound', 0x8a7a4a, 1.1, { armor: 0x6a2a1a }), { w: 0.1, abilities: [] }],
       ['greatWolf', 'Scarred Great-Wolf', 'alphaWolf', m.q('wolf', 0x4a4a4a, 1.6), { w: 0.05 }],
       ['khanGuard', 'Khan\'s Lamellar Guard', 'knight', m.h('lamellar', 'glaive', { cuirass: true }), { w: 0.06 }],
     ],
     ships: [['ferry', 'Lashed Troop-Ferry', 'brigantine', 'oxBarge', { color: 0x5a4030, sail: 0x8a6a4a, oars: true }], ['stolenBarge', 'Captured River-Barge', 'sloop', 'oxBarge', { color: 0x6a4a2a, sail: 0x8a1a1a }]],
     air: null },
 
-  { id: 'emerald', name: 'The Sisterhood of the Emerald River', adj: 'Emerald', group: 5, town: 'old', look: 'elemental', biomes: ['jungle', 'jungle', 'swamp'],
+  { id: 'emerald', name: 'The Sisterhood of the Emerald River', adj: 'Emerald', group: 5, town: 'old', look: 'xibalba', biomes: ['jungle', 'jungle', 'swamp'],
     P: { species: 'human', skin: 0xb07850, cloth: 0x8a6a2a, cloth2: 0x2a8a5a, armor: 0xd8b03a, trim: 0x2a8a5a },
     over: { civic: ['temple', 'temple', 'shrine', 'garden', 'fountain', 'barracks', 'palace'] },
     places: { village: 'canopy village', fort: 'river citadel', castle: 'sun-temple keep', city: 'golden river-city', coast: 'jaguar strand', harbor: 'galley haven', island: 'river isle' },
@@ -836,7 +836,7 @@ export const REALMS = [
     ships: [['jaguarGalley', 'Leaping-Jaguar Galley', 'galleon', 'warGalley', { color: 0x8a6a2a, sail: 0x2a8a5a, trim: 0xd8b03a, oars: true }], ['piranha', 'Piranha War-Galley', 'frigate', 'razorGalley', { color: 0x6a4a2a, sail: 0xd8b03a, trim: 0x2a8a5a }]],
     air: null },
 
-  { id: 'deeproot', name: 'The Deep-Root Folk of the Whispering Canopy', adj: 'Deep-Root', group: 5, town: 'wild', look: 'beasts', biomes: ['jungle', 'swamp'],
+  { id: 'deeproot', name: 'The Deep-Root Folk of the Whispering Canopy', adj: 'Deep-Root', group: 5, town: 'wild', look: 'verdant', biomes: ['jungle', 'swamp'],
     P: { species: 'goblin', skin: 0x6a8a4a, cloth: 0x3a6a2a, cloth2: 0xe83a3a, armor: 0x5a4030, trim: 0xe8d83a },
     over: { homes: 'hut', civic: ['shrine', 'totem', 'totem', 'graveyard', 'stall'] },
     places: { village: 'nest-tree village', fort: 'vine fort', castle: 'great canopy hold', city: 'city in the canopy', coast: 'swamp landing', harbor: 'reed-raft landing', island: 'mangrove isle' },
@@ -854,7 +854,7 @@ export const REALMS = [
     ships: [['balsa', 'Balsa Canoe', 'sloop', 'livingSkiff', { color: 0xc8a870, sail: 0x3a6a2a }], ['reedRaft', 'Woven Reed Raft', 'raft', 'hideRaft', { color: 0x8a8a4a, sail: 0x3a6a2a }]],
     air: null },
 
-  { id: 'goldsands', name: 'The Sun-Empires of the Golden Sands', adj: 'Golden Sands', group: 5, town: 'civ', look: 'kingdom', biomes: ['desert', 'desert'],
+  { id: 'goldsands', name: 'The Sun-Empires of the Golden Sands', adj: 'Golden Sands', group: 5, town: 'civ', look: 'caliphate', biomes: ['desert', 'desert'],
     P: { species: 'human', skin: 0xb07850, cloth: 0xe8e0d0, cloth2: 0x2a8a9a, armor: 0xd8b03a, trim: 0xd8b03a },
     over: { civic: ['palace', 'marketHall', 'stall', 'stall', 'stall', 'bank', 'fountain', 'garden', 'temple', 'alchemist'] },
     places: { village: 'oasis', fort: 'desert ribat', castle: 'sultan\'s citadel', city: 'city of a thousand domes', coast: 'pearl-diver coast', harbor: 'dhow harbour', island: 'oasis isle' },
