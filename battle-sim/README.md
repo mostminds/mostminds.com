@@ -325,6 +325,28 @@ dragons and more, ridden by their crews. Sky arts include:
 - swarms of carpets or harpies;
 - beasts that fight on alone when their riders fall (`src/data/fleets/sky.js`).
 
+### High-detail ships, fliers and crews, and their animations
+
+Every designed ship, sky unit, carrier flier and deck crew is modelled in detail: planked and plated hulls,
+rigged and seamed sails, sculpted figureheads and towed beasts, deck machines that move, sculpted sky-beasts
+with saddles and howdahs, and crews of the realm's own folk at work on deck. Each realm's style (materials,
+carved motifs, emblem, figurehead, lanterns, banners, roofs) runs through all of them (`src/render/parts/
+realmStyle.js`, `src/render/sky/style.js`). Six levels of detail keep big battles smooth.
+
+Battles animate what the engine does:
+
+- **Boarding.** Grapnels are thrown and hauled taut and planks dropped across. Boarders leap, swing or run
+  over and fight at the rail; the fallen drop into the sea. A taken ship strikes her colours.
+- **Grapples and rams.** Grapples bring chains and closing maws; rams bring splinter bursts and rocking hulls.
+- **Shots and arts.** Each kind of shot and each ship art has its own effect.
+- **Lasting states.** Fire, plague, wards, fog, lulls, wind, ice, briars, fouled rudders, anchors and hovering
+  glows show for as long as they last.
+- **Squadrons** dive on their strafing runs.
+- **Sky units** breathe, shriek, dive and snatch, drop bombs from opened bays and board each other.
+
+Models react to what happens to them through their own action hooks (`userData.actions`). The effects are in
+`src/render/fleetFx.js`.
+
 ## The land
 
 - **Hills and cliffs.** Dry land rolls into hills up to about three tiles high, with flat-topped heights
