@@ -168,7 +168,6 @@ export const BOW_PARTS = {
     c.kit.add(G.cone(r, l, 6), col, l / 2, 0, 0, { rz: -Math.PI / 2, sx: 1, sz: 0.7, m: 0.75, r: 0.35 });
     for (const yy of [-1, 0, 1]) c.kit.add(G.box(l * 0.55, 0.05, r * 1.6 - Math.abs(yy) * r * 0.5), col, l * 0.3, yy * r * 0.55, 0, { m: 0.75, r: 0.35 });
     c.kit.add(G.cyl(r * 1.3, r * 1.3, 0.12, 8), col, 0.05, 0, 0, { rz: Math.PI / 2, m: 0.75 });
-    if (c.def.kind === 'dreadnought' || c.has('figure:horse')) void 0;
     // a bull's head on her ram if she is a fire-forge monitor
     if (c.def.realm === 'ashur') { c.kit.add(G.sph(r * 1.2, 8, 6), C.bronze, 0.1, r * 1.8, 0, { m: 0.8, r: 0.3 }); for (const z of [-1, 1]) c.kit.add(G.cone(r * 0.3, r * 2.2, 5), C.bone, 0.1, r * 2.6, z * r * 1.2, { rx: z * 1.0 }); }
     c.kit.pop();

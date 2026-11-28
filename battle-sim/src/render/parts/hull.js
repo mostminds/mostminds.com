@@ -56,7 +56,7 @@ function twinHull(c, z, l, w, h) {
 function beams(c, xs, z, y0, y1, w = 0.16) {
   for (const x of xs) {
     const inner = Math.sign(z) * Math.max(0.1, c.hw(x) - 0.2), mid = (inner + z) / 2;
-    c.kit.add(G.box(w, w * 0.8, Math.abs(z - inner) + 0.3), C.dark, x, (y0 + y1) / 2 + 0.06, mid, { rx: Math.atan2(y0 - y1, z - inner) * Math.sign(z) * 0 });
+    c.kit.add(G.box(w, w * 0.8, Math.abs(z - inner) + 0.3), C.dark, x, (y0 + y1) / 2 + 0.06, mid);
     c.kit.bar([x, y1, inner], [x, y0, z], w * 0.45, C.dark);
   }
 }
@@ -156,14 +156,11 @@ export const HULL_PARTS = {
   ghost(c) {
     c.ghost = true;
     // drifting corpse-lights round her
-    const K = new Kit(), n = 7;
-    for (let i = 0; i < n; i++) K.add(G.sph(0.12 + hash(i) * 0.08, 6, 4), 0x9affb0, 0, 0, 0, { g: 3 });
-    const g = K.build(), motes = new THREE.Group();
+    const n = 7, motes = new THREE.Group();
     for (let i = 0; i < n; i++) {
       const o = new THREE.Mesh(G.sph(0.07 + hash(i) * 0.05, 6, 4), wispMat()); o.userData.base = [lerp(c.sternX, c.bowX, hash(i + 5)), c.dy + 0.4 + hash(i + 2) * 1.6, (hash(i + 7) - 0.5) * c.B * 1.6];
       motes.add(o);
     }
-    void g;
     c.addMoving(motes, (t, ph) => motes.children.forEach((o, i) => { const b = o.userData.base; o.position.set(b[0] + Math.sin(t * 0.7 + i) * 0.3, b[1] + Math.sin(t * 1.3 + i * 2 + ph) * 0.35, b[2] + Math.cos(t * 0.6 + i) * 0.3); }));
   },
   hover(c) {
@@ -219,7 +216,7 @@ export const HULL_PARTS = {
       const a = t * 2.4 + ph;
       pins.forEach(([x, y, z, s], i) => {
         const sw = Math.sin(a) * 0.38, dip = 0.38 + Math.cos(a) * 0.14;
-        e.set(s * dip, s > 0 ? -sw : Math.PI + sw, 0, 'YXZ');
+        e.set(dip, s > 0 ? -sw : Math.PI + sw, 0, 'YXZ');
         inst.setMatrixAt(i, mtx.compose(p.set(x, y, z), q.setFromEuler(e), one));
       });
       inst.instanceMatrix.needsUpdate = true;
