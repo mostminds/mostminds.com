@@ -9,7 +9,9 @@ export function buildSkyModel(def, sideColor) {
   if (!D) return null;
   /*DEBUG*/ const dq = typeof location !== 'undefined' && new URLSearchParams(location.search).get('opts'); if (dq) { const o = JSON.parse(dq); D = { ...D, ...o }; def = { ...def, sky: D }; }
   try {
-    return D.kind === 'beast' ? buildSkyBeast(def, sideColor) : buildSkyShip(def, sideColor);
+    const m = D.kind === 'beast' ? buildSkyBeast(def, sideColor) : buildSkyShip(def, sideColor);
+    /*DEBUG*/ if (D.damage) m.userData.setDamage(D.damage); if (D.sideX) m.userData.setSide(D.sideX);
+    return m;
   } catch (err) {
     console.warn(`[skyParts] ${def.id} failed, using the plain airship`, err);
     return null;

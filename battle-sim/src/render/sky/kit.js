@@ -23,7 +23,7 @@ export function mesh(g, m, x = 0, y = 0, z = 0, sx = 1, sy = sx, sz = sx) {
   o.position.set(x, y, z); o.scale.set(sx, sy, sz);
   return o;
 }
-export const ell = (p, m, x, y, z, rx, ry = rx, rz = rx, lo = false) => add(p, mesh(lo ? SPH_LO() : SPH(), m, x, y, z, rx, ry, rz));
+export const ell = (p, m, x, y, z, rx, ry = rx, rz = rx, lo = false) => add(p, mesh(lo || Math.max(rx, ry, rz) < 0.2 ? SPH_LO() : SPH(), m, x, y, z, rx, ry, rz));
 export const blk = (p, m, x, y, z, w, h, d) => add(p, mesh(BOX(), m, x, y, z, w, h, d));
 export function add(p, o) { p.add(o); return o; }
 export function group(p, x = 0, y = 0, z = 0) { const g = new THREE.Group(); g.position.set(x, y, z); if (p) p.add(g); return g; }
