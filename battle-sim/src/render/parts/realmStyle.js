@@ -13,7 +13,7 @@
 // figurehead kind a plain bow gets), lantern, finial, banner (cut: swallow | gonfalon | nobori | pennon | horsetail |
 // totem | square), glow (hex of her magic light), cloth / cloth2 (the realm's colours), tone (0 bright .. 1 grim).
 import * as THREE from 'three';
-import { G, C, shade, blend, clamp, lerp, taper, clothPanel } from './kit.js';
+import { G, C, shade, blend, clamp, lerp, taper, clothPanel, sculptKit } from './kit.js';
 import { REALMS } from '../../data/realms.js';
 
 const PI = Math.PI;
@@ -214,9 +214,27 @@ export function emblem(K, st, size, o = {}) {
 }
 
 // ===================================================================================
+//  carving, finials and lamps are SCULPTED: each kind is drawn once at unit size, re-cut as blended sculpt prims
+//  (kit.sculptKit) with baked occlusion, cached per realm colouring and scaled into place
+// ===================================================================================
+const skey = (st) => `${st.id}|${st.metal}|${st.metalM}|${st.carve}|${st.glow}|${st.cloth}|${st.cloth2}`;
+/** one unit of the realm's running carving (gunwale frieze), xy plane facing +z, centred, ~size wide */
+export function motif(K, st, size, kind = st.motif) {
+  K.add(sculptKit(`motif|${kind}|${skey(st)}`, (R) => motifRaw(R, st, 1, kind), { res: 46, min: 8, k: 0.014 }), 0xffffff, 0, 0, 0, { s: size });
+}
+/** a post-top ornament standing on the origin */
+export function finial(K, st, size, kind = st.finial) {
+  K.add(sculptKit(`finial|${kind}|${skey(st)}`, (R) => finialRaw(R, st, 1, kind), { res: 64, min: 10, k: 0.012 }), 0xffffff, 0, 0, 0, { s: size });
+}
+/** a stern lantern / brazier / lamp standing on the origin (glows) */
+export function lantern(K, st, size, kind = st.lantern) {
+  K.add(sculptKit(`lantern|${kind}|${skey(st)}`, (R) => lanternRaw(R, st, 1, kind), { res: 60, min: 10, k: 0.01 }), 0xffffff, 0, 0, 0, { s: size });
+}
+
+// ===================================================================================
 //  running carving: one unit, ~size wide and ~0.45 size tall, relief toward +z
 // ===================================================================================
-export function motif(K, st, size, kind = st.motif) {
+function motifRaw(K, st, size, kind = st.motif) {
   const s = size, c = st.carve, m = st.metal, gm = { m: st.metalM, r: 0.4 }, wd = { r: 0.7 };
   const metalCarve = c === st.metal;
   const o = metalCarve ? gm : wd;
@@ -267,7 +285,7 @@ export function motif(K, st, size, kind = st.motif) {
 // ===================================================================================
 //  finials, lanterns, banners
 // ===================================================================================
-export function finial(K, st, size, kind = st.finial) {
+function finialRaw(K, st, size, kind = st.finial) {
   const s = size, m = st.metal, gm = { m: st.metalM, r: 0.35 };
   K.add(G.cyl(s * 0.1, s * 0.13, s * 0.12, 8), m, 0, s * 0.06, 0, gm);
   switch (kind) {
@@ -296,7 +314,7 @@ export function finial(K, st, size, kind = st.finial) {
 function emblemAt(K, st, name, size, x, y, z, col) { K.push(x, y, z); emblem(K, st, size, { name, col, back: true, depth: 0.08 }); K.pop(); }
 
 /** a lantern standing on the origin, about size tall */
-export function lantern(K, st, size, kind = st.lantern) {
+function lanternRaw(K, st, size, kind = st.lantern) {
   const s = size, m = st.metal, gm = { m: st.metalM, r: 0.35 }, gl = st.glow;
   switch (kind) {
     case 'paper': K.add(G.sph(s * 0.22, 10, 8), 0xd82a1a, 0, s * 0.4, 0, { sy: 1.25, g: 0.9, r: 0.9 }); for (const y of [0.13, 0.67]) K.add(G.cyl(s * 0.1, s * 0.1, s * 0.05, 8), C.black, 0, s * y, 0); K.add(G.box(s * 0.02, s * 0.25, s * 0.02), 0xd8b03a, 0, s * 0.0, 0); break;

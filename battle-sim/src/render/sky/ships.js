@@ -4,6 +4,8 @@
 import { THREE, PI, TAU, SPH, SPH_LO, HEMI, BOX, CYL, CONE, TORUS, OCTA, ICO, mesh, ell, blk, add, group, rod, spike, plate, slab, lathe, sweep, rope, horn, emblem, patch, fam, tier, tintSet, shade, mixc, bake, noCrew, clamp, lerp, hash, pulse, sidesAt } from './kit.js';
 import { styleOf } from './style.js';
 import { decoMats, finial, figurehead, banner, trophies, motif, along, roof } from './deco.js';
+import { envelopeGeo, hullSkinGeo, skinMesh, skinLod, skinDamage, envPoint, holesOf } from './skin.js';
+import { sculptedFigurehead, helmsman } from './carved.js';
 
 // hull sizes per lift: [length x len, beam, depth]
 const HULL = { dirigible: [0.55, 1.5, 0.75], ribbed: [0.58, 1.6, 0.8], balloon: [0.62, 1.7, 0.95], lantern: [0.6, 1.7, 0.9], patched: [0.5, 1.6, 0.8], none: [0.78, 1.75, 0.95], crystal: [0.66, 1.7, 0.9], wings: [0.72, 1.6, 0.85] };
@@ -30,6 +32,8 @@ export function buildSkyShip(def, sideColor) {
   const [hk, HB, HD] = HULL[kind], HL = L * hk;
   const X = { g: I, root, C, S, A, T, L, HL, HB, HD, kind, dress, movers, hide2, props, blocked: [], def, sideM, guns: [], rockets: [], fx: {} };
   X.b = (x) => halfBeam((x + HL / 2) / HL, HB);
+  X.hex = { env: envC, env2: mixc(envC, 0xffffff, 0.12), seam: shade(envC, 0.62), hull: hullC, trim: trimC };
+  X.key = `${def.id}|${L}`;
   X.glow = (c, k = 1.3, o = {}) => { const { flick, ...mo } = o; const m = T.glow(c, k, mo); A.glows.push({ m, k: flick ?? 0.15, ph: A.glows.length * 1.7, op: mo.transparent ? mo.opacity : undefined }); return m; };
 
   hull(X);
@@ -40,12 +44,14 @@ export function buildSkyShip(def, sideColor) {
   if (E.props !== false) engines(X, E);
   realmDress(X);
   bombBay(X); boarding(X); hangar(X);
-  rents(X);
+  flames(X);
+  helmsman(X);
 
   movers.push(...props, ...hide2, ...A.spin.map((s) => s.o), ...A.bobs.map((b) => b.o), ...X.guns.map((g) => g.p), ...(X.moving || []));
   for (const w of A.wings) movers.push(w.sh, ...(w.el ? [w.el] : []));
   if (E.group) movers.push(E.group);
   const lodMeshes = bake(root, movers, T);
+  lodMeshes.push(...skinLod(X));
   const box = new THREE.Box3().setFromObject(root);
 
   const per = Math.max(1, def.cannons?.perSide || 3);
@@ -68,12 +74,21 @@ export function buildSkyShip(def, sideColor) {
     },
     actions: shipActions(X),
     setSide(hex) { sideM.color.set(hex); sideDark.color.set(hex).multiplyScalar(0.6); },
-    setDamage(lv) {
-      T.damage(lv);
+    breakParts: breakParts(X, E),
+    setDamage(lv, info = {}) {
+      lv = clamp(Math.round(+lv || 0), 0, 3);
+      const fire = !!(info && info.fire) || lv >= 3;
+      if (lv === X.dmgLv && fire === X.dmgFire) return;
+      X.dmgLv = lv; X.dmgFire = fire;
+      T.damage(lv * 0.6);
+      skinDamage(X, lv, root.userData.lod.level);
       for (const o of hide2) o.visible = lv >= 2;
+      for (const f of X.fires || []) f.g.visible = lv >= f.lv && (fire || lv >= 2);
       A.droop = lv >= 3 ? 1 : 0;
-      if (E.group) { const s = lv >= 3 ? E.sag ?? 0.8 : 1; E.group.scale.y = s; E.group.position.y = (E.cy || 0) * (1 - s) * 0.6; E.group.rotation.z = lv >= 3 ? -0.04 : 0; }
-      props.forEach((p, i) => { p.userData.dead = lv >= 3 || (lv >= 2 && i === 0); });
+      // the bag is torn and collapsed (its skin is redrawn); what holds it up sags and the ship noses down
+      if (E.group) { const s = lv >= 3 ? (X.skins?.some((k) => k.kind === 'bag') ? 0.94 : E.sag ?? 0.8) : 1; E.group.scale.y = s; E.group.position.y = (E.cy || 0) * (1 - s) * 0.6; E.group.rotation.z = lv >= 3 ? -0.06 : lv >= 2 ? -0.02 : 0; }
+      X.g.rotation.x = lv >= 2 ? (info.side || 1) * (lv >= 3 ? 0.07 : 0.03) : 0;   // a list toward the beam that took it
+      props.forEach((p, i) => { const dead = lv >= 3 || (lv >= 2 && i === 0); p.userData.dead = dead; if (p.userData.whole) { p.userData.whole.visible = !dead; p.userData.broken.visible = dead; } });
     },
   };
   return root;
@@ -107,16 +122,13 @@ function hull(X) {
   const H = group(g); X.H = H;
   const P = (t, f, k) => hullPt(HL, HB, HD, t, f, k);
   const wicker = kind === 'patched';
-  add(H, mesh(fam(null, (q) => hullGeo(HL, HB, HD, q)), wicker ? C.wood : C.hull)).userData.noCrew = true;
-  // planking: raised strakes in a darker tone, a keel along the bottom, a wale in the trim
-  tier(1, () => {
-    const strakes = wicker ? [0.25, 0.45, 0.65, 0.85, 1.05, 1.25] : [0.3, 0.55, 0.8, 1.05, 1.3];
-    for (const f0 of strakes) for (const sd of [1, -1]) {
-      const fa = sd > 0 ? f0 : PI - f0 - 0.035, fb = fa + 0.035;
-      noCrew(patch(H, wicker ? C.dark : C.plank, (u, v) => P(0.004 + u * 0.99, lerp(fa, fb, v), 1.008), 24, 1));
-    }
-    if (wicker) for (let i = 0; i < 22; i++) { const t = 0.03 + (i / 21) * 0.94; noCrew(patch(H, C.dark, (u, v) => P(t + (v - 0.5) * 0.008, 0.15 + u * (PI - 0.3), 1.012), 10, 1)); }
-  });
+  // the planked skin: lapstrake strakes, per-plank tone, butt joints, treenails, a tarred keel band (skin.js)
+  const ho = { pt: P, HL, col: X.hex.hull, strakes: wicker ? 12 : 10, wicker, seed: Math.round(HL * 11) };
+  noCrew(skinMesh(X, H, (q, lv) => hullSkinGeo(`${X.key}|hull`, ho, q, lv), 'hull'));
+  X.hullSkin = ho;
+  // frames inside the hull, seen through a breach
+  tier(2, () => { for (let i = 1; i < 9; i++) { const t = i / 9, sp = []; for (let j = 0; j <= 8; j++) sp.push(P(t, 0.1 + (j / 8) * (PI - 0.2), 0.94)); noCrew(sweep(H, C.dark, sp, 0.035, { n: 16, m: 4, round: 0 })); } });
+  void hullGeo;
   const keel = []; for (let i = 0; i <= 10; i++) keel.push(P(0.02 + i * 0.097, PI / 2, 1.0).map((v, k) => (k === 1 ? v - 0.04 : v)));
   noCrew(sweep(H, C.dark, keel, 0.06, { n: 20, m: 5, ry: 1.6 }));
   // stem post sweeping up at the bow
@@ -208,9 +220,15 @@ function cigar(X, P, Le, R, cy, o = {}) {
   }
   pts[0][0] = 0.001; pts[n][0] = 0.001;
   const gores = o.gores ?? 12, E = group(P, 0, cy, 0); E.rotation.z = -PI / 2;
-  for (let i = 0; i < gores; i++) lathe(E, o.single ? C.env : i % 2 ? C.env : C.env2, pts, 30, `cig:${Le},${R},${gores},${!!o.prof}:${i}`, (i / gores) * TAU, TAU / gores);
-  // seams along the gores
-  tier(1, () => { for (let i = 0; i < gores; i++) { const a = (i / gores) * TAU, sp = []; for (let k = 1; k < n; k += 2) sp.push([Math.sin(a) * pts[k][0] * 1.006, pts[k][1], Math.cos(a) * pts[k][0] * 1.006]); sweep(E, C.seam, sp, 0.012, { n: 24, m: 3, minM: 3, round: 0 }); } });
+  // the cloth: puffed gores between sunken seams, sewn panels, stitched patches (skin.js), torn and burnt when hurt
+  const H = X.hex, so = { gores, colA: H.env, colB: H.env2, single: o.single, seam: H.seam, up: [-1, 0, 0], panel: 1.2, patches: o.patches ?? 3, patchCols: o.patchCols, seed: Math.round(Le * 13 + R * 7) };
+  skinMesh(X, E, (q, lv) => envelopeGeo(`${X.key}|cig`, pts, so, q, lv), 'bag');
+  X.envProf = { prof: pts, frame: E, so };
+  // the frame inside: hoops and stringers, seen through the tears
+  tier(2, () => {
+    for (let k = 3; k < n - 2; k += 3) add(E, mesh(TORUS(0.03, 24, 4), C.woodDark, 0, pts[k][1], 0, pts[k][0] * 0.96)).rotation.x = PI / 2;
+    for (let a = 0; a < 6; a++) { const ang = (a / 6) * TAU, sp = []; for (let k = 2; k < n - 1; k += 2) sp.push([Math.sin(ang) * pts[k][0] * 0.95, pts[k][1], Math.cos(ang) * pts[k][0] * 0.95]); sweep(E, C.woodDark, sp, 0.025, { n: 20, m: 4, round: 0 }); }
+  });
   const rAt = (x) => { const u = clamp((x + Le / 2) / Le, 0, 1) * n, i = Math.min(n - 1, Math.floor(u)), f = u - i; return pts[i][0] * (1 - f) + pts[i + 1][0] * f; };
   return { pts, rAt };
 }
@@ -310,8 +328,7 @@ const LIFT = {
     const E = group(g);
     const prof = [[0.45, -2.0], [0.9, -1.85], [1.3, -1.6], [1.7, -1.3], [2.0, -0.95], [2.2, -0.5], [2.3, -0.1], [2.3, 0.3], [2.25, 0.7], [2.1, 1.05], [1.9, 1.4], [1.6, 1.7], [1.25, 1.95], [0.85, 2.15], [0.5, 2.25], [0.001, 2.3]].map(([r, y]) => [r * k, y * k]);
     const gores = 16;
-    for (let i = 0; i < gores; i++) { const s = lathe(E, i % 2 ? C.env : C.env2, prof, 36, `bal:${k}:${i}`, (i / gores) * TAU, TAU / gores); s.position.y = cy; }
-    tier(2, () => { for (let i = 0; i < gores; i++) { const a = (i / gores) * TAU, sp = prof.slice(1, -1).map(([r, y]) => [Math.sin(a) * r * 1.008, cy + y, Math.cos(a) * r * 1.008]); sweep(E, C.trim, sp, 0.018, { n: 26, m: 3, minM: 3, round: 0 }); } });
+    { const B = group(E, 0, cy, 0), so = { gores, colA: X.hex.env, colB: X.hex.env2, seam: X.hex.trim, up: [0, 1, 0], panel: 0.9, patches: 2, seed: 7 }; skinMesh(X, B, (q, lv) => envelopeGeo(`${X.key}|bal`, prof, so, q, lv), 'bag'); X.envProf = { prof, frame: B, so }; }
     const band = add(E, mesh(TORUS(0.05, 36), C.trim, 0, cy - 0.1 * k, 0, 2.31 * k)); band.rotation.x = PI / 2;
     add(E, mesh(TORUS(0.04, 36), C.envB, 0, cy + 0.5 * k, 0, 2.27 * k)).rotation.x = PI / 2;
     add(E, mesh(TORUS(0.06, 16), C.iron, 0, cy - 2.0 * k, 0, 0.45 * k)).rotation.x = PI / 2;
@@ -338,7 +355,7 @@ const LIFT = {
     const E = group(g);
     const m = X.glow(X.C.env.color.getHex(), 0.55, { flick: 0.12, roughness: 0.9 }); m.emissive.lerp(new THREE.Color(0xffa040), 0.18);
     const prof = [[0.9, -1.7], [1.3, -1.6], [1.6, -1.4], [1.85, -1.1], [1.95, -0.75], [2.05, -0.35], [2.08, 0], [2.05, 0.35], [1.95, 0.75], [1.85, 1.1], [1.6, 1.4], [1.3, 1.6], [0.9, 1.7]].map(([r, y]) => [r * k, y * k]);
-    lathe(E, m, prof, 24).position.y = cy;
+    void m; { const B = group(E, 0, cy, 0), so = { gores: 12, colA: X.hex.env, single: true, seam: shade(X.hex.env, 0.5), up: [0, 1, 0], panel: 0.7, patches: 0, seed: 11, glowA: 0.55 }; skinMesh(X, B, (q, lv) => envelopeGeo(`${X.key}|lan`, prof, so, q, lv), 'bag'); X.envProf = { prof, frame: B, so }; }
     for (const y of [-1.4, -0.75, 0, 0.75, 1.4]) { const r = prof.find((p) => Math.abs(p[1] - y * k) < 1e-6)[0]; add(E, mesh(TORUS(0.03, 28), C.dark, 0, cy + y * k, 0, r * 1.01)).rotation.x = PI / 2; }
     for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; sweep(E, i % 3 ? C.dark : C.trim, prof.map(([r, y]) => [Math.cos(a) * r * 1.012, cy + y, Math.sin(a) * r * 1.012]), i % 3 ? 0.022 : 0.035, { n: 24, m: 4, round: 0 }); }
     // painted panels: the emblem on four faces
@@ -362,15 +379,7 @@ const LIFT = {
     const { g, C, L, S } = X, Le = L * 0.78, R = L * 0.2, cy = 0.95 + R + 0.4;
     const E = group(g);
     const prof = (u) => Math.pow(Math.sin(u * PI), 0.55) * (1 + 0.06 * Math.sin(u * 23));
-    const { rAt } = cigar(X, E, Le, R, cy, { prof, gores: 8, single: true });
-    // patches of every cloth: curved pieces of the skin, stitched round
-    const pal = [C.env2, C.trim, X.T.t(0x8a6a4a), X.T.t(0xa8987a), X.T.t(0x6a4a5a), X.T.t(shade(X.C.env.color.getHex(), 0.7)), X.T.t(0xc8b070), C.side, C.accent];
-    for (let i = 0; i < 30; i++) {
-      const u = 0.1 + 0.8 * hash(i + 3), x = -Le / 2 + u * Le, a = hash(i * 7 + 1) * TAU, w = 0.5 + hash(i) * 0.7, aw = (0.4 + hash(i + 9) * 0.5) / Math.max(0.5, rAt(x));
-      const pp = patch(E, pal[i % pal.length], (s, t) => { const xx = x + (s - 0.5) * w, rr = rAt(xx) * 1.012, aa = a + (t - 0.5) * aw; return [xx, cy + Math.cos(aa) * rr, Math.sin(aa) * rr]; }, 4, 3);
-      void pp;
-      tier(0, () => { for (let k2 = 0; k2 < 4; k2++) { const xx = x + (k2 / 3 - 0.5) * w, rr = rAt(xx) * 1.02; for (const e of [-0.5, 0.5]) { const aa = a + e * aw; rod(E, C.dark, [xx - 0.03, cy + Math.cos(aa) * rr, Math.sin(aa) * rr], [xx + 0.03, cy + Math.cos(aa + 0.03) * rr, Math.sin(aa + 0.03) * rr], 0.008, 0.008, 3); } } });
-    }
+    const { rAt } = cigar(X, E, Le, R, cy, { prof, gores: 8, single: true, patches: 18, patchCols: [X.hex.env2, X.hex.trim, 0x8a6a4a, 0xa8987a, 0x6a4a5a, shade(X.hex.env, 0.7), 0xc8b070, X.def.sky.look?.trim ?? 0x8a2a1a] });
     for (const u of [-0.25, 0.1, 0.32]) add(E, mesh(TORUS(0.035, 24), C.rope, u * Le, cy, 0, rAt(u * Le) * 1.01)).rotation.y = PI / 2;
     tier(2, () => { for (let a = 0; a < 8; a++) { const ang = (a / 8) * TAU, sp = []; for (let i = 0; i <= 10; i++) { const x = -Le * 0.42 + (i / 10) * Le * 0.84; sp.push([x, cy + Math.cos(ang) * rAt(x) * 1.015, Math.sin(ang) * rAt(x) * 1.015]); } sweep(E, C.rope, sp, 0.02, { n: 20, m: 3, minM: 3, round: 0 }); } });
     // a rag tail-fin on a pole, the realm flag above
@@ -494,9 +503,19 @@ function rotor(X, at, h, R, dir = 1) {
 }
 /** a propeller spinning about local x: twisted blades on a hub with a spinner */
 function propeller(X, P, x, y, z, R = 0.65, n = 4) {
-  const p = group(P, x, y, z);
+  const p = group(P, x, y, z), whole = group(p), broken = group(p);
+  broken.visible = false; p.userData.whole = whole; p.userData.broken = broken;
+  (X.moving ||= []).push(whole, broken);
+  // shot away: two stumps and one bent blade
   for (let i = 0; i < n; i++) {
-    const q = group(p); q.rotation.x = (i / n) * TAU;
+    const q = group(broken); q.rotation.x = (i / n) * TAU + 0.3;
+    const bl = group(q); bl.rotation.y = PI / 2 - 0.45;
+    const len = i === 0 ? R * 0.85 : R * (0.18 + 0.12 * hash(i + 5));
+    if (i === 0) bl.rotation.z = 0.5;
+    if (i === 0 || i % 2) slab(bl, X.C.dark, [[-0.05, 0.06], [-0.08, len * 0.5], [-0.02, len], [0.07, len * 0.9], [0.05, len * 0.6], [0.05, 0.06]], 0.025, 0.004).rotation.x = -PI / 2;
+  }
+  for (let i = 0; i < n; i++) {
+    const q = group(whole); q.rotation.x = (i / n) * TAU;
     const bl = group(q); bl.rotation.y = PI / 2 - 0.45; // chord across the shaft, pitched
     slab(bl, X.C.wood, [[-0.05, 0.06], [-0.08, R * 0.5], [-0.05, R], [0.04, R * 0.98], [0.06, R * 0.45], [0.05, 0.06]], 0.025, 0.006, `prop:${R}`).rotation.x = -PI / 2;
     tier(1, () => { const tip = blk(bl, X.C.trim, 0, R * 0.92, 0, 0.11, 0.12, 0.03); void tip; });
@@ -971,3 +990,57 @@ function deckSlots(X) {
   return out;
 }
 void HEMI; void BOX; void plate; void sidesAt; void PARTS; void noCrew;
+
+// fires in the worst tears of the bag and the breaches of the hull: they show from level 2 (or when she burns)
+function flames(X) {
+  X.fires = [];
+  const outer = X.glow(0xff5a0a, 2.2, { flick: 0.5, transparent: true, opacity: 0.88, depthWrite: false }), inner = X.glow(0xffe08a, 2.8, { flick: 0.55 });
+  const cluster = (P, p, s, up, seed) => {
+    const g = group(P, p[0], p[1], p[2]);
+    if (up) g.quaternion.copy(up);
+    // tongues of fire: teardrop lathes, a hot yellow heart inside each, leaning with the wind of her passage
+    const tongue = [[0.001, 0], [0.55, 0.08], [0.78, 0.22], [0.7, 0.42], [0.45, 0.64], [0.22, 0.84], [0.06, 0.97], [0.001, 1]];
+    for (let i = 0; i < 4; i++) {
+      const a = hash(seed + i) * TAU, r = s * 0.4 * (i ? 1 : 0), h = s * (1.9 - 0.35 * i) * (0.75 + 0.5 * hash(seed + i + 9)), w = s * (0.5 - 0.07 * i);
+      const t = group(g, Math.cos(a) * r, 0, Math.sin(a) * r); t.rotation.z = 0.35 + 0.2 * hash(seed + i + 3); t.rotation.x = (hash(seed + i + 4) - 0.5) * 0.5;
+      t.scale.set(w, h, w);
+      lathe(t, outer, tongue, 9, 'fire:tongue');
+      lathe(t, inner, tongue.map(([x, y]) => [x * 0.5, y * 0.55]), 7, 'fire:heart');
+    }
+    return g;
+  };
+  const byLv = (P, list, place, up) => {
+    for (const lv of [2, 3]) {
+      const g = group(P); g.visible = false; (X.moving ||= []).push(g);
+      list.filter((h) => (lv === 2 ? h.lv === 2 : h.lv === 3)).forEach((h, i) => { const q = place(h); cluster(g, q, Math.min(0.55, h.r * 0.75), up, i * 11 + lv); });
+      X.fires.push({ g, lv });
+    }
+  };
+  if (X.envProf) {
+    const { prof, frame, so } = X.envProf, Rmax = Math.max(...prof.map((p) => p[0]));
+    X.root.updateMatrixWorld(true);
+    const up = frame.getWorldQuaternion(new THREE.Quaternion()).invert();
+    byLv(frame, holesOf(so.seed || 1, 3, Math.max(1, Rmax * 0.7)), (h) => { const e = envPoint(prof, h.u, h.a); return [e.p[0] + e.n[0] * 0.05, e.p[1], e.p[2] + e.n[2] * 0.05]; }, up);
+  }
+  if (X.hullSkin) {
+    const ho = X.hullSkin;
+    byLv(X.H, holesOf(ho.seed + 5, 3, 0.8, [0.12, 0.88]), (h) => hullPt(X.HL, X.HB, X.HD, h.u, h.a * PI, 1.03), null);
+  }
+}
+
+// pieces the wreck can throw off as she breaks up: the bag, the propellers, wings and rings, the hull
+function breakParts(X, E) {
+  X.root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(X.root.matrixWorld).invert(), v = new THREE.Vector3();
+  const at = (o) => { o.getWorldPosition(v).applyMatrix4(inv); return [+v.x.toFixed(3), +v.y.toFixed(3), +v.z.toFixed(3)]; };
+  const out = [];
+  for (const s of X.skins || []) {
+    if (s.kind === 'bag') out.push({ mesh: s.mesh, at: [0, E.cy ?? 2, 0], kind: 'bag' });
+    else if (s.kind === 'hull') out.push({ mesh: s.mesh, at: [0, -X.HD * 0.5, 0], kind: 'plate' });
+  }
+  for (const p of X.props) out.push({ mesh: p, at: at(p), kind: 'prop' });
+  for (const w of X.A.wings) out.push({ mesh: w.sh, at: at(w.el || w.sh), kind: 'wing' });
+  for (const s of X.A.spin) out.push({ mesh: s.o, at: at(s.o), kind: 'ring' });
+  if (E.group) out.push({ mesh: E.group, at: [0, E.cy ?? 2, 0], kind: 'spar' });
+  return out;
+}

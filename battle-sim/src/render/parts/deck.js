@@ -19,10 +19,14 @@
 //   hit      bells clang, cages swing, turrets jolt
 // Anchors: model.userData.anchors gets mortar / harpoon / launch / aura points where a part makes one.
 import * as THREE from 'three';
-import { Kit, G, C, shade, blend, clamp, lerp } from './kit.js';
+import { Kit, G, C, shade, blend, clamp, lerp, EMPTY_GEO } from './kit.js';
 import { styleOf, emblem as rsEmblem, finial as rsFinial, lantern as rsLantern, banner as rsBanner } from './realmStyle.js';
 import { buildFlier } from '../fleetDress.js';
 import { REALMS } from '../../data/realms.js';
+import { UNITS } from '../../data/units.js';
+import { buildUnitModel, animateUnit } from '../models.js';
+import { DKit, groundShade, figureGeo, useUnits, attachDamage, hooks, entryOf, entryMesh } from './deckKit.js';
+import { HI } from './deckHi.js';
 
 const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 const PI = Math.PI;
@@ -128,7 +132,7 @@ class Tri {
   pop() { this.K.pop(); return this; }
 }
 const T = (c) => (c.__tri ||= new Tri(c.kit));
-const mover = () => new Tri(new Kit());
+const mover = () => new Tri(new DKit());
 /** a moving part from its kit: one mesh with a geometry per detail level (registered when it is added) */
 function moverMesh(c, t) {
   const m = t.K.mesh(); m.userData.ghostly = true;
@@ -228,6 +232,10 @@ const faceRy = (a) => PI / 2 - a;
 // ====================================================================================================
 const SKULL_C = 0x141010;
 function skull(K, s = 1, col = C.bone) {
+  far(K, () => skull0(K, s, col));
+  hiAdd(K, () => HI.skull({}), 0, 0, 0, { s }, col);
+}
+function skull0(K, s, col) {
   K.add(G.sph(0.13 * s, 9, 6), col, 0, 0.14 * s, 0, { sx: 1.1, sz: 0.92 });
   K.add(G.box(0.1 * s, 0.075 * s, 0.13 * s), col, 0.07 * s, 0.055 * s, 0);
   K.add(G.box(0.085 * s, 0.035 * s, 0.11 * s), col, 0.065 * s, 0.0, 0);
@@ -407,20 +415,40 @@ const railY = (c, x, s) => c.deckAt(x, s * c.B * 0.28) + 0.22;
 const railZ = (c, x, s) => s * (c.hw(x) + 0.02);
 const hullH = (c, x) => Math.min(c.dy, c.deckAt(x, c.B * 0.28));
 
-// ---- a little crewman or prisoner (in the kit's frame), sitting or standing, facing +x ----
+// ---- a crewman, prisoner or corpse (in the kit's frame), facing +x: the realm's own soldier (or a common man)
+// sculpted and baked small for the near levels, a stick figure far away ----
 function figure(K, cloth, skin = 0xc89a7a, s = 1, pose = 'stand') {
-  const sit = pose === 'sit', y0 = sit ? 0 : 0.3 * s;
-  if (!sit) for (const z of [-1, 1]) K.add(G.cyl(0.035 * s, 0.03 * s, 0.32 * s, 5), shade(cloth, 0.6), 0, 0.16 * s, z * 0.05 * s);
-  else for (const z of [-1, 1]) K.add(G.cyl(0.035 * s, 0.03 * s, 0.26 * s, 5), shade(cloth, 0.6), 0.1 * s, 0.06 * s, z * 0.06 * s, { rz: -1.3 });
-  K.add(G.custom('torso', () => new THREE.CapsuleGeometry(0.07, 0.16, 2, 6)), cloth, sit ? -0.02 * s : 0, y0 + 0.14 * s, 0, { s, rz: sit ? 0.35 : 0.05 });
-  K.add(G.sph(0.06 * s, 8, 6), skin, sit ? 0.05 * s : 0.02 * s, y0 + 0.33 * s, 0);
+  const sit = pose === 'sit', dead = pose === 'dead', y0 = sit ? 0 : 0.3 * s;
+  far(K, () => {
+    if (dead) K.push(0, 0.08 * s, 0, 0, 0, PI / 2);
+    if (!sit) for (const z of [-1, 1]) K.add(G.cyl(0.035 * s, 0.03 * s, 0.32 * s, 5), shade(cloth, 0.6), 0, 0.16 * s, z * 0.05 * s);
+    else for (const z of [-1, 1]) K.add(G.cyl(0.035 * s, 0.03 * s, 0.26 * s, 5), shade(cloth, 0.6), 0.1 * s, 0.06 * s, z * 0.06 * s, { rz: -1.3 });
+    K.add(G.custom('torso', () => new THREE.CapsuleGeometry(0.07, 0.16, 2, 6)), cloth, sit ? -0.02 * s : 0, y0 + 0.14 * s, 0, { s, rz: sit ? 0.35 : 0.05 });
+    K.add(G.sph(0.06 * s, 8, 6), skin, sit ? 0.05 * s : 0.02 * s, y0 + 0.33 * s, 0);
+    if (dead) K.pop();
+  });
+  const who = pose === 'crew' ? crewUnit(CUR?.c) : 'militia';
+  hiAdd(K, () => figureGeo(who, sit ? 'kneel' : dead ? 'dead' : 'stand', 0.46 * s), 0, 0, 0);
   return y0;
 }
+/** the realm's own foot soldier (for drummers and the like) */
+const CREW_UNIT = {};
+function crewUnit(c) {
+  const r = c?.def?.realm || c?.st?.id || '_';
+  if (CREW_UNIT[r]) return CREW_UNIT[r];
+  const id = Object.keys(UNITS).find((k) => k.startsWith(`${r}_`) && (UNITS[k].model?.body || 'humanoid') === 'humanoid' && !UNITS[k].fly) || 'footman';
+  return (CREW_UNIT[r] = id);
+}
+/** what fn adds to a kit (or view) is the far stand-in only: the part draws finished work in its place near by */
+function far(K, fn) { const n0 = K.items.length; fn(); const it = K.items; for (let i = n0; i < it.length; i++) it[i].farOnly = true; }
+/** finished work (three near levels: a sculpt, a baked figure) into a kit or view, drawn at levels 0..2 */
+function hiAdd(K, make, x, y, z, o = {}, col = 0xffffff) { K.add(EMPTY6, col, x, y, z, o); const it = K.items[K.items.length - 1]; it.ref = true; it.make = make; it.lv = Math.min(it.lv, 2); return K; }
+const EMPTY6 = [0, 1, 2, 3, 4, 5].map(() => EMPTY_GEO);
 
 // ====================================================================================================
 // parts
 // ====================================================================================================
-export const DECK_PARTS = {
+const RAW = {
   // ================= buildings =================
   pagoda: part(3, (c) => {
     const S = sty(c), w = clamp(Math.min(c.hw(0) * 1.6, c.L * 0.28), 1.4, 3.4), tiers = c.L > 10 ? 4 : 3, at = c.place(w * 0.62, -0.08), t = T(c), k = c.k;
@@ -558,7 +586,7 @@ export const DECK_PARTS = {
     t.m.add(G.box(0.02, sh * 0.5, w * 0.12), 0x1a1210, w * 0.151, rise + sh * 0.3, 0);
     t.m.add(G.lathe('zigbowl', [[0, 0], [0.2, 0], [0.28, 0.1], [0.3, 0.16]], 12), S.met, 0, rise + sh * 0.8, 0, { ...S.M, s: k * 1.4 });
     t.pop();
-    const fl = new Kit(); flame(fl, 0, 0, 0, 1.6 * k); const fm = fl.mesh(); fm.position.set(at.x, at.y + rise + sh * 0.8 + 0.15 * k, 0);
+    const fl = new DKit(); flame(fl, 0, 0, 0, 1.6 * k); const fm = fl.mesh(); fm.position.set(at.x, at.y + rise + sh * 0.8 + 0.15 * k, 0);
     c.addMoving(fm, (tt, ph) => { const q = 1 + 0.12 * Math.sin(tt * 9 + ph) + 0.06 * Math.sin(tt * 23); fm.scale.set(1, q * (1 + (fm.userData.boost || 0)), 1); });
     act(c, 'aura', (kk) => { fm.userData.boost = bump(kk) * 0.8; });
     anchor(c, 'aura', [at.x, at.y + rise + sh, 0]);
@@ -610,7 +638,7 @@ export const DECK_PARTS = {
     t.b.add(G.cone(w * 0.52, w * 1.3, 4), C.gold, 0, 0.36 + h + w * 0.65, 0, { ry: PI / 4, m: 0.9, r: 0.25 });
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) { t.push(sx * w * 1.25, 0.36, sz * w * 1.25); t.m.add(G.cyl(0.06 * k, 0.08 * k, 0.3 * k, 6), S.met, 0, 0.15 * k, 0, S.M); flame(t.m, 0, 0.3 * k, 0, 0.35 * k); t.pop(); }
     // carved glyph columns (and their glow, which pulses)
-    const gl = new Kit();
+    const gl = new DKit();
     for (let s = 0; s < 4; s++) {
       const a = (s * PI) / 2 + PI / 4, sl = Math.atan2(w * 0.28, h);
       for (let i = 0; i < 7; i++) {
@@ -642,7 +670,7 @@ export const DECK_PARTS = {
     t.pop();
     t.pop();
     // the runes glow, and three shards drift round it
-    const gl = new Kit(); gl.push(at.x, at.y + 0.2, 0, 0, 0.3, 0.05);
+    const gl = new DKit(); gl.push(at.x, at.y + 0.2, 0, 0, 0.3, 0.05);
     for (let i = 0; i < 9; i++) for (const s of [-1, 1]) { gl.add(G.box(w * (0.15 + hash(i) * 0.35), 0.04, 0.006), gc, (hash(i + 4) - 0.5) * w * 0.4, h * (0.1 + i * 0.09), s * w * 0.178); gl.add(G.box(0.03, 0.1 + hash(i + 9) * 0.1, 0.006), gc, (hash(i + 7) - 0.5) * w * 0.6, h * (0.12 + i * 0.09), s * w * 0.178); }
     gl.pop();
     const gm = glowMesh(gl, 0.7);
@@ -657,13 +685,14 @@ export const DECK_PARTS = {
   }),
   stones: part(2.8, (c) => {
     const S = sty(c), R = clamp(c.hw(0) * 0.72, 0.9, 1.8), at = c.place(R + 0.2, -0.15), t = T(c), n = 6, k = c.k, gc = S.glow;
-    const gl = new Kit();
+    const gl = new DKit();
     t.push(at.x, at.y, 0);
     const tops = [];
     for (let i = 0; i < n; i++) {
       const a = (i / n) * PI * 2 + 0.3, h = (1.1 + hash(i) * 0.8) * k, x = Math.cos(a) * R, z = Math.sin(a) * R * 0.85, col = blend(C.darkStone, 0x4a4450, hash(i + 1));
       t.push(x, 0, z, 0, -a, (hash(i + 2) - 0.5) * 0.15);
-      t.b.add(G.custom('menhir', () => { const g = new THREE.CylinderGeometry(0.5, 0.62, 1, 6, 3); const P = g.attributes.position; for (let j = 0; j < P.count; j++) { const yy = P.getY(j); P.setX(j, P.getX(j) * (1 + 0.15 * Math.sin(j * 3.1)) * (yy > 0.4 ? 0.8 : 1)); P.setZ(j, P.getZ(j) * 0.6 * (1 + 0.1 * Math.cos(j * 2.3))); } g.computeVertexNormals(); return g; }), col, 0, h / 2, 0, { sx: 0.34 * k, sy: h, sz: 0.36 * k, r: 0.95 });
+      hiAdd(t.b, () => HI.rock({ w: 0.34 * k, h, d: 0.22 * k, col, seed: i }), 0, 0, 0);
+      far(t.K, () => t.b.add(G.custom('menhir', () => { const g = new THREE.CylinderGeometry(0.5, 0.62, 1, 6, 3); const P = g.attributes.position; for (let j = 0; j < P.count; j++) { const yy = P.getY(j); P.setX(j, P.getX(j) * (1 + 0.15 * Math.sin(j * 3.1)) * (yy > 0.4 ? 0.8 : 1)); P.setZ(j, P.getZ(j) * 0.6 * (1 + 0.1 * Math.cos(j * 2.3))); } g.computeVertexNormals(); return g; }), col, 0, h / 2, 0, { sx: 0.34 * k, sy: h, sz: 0.36 * k, r: 0.95 }));
       t.l.add(G.box(0.3 * k, h, 0.2 * k), col, 0, h / 2, 0);
       for (let q = 0; q < 3; q++) t.f.add(G.sph(0.06 * k, 5, 4), 0x4a6a3a, (hash(q + i) - 0.5) * 0.2 * k, h * (0.1 + q * 0.12), 0.1 * k, { sy: 0.5, r: 1 });
       t.pop();
@@ -673,7 +702,7 @@ export const DECK_PARTS = {
       tops.push([x, h, z]);
     }
     // lintels across two pairs
-    for (const [i, j] of [[0, 1], [3, 4]]) { const p = tops[i], q = tops[j], y = Math.min(p[1], q[1]) + 0.08; t.b.add(G.box(Math.hypot(p[0] - q[0], p[2] - q[2]) + 0.4 * k, 0.2 * k, 0.28 * k), shade(C.darkStone, 1.1), (p[0] + q[0]) / 2, y, (p[2] + q[2]) / 2, { ry: -Math.atan2(q[2] - p[2], q[0] - p[0]), r: 0.95 }); }
+    for (const [i, j] of [[0, 1], [3, 4]]) { const p = tops[i], q = tops[j], y = Math.min(p[1], q[1]) + 0.08, L = Math.hypot(p[0] - q[0], p[2] - q[2]) + 0.4 * k; hiAdd(t.b, () => HI.rock({ w: L, h: 0.2 * k, d: 0.28 * k, col: shade(C.darkStone, 1.1), taper: 0, seed: i + 9 }), (p[0] + q[0]) / 2, y - 0.1 * k, (p[2] + q[2]) / 2, { ry: -Math.atan2(q[2] - p[2], q[0] - p[0]) }); far(t.K, () => t.b.add(G.box(Math.hypot(p[0] - q[0], p[2] - q[2]) + 0.4 * k, 0.2 * k, 0.28 * k), shade(C.darkStone, 1.1), (p[0] + q[0]) / 2, y, (p[2] + q[2]) / 2, { ry: -Math.atan2(q[2] - p[2], q[0] - p[0]), r: 0.95 })); }
     // the altar stone
     t.b.add(G.cyl(R * 0.4, R * 0.45, 0.25, 8), 0x2a2430, 0, 0.12, 0, { r: 0.9 });
     t.m.add(G.box(R * 0.5, 0.12, R * 0.3), 0x3a3440, 0, 0.3, 0, { r: 0.8 });
@@ -692,6 +721,8 @@ export const DECK_PARTS = {
     const leaf = S.id === 'morbus' ? 0x7a8a3a : S.id === 'nagavar' ? 0x3a6a2a : S.id === 'cloven' ? 0x5a6a2a : blend(C.leaf, c.sailC, 0.15);
     const fat = S.id === 'baobab' ? 1.7 : 1;
     t.push(at.x, at.y, 0);
+    hiAdd(t.b, () => HI.trunk({ h, k, fat, bark }), 0, 0, 0);
+    const n0 = t.K.items.length;
     // trunk in tapering lengths, root flares into the deck
     const trunk = [[0, 0, 0], [0.06, 0.25, 0.03], [-0.04, 0.5, -0.02], [0.03, 0.72, 0.02]].map(([x, y, z]) => [x * k, y * h, z * k]);
     t.b.add(taper(trunk, 0.42 * k * fat, 0.17 * k * (fat > 1 ? 1.4 : 1), 8, 9), bark, 0, 0, 0, { r: 0.95 });
@@ -706,16 +737,18 @@ export const DECK_PARTS = {
       t.b.add(taper([[0, y0, 0], [e[0] * 0.5, (y0 + e[1]) / 2 + 0.1, e[2] * 0.5], e], 0.11 * k, 0.04 * k, 6, 5), bark, 0, 0, 0, { r: 0.95 });
       tips.push(e);
     }
+    for (let i = n0; i < t.K.items.length; i++) t.K.items[i].farOnly = true;
     t.pop();
     // the canopy sways a little: clusters of leaf masses, with fruit/lanterns of the realm
     const cn = mover(), blobs = [[0, 0.92, 0, 1.0], [0.8, 0.8, 0.35, 0.75], [-0.72, 0.82, -0.3, 0.8], [0.25, 0.78, -0.75, 0.72], [-0.3, 0.8, 0.72, 0.72], [0, 1.12, 0, 0.7], [0.5, 1.0, -0.3, 0.55], [-0.45, 1.02, 0.25, 0.55]];
-    blobs.forEach(([x, y, z, r], i) => {
+    hiAdd(cn.K, () => HI.canopy({ k, h, leaf }), 0, 0, 0);
+    far(cn.K, () => blobs.forEach(([x, y, z, r], i) => {
       const col = shade(leaf, 0.82 + hash(i) * 0.3), px = x * k, py = y * h - h * 0.7, pz = z * k;
       cn.b.add(G.ico(r * k, 1), col, px, py, pz, { r: 0.85, sy: 0.8 });
       cn.l.add(G.ico(r * k * 0.9, 0), col, px, py, pz, { sy: 0.8 });
       for (let q = 0; q < 5; q++) { const a = q * 1.3 + i, b = (q / 5) * 1.2 - 0.3; cn.m.add(G.ico(r * k * 0.42, 1), shade(col, 0.9 + hash(q + i) * 0.25), px + Math.cos(a) * Math.cos(b) * r * k * 0.85, py + Math.sin(b) * r * k * 0.7, pz + Math.sin(a) * Math.cos(b) * r * k * 0.85, { r: 0.85, sy: 0.8 }); }
       for (let q = 0; q < 6; q++) { const a = q * 2.1 + i * 0.7; cn.f.add(G.sph(r * k * 0.16, 5, 4), shade(col, 1.15), px + Math.cos(a) * r * k * 0.9, py + (hash(q + i * 3) - 0.3) * r * k, pz + Math.sin(a) * r * k * 0.9, { sx: 1.3, sy: 0.4, rz: a }); }
-    });
+    }));
     const fruit = S.id === 'morbus' ? C.slime : S.id === 'baobab' ? 0xc8b890 : S.id === 'nagavar' ? 0xff3a3a : S.id === 'verdant' || S.id === 'deeproot' ? S.glow : 0xff9a3a;
     for (let i = 0; i < 9; i++) { const a = i * 0.7, r = 0.9 * k, y = h * (0.7 + hash(i) * 0.15) - h * 0.7; cn.m.bar([Math.cos(a) * r, y, Math.sin(a) * r], [Math.cos(a) * r, y - 0.3, Math.sin(a) * r], 0.008, 0x3a2a1a); cn.m.add(G.sph(0.07 * k, 6, 5), fruit, Math.cos(a) * r, y - 0.36, Math.sin(a) * r, { g: S.id === 'verdant' || S.id === 'deeproot' || S.id === 'nagavar' ? 1.6 : 0.1, sy: S.id === 'baobab' ? 1.8 : 1 }); }
     const cm = moverMesh(c, cn); cm.position.set(at.x, at.y + h * 0.7, 0);
@@ -726,15 +759,21 @@ export const DECK_PARTS = {
     const S = sty(c), h = clamp(c.L * 0.36, 2.6, 5), at = c.place(0.6, 0.05), t = T(c), k = c.k, bark = S.rot ? 0x3a3a2e : 0x4a4038;
     t.push(at.x, at.y, 0);
     const trunk = [[0, 0, 0], [0.12, 0.3, 0.05], [-0.08, 0.6, 0], [0.05, 0.85, 0.06], [0, 1, 0]].map(([x, y, z]) => [x * k, y * h, z * k]);
+    const br0 = [[0.4, 0.5, 0.35], [0.55, -0.6, 0.15], [0.7, 0.3, -0.5], [0.62, -0.4, 0.6], [0.85, 0.2, 0.4], [0.8, -0.3, -0.35]];
+    hiAdd(t.b, () => HI.deadTrunk({ h, k, bark, boughs: br0.map(([f, dx, dz]) => [[0, f * h, 0], [dx * 1.8 * k, f * h + 0.55 * h * 0.35, dz * 1.8 * k], [dx * 2.6 * k, f * h + 0.7, dz * 2.4 * k + 0.2]]) }), 0, 0, 0);
+    far(t.K, () => {
     t.b.add(taper(trunk, 0.3 * k, 0.05 * k, 12, 8), bark, 0, 0, 0, { r: 1 });
     t.m.add(G.sph(0.11 * k, 8, 6), 0x0a0806, 0.1 * k, h * 0.42, 0.17 * k, { sy: 1.6, sz: 0.4 });
     for (let i = 0; i < 5; i++) { const a = i * 1.3; t.m.add(taper([[0, 0.25, 0], [Math.cos(a) * 0.4 * k, 0.05, Math.sin(a) * 0.35 * k], [Math.cos(a) * 0.75 * k, -0.02, Math.sin(a) * 0.65 * k]], 0.11 * k, 0.015, 6, 4), bark, 0, 0, 0, { r: 1 }); }
     for (let i = 0; i < 8; i++) { const a = (i / 8) * PI * 2; t.f.add(taper([0, 0.3, 0.6, 0.85].map((f) => [Math.cos(a + f) * (0.3 - f * 0.25) * k + trunk[Math.round(f * 3)][0], f * h, Math.sin(a + f) * (0.3 - f * 0.25) * k]), 0.025 * k, 0.008, 6, 3), shade(bark, 0.7), 0, 0, 0); }
+    });
     const br = [[0.4, 0.5, 0.35], [0.55, -0.6, 0.15], [0.7, 0.3, -0.5], [0.62, -0.4, 0.6], [0.85, 0.2, 0.4], [0.8, -0.3, -0.35]];
     br.forEach(([f, dx, dz], i) => {
       const a = [0, f * h, 0], b = [dx * 1.8 * k, f * h + 0.55 * h * 0.35, dz * 1.8 * k], e = [dx * 2.6 * k, f * h + 0.7, dz * 2.4 * k + 0.2];
+      far(t.K, () => {
       t.b.add(taper([a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 0.15, (a[2] + b[2]) / 2], b, e], 0.09 * k, 0.012, 10, 5), bark, 0, 0, 0, { r: 1 });
       t.m.add(taper([b, [b[0] + 0.15, b[1] + 0.3, b[2] - 0.1], [b[0] + 0.3, b[1] + 0.45, b[2] - 0.2]], 0.035 * k, 0.006, 5, 3), bark, 0, 0, 0);
+      });
       for (let q = 0; q < 3; q++) t.f.add(taper([e, [e[0] + (hash(q + i) - 0.5) * 0.4, e[1] + 0.2 + hash(q) * 0.2, e[2] + (hash(q * 3 + i) - 0.5) * 0.4]], 0.012, 0.003, 2, 3), bark, 0, 0, 0);
       if (i < 3) {
         // something hangs from it: a noose and a body, a crow-cage, a lantern
@@ -775,7 +814,7 @@ export const DECK_PARTS = {
     // the swirling disc
     const g = new THREE.Group(); g.position.set(at.x, at.y + y, 0);
     const disc = new THREE.Mesh(G.circle(R * 0.92, 32), glowMat(gc, 0.5)); disc.rotation.y = PI / 2;
-    const sw = new Kit();
+    const sw = new DKit();
     for (let i = 0; i < 4; i++) { const pts = Array.from({ length: 12 }, (_, j) => { const f = j / 11, a = (i / 4) * PI * 2 + f * 3.4, r = R * (0.05 + f * 0.85); return [0, Math.sin(a) * r, Math.cos(a) * r]; }); sw.add(tube(pts, R * 0.035, 24, 3), blend(gc, 0xffffff, 0.35 + (i % 2) * 0.2), 0, 0, 0); }
     for (let i = 0; i < 3; i++) sw.add(G.tor(R * (0.3 + i * 0.22), 0.02, 3, 24, PI * 1.2), 0xffffff, 0, 0, 0, { ry: PI / 2, rx: i * 2 });
     const swirl = new THREE.Mesh(sw.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
@@ -821,7 +860,7 @@ export const DECK_PARTS = {
     t.pop();
     t.pop();
     // the catapult shuttle runs the track when she launches
-    const sh = new Kit(); sh.add(G.box(0.3, 0.08, 0.16), S.met, 0, 0.04, 0, S.M).add(G.box(0.05, 0.14, 0.2), C.iron, 0.12, 0.1, 0, { m: 0.6, rz: -0.4 });
+    const sh = new DKit(); sh.add(G.box(0.3, 0.08, 0.16), S.met, 0, 0.04, 0, S.M).add(G.box(0.05, 0.14, 0.2), C.iron, 0.12, 0.1, 0, { m: 0.6, rz: -0.4 });
     const shm = sh.mesh(), x0 = fx - fl * 0.38; shm.position.set(x0, fy + 0.07, -fw * 0.18);
     c.addMoving(shm);
     act(c, 'launch', (kk) => { const f = kk < 0.25 ? ease(kk / 0.25) : 1 - ease((kk - 0.25) / 0.75); shm.position.x = x0 + f * fl * 0.78; });
@@ -844,7 +883,7 @@ export const DECK_PARTS = {
     t.push(r * 0.9, 0, 0); for (let i = 0; i < 6; i++) t.m.add(G.box(0.25, 0.04, 0.3), C.iron, -0.05 - i * 0.02, (y * (i + 0.5)) / 6, 0, { m: 0.5 }); t.pop();
     t.pop();
     // the rim lights flash when she launches
-    const lk = new Kit(); for (let i = 0; i < 12; i++) { const a = (i / 12) * PI * 2; lk.add(G.sph(0.06, 6, 4), i % 3 ? S.glow : 0xffffff, Math.cos(a) * r, 0.1, Math.sin(a) * r); }
+    const lk = new DKit(); for (let i = 0; i < 12; i++) { const a = (i / 12) * PI * 2; lk.add(G.sph(0.06, 6, 4), i % 3 ? S.glow : 0xffffff, Math.cos(a) * r, 0.1, Math.sin(a) * r); }
     const lm = glowMesh(lk, 0.6); lm.position.set(at.x, at.y + y, 0);
     c.addMoving(lm, (tt, ph) => { lm.material.opacity = lm.userData.base * (0.6 + 0.4 * (Math.sin(tt * 3 + ph) > 0.6 ? 1 : 0.3)) + (lm.userData.boost || 0); });
     act(c, 'launch', (kk) => { lm.userData.boost = pulses(kk, 4) * 0.8; });
@@ -1029,12 +1068,12 @@ export const DECK_PARTS = {
     b.pop();
     const bm = moverMesh(c, b); bm.position.set(at.x, at.y + 0.5 * s, 0);
     // string and bolt: drawn back, they slide forward and the bolt flies on loosing
-    const sb = new Kit();
+    const sb = new DKit();
     sb.push(0, 0, 0, 0, 0, 0, s);
     sb.bar([0.3, 0.16, -0.78], [-0.25, 0.16, 0], 0.008, C.rope).bar([0.3, 0.16, 0.78], [-0.25, 0.16, 0], 0.008, C.rope);
     sb.pop();
     const str = sb.mesh();
-    const bk = new Kit(); bk.push(0, 0, 0, 0, 0, 0, s);
+    const bk = new DKit(); bk.push(0, 0, 0, 0, 0, 0, s);
     bk.add(G.cyl(0.022, 0.022, 0.9, 6), C.wood, 0.2, 0.18, 0, { rz: PI / 2 }).add(G.cone(0.045, 0.16, 4), C.steel, 0.72, 0.18, 0, { rz: -PI / 2, m: 0.8 });
     for (let q = 0; q < 3; q++) bk.add(G.box(0.1, 0.002, 0.05), c.side, -0.18, 0.18, 0, { rx: (q * PI) / 3 });
     bk.pop();
@@ -1108,7 +1147,7 @@ export const DECK_PARTS = {
     br.pop();
     br.pop();
     const bm = moverMesh(c, br); gm.add(bm);
-    const hk = new Kit(); hk.push(0, 0, 0, 0, 0, 0, k); hk.push(0, 0.18, 0, 0, 0, -PI / 2 + 0.2);
+    const hk = new DKit(); hk.push(0, 0, 0, 0, 0, 0, k); hk.push(0, 0.18, 0, 0, 0, -PI / 2 + 0.2);
     hk.add(G.cyl(0.022, 0.022, 0.5, 5), C.wood, 0, 0.88, 0).add(G.cone(0.065, 0.24, 6), C.steel, 0, 1.24, 0, { m: 0.85, r: 0.3 });
     for (const z of [-1, 1]) for (const x of [-1, 1]) hk.add(G.cone(0.018, 0.15, 3), C.steel, x * 0.04, 1.11, z * 0.04, { rz: x * 2.7, rx: z * 0.3, m: 0.85 });
     hk.add(G.tor(0.03, 0.008, 3, 8), C.iron, 0, 0.65, 0, { m: 0.7 });
@@ -1192,11 +1231,11 @@ export const DECK_PARTS = {
     for (const z of [-1, 1]) { cw.push(0, -0.62 * k, z * (cwz / 2 + 0.005), 0, z > 0 ? 0 : PI, 0); relief(cw.f, S, 0.14 * k, S.met); cw.pop(); }
     const cwm = moverMesh(c, cw); cwm.position.set(-Ls, 0, 0); am.add(cwm);
     // the sling: two cords and a pouch with its stone, hanging from the long end
-    const sl = new Kit();
+    const sl = new DKit();
     sl.bar([0, 0, 0.03], [0.02, -0.55 * k, 0.07], 0.01, C.rope).bar([0, 0, -0.03], [0.02, -0.55 * k, -0.07], 0.01, C.rope);
     sl.add(G.hemi(0.12 * k, 8, 4), 0x6a5236, 0.02, -0.55 * k, 0, { rx: PI, r: 1 });
     const slm = sl.mesh(); slm.position.set(Ll, 0, 0); am.add(slm);
-    const stK = new Kit(); stK.add(G.dod(0.11 * k), C.stone, 0, 0, 0, { r: 0.9 }); const stone = holder(stK.mesh()); stone.position.set(0.02, -0.6 * k, 0); slm.add(stone);
+    const stK = new DKit(); stK.add(G.dod(0.11 * k), C.stone, 0, 0, 0, { r: 0.9 }); const stone = holder(stK.mesh()); stone.position.set(0.02, -0.6 * k, 0); slm.add(stone);
     const pivot = new THREE.Group(); pivot.position.set(at.x, at.y + ha, 0); pivot.add(am);
     const rest = PI + 0.42;
     const pose = (th) => { am.rotation.z = th; cwm.rotation.z = -th; slm.rotation.z = -th; };
@@ -1241,7 +1280,7 @@ export const DECK_PARTS = {
     a.b.add(G.lathe('catbucket', [[0, 0], [0.12, 0.01], [0.18, 0.08], [0.2, 0.14]], 10), S.crude ? 0x5a4a32 : C.dark, 0, 1.0, 0, { r: 0.8 });
     a.pop();
     const am = moverMesh(c, a);
-    const sk = new Kit(); sk.push(0, 0, 0, 0, 0, 0, s);
+    const sk = new DKit(); sk.push(0, 0, 0, 0, 0, 0, s);
     if (S.crude || S.motif === 'skull') { sk.push(0, 1.04, 0, 0, 0, 0, 0.9); skull(sk, 1); sk.pop(); } else sk.add(G.dod(0.13), C.stone, 0, 1.12, 0, { r: 0.9 });
     sk.pop();
     const shot = holder(sk.mesh()); am.add(shot);
@@ -1324,7 +1363,7 @@ export const DECK_PARTS = {
       t.push(-0.5, 0, 0); t.m.add(G.box(0.3, 0.18, 0.4), S.wood, 0, 0.09, 0); for (let q = 0; q < 4; q++) t.m.add(G.cyl(0.035, 0.035, 0.42, 6), q % 2 ? 0xb02a1a : 0xd4a83a, -0.08 + (q % 2) * 0.1, 0.21, -0.1 + q * 0.06, { rx: PI / 2 }); t.pop();
       t.pop();
       // the rack: a hive of tubes that tilts outboard; the rockets in it flare out together
-      const rk = mover(), rocket = new Kit(), fl = new Kit();
+      const rk = mover(), rocket = new DKit(), fl = new DKit();
       const n = 4, m2 = 3;
       rk.b.add(G.box(0.95, 0.08, 0.62), frame, 0, -0.05, 0);
       for (let i = 0; i < n; i++) for (let j = 0; j < m2; j++) {
@@ -1360,7 +1399,7 @@ export const DECK_PARTS = {
     for (let i = 0; i < 4; i++) { const a = (i / 4) * PI * 2 + PI / 4; t.m.add(taper([[Math.cos(a) * 0.3 * k, 0.58 * k, Math.sin(a) * 0.3 * k], [Math.cos(a) * 0.38 * k, 1.0 * k, Math.sin(a) * 0.38 * k], [Math.cos(a) * 0.18 * k, 1.35 * k, Math.sin(a) * 0.18 * k]], 0.04 * k, 0.01, 6, 4), S.met, 0, 0, 0, S.M); }
     t.pop();
     // the core's glow, and the ring of lesser crystals that turns about it
-    const gk = new Kit(); gk.add(G.oct(0.52 * k), gc, 0, 0, 0, { sy: 1.9 });
+    const gk = new DKit(); gk.add(G.oct(0.52 * k), gc, 0, 0, 0, { sy: 1.9 });
     const glow = glowMesh(gk, 0.25); glow.position.set(at.x, at.y + 1.3 * k, 0);
     const rg = mover();
     rg.b.add(G.tor(R, 0.05, 6, 36), S.met, 0, 0, 0, { rx: PI / 2, ...S.M });
@@ -1393,7 +1432,7 @@ export const DECK_PARTS = {
     for (let i = 0; i < 24; i++) { const a = (i / 24) * PI * 2; ln.f.add(G.sph(0.018, 4, 3), S.met, 0.07, Math.sin(a) * R, Math.cos(a) * R, S.M); }
     ln.push(0, R + 0.18, 0); finial(ln.m, S, 0.4 * k); ln.pop();
     const lm = moverMesh(c, ln); lm.position.set(0, y - 0.56, 0); lm.rotation.z = -0.45; ym.add(lm);
-    const gk = new Kit(); gk.add(G.circle(R * 0.9, 24), gc, 0.02, 0, 0, { ry: PI / 2 }); gk.add(G.circle(R * 0.9, 24), gc, -0.02, 0, 0, { ry: PI / 2 });
+    const gk = new DKit(); gk.add(G.circle(R * 0.9, 24), gc, 0.02, 0, 0, { ry: PI / 2 }); gk.add(G.circle(R * 0.9, 24), gc, -0.02, 0, 0, { ry: PI / 2 });
     const gm = glowMesh(gk, 0.15); lm.add(gm);
     c.addMoving(ym, (tt, ph) => { ym.rotation.y = Math.sin(tt * 0.22 + ph) * 0.5; lm.rotation.z = -0.45 + Math.sin(tt * 0.4 + ph) * 0.08; gm.material.opacity = 0.12 + (gm.userData.boost || 0); });
     const charge = (kk) => { gm.userData.boost = kk < 0.65 ? ease(kk / 0.65) * 0.9 : (1 - ease((kk - 0.65) / 0.35)) * 0.9; };
@@ -1412,7 +1451,7 @@ export const DECK_PARTS = {
     t.push(-0.5, 0, 0); for (let i = 0; i < 4; i++) t.m.add(G.box(0.3 - i * 0.02, 0.06, w * 0.5), i % 2 ? 0x6a3a2a : S.wood, 0, 0.08 + i * 0.07, 0); t.m.bar([0.1, 0.4, 0], [-0.2, 0.7, 0], 0.025, S.wood); t.pop();
     t.pop();
     // the pipes: a rank with mouths, flared crowns, and a carved crest over them
-    const pp = mover(), gl = new Kit();
+    const pp = mover(), gl = new DKit();
     for (const rank of [0, 1]) for (let i = 0; i < n; i++) {
       const f = 1 - Math.abs(i - (n - 1) / 2) / ((n - 1) / 2), h = (0.9 + f * 1.5 - rank * 0.35) * k, z = -w / 2 + (w * (i + 0.5)) / n, x = rank ? -0.18 : 0.08, r = (0.07 + f * 0.03) * (rank ? 0.8 : 1);
       pp.b.add(G.lathe('pipe', [[0, 0], [0.4, 0.0], [1, 0.12], [1, 0.95], [1.15, 1.0], [0.85, 1.0]], 10), pipeC, x, 0, z, { sx: r, sz: r, sy: h, m: 0.9, r: 0.22 });
@@ -1461,7 +1500,7 @@ export const DECK_PARTS = {
       c.addMoving(hold);
       mm.push({ hold, m, a });
     }
-    const fk = new Kit(); fk.add(G.sph(0.35, 12, 8), gc, 0, 0, 0); for (let i = 0; i < 4; i++) fk.add(G.cone(0.05, 1.2, 6), 0xffffff, 0, 0, 0, { rz: PI / 2, ry: (i / 4) * PI * 2 + PI / 4 });
+    const fk = new DKit(); fk.add(G.sph(0.35, 12, 8), gc, 0, 0, 0); for (let i = 0; i < 4; i++) fk.add(G.cone(0.05, 1.2, 6), 0xffffff, 0, 0, 0, { rz: PI / 2, ry: (i / 4) * PI * 2 + PI / 4 });
     const flash = glowMesh(fk, 0); flash.position.set(at.x, at.y + 1.05, 0); flash.visible = false;
     let focus = 0;
     c.addMoving(flash, (tt, ph) => { for (const q of mm) { q.hold.rotation.y = -q.a + PI + Math.sin(tt * 0.2 + ph) * 0.25 * (1 - focus); q.m.rotation.z = 0.4 + focus * 0.35; } });
@@ -1516,7 +1555,7 @@ export const DECK_PARTS = {
     for (let i = 0; i < 5; i++) { t.push(Math.cos(i * 1.26) * 0.32, 0.25, Math.sin(i * 1.26) * 0.32, 0, -i * 1.26, 0, 0.55); skull(t.f, 1, bone); t.pop(); }
     t.pop();
     t.pop();
-    const fk = new Kit(); flame(fk, 0, 0, 0, 1.2 * k, S.id === 'khemet' ? 0x6affd8 : C.fire);
+    const fk = new DKit(); flame(fk, 0, 0, 0, 1.2 * k, S.id === 'khemet' ? 0x6affd8 : C.fire);
     const fm = fk.mesh(); fm.position.set(at.x - 0.6, at.y + 0.6, 0);
     c.addMoving(fm, (tt, ph) => { fm.scale.set(1, (1 + 0.15 * Math.sin(tt * 8 + ph)) * (1 + (fm.userData.boost || 0)), 1); });
     const flare = (kk) => { fm.userData.boost = kick(kk, 0.15) * 1.2; };
@@ -1533,6 +1572,8 @@ export const DECK_PARTS = {
     }
     const t = T(c), r = clamp(c.B * 0.22, 0.6, 1.1);
     t.push(p[0], p[1], p[2]);
+    hiAdd(t.b, () => HI.nest({ r: r * 1.25, col: 0x6a5236 }), 0, -r * 0.05, 0);
+    const n0 = t.K.items.length;
     t.b.add(G.tor(r, r * 0.35, 8, 18), 0x6a5236, 0, r * 0.2, 0, { rx: PI / 2, r: 1 });
     t.b.add(G.cyl(r * 0.9, r * 0.4, r * 0.4, 12), 0x5a4228, 0, 0, 0, { r: 1 });
     // woven sticks, a few long ones poking out; feathers; eggs or a skull
@@ -1541,6 +1582,7 @@ export const DECK_PARTS = {
     for (let i = 0; i < 18; i++) { const a = i * 0.35; t.f.bar([Math.cos(a) * r * 0.9, r * 0.45, Math.sin(a) * r * 0.9], [Math.cos(a + 0.5) * r * 1.25, r * 0.38, Math.sin(a + 0.5) * r * 1.25], 0.012, 0x9a7a52); }
     for (let i = 0; i < 4; i++) t.f.add(G.sph(0.06, 5, 4), i % 2 ? 0xe8e0d0 : 0x3a3a40, Math.cos(i * 1.6) * r * 0.9, r * 0.5, Math.sin(i * 1.6) * r * 0.9, { sx: 0.4, sy: 2, rz: 0.6, ry: i });
     for (let i = 0; i < 3; i++) t.m.add(G.sph(0.14, 9, 7), S.id === 'fimbul' ? 0xd8e8f0 : S.id === 'verdant' ? 0xb8d8a0 : 0xe8dcc0, (i - 1) * 0.2, 0.18, (i % 2) * 0.12, { sy: 1.3 });
+    for (let i = n0; i < t.K.items.length; i++) t.K.items[i].farOnly = true;
     t.pop();
     c.topAt = Math.max(c.topAt || 0, p[1] + r);
   }),
@@ -1569,12 +1611,12 @@ export const DECK_PARTS = {
       // the wretch inside, gripping the bars
       K.push(0, 0.04, 0, 0, hash(r * 9) * 6, 0);
       figure(K, S.crude ? 0x7a6a5a : 0x8a7a6a, 0xb89a7a, h * 1.1, 'sit');
-      for (const z of [-1, 1]) K.bar([0.0, h * 0.45, z * 0.07], [r * 0.95, h * 0.62, z * 0.1], 0.02, 0xb89a7a);
+      far(K, () => { for (const z of [-1, 1]) K.bar([0.0, h * 0.45, z * 0.07], [r * 0.95, h * 0.62, z * 0.1], 0.02, 0xb89a7a); });
       K.pop();
       if (S.crude || S.motif === 'skull') K.add(G.sph(0.05, 6, 4), C.bone, -r * 0.5, 0.08, r * 0.3);
     };
     for (let i = 0; i < 2; i++) {
-      if (hooks[i]) { const K = new Kit(); K.push(0, -0.85, 0); build(K, 0.3, 0.62, C.iron); K.pop(); K.bar([0, 0, 0], [0, -0.85 + 0.62 + 0.18, 0], 0.012, C.iron); const m = K.mesh(); m.userData.noCrew = true; hooks[i].add(m); lodReg(c, m); sw.push(m); continue; }
+      if (hooks[i]) { const K = new DKit(); K.push(0, -0.85, 0); build(K, 0.3, 0.62, C.iron); K.pop(); K.bar([0, 0, 0], [0, -0.85 + 0.62 + 0.18, 0], 0.012, C.iron); const m = K.mesh(); m.userData.noCrew = true; hooks[i].add(m); lodReg(c, m); sw.push(m); continue; }
       const at = spot(c, 0.42, i ? -0.25 : 0.05, 's'), t = T(c);
       t.push(at.x, at.y, at.z);
       build(t.b, 0.34, 0.75, S.metal === 'bone' ? C.bone : C.iron);
@@ -1595,14 +1637,13 @@ export const DECK_PARTS = {
       t.m.bar([x, y + 1.45, z + s * 0.5], [x, y + 1.2, z + s * 0.5], 0.012, C.rope);
       t.push(x, y + 0.45, z + s * 0.5, 0, s * 0.6, 0.06);
       figure(t.m, wrap, body, 1.45, 'stand');
-      t.m.add(G.sph(0.05, 5, 4), body, 0, 0.78, 0.0, { sz: 0.8 });
-      for (const zz of [-1, 1]) t.m.bar([0, 0.65, zz * 0.08], [0.02, 0.38, zz * 0.1], 0.025, body);
+      far(t.m, () => { t.m.add(G.sph(0.05, 5, 4), body, 0, 0.78, 0.0, { sz: 0.8 }); for (const zz of [-1, 1]) t.m.bar([0, 0.65, zz * 0.08], [0.02, 0.38, zz * 0.1], 0.025, body); });
       t.pop();
       t.l.add(G.custom('corpse', () => new THREE.CapsuleGeometry(0.11, 0.5, 2, 6)), body, x, y + 0.8, z + s * 0.5);
     }
     const at = c.place(0.5, -0.15, 's');
     t.push(at.x, at.y, at.z);
-    for (let i = 0; i < 2; i++) { t.push(i * 0.1, 0.08, i * 0.25, 0, 0.4 * i, PI / 2); figure(t.b, wrap, body, 1.3, 'stand'); t.pop(); }
+    for (let i = 0; i < 2; i++) { t.push(i * 0.1, 0, i * 0.25, 0, 0.4 * i, 0); figure(t.b, wrap, body, 1.3, 'dead'); t.pop(); }
     t.f.add(G.sph(0.03, 4, 3), 0x101010, 0.2, 0.25, 0.1).add(G.sph(0.03, 4, 3), 0x101010, -0.2, 0.22, 0.3);
     t.pop();
   }),
@@ -1692,8 +1733,9 @@ export const DECK_PARTS = {
       for (let k = 0; k < 3; k++) t.m.add(G.box(0.05, 0.22, 0.05), C.dark, Math.cos(k * 2.1) * r * 0.8, 0.1, Math.sin(k * 2.1) * r * 0.8);
       t.pop();
       // a pair of beaters over each skin, which strike in turn
-      const sk = new Kit();
+      const sk = new DKit();
       for (const s of [-1, 1]) { sk.bar([0, 0, s * 0.1], [r * 0.7, -0.05, s * 0.08], 0.022, S.crude ? C.bone : S.wood); sk.add(G.sph(0.05, 8, 6), S.crude ? C.bone : 0xe8dcc0, r * 0.72, -0.05, s * 0.08); }
+      if (i === 0) { t.push(bx - r - 0.12, at.y, bz - r * 0.75, 0, 0.5, 0); figure(t.b, c.side, 0xc89a7a, 2.1 * c.k, 'crew'); t.pop(); }
       const sm = sk.mesh(); sm.position.set(bx - r * 0.65, at.y + h + 0.45, bz); sm.rotation.z = 0.35;
       c.addMoving(sm);
       sticks.push({ sm, i });
@@ -1711,6 +1753,8 @@ export const DECK_PARTS = {
     t.b.add(G.cyl(0.36, 0.4, 0.12, 10), S.stone, 0, 0.06, 0);
     for (let i = 0; i < n; i++) {
       const y = sh * i + 0.1;
+      hiAdd(t.b, () => HI.totemFace({ h: sh, r: 0.29, wood, col: cols[i % cols.length], kind: i }), 0, y, 0, {}, shade(0xffffff, 0.9 + (i % 2) * 0.1));
+      const n0 = t.K.items.length;
       t.b.add(G.lathe('totseg', [[0.24, 0], [0.29, 0.05], [0.3, 0.5], [0.27, 0.95], [0.25, 1]], 10), shade(wood, 0.9 + (i % 2) * 0.2), 0, y, 0, { sy: sh, r: 0.9 });
       // a face: brows, eyes, nose or beak, mouth with teeth, ears
       t.push(0.27, y + sh * 0.5, 0);
@@ -1720,6 +1764,7 @@ export const DECK_PARTS = {
       t.m.add(G.box(0.05, sh * 0.12, 0.3), 0x2a1010, 0.02, -sh * 0.25, 0);
       for (let q = 0; q < 5; q++) t.f.add(G.box(0.03, sh * 0.05, 0.03), 0xf0e8d8, 0.04, -sh * 0.2, (q - 2) * 0.055);
       t.pop();
+      for (let q = n0; q < t.K.items.length; q++) t.K.items[q].farOnly = true;
       for (let q = 0; q < 12; q++) { const a = (q / 12) * PI * 2; t.f.add(G.box(0.01, sh * 0.06, 0.06), cols[(i + q) % cols.length], Math.cos(a) * 0.3, y + sh * 0.97, Math.sin(a) * 0.3, { ry: -a }); }
     }
     // spread wings at the crown, and the realm's finial
@@ -1757,7 +1802,7 @@ export const DECK_PARTS = {
     act(c, 'fire', (kk) => { boost = kick(kk, 0.1) * 0.5; });
   }),
   lanterns: part(0, (c) => {
-    const S = sty(c), t = T(c), gl = new Kit(), k = c.k, gc = S.rs.lantern === 'paper' ? 0xff6a3a : S.glow;
+    const S = sty(c), t = T(c), gl = new DKit(), k = c.k, gc = S.rs.lantern === 'paper' ? 0xff6a3a : S.glow;
     for (const s of [-1, 1]) for (const x of along(c, 3, 0.12, 0.85)) {
       const y = railY(c, x, s), z = railZ(c, x, s) - s * 0.05;
       // a bracket on the rail and the realm's own lamp on it
@@ -1887,6 +1932,8 @@ export const DECK_PARTS = {
     for (const s of [-1, 1]) for (const x of [lerp(c.sternX, c.bowX, 0.12), lerp(c.sternX, c.bowX, 0.85)]) {
       const y = railY(c, x, s), z = railZ(c, x, s);
       t.push(x, y, z, 0, s > 0 ? -PI / 2 : PI / 2, 0, c.k);
+      hiAdd(t.b, () => HI.gargoyle({ s: 1.05, stone: st, eye }), 0, 0, 0);
+      const n0 = t.K.items.length;
       // crouched body, haunches, forelimbs gripping the rail
       t.b.add(G.sph(0.22, 10, 8), st, 0, 0.25, 0, { sx: 1.2, r: 0.85 });
       for (const w of [-1, 1]) { t.b.add(G.sph(0.11, 8, 6), st, -0.12, 0.15, w * 0.15, { sx: 1.3 }); t.m.add(taper([[0.12, 0.25, w * 0.12], [0.22, 0.12, w * 0.12], [0.26, 0.0, w * 0.1]], 0.05, 0.035, 4, 5), st, 0, 0, 0); for (let q = 0; q < 3; q++) t.f.add(G.cone(0.012, 0.06, 3), st, 0.29, 0.0, w * 0.1 + (q - 1) * 0.025, { rz: -PI / 2 - 0.6 }); }
@@ -1904,6 +1951,7 @@ export const DECK_PARTS = {
         for (const [ex, ey] of [[-0.45, 0.55], [-0.55, 0.3], [-0.45, 0.05]]) t.m.bar([-0.1, 0.15, 0], [ex, ey, 0], 0.012, shade(st, 0.8));
         t.pop();
       }
+      for (let i = n0; i < t.K.items.length; i++) t.K.items[i].farOnly = true;
       t.l.add(G.box(0.4, 0.5, 0.3), st, 0, 0.25, 0);
       t.pop();
     }
@@ -1963,11 +2011,14 @@ export const DECK_PARTS = {
     const S = sty(c), K = mover(), goo = blend(C.slime, 0xd8e05a, 0.3), flesh = blend(c.hullC, C.flesh, 0.5);
     for (const s of [-1, 1]) for (let i = 0; i < 7; i++) {
       const x = lerp(c.sternX, c.bowX, 0.1 + i * 0.12 + hash(i + s) * 0.05), top = hullH(c, x), y = top * (0.35 + hash(i * 3 + s) * 0.4), z = s * (c.hw(x) + 0.05), r = (0.18 + hash(i + 2) * 0.16) * c.k;
+      hiAdd(K.K, () => HI.pustule({ r: 0.25, flesh, goo }), x, y, z, { s: r / 0.25, ry: s > 0 ? 0 : PI });
+      const n0 = K.K.items.length;
       K.b.add(G.sph(r * 1.25, 8, 6), flesh, x, y, z, { sz: 0.6, r: 0.5 }).add(G.sph(r, 8, 6), goo, x, y, z + s * r * 0.4, { g: 1.1, r: 0.2 });
       K.m.add(G.sph(r * 0.25, 6, 5), 0xffffc0, x + r * 0.2, y + r * 0.35, z + s * r * 1.15, { g: 1.5 });
       // veins running from it
       for (let q = 0; q < 2; q++) { const a = q * 2.1 + i; K.f.add(tube([[x, y, z + s * r * 0.3], [x + Math.cos(a) * r * 1.6, y + Math.sin(a) * r * 1.4, z + s * r * 0.1], [x + Math.cos(a + 0.4) * r * 2.6, y + Math.sin(a + 0.4) * r * 2.2, z]], 0.018, 6, 3), 0x5a3a4a, 0, 0, 0, { r: 0.4 }); }
       for (let q = 0; q < 2; q++) K.f.add(G.sph(r * 0.3, 6, 5), goo, x + (hash(q + i) - 0.5) * r * 3, y + (hash(q * 2 + i) - 0.5) * r * 2, z + s * r * 0.2, { g: 1, sz: 0.6 });
+      for (let q = n0; q < K.K.items.length; q++) if (q < n0 + 3 || K.K.items[q].geo?.type === 'TubeGeometry') K.K.items[q].farOnly = true;
     }
     for (let i = 0; i < 5; i++) { const at = c.place(0.25, (hash(i) - 0.5) * 0.7, 's', false); K.b.add(G.sph(0.22 * c.k, 10, 8), goo, at.x, at.y + 0.1, at.z, { g: 1.1, r: 0.2, sy: 0.7 }); K.m.add(G.sph(0.1 * c.k, 6, 5), goo, at.x + 0.2, at.y + 0.05, at.z + 0.1, { g: 1.1, sy: 0.6 }); K.f.add(G.circle(0.35 * c.k, 10), 0x6a8a2a, at.x, at.y + 0.01, at.z, { rx: -PI / 2, g: 0.4 }); }
     const m = moverMesh(c, K);
@@ -2036,7 +2087,7 @@ export const DECK_PARTS = {
       const cm = moverMesh(c, cr); cm.position.set(at.x, at.y + 0.15, z0);
       // the fall and hook hang from the boom tip on their own
       const hk = new THREE.Group(); hk.position.set(tip[0], tip[1], tip[2]); cm.add(hk);
-      const hkK = new Kit(); hkK.bar([0, 0, 0], [0, -0.6, 0], 0.012, C.rope).add(G.cyl(0.05, 0.06, 0.1, 8), S.met, 0, -0.62, 0, S.M).add(G.tor(0.07, 0.02, 3, 8, PI * 1.5), C.iron, 0, -0.74, 0, { m: 0.7 });
+      const hkK = new DKit(); hkK.bar([0, 0, 0], [0, -0.6, 0], 0.012, C.rope).add(G.cyl(0.05, 0.06, 0.1, 8), S.met, 0, -0.62, 0, S.M).add(G.tor(0.07, 0.02, 3, 8, PI * 1.5), C.iron, 0, -0.74, 0, { m: 0.7 });
       const fall = hkK.mesh(); hk.add(fall);
       const hookAt = new THREE.Group(); hookAt.position.set(0, -0.3, 0); hk.add(hookAt);
       c.addMoving(cm);
@@ -2098,7 +2149,7 @@ export const DECK_PARTS = {
     else for (let q = 0; q < 4; q++) t.m.add(G.sph(0.06, 6, 4), [0xa0c050, 0xc87a3a, 0xe8d8a0, 0x8a3a5a][q], -r * 1.2 + q * 0.08, 0.06, r * 0.7, { sy: 0.8 });
     t.pop();
     // the brew: a heaving surface with bubbles; it surges on an aura
-    const bw = new Kit();
+    const bw = new DKit();
     bw.add(G.circle(r * 0.88, 18), goo, 0, 0, 0, { rx: -PI / 2, g: glowy ? 2 : 0.3, r: 0.2 });
     for (let q = 0; q < 6; q++) bw.add(G.hemi(0.05 + hash(q) * 0.05, 8, 4), blend(goo, 0xffffff, 0.2), (hash(q + 1) - 0.5) * r * 1.2, 0, (hash(q + 4) - 0.5) * r * 1.2, { g: glowy ? 2 : 0.3, r: 0.2 });
     const brew = bw.mesh(); brew.position.set(at.x, at.y + 0.22 + r * 0.92, 0);
@@ -2123,7 +2174,7 @@ export const DECK_PARTS = {
       t.m.add(G.cyl(0.04, 0.04, 0.08, 6), C.bronze, r * 1.02, h * 0.15, 0, { rz: PI / 2, m: 0.7 });
       for (let q = 0; q < 3; q++) t.f.add(tube([[Math.cos(q * 2) * r, h, Math.sin(q * 2) * r], [Math.cos(q * 2) * r * 1.05, h * (0.7 - q * 0.1), Math.sin(q * 2) * r * 1.05]], 0.02, 3, 3), goo, 0, 0, 0, { g: 1.2 });
       t.pop();
-      const sk = new Kit(); sk.add(G.circle(r * 0.96, 14), goo, 0, 0, 0, { rx: -PI / 2, g: 1.8, r: 0.2 }); for (let q = 0; q < 3; q++) sk.add(G.hemi(0.04 + hash(q + i) * 0.04, 6, 3), blend(goo, 0xffffff, 0.3), (hash(q * 3 + i) - 0.5) * r, 0, (hash(q * 5 + i) - 0.5) * r, { g: 1.8 });
+      const sk = new DKit(); sk.add(G.circle(r * 0.96, 14), goo, 0, 0, 0, { rx: -PI / 2, g: 1.8, r: 0.2 }); for (let q = 0; q < 3; q++) sk.add(G.hemi(0.04 + hash(q + i) * 0.04, 6, 3), blend(goo, 0xffffff, 0.3), (hash(q * 3 + i) - 0.5) * r, 0, (hash(q * 5 + i) - 0.5) * r, { g: 1.8 });
       const sm = sk.mesh(); sm.position.set(at.x + dx, at.y + h * 0.9, dz); c.addMoving(sm); surf.push({ sm, y: at.y + h * 0.9, i });
     });
     t.m.add(tube([[at.x, at.y + 0.85, 0.32], [at.x + 0.3, at.y + 0.95, 0], [at.x + 0.55, at.y + 0.75, -0.35]], 0.05, 10, 6), C.bronze, 0, 0, 0, { m: 0.7 });
@@ -2135,3 +2186,41 @@ export const DECK_PARTS = {
     act(c, 'mortar', (kk) => { surge = kick(kk, 0.2); });
   }),
 };
+
+// ====================================================================================================
+// every part: its own still mesh (finished near, the drawn shapes far), damage states and loose pieces
+// ====================================================================================================
+// how a part goes when she is badly hurt: tall work topples, machines and stores are smashed, the rest burns
+const TOPPLE = new Set(['pagoda', 'tower', 'temple', 'obelisk', 'monolith', 'tree', 'deadTree', 'portal', 'dome', 'shrine', 'pulpit', 'totem', 'chimneys', 'organPipes', 'mirrors', 'cranes', 'astrolabe', 'bells', 'crystalRing', 'lens', 'yurt', 'stones']);
+const CHAR_ONLY = new Set(['pyramid', 'ziggurat', 'flightDeck', 'pad', 'perches', 'banners', 'shields', 'spikes', 'plates', 'chains', 'skulls', 'gargoyles', 'pustules', 'vines', 'braziers', 'lanterns', 'nest', 'corpses', 'bones', 'skullPile', 'sarcophagus']);
+const GUNS = new Set(['turrets', 'ballista', 'repeater', 'harpoonGun', 'winch', 'trebuchet', 'catapult', 'mortarPit', 'bombard', 'rocketRack', 'crystalRing', 'lens', 'organPipes', 'mirrors', 'pumpCannon', 'cranes']);
+const KIND = (name, size) => (GUNS.has(name) ? 'gun' : name === 'tree' || name === 'deadTree' ? 'tree' : size >= 2 ? 'house' : size === 0 ? 'plate' : 'crate');
+let CUR = null;
+hooks.key = () => (CUR ? `${CUR.key}|m${CUR.n++}` : null);
+hooks.model = () => CUR?.c.m ?? null;
+useUnits({ UNITS, prepareDef: (d) => ({ size: 1, ...d }), buildUnitModel, animateUnit });
+
+function runPart(name, P, c) {
+  const key = `dk|${c.def.id}|${c.side}|${name}`;
+  const was = c.__tri, K = new Kit(), g0 = c.group.children.length, prev = CUR;
+  c.__tri = new Tri(K); CUR = { c, name, key, n: 0 };
+  try { P.fn(c); } finally { c.__tri = was; CUR = prev; }
+  const movers = c.group.children.slice(g0).filter((o) => !(o.isGroup && !o.children.length));
+  let mesh = null;
+  const deckAt = (x, z) => c.deckAt(x, z);
+  let kit = K;
+  if (!K.empty) {
+    const e = entryOf(key, K, (fin) => groundShade(fin, deckAt));
+    kit = e.kit;
+    mesh = entryMesh(e, c.m); mesh.name = `deck:${name}`;
+    c.addMoving(mesh);
+  }
+  if (globalThis.__deckStat) globalThis.__deckStat(name, mesh, movers);
+  const box = new THREE.Box3();
+  if (mesh) { const g = mesh.userData.lodGeos.find((x) => x.attributes.position?.count); if (g) { if (!g.boundingBox) g.computeBoundingBox(); box.copy(g.boundingBox); } }
+  for (const o of movers) box.expandByObject(o);
+  const at = box.isEmpty() ? [0, c.dy, 0] : [(box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2];
+  attachDamage({ model: c.m, mesh, kit, key, movers, deckAt, at, wreck: TOPPLE.has(name) ? 'topple' : CHAR_ONLY.has(name) ? 'char' : 'smash', kind: KIND(name, P.size), moverKind: GUNS.has(name) ? 'gun' : 'spar' });
+}
+
+export const DECK_PARTS = Object.fromEntries(Object.entries(RAW).map(([name, P]) => [name, { size: P.size, fn: (c) => runPart(name, P, c) }]));

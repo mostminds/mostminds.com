@@ -1,7 +1,7 @@
 // Hull forms, rigs and drives for a designed ship (see ../shipParts.js for the context `c` every builder gets).
 // Detail tiers (Kit.detail): 1 = rivets, lashings, rigging lines, seams; 2 = mid-distance trim; the rest always.
 import * as THREE from 'three';
-import { Kit, G, C, shade, blend, clamp, lerp, hash, loftL, taper, clothPanel, boatHull } from './kit.js';
+import { Kit, G, C, shade, blend, clamp, lerp, hash, loftL, taper, clothPanel, boatHull, noise3 } from './kit.js';
 import { sculptMaterial } from '../sculpt.js';
 import { motif, finial, emblemOn } from './realmStyle.js';
 
@@ -19,13 +19,15 @@ export const nativeSail = (kind) => NATIVE[kind] || [];
 export const OAR_KINDS = ['longship', 'curragh', 'solarBarque', 'warGalley', 'razorGalley', 'dreadGalley', 'swanBarge', 'swanGalley', 'atakebune', 'oxBarge', 'hideRaft'];
 
 const f2 = (v) => v.toFixed(2);
+/** bark relief for a lofted log: long furrows broken by knots */
+const bark = (l, r) => (t, a) => 1 + 0.045 * (noise3(t * l * 2.2, Math.cos(a) * 2.5, Math.sin(a) * 2.5) - 0.5) * 2 - 0.035 * Math.max(0, Math.sin(a * 11 + noise3(t * l * 0.7, a, 1) * 5)) + 0.08 * Math.max(0, noise3(t * l * 0.9 + 9, Math.cos(a) * 1.2, Math.sin(a) * 1.2) - 0.78) * 4;
 
 /** a float hull at z (bow +x), keel at y0: a planked boat with rail, wales, a painted band and the realm's carving */
 function floatHull(c, z, l, w, h, y0, o = {}) {
   const K = c.kit, st = c.st, x0 = o.x0 ?? (c.bowX + c.sternX) / 2 - c.L * 0.02;
   const key = `${f2(l)},${f2(w)},${f2(h)},${o.stern || 't'},${c.hullC},${st.band[0]},${o.sheer ?? 0.3}`;
   const hullGeo = (nu, nv) => boatHull(`${key},${nu}`, l, w, h, { stern: o.stern || 'transom', sheer: o.sheer ?? 0.3, rocker: 0.18, col: c.hullC, deckCol: C.plank, band: [st.band[0], 0.62, 0.78], strakes: nu > 12 ? 6 : 0, nu, nv });
-  const g0 = hullGeo(26, 14), g1 = hullGeo(16, 9), g2 = hullGeo(10, 6);
+  const g0 = hullGeo(48, 30), g1 = hullGeo(20, 10), g2 = hullGeo(10, 6);
   K.add([g0, g0, g1, g2, g2, g2], 0xffffff, x0, y0, z, { r: 0.75 });
   const top = g0.userData.top, halfW = g0.userData.halfW;
   // the rail (a cap along the sheer, both sides) and a wale lower down
@@ -130,7 +132,7 @@ export const HULL_PARTS = {
     for (const s of [-1, 1]) {
       const z = s * (c.hw(0) + c.B * 0.75), x0 = c.L * 0.02;
       const stations = [[-l * 0.62, r * 1.3, 0, r * 0.15, r * 0.2], [-l * 0.5, r * 0.6, 0, r * 0.7, r * 0.75], [-l * 0.3, r * 0.4, 0, r, r], [l * 0.3, r * 0.4, 0, r, r], [l * 0.5, r * 0.6, 0, r * 0.7, r * 0.75], [l * 0.64, r * 1.6, 0, r * 0.12, r * 0.18]];
-      c.kit.add(loftL(`outr${f2(l)},${f2(r)},${c.hullC}`, stations, { radial: 12, sub: 3, col: shade(C.wood, 1.05), ridge: shade(C.wood, 0.8), paint: (t) => (t > 0.12 && t < 0.16) || (t > 0.84 && t < 0.88) ? st.band[0] : null }), 0xffffff, x0, -r * 0.1, z, { r: 0.8 });
+      c.kit.add(loftL(`outr${f2(l)},${f2(r)},${c.hullC}`, stations, { radial: 18, sub: 6, col: shade(C.wood, 1.05), ridge: shade(C.wood, 0.8), disp: (t, a) => 1 + 0.02 * (noise3(t * 30, Math.cos(a) * 3, Math.sin(a) * 3) - 0.5), paint: (t) => (t > 0.12 && t < 0.16) || (t > 0.84 && t < 0.88) ? st.band[0] : null }), 0xffffff, x0, -r * 0.1, z, { r: 0.8 });
       c.kit.push(x0 + l * 0.64, r * 1.5, z); finial(c.kit, st, r * 2.4); c.kit.pop();
       for (const x of [x0 - l * 0.28, x0 + l * 0.28]) {
         const zi = s * (c.hw(x) - 0.15), ym = c.dy + 0.4;
@@ -147,7 +149,7 @@ export const HULL_PARTS = {
     for (let i = 0; i < n; i++) {
       const z = -W + ((2 * W) * (i + 0.5)) / n, l = c.L * (0.92 + hash(i) * 0.14), dx = (hash(i + 9) - 0.5) * c.L * 0.06, col = shade(C.wood, 0.78 + hash(i + 3) * 0.35);
       const bend = (hash(i + 21) - 0.5) * r * 0.6;
-      c.kit.add(loftL(`rlog${f2(l)},${f2(r)},${f2(bend)}`, [[-l / 2, 0, 0, r * 0.96, r * 0.96], [-l / 6, bend * 0.6, 0, r, r], [l / 6, bend, 0, r * 0.97, r * 0.97], [l / 2, 0, 0, r * 0.92, r * 0.92]], { radial: 10, sub: 2, col: 0xffffff }), col, dx - c.L * 0.02, r * 0.3, z, { r: 0.9 });
+      c.kit.add(loftL(`rlog2${f2(l)},${f2(r)},${f2(bend)}`, [[-l / 2, 0, 0, r * 0.96, r * 0.96], [-l / 6, bend * 0.6, 0, r, r], [l / 6, bend, 0, r * 0.97, r * 0.97], [l / 2, 0, 0, r * 0.92, r * 0.92]], { radial: 20, sub: 10, col: 0xffffff, disp: bark(l, r) }), col, dx - c.L * 0.02, r * 0.3, z, { r: 0.92, grain: 0 });
       c.kit.detail(2, () => { for (const e of [-1, 1]) { c.kit.add(G.cyl(r * 0.9, r * 0.9, 0.02, 10), 0xc8a878, dx - c.L * 0.02 + e * (l / 2 + 0.005), r * 0.3, z, { rz: PI / 2 }); c.kit.detail(1, () => c.kit.add(G.tor(r * 0.5, 0.008, 3, 10), 0x9a7a4a, dx - c.L * 0.02 + e * (l / 2 + 0.012), r * 0.3, z, { ry: PI / 2 })); } });
     }
     for (const x of [-0.36, -0.1, 0.14, 0.38].map((f) => f * c.L)) {
@@ -383,6 +385,7 @@ export function buildRig(c, style) {
     c.taken.push([x, 0, 0.3]); c.keep.push([x, 0, 0.3]);
     const hgt = style === 'lateen' ? mh * 0.72 : mh;
     mast(K, c, x, y0, hgt, rr);
+    (c.masts ||= []).push({ x, span: style === 'lateen' ? clamp(c.L * 0.36, 2.4, 5.2) * 0.62 : style === 'junkSails' ? clamp(c.L * 0.24, 1.6, 3.4) * 0.8 : 0.7 });
     if (style !== 'lateen' && style !== 'junkSails') shrouds(K, c, x, y0 + hgt * 0.92);
     top = Math.max(top, y0 + hgt);
     if (style === 'squareSail' || style === 'tatteredSails') {
@@ -396,7 +399,7 @@ export function buildRig(c, style) {
           return [xx, y];
         };
         const belly = h * 0.22, key = `${tat ? 't' : 's'}${f2(w)},${f2(h)},${j}`;
-        const g0 = clothPanel(`${key}a`, fn, belly, 14, 10, { u: 6, v: 3 }), g1 = clothPanel(`${key}b`, fn, belly, 8, 6), g2 = clothPanel(`${key}c`, fn, belly, 5, 3);
+        const g0 = clothPanel(`${key}a2`, fn, belly, 30, 18, { u: 6, v: 3, fold: belly * 0.12 }), g1 = clothPanel(`${key}b2`, fn, belly, 12, 8, { u: 6, v: 3 }), g2 = clothPanel(`${key}c`, fn, belly, 5, 3);
         K.add([g0, g0, g1, g2, g2, g2], col, x + 0.1, y0 + yb, 0, { ry: PI / 2, r: 0.95 });
         // the yard, with its lifts and footropes
         K.add(G.lathe(`yard${f2(w)}`, [[0, -w * 0.56], [0.03, -w * 0.5], [0.05, 0], [0.03, w * 0.5], [0, w * 0.56]], 7), mastC, x + 0.08, y0 + yb + h, 0, { rx: PI / 2 });
@@ -410,7 +413,7 @@ export function buildRig(c, style) {
       const w = clamp(c.L * 0.24, 1.6, 3.4), h = mh * 0.72, yb = y0 + mh * 0.16;
       const fn = (u, v) => [lerp(w * 0.3, -w * 0.7, u), v * h * (1 + 0.22 * u) + Math.sin(v * PI * 6) * 0.0];
       const key = `j${f2(w)},${f2(h)}`;
-      const g0 = clothPanel(`${key}a`, (u, v) => [...fn(u, v), 0.6 + 0.4 * Math.abs(Math.sin(v * PI * 6))], 0.14, 12, 18), g1 = clothPanel(`${key}b`, fn, 0.12, 6, 6);
+      const g0 = clothPanel(`${key}a2`, (u, v) => [...fn(u, v), 0.6 + 0.4 * Math.abs(Math.sin(v * PI * 6))], 0.14, 20, 36, { v: 6, dark: 0.7, fold: 0.012 }), g1 = clothPanel(`${key}b`, fn, 0.12, 6, 6);
       K.add([g0, g0, g1, g1, g1, g1], sail, x, yb, 0.08, { r: 0.9 });
       for (let b = 0; b <= 6; b++) { const v = b / 6; K.bar([x + w * 0.3, yb + v * h, 0.1], [x - w * 0.7, yb + v * h * 1.22, 0.1], 0.03, C.black); K.detail(2, () => K.bar([x + w * 0.3, yb + v * h, 0.06], [x - w * 0.7, yb + v * h * 1.22, 0.06], 0.03, C.black)); }
       // the sheetlets fanning from each batten end to one block
@@ -421,7 +424,7 @@ export function buildRig(c, style) {
       const A = [x + span * 0.42, y0 + hgt * 0.55], Bp = [x - span * 0.58, y0 + mh * 1.02], Cp = [x - span * 0.45, y0 + 0.45];
       const fn = (u, v) => [lerp(lerp(A[0], Bp[0], u), Cp[0], v), lerp(lerp(A[1], Bp[1], u), Cp[1], v), Math.sin(PI * Math.min(1, v * 1.6)) * (1 - v)];
       const key = `lat${c.def.id}|${i}`;
-      const g0 = clothPanel(`${key}a`, fn, 0.5, 12, 8, { u: 5 }), g1 = clothPanel(`${key}b`, fn, 0.5, 6, 5);
+      const g0 = clothPanel(`${key}a2`, fn, 0.5, 26, 16, { u: 5, fold: 0.05 }), g1 = clothPanel(`${key}b`, fn, 0.5, 10, 7, { u: 5 });
       K.add([g0, g0, g1, g1, g1, g1], sail, 0, 0, 0.1, { r: 0.9 });
       K.add(taper(`latyard${key}`, [[A[0] + 0.25, A[1] - 0.1, 0.1], [(A[0] + Bp[0]) / 2, (A[1] + Bp[1]) / 2 + 0.05, 0.1], [Bp[0] - 0.15, Bp[1] + 0.08, 0.1]], [0.035, 0.06, 0.025], 10, 6), mastC);
       K.detail(1, () => { K.bar([A[0] + 0.2, A[1] - 0.08, 0.1], [c.bowX - 0.2, c.deckAt(c.bowX - 0.3) + 0.2, 0], 0.01, 0x2a2218); K.bar([Cp[0], Cp[1], 0.1], [c.sternX + 0.4, c.deckAt(c.sternX + 0.4) + 0.3, 0], 0.01, 0x2a2218); for (const s of [-1, 1]) K.bar([x, y0 + hgt * 0.95, 0], [x - 0.3, c.deckAt(x - 0.3) + 0.15, s * c.hw(x - 0.3) * 0.95], 0.011, 0x2a2218); });
@@ -431,7 +434,7 @@ export function buildRig(c, style) {
       const w = c.B * 1.0, h = mh * 0.68, yb = y0 + mh * 0.22, col = blend(sail, C.leaf, 0.25);
       const fn = (u, v) => [(u - 0.5) * w * Math.pow(Math.sin(PI * clamp(v * 0.94 + 0.03, 0, 1)), 0.75), v * h];
       const key = `leaf${f2(w)},${f2(h)}`;
-      const g0 = clothPanel(`${key}a`, fn, h * 0.12, 12, 14), g1 = clothPanel(`${key}b`, fn, h * 0.12, 6, 8);
+      const g0 = clothPanel(`${key}a2`, fn, h * 0.12, 20, 24, { fold: h * 0.01 }), g1 = clothPanel(`${key}b`, fn, h * 0.12, 8, 10);
       K.add([g0, g0, g1, g1, g1, g1], col, x + 0.1, yb, 0, { ry: PI / 2, r: 0.7 });
       const ribX = x + 0.1 + h * 0.12;
       K.add(taper(`leafrib${key}`, [[ribX, yb, 0], [ribX + h * 0.02, yb + h * 0.5, 0], [ribX - h * 0.02, yb + h, 0]], [0.04, 0.012], 10, 5), shade(col, 0.55));
@@ -443,8 +446,9 @@ export function buildRig(c, style) {
       for (let b = 0; b < bands; b++) {
         const hb = h / bands;
         const fn = (u, v) => { let y = v * hb; if (b === 0 && v === 0) y = hb * 0.25 * Math.abs(Math.sin(u * PI * 3)); return [(u - 0.5) * w * (1 - ((b + v) / bands) * 0.12), y]; };
-        const geo = clothPanel(`silk${f2(w)},${f2(hb)},${b}`, fn, h * 0.13, 12, 3);
-        K.add(geo, b % 2 ? c.trimC : sail, x + 0.1, yb + b * hb, 0, { ry: PI / 2, r: 0.35, m: 0.1 });
+        const geo = [clothPanel(`silk2${f2(w)},${f2(hb)},${b}`, fn, h * 0.13, 24, 6, { u: 4, fold: hb * 0.05 }), clothPanel(`silk${f2(w)},${f2(hb)},${b}`, fn, h * 0.13, 12, 3)];
+        const geoL = [geo[0], geo[0], geo[1], geo[1], geo[1], geo[1]];
+        K.add(geoL, b % 2 ? c.trimC : sail, x + 0.1, yb + b * hb, 0, { ry: PI / 2, r: 0.35, m: 0.1 });
         K.detail(2, () => K.add(G.cyl(0.018, 0.018, w * (1 - (b / bands) * 0.12), 5), st.metal, x + 0.1 + h * 0.13 * 0.4, yb + b * hb, 0, { rx: PI / 2, m: st.metalM }));
       }
       K.add(G.cyl(0.04, 0.04, w * 1.1, 6), C.gold, x + 0.08, yb + h, 0, { rx: PI / 2, m: 0.7, r: 0.3 });

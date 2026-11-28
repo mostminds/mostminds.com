@@ -7,10 +7,23 @@ import { THREE, PI, TAU, SPH, HEMI, CYL, CONE, TORUS, ICO, OCTA, mesh, ell, blk,
 import { styleOf } from './style.js';
 import { decoMats, finial, banner, trophies, motif, helm, roof } from './deco.js';
 import { animateSky } from '../skyParts.js';
+import { creatureSpec, creatureTemplate, seatedPilot } from './creatures.js';
+import { buildRigBeast } from './rigbeast.js';
+export { saddle, throat, beastActions, BREATH };
 
 const BREATH = { fire: 0xff7a1a, acid: 0x9aff3a, frost: 0xa8e8ff, warp: 0xd060ff, plague: 0xa8c83a, light: 0xfff0a0, sound: 0xffb0e0 };
 
 export function buildSkyBeast(def, sideColor) {
+  const spec = creatureSpec(def, styleOf(def));
+  if (spec) {
+    let tpl = null;
+    try { tpl = creatureTemplate(spec); } catch (err) { console.warn(`[sky] ${def.id}: sculpted ${def.sky.creature} failed, drawing the plain one`, err); }
+    if (tpl) return buildRigBeast(def, sideColor, spec, tpl);
+  }
+  return buildPlainBeast(def, sideColor);
+}
+
+function buildPlainBeast(def, sideColor) {
   const D = def.sky, L = D.look || {}, T = tintSet(), S = styleOf(def);
   const body = L.body ?? 0x6a5a40, wingC = L.wing ?? 0x4a3a2a, bellyC = L.belly ?? 0xc8b890;
   const sideM = mat0(sideColor), sideDark = mat0(shade(sideColor, 0.6));
@@ -59,6 +72,7 @@ export function buildSkyBeast(def, sideColor) {
     },
     actions: beastActions(X, root),
     setSide(hex) { sideM.color.set(hex); sideDark.color.set(hex).multiplyScalar(0.6); },
+    breakParts: A.wings.map((w) => ({ mesh: w.sh, at: [0, 0, 0], kind: 'wing' })),
     setDamage(lv) {
       T.damage(lv);
       for (const o of A.hide2) o.visible = lv >= 2;
@@ -626,7 +640,8 @@ function saddle(X, info, n) {
   const cloth = group(B, x, y, 0), cy = -R; // the body's axis under the saddle
   // the caparison: a cloth draped down both flanks, hemmed in the metal colour, with the emblem and tassels
   const L = len + (info.caparison ? 0.9 : 0.2), AH = info.caparison ? 1.75 : 0.95;
-  for (const sd of [1, -1]) {
+  if (info.drape) info.drape(cloth, L, AH, len);
+  else for (const sd of [1, -1]) {
     patch(cloth, C.side, (u, v) => { const a = lerp(0.05, AH, v), xx = (u - 0.5) * L * (1 + v * 0.08), rr = R * 1.06 + 0.02; return [xx, cy + Math.cos(a) * rr, sd * Math.sin(a) * rr * (w / R * 0.9 + 0.1)]; }, 8, 5);
     const ah = AH, hem = (u) => [(u - 0.5) * L * 1.08, cy + Math.cos(ah) * (R * 1.06 + 0.02), sd * Math.sin(ah) * (R * 1.06 + 0.02) * (w / R * 0.9 + 0.1)];
     sweep(cloth, C.metal, [hem(0), hem(0.5), hem(1)], 0.025, { n: 12, m: 4, round: 0 });
@@ -635,7 +650,7 @@ function saddle(X, info, n) {
     tier(3, () => { const a = AH * 0.6, g = group(cloth, 0, cy + Math.cos(a) * (R * 1.09 + 0.03), sd * Math.sin(a) * (R * 1.09 + 0.03) * (w / R * 0.9 + 0.1)); g.rotation.x = -sd * (PI / 2 - a); if (sd < 0) g.rotation.y = PI; emblem(g, C.metal, S.emblem, info.caparison ? 0.42 : 0.3, 0.03); });
   }
   // girths round the belly
-  for (const gx of [-len * 0.25, len * 0.25]) add(cloth, mesh(TORUS(0.05, 28, 4), C.leather, gx, cy, 0, R * 1.08, R * 1.08, R * 1.08)).rotation.y = PI / 2;
+  if (!info.drape) for (const gx of [-len * 0.25, len * 0.25]) add(cloth, mesh(TORUS(0.05, 28, 4), C.leather, gx, cy, 0, R * 1.08, R * 1.08, R * 1.08)).rotation.y = PI / 2;
   const sides = [[x, y + 0.1, w + 0.15], [x, y + 0.1, -(w + 0.15)]];
   if (big) {
     // howdah: a railed platform with corner posts, side shields and a roof in the realm's style
@@ -727,9 +742,9 @@ const hold = (k, a = 0.18, b = 0.78) => (k <= 0 || k >= 1 ? 0 : k < a ? Math.sin
 function beastActions(X, root) {
   const { A, jaws } = X, act = A.act;
   const apply = () => animateSky(root, A.t ?? 0);
-  const jaw = (o) => { for (const j of jaws) j.p.rotation.z = -j.open * o; };
+  const jaw = (o) => { act.jaw = o; for (const j of jaws) j.p.rotation.z = -j.open * o; };
   const throatOn = (o) => { if (!X.throat) return; X.throat.visible = o > 0.02; X.throat.scale.set(o > 0.02 ? 0.6 + 0.6 * o : 1, 1, 1); if (X.throatMat) { X.throatMat.userData.boost = 1.5 * o; X.throatMat.emissiveIntensity = X.throatMat.userData.glowBase * (1 + 1.5 * o); } };
-  const legs = (reach, curl) => { for (const l of A.legs) { l.p.rotation.z = l.rest + l.reach * reach; if (l.toes) l.toes.rotation.z = -l.curl * curl; } };
+  const legs = (reach, curl) => { act.reach = reach; act.curl = curl; for (const l of A.legs) { l.p.rotation.z = l.rest + l.reach * reach; if (l.toes) l.toes.rotation.z = -l.curl * curl; } };
   const clear = (...keys) => { for (const k of keys) act[k] = 0; };
   const acts = {
     breath(k) {
@@ -776,4 +791,4 @@ function beastActions(X, root) {
   };
   return acts;
 }
-void SPH; void OCTA; void blk; void plate; void clamp; void hash; void noCrew; void finial; void CONE;
+void SPH; void OCTA; void seatedPilot; void blk; void plate; void clamp; void hash; void noCrew; void finial; void CONE;

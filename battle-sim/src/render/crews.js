@@ -1,29 +1,38 @@
-// Hands on deck: small sailors standing on every ship's and airship's deck, as many as she has crew left
-// (up to what her deck holds). The hands are the folk of the realm that sails her: each kind of body
-// (a "kit": human, elf, dwarf, brute, goblin, skeleton, rat, lizard, ...) is a few instanced meshes, one per
-// colour role, built the first time a ship of that folk shows up. Tabards are in the side's colour with the
-// realm's badge on the chest; skin, armour, trim and headgear (kettle helms, kabuto, turbans, tricorns, fur caps,
-// feathered bands ... one per realm, see HAT) come from the realm's palette and style (parts/realmStyle.js).
+// Hands on deck: sailors standing on every ship's and airship's deck, as many as she has crew left (up to what
+// her deck holds). The hands are the realm's own soldiers: each realm (and each of the original factions) sends
+// two or three of the sculpted ground units of its roster to sea (see CREW below: deck hands, gunners and an
+// officer), so a figure on deck is the very model that fights on land, scaled to the deck.
 //
-// Every figure has its two arms on their own instances so it can work: hands haul on lines, gunners stand at
-// the rail, lookouts shade their eyes, the rest go about the deck. The effects code tells a ship's hands what
-// is happening to her with pulse():
+// How it stays cheap: a unit is built once (at a crew detail, see CREW_DETAIL), posed with the units' own
+// animators (animate.js via animateUnit) plus a few deck poses on top (hauling, kneeling at the gun, bracing,
+// cheering ...), and each pose is baked (rigkit.bakePose) into one static geometry per distance level. Every
+// figure is then one instance in the instanced mesh of its (unit, pose, level) bucket; bakes happen lazily the
+// first time a bucket is wanted, are cached for the whole session and shared by every ship. "Animation" is
+// swapping a figure between pose buckets over time plus the bob, turn, lean and slide of its instance matrix.
+// The level is picked per ship from the camera's distance, with caps on the close levels (LEVEL_CAP).
+// Side colours: the cloth of each baked figure is marked per vertex (aSide) and takes the side's colour from the
+// instance colour in the shader, keeping its shading (so a Graalish blue tabard turns red on the red side).
+//
+// The effects code tells a ship's hands what is happening to her with pulse():
 //
 //   const crews = new Crews(scene)
 //   crews.track(model, key, { airship })   finds the deck (raycast from above) and its standing places, once per hull type
 //   crews.update(list, t)                  list: [{ model, frac (0..1 of crew aboard), color, alive, def?, faction?, size? }]
 //   crews.pulse(model, kind, opts?)        kind:
-//       'fire'   her guns go off: the gunners at the rail crouch behind it, the rest flinch          (~1.2 s)
+//       'fire'   her guns go off: the gunners at the rail kneel and aim, the rest flinch               (~1.2 s)
 //       'brace'  she is about to be hit or rammed: every hand crouches and grabs hold               (~1.4 s)
-//       'board'  grapnels are over: most hands rush the rail facing the enemy with weapons up,
+//       'board'  grapnels are over: most hands rush the rail facing the enemy and lay about them,
 //                then (if they hold) cheer. opts.toward: a world point (THREE.Vector3 or {x, z})
 //                to rush toward; by default the nearest other ship in the last update list           (~3.5 s)
 //       'cheer'  arms up and jumping                                                                (~2 s)
 //     Calling it again while the reaction runs extends it. Safe to call for models it does not track.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { REALMS } from '../data/realms.js';
+import { UNITS } from '../data/units.js';
 import { REALM_STYLE, styleOf } from './parts/realmStyle.js';
+import { buildUnitModel, animateUnit } from './models.js';
+import { DETAIL, getDetail, setDetail, bakePose } from './rigkit.js';
+import { sculptMaterial } from './sculpt.js';
 
 const slotCache = new Map();
 const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3();
@@ -64,131 +73,8 @@ function deckSlots(model, key, airship) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Body kits. Each part is [geometry, role, piece]; a figure faces +z and stands on y = 0.
-// piece: 'body' (default), 'armL' / 'armR' (built hanging from the shoulder at the origin, posed every frame).
-// Roles: side (tabard, in the side's colour), cloth (tunic, sleeves), skin, armor, trim, metal, hair, legs,
-// boots, bone, badge (the realm's device colour on the chest), dark (hafts, gear)
-// Budget: about 200-300 triangles a figure with its hat.
+// The folk of each realm: palette, headgear and style (realmLook, used by the ship and flier fittings)
 // ---------------------------------------------------------------------------------------------
-const e = new THREE.Euler(), mq = new THREE.Quaternion(), mm = new THREE.Matrix4(), mp = new THREE.Vector3(), ms = new THREE.Vector3();
-const put = (g, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => {
-  mm.compose(mp.set(x, y, z), mq.setFromEuler(e.set(rx, ry, rz)), ms.set(sx, sy, sz));
-  g.applyMatrix4(mm);
-  g.deleteAttribute('uv');
-  return g.index ? g.toNonIndexed() : g;
-};
-const cyl = (rt, rb, h, x, y, z, o = {}) => put(new THREE.CylinderGeometry(rt, rb, h, o.seg || 6, 1, !!o.open), x, y, z, o.rx, o.ry, o.rz, o.sx, 1, o.sz);
-const ball = (r, x, y, z, sx = 1, sy = 1, sz = 1, o = {}) => put(new THREE.SphereGeometry(r, o.w || 5, o.h || 3, 0, Math.PI * 2, 0, o.th ?? Math.PI), x, y, z, o.rx, o.ry, o.rz, sx, sy, sz);
-const cone = (r, h, x, y, z, rx = 0, ry = 0, rz = 0, seg = 4) => put(new THREE.ConeGeometry(r, h, seg), x, y, z, rx, ry, rz);
-const box = (w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) => put(new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz);
-const lathe = (pts, seg, x, y, z, sx = 1, sz = 1) => put(new THREE.LatheGeometry(pts.map(([a, b]) => new THREE.Vector2(a, b)), seg), x, y, z, 0, 0, 0, sx, 1, sz);
-/** a flat outline [[x, y]...] in the xy plane, thickened a little (a tabard panel) */
-const plate = (pts, x, y, z, ry = 0) => put(new THREE.ShapeGeometry(new THREE.Shape(pts.map(([a, b]) => new THREE.Vector2(a, b)))), x, y, z, 0, ry, 0);
-const pair = (f) => [f(1), f(-1)];
-
-/**
- * the base of most kits: legs and boots, belt, a shaped torso under a tabard with the badge, pauldrons, head,
- * and two arms (each a sleeve and a hand; the right one carries the tool or weapon)
- * Returns { parts, shoulder: [x, y, z], arm: length, head: [x, y, z], headR }
- */
-function biped(o = {}) {
-  const h = o.h ?? 1, w = o.w ?? 1, lean = o.lean ?? 0, head = o.head ?? 0.085;
-  const L = 0.2 * h, T = 0.3 * h;
-  const cz = Math.sin(lean) * T * 0.5;
-  const hy = o.headY ?? L + T + head * 0.85, hz = o.headZ ?? cz * 2.2;
-  const legs = o.legs || 'legs', torso = o.torso || 'cloth', arms = o.arms || 'cloth';
-  const TZ = 0.11 * 0.85 + 0.006; // the chest's front, where the tabard lies
-  const upper = [ // everything above the hips leans with the figure
-    [cyl(0.088 * w, 0.09 * w, 0.045, 0, L + 0.02, 0, { seg: 7, open: true }), 'trim'], // the belt
-    [lathe([[0.08, 0], [0.1, 0.12], [0.11, 0.24], [0.085, T * 0.98], [0.035, T * 1.02]], 6, 0, L + 0.01, 0, w * (o.chest ?? 1), 0.85), torso],
-    // the tabard over the chest and back, pointed below the belt, and the realm's badge
-    [plate([[-0.072 * w, 0.02], [0, -0.06], [0.072 * w, 0.02], [0.068 * w, 0.25], [-0.068 * w, 0.25]], 0, L, TZ), 'side'],
-    [plate([[-0.072 * w, 0.02], [0, -0.05], [0.072 * w, 0.02], [0.068 * w, 0.25], [-0.068 * w, 0.25]], 0, L, -TZ, Math.PI), 'side'],
-    [put(new THREE.OctahedronGeometry(0.03, 0), 0, L + T * 0.6, TZ + 0.006, 0, 0, Math.PI / 4, 1, 1.2, 0.3), 'badge'],
-  ];
-  if (o.pauldrons !== false) upper.push(...pair((s) => [ball(0.045 * w, s * 0.105 * w, L + T * 0.92, 0, 1.15, 0.75, 1.1, { w: 5, h: 2, th: Math.PI * 0.6 }), 'armor']));
-  if (lean) { mm.makeTranslation(0, -L, 0).premultiply(new THREE.Matrix4().makeRotationX(lean)).premultiply(new THREE.Matrix4().makeTranslation(0, L, 0)); for (const [g] of upper) g.applyMatrix4(mm); }
-  const P = [
-    ...pair((s) => [cyl(0.036 * w, 0.028 * w, L, s * 0.048 * w, L / 2 + 0.02, 0, { seg: 5, open: true }), legs]),
-    ...(o.feet === 'hoof' ? pair((s) => [cyl(0.03 * w, 0.038 * w, 0.05, s * 0.048 * w, 0.025, 0.005, { seg: 5 }), 'bone'])
-      : o.feet === 'claw' ? pair((s) => [cone(0.035 * w, 0.1, s * 0.05 * w, 0.02, 0.04, Math.PI / 2, 0, 0, 4), legs])
-        : pair((s) => [box(0.06 * w, 0.05, 0.1, s * 0.048 * w, 0.025, 0.015), 'boots'])),
-    ...upper,
-    [ball(head, 0, hy, hz, 1, 1.06, 1, { w: 6, h: 4 }), 'skin'],
-    [cone(head * 0.18, head * 0.4, 0, hy - head * 0.1, hz + head * 0.95, Math.PI / 2, 0, 0, 3), 'skin'], // the nose
-  ];
-  // arms: a sleeve hanging from the shoulder and a hand; the right hand holds the realm's tool
-  const al = T * 0.95, ar = 0.03 * w;
-  const arm = (s) => [
-    [cyl(ar, ar * 0.8, al, 0, -al / 2, 0, { seg: 5, open: true }), o.arms || arms, s > 0 ? 'armL' : 'armR'],
-    [ball(ar * 1.05, 0, -al - ar * 0.4, 0.004, 1, 1, 1, { w: 4, h: 2 }), o.hands || (o.arms === 'skin' ? 'skin' : 'skin'), s > 0 ? 'armL' : 'armR'],
-  ];
-  P.push(...arm(1), ...arm(-1));
-  const tool = o.tool ?? 'pike';
-  const ty = -al - ar * 0.4;
-  if (tool === 'pike') P.push([cyl(0.009, 0.009, 0.62, 0, ty + 0.02, 0.03, { seg: 3, rx: Math.PI / 2 - 0.25 }), 'dark', 'armR'], [cone(0.018, 0.08, 0, ty + 0.1, 0.33, Math.PI / 2 - 0.25, 0, 0, 3), 'metal', 'armR']);
-  else if (tool === 'axe') P.push([cyl(0.01, 0.01, 0.3, 0, ty, 0.02, { seg: 3, rx: Math.PI / 2 - 0.4 }), 'dark', 'armR'], [box(0.012, 0.07, 0.06, 0, ty + 0.06, 0.15, -0.4), 'metal', 'armR']);
-  else if (tool === 'blade') P.push([box(0.012, 0.03, 0.28, 0, ty, 0.14, -0.35), 'metal', 'armR'], [box(0.06, 0.012, 0.014, 0, ty, 0.01), 'trim', 'armR']);
-  else if (tool === 'club') P.push([cyl(0.028, 0.012, 0.32, 0, ty, 0.12, { seg: 5, rx: Math.PI / 2 - 0.35 }), 'dark', 'armR']);
-  const shY = T * 0.88; // the shoulder, carried forward by the lean
-  return { parts: P, shoulder: [0.13 * w, L + shY * Math.cos(lean), shY * Math.sin(lean) + 0.01], arm: al, head: [0, hy, hz], headR: head };
-}
-const withParts = (k, ...more) => { k.parts.push(...more); return k; };
-
-const KITS = {
-  human: () => biped({ tool: 'pike' }),
-  elf: () => withParts(biped({ h: 1.1, w: 0.85, head: 0.078, tool: 'blade', chest: 0.9 }),
-    ...pair((s) => [cone(0.02, 0.12, s * 0.085, 0.665, -0.01, 0, 0, -s * 1.2, 3), 'skin']),
-    [ball(0.083, 0, 0.672, -0.02, 1.02, 1.05, 1, { w: 6, h: 3, th: Math.PI * 0.55 }), 'hair'], [box(0.07, 0.22, 0.02, 0, 0.55, -0.075), 'hair']),
-  dwarf: () => withParts(biped({ h: 0.62, w: 1.45, head: 0.088, tool: 'axe', chest: 1.1 }),
-    [cone(0.09, 0.22, 0, 0.27, 0.085, Math.PI + 0.25, 0, 0, 5), 'hair'], [ball(0.05, 0, 0.36, 0.08, 1.4, 0.8, 0.7, { w: 5, h: 3 }), 'hair']),
-  brute: (horns) => withParts(biped({ h: 1, w: 1.45, lean: 0.35, head: 0.088, headY: 0.5, headZ: 0.12, arms: 'skin', tool: 'club', chest: 1.15 }),
-    ...pair((s) => [cone(0.014, 0.05, s * 0.035, 0.475, 0.2, -0.3, 0, 0, 3), 'bone']), // tusks
-    ...(horns ? pair((s) => [cone(0.03, 0.17, s * 0.1, 0.6, 0.1, 0, 0, -s * 1.0), 'bone']) : [[ball(0.05, 0, 0.56, 0.08, 1, 0.5, 1.2, { w: 5, h: 3 }), 'hair']])),
-  goblin: () => withParts(biped({ h: 0.62, w: 0.85, head: 0.09, lean: 0.2, tool: 'blade' }),
-    ...pair((s) => [cone(0.035, 0.17, s * 0.13, 0.4, 0, 0, 0, -s * 1.3), 'skin']),
-    [cone(0.022, 0.08, 0, 0.36, 0.13, Math.PI / 2, 0, 0, 3), 'skin'], [cone(0.07, 0.1, 0, 0.48, 0.03, -0.2, 0, 0, 5), 'trim']),
-  halfling: () => withParts(biped({ h: 0.64, w: 0.95, head: 0.088, tool: 'blade', feet: 'bare' }), [ball(0.094, 0, 0.44, -0.015, 1, 0.9, 1, { w: 6, h: 4, th: Math.PI * 0.6 }), 'hair']),
-  gnome: () => withParts(biped({ h: 0.62, w: 0.95, head: 0.085, tool: 'axe' }), [cone(0.075, 0.24, 0, 0.55, 0, -0.15, 0, 0, 6), 'trim'],
-    [cone(0.06, 0.12, 0, 0.36, 0.06, Math.PI + 0.3, 0, 0, 5), 'hair']),
-  skeleton: () => {
-    const P = [
-      ...pair((s) => [cyl(0.02, 0.018, 0.21, s * 0.05, 0.125, 0, { seg: 4 }), 'skin']),
-      ...pair((s) => [box(0.04, 0.025, 0.08, s * 0.05, 0.012, 0.015), 'skin']),
-      [box(0.13, 0.05, 0.07, 0, 0.23, 0), 'skin'], [cyl(0.018, 0.018, 0.1, 0, 0.29, -0.01, { seg: 4 }), 'skin'],
-      // the ribcage, ribs as rings
-      ...[0, 1].map((k) => [put(new THREE.TorusGeometry(0.07 - k * 0.008, 0.01, 3, 6), 0, 0.38 + k * 0.06, 0, Math.PI / 2, 0, 0, 1, 0.8, 1), 'skin']),
-      [box(0.1, 0.22, 0.012, 0, 0.38, 0.078), 'side'], [box(0.1, 0.2, 0.012, 0, 0.4, -0.075), 'side'],
-      [put(new THREE.OctahedronGeometry(0.026, 0), 0, 0.42, 0.088, 0, 0, Math.PI / 4, 1, 1.2, 0.3), 'badge'],
-      ...pair((s) => [ball(0.04, s * 0.1, 0.49, 0, 1.2, 0.7, 1.1, { w: 5, h: 3, th: Math.PI * 0.6 }), 'armor']),
-      [ball(0.07, 0, 0.6, 0, 0.95, 1.05, 1, { w: 6, h: 4 }), 'skin'], [box(0.07, 0.04, 0.05, 0, 0.535, 0.03), 'skin'],
-      ...pair((s) => [ball(0.017, s * 0.027, 0.6, 0.06, 1, 1, 0.5, { w: 4, h: 3 }), 'dark']),
-    ];
-    const arm = (s) => [[cyl(0.017, 0.015, 0.26, 0, -0.13, 0, { seg: 4 }), 'skin', s > 0 ? 'armL' : 'armR'], [box(0.03, 0.04, 0.02, 0, -0.27, 0), 'skin', s > 0 ? 'armL' : 'armR']];
-    P.push(...arm(1), ...arm(-1), [box(0.012, 0.03, 0.26, 0, -0.27, 0.13, -0.35), 'metal', 'armR']);
-    return { parts: P, shoulder: [0.11, 0.48, 0.0], arm: 0.27, head: [0, 0.6, 0], headR: 0.072 };
-  },
-  ghoul: () => withParts(biped({ h: 0.95, w: 0.8, lean: 0.5, head: 0.08, headY: 0.47, headZ: 0.16, legs: 'skin', arms: 'skin', torso: 'skin', tool: 'none', pauldrons: false }),
-    ...pair((s) => [cone(0.012, 0.06, s * 0.03, 0.43, 0.24, 0.4, 0, 0, 3), 'bone']), [box(0.16, 0.12, 0.14, 0, 0.17, 0.02), 'legs']),
-  rat: () => withParts(biped({ h: 0.8, w: 0.95, lean: 0.5, head: 0.07, headY: 0.44, headZ: 0.17, arms: 'skin', tool: 'blade', feet: 'claw' }),
-    [cone(0.055, 0.15, 0, 0.42, 0.27, Math.PI / 2, 0, 0, 5), 'skin'], [ball(0.014, 0, 0.42, 0.345), 'dark'],
-    ...pair((s) => [ball(0.04, s * 0.055, 0.52, 0.13, 1, 1, 0.35), 'skin']),
-    [put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.18, -0.06), new THREE.Vector3(0, 0.1, -0.2), new THREE.Vector3(0, 0.08, -0.38), new THREE.Vector3(0, 0.16, -0.5)]), 5, 0.01, 3), 0, 0, 0), 'skin']),
-  lizard: () => withParts(biped({ h: 1.05, w: 1, head: 0.072, lean: 0.12, arms: 'skin', legs: 'skin', tool: 'pike', feet: 'claw', torso: 'cloth' }),
-    [box(0.075, 0.055, 0.14, 0, 0.61, 0.1), 'skin'], [box(0.06, 0.02, 0.12, 0, 0.58, 0.1), 'skin'],
-    [put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.24, -0.06), new THREE.Vector3(0, 0.15, -0.22), new THREE.Vector3(0, 0.05, -0.42)]), 4, 0.035, 4), 0, 0, 0), 'skin'],
-    ...[0, 1, 2].map((k) => [cone(0.02, 0.07, 0, 0.68 - k * 0.025, 0.02 - k * 0.05, -0.3, 0, 0, 3), 'trim'])),
-  demon: () => withParts(biped({ h: 1.05, w: 1.25, head: 0.085, arms: 'skin', tool: 'axe', feet: 'hoof', chest: 1.1 }),
-    ...pair((s) => [cone(0.028, 0.16, s * 0.08, 0.7, 0.01, 0, 0, -s * 0.5), 'bone']),
-    [put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.22, -0.06), new THREE.Vector3(0, 0.1, -0.2), new THREE.Vector3(0, 0.12, -0.34)]), 4, 0.012, 3), 0, 0, 0), 'skin'],
-    [cone(0.02, 0.05, 0, 0.12, -0.35, -Math.PI / 2, 0, 0, 3), 'skin']),
-  goat: () => withParts(biped({ h: 1, w: 1.1, head: 0.08, legs: 'hair', arms: 'skin', tool: 'axe', feet: 'hoof' }),
-    [box(0.06, 0.08, 0.12, 0, 0.56, 0.08), 'skin'],
-    ...pair((s) => [cone(0.03, 0.18, s * 0.08, 0.68, -0.05, -0.9, 0, -s * 0.4), 'bone'])),
-  harpy: () => withParts(biped({ h: 1, w: 0.8, head: 0.075, arms: 'hair', tool: 'pike', feet: 'claw', legs: 'skin' }), [ball(0.08, 0, 0.6, -0.03, 1, 1.1, 1, { w: 6, h: 4, th: Math.PI * 0.6 }), 'hair'],
-    ...pair((s) => [box(0.3, 0.025, 0.14, s * 0.19, 0.5, -0.09, 0, s * 0.5, s * -0.4), 'hair'])),
-};
-
 // which kit, how big and in what colours, by the folk that sails her
 const SPECIES = {
   human: { kit: 'human' }, elf: { kit: 'elf' }, dwarf: { kit: 'dwarf' },
@@ -239,32 +125,6 @@ const HATCOL = {
   nemes: ['white', 'cloth2'], skullcap: ['armor', 'trim'], brimmed: ['dark', 'cloth'], beret: ['cloth', 'white'], morion: ['armor', 'metal'],
   turban: ['white', 'cloth'], kabuto: ['armor', 'metal'], fur: ['fur', 'cloth'], cap: ['cloth', 'trim'], mushroom: ['red', 'white'],
 };
-const half = (r, w = 7, h = 2) => new THREE.SphereGeometry(r, w, h, 0, Math.PI * 2, 0, Math.PI / 2);
-const HATS = {
-  kettle: () => [[put(half(1.12, 7, 2), 0, 0.05, 0), 'a'], [put(new THREE.CylinderGeometry(1.12, 1.8, 0.2, 8, 1, true), 0, 0.02, 0), 'a'], [cyl(1.14, 1.14, 0.16, 0, 0.2, 0, { seg: 7, open: true }), 'b']],
-  crested: () => [[put(half(1.12), 0, 0.05, 0), 'a'], ...pair((s) => [box(0.12, 0.7, 0.55, s * 0.95, -0.25, 0.3), 'a']), [put(new THREE.CylinderGeometry(1.0, 1.0, 0.26, 8, 1, false, -Math.PI / 2, Math.PI), 0, 1.1, 0, 0, 0, Math.PI / 2, 1, 1, 1), 'b']],
-  circlet: () => [[put(new THREE.TorusGeometry(1.05, 0.08, 3, 8), 0, 0.25, 0, Math.PI / 2 - 0.15, 0, 0), 'a'], [put(new THREE.OctahedronGeometry(0.2, 0), 0, 0.45, 1.0, 0, 0, 0, 1, 1.5, 0.5), 'b']],
-  hood: () => [[put(new THREE.SphereGeometry(1.3, 6, 3, 0, Math.PI * 2, 0, Math.PI * 0.62), 0, -0.05, -0.12), 'a'], [cone(0.55, 1.1, 0, 0.35, -1.2, -Math.PI / 2 - 0.5, 0, 0, 3), 'a'], [put(new THREE.TorusGeometry(1.1, 0.1, 3, 6, Math.PI), 0, -0.3, 0.05, 0.4, 0, 0), 'b']],
-  feathered: () => [[cyl(1.08, 1.08, 0.3, 0, 0.3, 0, { seg: 7, open: true }), 'a'], ...[-2, -1, 0, 1, 2].map((k) => [put(new THREE.ConeGeometry(0.3, 1.9, 3), k * 0.25, 1.3, -0.25, -0.2, 0, -k * 0.32, 1, 1, 0.3), k % 2 ? 'a' : 'b'])],
-  spiked: () => [[put(half(1.13), 0, 0.05, 0), 'a'], [cone(0.8, 0.9, 0, 1.25, 0, 0, 0, 0, 7), 'a'], [cone(0.14, 0.8, 0, 1.95, 0, 0, 0, 0, 4), 'b'], [cyl(1.15, 1.15, 0.18, 0, 0.1, 0, { seg: 7, open: true }), 'b']],
-  conical: () => [[put(new THREE.ConeGeometry(2.2, 0.95, 10, 1, true), 0, 0.55, 0), 'a'], [put(new THREE.ConeGeometry(2.2, 0.06, 10), 0, 0.06, 0, Math.PI, 0, 0), 'a'], [ball(0.18, 0, 1.05, 0), 'b']],
-  horned: () => [[put(half(1.12), 0, 0.05, 0), 'a'], [box(0.18, 0.8, 0.12, 0, -0.1, 1.08), 'a'],
-    ...pair((s) => [put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(s * 0.9, 0.5, 0), new THREE.Vector3(s * 1.6, 0.9, 0.1), new THREE.Vector3(s * 1.8, 1.7, 0.2)]), 3, 0.18, 3), 0, 0, 0), 'b']),
-    ...pair((s) => [cone(0.15, 0.4, s * 1.82, 1.9, 0.22, 0, 0, 0, 4), 'b'])],
-  tall: () => [[put(new THREE.CylinderGeometry(0.55, 1.12, 1.9, 8, 1, true), 0, 0.85, 0), 'a'], [cyl(1.14, 1.14, 0.22, 0, 0.1, 0, { seg: 8, open: true }), 'b'], [ball(0.5, 0, 1.8, 0, 1, 0.5, 1, { w: 6, h: 3 }), 'b']],
-  tricorn: () => [[put(new THREE.CylinderGeometry(1.9, 1.75, 0.45, 3, 1, true), 0, 0.45, 0, 0, Math.PI, 0), 'a'], [cyl(1.05, 1.1, 0.75, 0, 0.55, 0, { seg: 7 }), 'a'], [put(new THREE.CylinderGeometry(1.92, 1.92, 0.08, 3, 1, true), 0, 0.68, 0, 0, Math.PI, 0), 'b']],
-  nemes: () => [[put(half(1.12), 0, 0.02, -0.03), 'a'], ...pair((s) => [box(0.45, 1.6, 0.18, s * 0.95, -0.55, 0.45, 0, 0, s * 0.12), 'a']), [box(1.1, 1.5, 0.2, 0, -0.5, -0.9), 'a'], [cyl(1.14, 1.14, 0.22, 0, 0.2, 0, { seg: 8, open: true }), 'b'], [cone(0.18, 0.5, 0, 0.6, 1.12, 0.3, 0, 0, 4), 'b']],
-  skullcap: () => [[put(half(1.1), 0, 0.05, 0), 'a'], [box(0.18, 0.8, 0.12, 0, -0.15, 1.08), 'b']],
-  brimmed: () => [[cyl(2.1, 2.1, 0.08, 0, 0.35, 0, { seg: 10 }), 'a'], [cyl(0.95, 1.08, 0.8, 0, 0.75, 0, { seg: 8 }), 'a'], [put(new THREE.SphereGeometry(0.4, 4, 3), -0.9, 1.25, -0.3, 0.3, 0, 0.7, 0.35, 2.6, 0.12), 'b']],
-  beret: () => [[ball(1.25, 0.25, 0.65, 0, 1.1, 0.42, 1.05, { w: 8, h: 4 }), 'a'], [put(new THREE.SphereGeometry(0.4, 4, 3), -0.8, 1.2, -0.2, 0.2, 0, 0.9, 0.3, 2.4, 0.12), 'b']],
-  morion: () => [[put(half(1.1), 0, 0.15, 0), 'a'], [put(new THREE.CylinderGeometry(1.7, 1.7, 0.08, 10), 0, 0.15, 0, 0, 0, 0, 0.75, 1, 1.25), 'a'], [put(new THREE.CylinderGeometry(1.0, 1.0, 0.16, 8, 1, false, -Math.PI / 2, Math.PI), 0, 1.0, 0, 0, Math.PI / 2, Math.PI / 2, 1, 1, 0.75), 'b']],
-  turban: () => [[put(new THREE.TorusGeometry(0.95, 0.38, 4, 9), 0, 0.45, 0, Math.PI / 2, 0, 0), 'a'], [ball(1.0, 0, 0.62, 0, 1, 0.75, 1, { w: 7, h: 4 }), 'a'], [put(new THREE.OctahedronGeometry(0.22, 0), 0, 0.6, 1.3, 0, 0, 0, 1, 1.3, 0.5), 'b'], [put(new THREE.SphereGeometry(0.3, 4, 3), 0, 1.25, 1.0, -0.4, 0, 0, 0.3, 2, 0.12), 'b']],
-  kabuto: () => [[put(half(1.15), 0, 0.08, 0), 'a'], [put(new THREE.CylinderGeometry(1.2, 1.8, 0.7, 8, 1, true, Math.PI * 0.75, Math.PI * 1.5), 0, -0.2, -0.05), 'a'], [put(new THREE.TorusGeometry(0.85, 0.09, 3, 8, Math.PI), 0, 0.85, 0.75, 0, 0, 0), 'b'], [ball(0.16, 0, 0.6, 1.05), 'b']],
-  fur: () => [[cyl(1.2, 1.15, 1.0, 0, 0.45, 0, { seg: 8 }), 'a'], [ball(0.8, 0, 0.95, 0, 1, 0.45, 1, { w: 6, h: 3 }), 'b'], ...pair((s) => [box(0.25, 0.8, 0.6, s * 1.05, -0.3, 0), 'a'])],
-  cap: () => [[ball(1.12, 0, 0.1, 0, 1, 1, 1, { w: 7, h: 3, th: Math.PI * 0.5 }), 'a'], [cone(0.5, 0.9, 0, 1.0, 0.3, 0.6, 0, 0, 5), 'a'], [cyl(1.13, 1.13, 0.2, 0, 0.1, 0, { seg: 8, open: true }), 'b']],
-  mushroom: () => [[ball(1.9, 0, 0.45, 0, 1, 0.6, 1, { w: 9, h: 3, th: Math.PI * 0.5 }), 'a'], ...[0, 1, 2, 3, 4].map((k) => [ball(0.28, Math.cos(k * 1.26) * 1.0, 1.4 - (k % 2) * 0.25, Math.sin(k * 1.26) * 1.0, 1, 0.5, 1, { w: 4, h: 3 }), 'b'])],
-};
-
 const lookCache = new Map();
 /** the folk aboard a ship or airship def: { kit, scale, P, hat, hatCol, metal, badge } */
 function folkOf(def, faction) {
@@ -331,8 +191,263 @@ export function realmLook(id) {
   return out;
 }
 
-const ROLE_MAT = { skin: 0.75, side: 0.85, cloth: 0.85, armor: 0.42, trim: 0.55, metal: 0.35, badge: 0.4, hair: 0.95, legs: 0.9, boots: 0.8, bone: 0.7, dark: 0.85, a: 0.6, b: 0.5 };
-const ROLE_METAL = { armor: 0.45, metal: 0.55, badge: 0.4, trim: 0.15 };
+// ---------------------------------------------------------------------------------------------
+// Who crews her: two or three sculpted ground units of the realm's own roster.
+//   deck     the hands: a cheap melee trooper (marines, deckhands, corsairs first)
+//   gun      at the guns: the realm's shot or bowmen (else a second kind of deck hand)
+//   officer  one per ship: a captain, the realm's champion or its best foot soldier
+// ---------------------------------------------------------------------------------------------
+const OLD_CAT = { kingdom: 'Kingdom', goblin: 'Goblin Horde', undead: 'Undead', beasts: 'Beasts', elemental: 'Elemental', infernal: 'Infernal', dragons: 'Dragons' };
+const FOOT = new Set(['humanoid', 'skeleton', 'naga']);
+const SEA = /marine|deckhand|mariner|corsair|sailor|gunnery|harpoon/i;
+const DECK_ARMS = new Set(['cutlass', 'sword', 'spear', 'axe', 'club', 'dagger', 'scimitar', 'cleaver', 'trident', 'javelin', 'khopesh', 'rapier', 'katana', 'warhammer', 'macuahuitl', 'claws']);
+const GUNS = { handgun: 4, crossbow: 3.5, repeater: 3.5, blunderbuss: 4, axeGun: 4, longbow: 2, bow: 2, sling: 1.5, blowpipe: 1.5, javelin: 1, chakram: 1 };
+const PREFER = { // where the roster's own choice is plain
+  drowned: ['drowned_deckhand', 'drowned_gunnery', 'drowned_captain'], westmark: ['westmark_marine', 'westmark_shotW', 'westmark_leader'],
+  pearlfleet: ['pearlfleet_mariner', 'pearlfleet_harpooner', 'pearlfleet_tridentGuard'], kaelneth: ['kaelneth_corsair', 'kaelneth_repeater', 'kaelneth_executioner'],
+  skar: ['skar_clanrat', 'skar_jezzail', 'skar_stormrat'], grom: ['grom_warrior', 'grom_thunderer', 'grom_ironbreaker'],
+  kingdom: ['militia', 'crossbow', 'footman'], goblin: ['goblin', 'goblinArcher', 'hobgoblin'], undead: ['skeleton', 'skeletonArcher', 'wight'],
+  infernal: ['cultist', 'hellknight', 'infernal_leader'], dragons: ['kobold', 'dragonKnight', 'dragons_leader'], beasts: ['minotaur', 'troll', 'beasts_leader'],
+  elemental: ['golem', 'fireElemental', 'stormElemental'], crimson: ['crimson_zombie', 'crimson_rustSkel', 'crimson_vampire'],
+  khemet: ['khemet_skelSpear', 'khemet_skelBow', 'khemet_tombGuard'], shogunate: ['shogunate_ashigaru', 'shogunate_teppo', 'shogunate_samurai'],
+};
+const crewPick = new Map();
+/** [{ id, role }] for a realm or original faction id */
+function crewOf(rid) {
+  if (crewPick.has(rid)) return crewPick.get(rid);
+  const all = Object.entries(UNITS).filter(([, u]) => (OLD_CAT[rid] ? u.category === OLD_CAT[rid] && !u.realm : u.realm === rid));
+  const ok = ([, u]) => !u.fly && FOOT.has(u.model?.body || 'humanoid') && (u.size || 1) <= 2;
+  let foot = all.filter(ok);
+  if (!foot.length) foot = all.filter(([, u]) => !u.fly && (u.size || 1) <= 2 && u.model?.body !== 'rider' && u.model?.body !== 'quadruped');
+  if (!foot.length) { const k = crewOf('kingdom'); crewPick.set(rid, k); return k; }
+  const small = (u) => ((u.size || 1) > 1 ? -3 : 0);
+  const w = (u) => u.model?.weapon || '';
+  const best = (score, not = []) => { let b = null, bs = -1e9; for (const [id, u] of foot) { if (not.includes(id)) continue; const s = score(id, u); if (s > bs) { bs = s; b = id; } } return b; };
+  const pref = (PREFER[rid] || []).filter((id) => UNITS[id] && foot.some(([f]) => f === id));
+  const deck = pref[0] || best((id, u) => (SEA.test(id) ? 6 : 0) + (DECK_ARMS.has(w(u)) ? 2 : 0) + (u.style === 'melee' ? 2 : -4) + small(u) - u.hp / 60 - (/leader/.test(id) ? 5 : 0));
+  const gun = pref[1] || best((id, u) => (u.style === 'ranged' ? 4 + (GUNS[w(u)] || 0) : -9) + (SEA.test(id) ? 3 : 0) + small(u), [deck]);
+  const officer = pref[2] || best((id, u) => (/captain/i.test(id) ? 8 : /leader/.test(id) ? 4 : 0) + (u.style === 'melee' ? 2 : -2) + u.hp / 40 + small(u) * 2 - (w(u) === 'staff' ? 3 : 0), [deck, gun]);
+  const out = [{ id: deck, role: 'deck' }];
+  if (gun && UNITS[gun].style === 'ranged') out.push({ id: gun, role: 'gun' });
+  if (officer && officer !== deck) out.push({ id: officer, role: 'officer' });
+  crewPick.set(rid, out);
+  return out;
+}
+/** the realm (or original faction) id a crew list entry belongs to */
+const ridCache = new Map();
+function ridOf(def, faction) {
+  const key = `${(def && (def.realm || def.faction || def.id)) || ''}|${faction || ''}`;
+  let r = ridCache.get(key);
+  if (r) return r;
+  for (const id of [def && def.realm, def && def.faction, faction]) if (id && (REALM.has(id) || OLD[id])) { r = id; break; }
+  if (!r && def && def.id) { const pre = String(def.id).split(/_|(?=[A-Z])/)[0]; r = REALM.has(pre) || OLD[pre] ? pre : OLD_IDS.find((k) => def.id.startsWith(k)); }
+  r ||= 'kingdom';
+  ridCache.set(key, r);
+  return r;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Building and baking. A crew figure is built at its own detail (cells per unit for the three levels) and
+// stands DECK_H tall (a man; dwarves and goblins shorter, ogres capped at TALL times that).
+// ---------------------------------------------------------------------------------------------
+DETAIL.crew = [56, 22, 9];
+const CREW_DETAIL = 'crew', LEVELS = 3;
+const DECK_H = 0.64, TALL = 1.3;
+const NEAR = 16, MID = 46;                 // camera distance (world units) below which a ship's hands use level 0 / 1
+const LEVEL_CAP = [40, 200];              // most figures drawn at level 0 / level 1 in one frame (the rest drop a level)
+const BAKES_PER_FRAME = 6;
+const POSES = ['stand', 'stand2', 'walk1', 'walk2', 'haul1', 'haul2', 'gun', 'brace', 'atk1', 'atk2', 'cheer1', 'cheer2', 'look', 'work'];
+// what a pose falls back to on the cheaper levels (so far ships use few buckets)
+const DOWN = [{}, { look: 'stand2', work: 'haul2' }, { stand2: 'stand', walk2: 'walk1', haul2: 'haul1', atk1: 'atk2', cheer2: 'cheer1', look: 'stand', work: 'haul1' }];
+
+const units = new Map();   // unit id -> { def, state: 'new' | 'ready' | 'failed', model, scale, cloth, ranged }
+const baked = new Map();   // `${id}|${pose}|${level}` -> geometry (or null when it could not be baked)
+const add = (o, x = 0, y = 0, z = 0) => { if (o) { o.rotation.x += x; o.rotation.y += y; o.rotation.z += z; } };
+const LR = (L, i) => L && L[i];
+
+function buildCrewUnit(id) {
+  const def = UNITS[id];
+  const prev = getDetail();
+  setDetail(CREW_DETAIL);
+  let m = null;
+  try { m = buildUnitModel(def); } finally { setDetail(prev); }
+  if (!m || !m.userData.lod || !m.userData.rig) return null;
+  const rig = m.userData.rig;
+  // stature: the top of the head over the feet (the weapon does not count)
+  animateUnit(m, 0.4, false, -1, 0, 0, false);
+  m.updateMatrixWorld(true);
+  const hv = new THREE.Vector3();
+  let top = rig.height || 1;
+  if (rig.head) { rig.head.getWorldPosition(hv); top = hv.y * 1.1 + 0.04; }
+  const human = 1.05; // a man's head top in model units
+  let scale = (DECK_H / human);
+  if (top * scale > DECK_H * TALL) scale = (DECK_H * TALL) / top;
+  const cloth = new THREE.Color(def.model?.cloth ?? 0x7a6a4f);
+  return { def, state: 'ready', model: m, scale, cloth, ranged: def.style === 'ranged', rest: restOf(m) };
+}
+function restOf(m) {
+  const list = [];
+  m.traverse((o) => { const r = o.userData && o.userData.rest; if (r) list.push([o, r]); });
+  return list;
+}
+
+/** pose the unit's model for one named deck pose */
+function setPose(U, name) {
+  const m = U.model, rig = m.userData.rig, inner = m.userData.inner;
+  for (const [o, r] of U.rest) { o.rotation.set(r[0], r[1], r[2]); o.position.set(r[3], r[4], r[5]); }
+  if (inner) { inner.position.set(0, 0, 0); inner.rotation.set(0, 0, 0); }
+  const A = rig.arms, F = rig.forearms, L = rig.legs, S = rig.shins, T = rig.torso, Hd = rig.head;
+  const W1 = (2 * Math.PI) / 9.5;
+  switch (name) {
+    case 'walk1': animateUnit(m, W1 * 0.25, true, -1, 0); break;
+    case 'walk2': animateUnit(m, W1 * 0.75, true, -1, 0); break;
+    case 'atk1': animateUnit(m, 0.4, false, 0.36, 0); break;
+    case 'atk2': animateUnit(m, 0.4, false, 0.56, 0); add(T, 0.1); break;
+    case 'gun': animateUnit(m, 0.4, false, U.ranged ? 0.5 : -1, 0); break;
+    default: animateUnit(m, name === 'stand2' ? 2.3 : 0.4, false, -1, 0);
+  }
+  switch (name) {
+    case 'stand2': add(Hd, 0, 0.55); add(T, 0, 0.18); break;
+    case 'haul1': for (const i of [0, 1]) { add(LR(A, i), -2.6, 0, i ? -0.1 : 0.1); add(LR(F, i), -0.25); } add(T, -0.12); add(LR(L, 0), -0.35); add(LR(L, 1), 0.25); add(Hd, -0.25); break;
+    case 'haul2': for (const i of [0, 1]) { add(LR(A, i), -1.35, 0, i ? 0.15 : -0.15); add(LR(F, i), -1.1); } add(T, -0.38); add(LR(L, 0), -0.55); add(LR(S, 0), 0.3); add(LR(L, 1), 0.35); break;
+    case 'gun': // down on one knee at the rail
+      add(LR(L, 0), -1.35); add(LR(S, 0), 1.4); add(LR(L, 1), 0.2); add(LR(S, 1), 1.75); add(T, U.ranged ? 0.05 : 0.2);
+      if (!U.ranged) { add(LR(A, 1), -0.5); add(LR(A, 0), -0.4); }
+      break;
+    case 'brace':
+      for (const i of [0, 1]) { add(LR(L, i), -0.95); add(LR(S, i), 1.55); add(LR(A, i), -0.95, 0, i ? -0.45 : 0.45); add(LR(F, i), -0.6); }
+      add(T, 0.45); add(Hd, -0.3); break;
+    case 'cheer1': for (const i of [0, 1]) { add(LR(A, i), -2.85, 0, i ? -0.32 : 0.32); add(LR(F, i), -0.15); } add(T, -0.12); add(Hd, -0.35); break;
+    case 'cheer2': add(LR(A, 1), -3.0, 0, -0.15); add(LR(A, 0), -1.7, 0, 0.6); add(LR(F, 0), -1.2); add(LR(L, 0), -0.6); add(LR(S, 0), 1.0); add(Hd, -0.25); break;
+    case 'look': add(LR(A, 0), -2.0, 0, 0.45); add(LR(F, 0), -2.0); add(Hd, -0.12, 0.35); add(T, 0, 0.2); break;
+    case 'work': add(T, 0.7); for (const i of [0, 1]) { add(LR(A, i), -0.85, 0, i ? 0.1 : -0.1); add(LR(F, i), -0.5); add(LR(L, i), -0.3); add(LR(S, i), 0.55); } break;
+    // riders (fliers.js): astride, cross-legged, slung from lines
+    case 'sit': for (const i of [0, 1]) { add(LR(L, i), -1.45, 0, i ? -0.42 : 0.42); add(LR(S, i), 1.35); add(LR(A, i), -0.75, 0, i ? 0.12 : -0.12); add(LR(F, i), -0.7); } add(T, 0.12); break;
+    case 'cross': for (const i of [0, 1]) { add(LR(L, i), -1.5, 0, i ? -1.0 : 1.0); add(LR(S, i), 2.3); add(LR(A, i), -0.5, 0, i ? 0.1 : -0.1); add(LR(F, i), -0.9); } break;
+  }
+  m.updateMatrixWorld(true);
+}
+
+/** the side mask of a baked figure: 1 on its cloth, 0 elsewhere (from the vertex colours) */
+function sideMask(geo, cloth) {
+  const col = geo.attributes.color, n = col.count, out = new Float32Array(n);
+  const cs = cloth.r + cloth.g + cloth.b + 1e-4, cr = cloth.r / cs, cg = cloth.g / cs, cb = cloth.b / cs;
+  const sat = Math.max(cloth.r, cloth.g, cloth.b) - Math.min(cloth.r, cloth.g, cloth.b);
+  const tol = sat > 0.08 ? 0.075 : 0.03, lo = sat > 0.08 ? 0.3 : 0.6, hi = sat > 0.08 ? 2.2 : 1.5;
+  for (let i = 0; i < n; i++) {
+    const r = col.getX(i), g = col.getY(i), b = col.getZ(i), s = r + g + b + 1e-4;
+    const d = Math.abs(r / s - cr) + Math.abs(g / s - cg) + Math.abs(b / s - cb), k = s / cs;
+    if (k < lo || k > hi || d > tol) continue;
+    out[i] = Math.min(1, (tol - d) / (tol * 0.5)) * 0.85;
+  }
+  geo.setAttribute('aSide', new THREE.BufferAttribute(out, 1));
+}
+
+/**
+ * A rider for fliers.js: one of the realm's crew units (its deck hand) baked in a riding pose, as geometries for
+ * the three crew levels, facing +z. pose: sit | cross (seat at the origin), stand | hang (feet at the origin), prone.
+ * The cloth takes the side colour. Returns { geos: [near, mid, far], height } (height: the head's top above the
+ * origin) or null when the realm's crew cannot be built. Built synchronously on first use and cached.
+ */
+const riders = new Map();
+export function riderFigure(realm, pose = 'sit', sideColor = 0xcccccc) {
+  const rid = REALM.has(realm) || OLD[realm] ? realm : 'kingdom';
+  const key = `${rid}|${pose}|${sideColor}`;
+  if (riders.has(key)) return riders.get(key);
+  let out = null;
+  try {
+    const crew = crewOf(rid), id = (crew.find((c) => c.role === 'deck') || crew[0]).id;
+    let U = units.get(id);
+    if (!U) { U = buildCrewUnit(id) || { state: 'failed' }; units.set(id, U); }
+    if (U.state === 'ready') {
+      const P = { sit: 'sit', cross: 'cross', stand: 'stand', hang: 'haul1', prone: 'stand' }[pose] || 'stand';
+      setPose(U, P);
+      const rig = U.model.userData.rig, hip = new THREE.Vector3(), v = new THREE.Vector3();
+      if (rig.legs && rig.legs.length) { for (const l of rig.legs) hip.add(l.getWorldPosition(v)); hip.multiplyScalar(1 / rig.legs.length); } else if (rig.torso) rig.torso.getWorldPosition(hip);
+      const seat = P === 'sit' || P === 'cross';
+      const tint = new THREE.Color(sideColor);
+      const geos = [];
+      for (let lv = 0; lv < LEVELS; lv++) {
+        const g = bakePose(U.model, lv);
+        if (!g) { geos.push(geos[lv - 1] || null); continue; }
+        g.computeBoundingBox();
+        g.translate(-hip.x, seat ? -hip.y : -g.boundingBox.min.y, -hip.z);
+        if (pose === 'prone') g.rotateX(Math.PI / 2 - 0.1).translate(0, 0.05, 0);
+        g.scale(U.scale, U.scale, U.scale);
+        sideMask(g, U.cloth);
+        const col = g.attributes.color, m = g.attributes.aSide;
+        for (let i = 0; i < col.count; i++) {
+          const k = m.getX(i);
+          if (!k) continue;
+          const r = col.getX(i), gg = col.getY(i), b = col.getZ(i), lum = r * 0.3 + gg * 0.59 + b * 0.11, tl = Math.max(0.05, tint.r * 0.3 + tint.g * 0.59 + tint.b * 0.11) / lum;
+          col.setXYZ(i, r + (Math.min(1.2, tint.r / tl * 1.15) - r) * k, gg + (Math.min(1.2, tint.g / tl * 1.15) - gg) * k, b + (Math.min(1.2, tint.b / tl * 1.15) - b) * k);
+        }
+        g.deleteAttribute('aSide');
+        g.computeBoundingBox(); g.computeBoundingSphere();
+        geos.push(g);
+      }
+      if (geos[0]) out = { geos, height: geos[0].boundingBox.max.y };
+    }
+  } catch (err) { console.warn(`crews: no rider for ${realm}`, err); out = null; }
+  riders.set(key, out);
+  return out;
+}
+/** the humanoid model description of a realm's deck hand (for bodies that seat their own rider: carpets, flies, pegasi) */
+export function riderDress(realm) {
+  const rid = REALM.has(realm) || OLD[realm] ? realm : 'kingdom';
+  const crew = crewOf(rid), d = UNITS[(crew.find((c) => c.role === 'deck') || crew[0]).id];
+  const m = d.model && d.model.body === 'humanoid' ? d.model : UNITS.militia.model;
+  return { ...m, body: 'humanoid' };
+}
+
+function bakeBucket(id, pose, level) {
+  const key = `${id}|${pose}|${level}`;
+  if (baked.has(key)) return baked.get(key);
+  const U = units.get(id);
+  let g = null;
+  try {
+    setPose(U, pose);
+    g = bakePose(U.model, level);
+    if (g) {
+      g.computeBoundingBox();
+      g.translate(0, -g.boundingBox.min.y, 0); // stand on the deck whatever the pose
+      sideMask(g, U.cloth);
+      g.computeBoundingSphere();
+    }
+  } catch (err) { console.warn(`crews: could not bake ${key}`, err); g = null; }
+  baked.set(key, g);
+  return g;
+}
+
+let crewMat = null;
+/** the sculpt material, with the instance colour painted over the cloth (aSide) instead of over everything */
+function crewMaterial() {
+  if (crewMat) return crewMat;
+  const m = sculptMaterial().clone();
+  const pbr = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    pbr.call(m, sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aSide;')
+      .replace('#include <color_vertex>', `
+#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
+  vColor = vec3( 1.0 );
+#endif
+#ifdef USE_COLOR
+  vColor *= color;
+#endif
+#ifdef USE_INSTANCING_COLOR
+  {
+    float lum = dot( vColor, vec3( 0.3, 0.59, 0.11 ) );
+    vec3 tint = instanceColor.xyz * ( lum / max( 0.05, dot( instanceColor.xyz, vec3( 0.3, 0.59, 0.11 ) ) ) );
+    vColor = mix( vColor, min( tint * 1.15, vec3( 1.2 ) ), aSide );
+  }
+#endif`);
+  };
+  m.customProgramCacheKey = () => 'sculpt-crew';
+  crewMat = m;
+  return m;
+}
 
 // ---------------------------------------------------------------------------------------------
 // What each hand is doing. Jobs are given by place; reactions come from pulse().
@@ -360,59 +475,30 @@ function jobsOf(slots) {
   return J;
 }
 
-const _m = new THREE.Matrix4(), _b = new THREE.Matrix4(), _a = new THREE.Matrix4(), _h = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+const _m = new THREE.Matrix4(), _b = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
 export class Crews {
   constructor(scene, max = 1600) {
     this.max = max; this.scene = scene;
-    this.kits = new Map(); this.hats = new Map();
-    this.tmp = new THREE.Matrix4(); this.loc = new THREE.Matrix4(); this.col = new THREE.Color(); this.c2 = new THREE.Color(); this.q = new THREE.Quaternion(); this.v = new THREE.Vector3(); this.s = new THREE.Vector3(1, 1, 1);
-    this.scale = 1; this.t = 0; this.state = new WeakMap(); this.last = null;
-  }
-  _inst(geo, role, flat = false) {
-    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: ROLE_MAT[role] ?? 0.85, metalness: ROLE_METAL[role] ?? 0, flatShading: flat }), this.max);
-    mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = role === 'side' || role === 'skin' || role === 'cloth' || role === 'a';
-    mesh.setColorAt(0, this.col.set(0xffffff));
-    mesh.userData.noCrew = true;
-    this.scene.add(mesh);
-    return mesh;
-  }
-  /** the instanced meshes of one body kit, made on first use: { body: [{ role, mesh }], armL, armR, shoulder, head, headR } */
-  kit(name) {
-    let k = this.kits.get(name);
-    if (k) return k;
-    const spec = name === 'bruteHorned' ? KITS.brute(true) : (KITS[name] || KITS.human)();
-    const groups = { body: new Map(), armL: new Map(), armR: new Map() };
-    for (const [g, role, piece = 'body'] of spec.parts) { const m = groups[piece]; if (!m.has(role)) m.set(role, []); m.get(role).push(g); }
-    k = { n: 0, shoulder: spec.shoulder, head: spec.head, headR: spec.headR, arm: spec.arm };
-    for (const piece of ['body', 'armL', 'armR']) {
-      k[piece] = [];
-      for (const [role, gs] of groups[piece]) {
-        const geo = mergeGeometries(gs, false);
-        for (const g of gs) g.dispose();
-        k[piece].push({ role, mesh: this._inst(geo, role, role === 'armor' || role === 'metal' || role === 'badge') });
-      }
-    }
-    this.kits.set(name, k);
-    return k;
-  }
-  hat(kind) {
-    let h = this.hats.get(kind);
-    if (h) return h;
-    const parts = (HATS[kind] || (() => []))();
-    const by = new Map();
-    for (const [g, role] of parts) { if (!by.has(role)) by.set(role, []); by.get(role).push(g); }
-    h = { n: 0, meshes: [] };
-    for (const [role, gs] of by) { const geo = mergeGeometries(gs, false); for (const g of gs) g.dispose(); h.meshes.push({ role, mesh: this._inst(geo, role, true) }); }
-    this.hats.set(kind, h);
-    return h;
+    this.buckets = new Map(); // `${id}|${pose}|${level}` -> { mesh, n }
+    this.t = 0; this.state = new WeakMap(); this.last = null; this.scale = 1;
+    // where the camera is: read from the renderer as it draws (a drawless probe), so update() can pick levels
+    this.eye = new THREE.Vector3(0, 40, 40); this.sawEye = false;
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+    this.probe = new THREE.Mesh(pg, new THREE.MeshBasicMaterial());
+    this.probe.frustumCulled = false; this.probe.castShadow = false; this.probe.userData.noCrew = true;
+    this.probe.onBeforeRender = (r, s, cam) => { if (cam && cam.isPerspectiveCamera) { this.eye.setFromMatrixPosition(cam.matrixWorld); this.sawEye = true; } };
+    scene.add(this.probe);
+    this.stats = { figures: 0, buckets: 0, levels: [0, 0, 0] };
+    this.forceLevel = null; // tests and previews: every figure at this level
   }
   dispose() {
-    for (const k of this.kits.values()) for (const p of ['body', 'armL', 'armR']) for (const { mesh } of k[p]) this._drop(mesh);
-    for (const h of this.hats.values()) for (const { mesh } of h.meshes) this._drop(mesh);
-    this.kits.clear(); this.hats.clear();
+    for (const b of this.buckets.values()) this._drop(b.mesh);
+    this.buckets.clear();
+    if (this.probe) { this.probe.parent && this.probe.parent.remove(this.probe); this.probe.geometry.dispose(); this.probe.material.dispose(); this.probe = null; }
   }
-  _drop(mesh) { mesh.parent && mesh.parent.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); mesh.dispose(); }
+  _drop(mesh) { mesh.parent && mesh.parent.remove(mesh); mesh.dispose(); } // geometry is the shared bake: kept
   /** finds and remembers the deck of a hull type; returns the number of standing places */
   track(model, key, opts = {}) {
     const slots = deckSlots(model, key, opts.airship);
@@ -446,106 +532,142 @@ export class Crews {
     for (const it of this.last || []) { const m = it.model; if (!m || m === model || !it.alive) continue; const d = m.position.distanceToSquared(model.position); if (d < bd) { bd = d; best = m.position; } }
     return best;
   }
-  /** the colour of one role on figure i */
-  roleColor(role, look, side, i) {
-    const P = look.P, c = this.col, j = ((i * 37) % 11) / 11 - 0.5; // a steady per-figure jitter
-    switch (role) {
-      case 'side': c.set(side).lerp(this.c2.set(P.cloth), 0.12); if (i % 5 === 0) c.lerp(this.c2.set(0xe8e0d0), 0.35); return c;
-      case 'cloth': return c.set(i % 3 === 1 ? P.cloth : P.cloth2 ?? P.cloth).multiplyScalar(0.85 + j * 0.1);
-      case 'skin': return c.set(P.skin).multiplyScalar(1 + j * 0.14);
-      case 'armor': return c.set(i % 3 === 2 ? P.trim : P.armor);
-      case 'trim': return c.set(i % 3 === 1 ? P.armor : P.trim).multiplyScalar(i % 2 ? 0.8 : 1);
-      case 'metal': return c.set(look.metal);
-      case 'badge': return c.set(look.badge);
-      case 'hair': return c.set(look.hair[i % look.hair.length]);
-      case 'legs': return c.set(look.legs);
-      case 'boots': return c.set(0x2a221c);
-      case 'bone': return c.set(0xe2d8c0);
-      case 'a': return c.set(look.hatCol[0]).multiplyScalar(1 + j * 0.08);
-      case 'b': return c.set(look.hatCol[1]);
-      default: return c.set(0x2a2420);
+  /** the crew units of a realm, built on demand (at most one new unit per frame) */
+  _crew(rid, budget) {
+    const out = [];
+    for (const { id, role } of crewOf(rid)) {
+      let U = units.get(id);
+      if (!U) {
+        if (budget.builds <= 0) continue;
+        budget.builds--;
+        let built = null;
+        try { built = buildCrewUnit(id); } catch (err) { console.warn(`crews: could not build ${id}`, err); }
+        U = built || { state: 'failed' };
+        units.set(id, U);
+      }
+      if (U.state === 'ready') out.push({ id, role, U });
     }
+    return out;
+  }
+  /** the instanced mesh of one bucket, baking it if the frame's budget allows; null if not ready */
+  _bucket(id, pose, level, budget) {
+    const key = `${id}|${pose}|${level}`;
+    let b = this.buckets.get(key);
+    if (b && b.n < b.cap) return b;
+    if (!b) {
+      if (!baked.has(key)) { if (budget.bakes <= 0) return null; budget.bakes--; }
+      const geo = bakeBucket(id, pose, level);
+      if (!geo) return null;
+      b = { mesh: null, n: 0, cap: 0, geo, level };
+      this.buckets.set(key, b);
+    }
+    if (b.n >= b.cap) {
+      // grow: a fresh instanced mesh with room for twice as many (this frame's instances so far are copied over)
+      const cap = Math.max(16, b.cap * 2), old = b.mesh;
+      const mesh = new THREE.InstancedMesh(b.geo, crewMaterial(), cap);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.setColorAt(0, _c.set(0xffffff));
+      mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      mesh.frustumCulled = false; mesh.castShadow = level < 2; mesh.receiveShadow = level === 0;
+      mesh.userData.noCrew = true;
+      if (old) { mesh.instanceMatrix.array.set(old.instanceMatrix.array.subarray(0, b.n * 16)); mesh.instanceColor.array.set(old.instanceColor.array.subarray(0, b.n * 3)); this._drop(old); }
+      this.scene.add(mesh);
+      b.mesh = mesh; b.cap = cap;
+    }
+    return b;
+  }
+  /** a figure into its pose bucket (falling back to a pose that is ready, then to a cheaper level) */
+  _put(F, pose, level, mat, color, budget) {
+    for (let lv = level; lv < LEVELS; lv++) {
+      const p = DOWN[lv][pose] || pose;
+      const b = this._bucket(F.id, p, lv, budget) || this._bucket(F.id, DOWN[lv].stand2 || 'stand', lv, budget) || this._bucket(F.id, 'stand', lv, budget);
+      if (!b) continue;
+      const n = b.n++;
+      b.mesh.setMatrixAt(n, mat); b.mesh.setColorAt(n, color);
+      this.stats.levels[lv]++;
+      return true;
+    }
+    return false;
   }
   update(list, t) {
     this.t = t; this.last = list;
-    for (const k of this.kits.values()) k.n = 0;
-    for (const h of this.hats.values()) h.n = 0;
-    let total = 0;
+    for (const b of this.buckets.values()) b.n = 0;
+    this.stats.levels = [0, 0, 0];
+    const budget = { builds: 1, bakes: BAKES_PER_FRAME };
+    // nearest ships first, so the close levels go to the hands the camera can see best
+    const order = [];
     for (const it of list) {
       const m = it.model, slots = m && m.userData.crewSlots;
       if (!slots || !slots.length || !it.alive || m.visible === false) continue;
       // a plain role ship learns her faction from the first list that names it (see fleetDress.dressRole)
       if (it.faction && m.userData.styleFaction) { const f = m.userData.styleFaction; m.userData.styleFaction = null; f(it.faction); }
-      const look = folkOf(it.def, it.faction);
-      const kit = this.kit(look.kit), hat = look.hat !== 'none' ? this.hat(look.hat) : null;
+      m.getWorldPosition(_v);
+      order.push({ it, d: _v.distanceTo(this.eye) });
+    }
+    order.sort((a, c) => a.d - c.d);
+    let total = 0;
+    const used = [0, 0];
+    for (const { it, d } of order) {
+      const m = it.model, slots = m.userData.crewSlots;
+      const crew = this._crew(ridOf(it.def, it.faction), budget);
+      if (!crew.length) continue;
+      const deck = crew.find((c) => c.role === 'deck') || crew[0], gun = crew.find((c) => c.role === 'gun') || deck, officer = crew.find((c) => c.role === 'officer');
       const k = Math.min(slots.length, Math.ceil(slots.length * Math.max(0, Math.min(1, it.frac))));
+      let level = this.forceLevel ?? (d < NEAR * (it.size || 1) ? 0 : d < MID * (it.size || 1) ? 1 : 2);
+      while (level < 2 && this.forceLevel == null && used[level] + k > LEVEL_CAP[level]) level++;
+      if (level < 2) used[level] += k;
       const J = jobsOf(slots), S = this.state.get(m);
       const fireK = S ? 1 - ease((t - S.fire) / FIRE) : 0, braceK = S ? 1 - ease((t - S.brace - BRACE * 0.6) / (BRACE * 0.4)) * (t - S.brace > 0 ? 1 : 0) : 0;
       const bAge = S ? t - S.board : 99, rush = S && bAge < BOARD ? ease((t - S.boardFrom) / 0.5) * (1 - ease((bAge - BOARD + 0.6) / 0.6)) : 0;
       const cheerAge = S ? Math.min(t - S.cheer, bAge - BOARD + 0.3) : 99;
       m.updateMatrixWorld();
-      const sc = this.scale * (it.size || 1) * look.scale;
+      const color = _c.set(it.color ?? 0xcccccc);
       for (let i = 0; i < k && total < this.max; i++) {
-        const p = slots[i], jb = J[i], r = jb.r, ph = t * 2.4 + i * 1.7;
-        // the pose: where it stands, which way it faces, how it leans and crouches, and its two arms
-        let x = p[0], z = p[2], face = jb.face + Math.sin(t * 0.3 + i) * 0.25, lean = 0, crouch = 0, bob = 0;
-        let aL = [-0.1 + Math.sin(ph * 0.5) * 0.06, 0.12], aR = [-0.1 - Math.sin(ph * 0.5) * 0.06, -0.12];
+        const p = slots[i], jb = J[i], r = jb.r;
+        const F = i === 0 && officer && k >= 4 ? officer : jb.job === 'gun' ? gun : deck;
+        // the pose: where it stands, which way it faces, how it leans, and which baked pose it is in
+        let x = p[0], z = p[2], face = jb.face + Math.sin(t * 0.3 + i) * 0.25, lean = 0, bob = 0, pose = 'stand';
+        const slow = Math.floor(t / 2.7 + r * 9);
         switch (jb.job) {
-          case 'haul': { const w = Math.sin(t * 2.2 + r * 6); face = Math.PI * 0.5 * (r < 0.19 ? 1 : -1); lean = -0.18 - w * 0.12; aL = [-2.2 - w * 0.5, 0.1]; aR = [-2.2 + w * 0.5, -0.1]; bob = Math.abs(w) * 0.008; break; }
-          case 'work': { const w = Math.sin(t * 1.7 + r * 6); lean = 0.45 + w * 0.1; aL = [-0.9 - w * 0.3, 0.1]; aR = [-0.9 + w * 0.3, -0.1]; break; }
-          case 'look': { face = jb.out > 0 ? r * 2 : Math.PI + r * 2; aR = [-2.3, 0.55]; break; }
-          case 'gun': { face = jb.out > 0 ? 0 : Math.PI; face += (r - 0.5) * 0.6; aL = [-1.1 + Math.sin(ph) * 0.1, 0.15]; aR = [-1.25, -0.15]; crouch = fireK * 0.9; lean = fireK * 0.3; break; }
-          default: bob = Math.abs(Math.sin(t * 3 + i * 1.7)) * 0.012;
+          case 'haul': { const w = Math.sin(t * 2.2 + r * 6); face = Math.PI * 0.5 * (r < 0.19 ? 1 : -1); pose = w > 0 ? 'haul1' : 'haul2'; bob = Math.abs(w) * 0.008; break; }
+          case 'work': { const w = Math.sin(t * 1.7 + r * 6); pose = w > -0.3 ? 'work' : 'haul2'; lean = w * 0.04; break; }
+          case 'look': { face = jb.out > 0 ? r * 2 : Math.PI + r * 2; pose = 'look'; break; }
+          case 'gun': { face = (jb.out > 0 ? 0 : Math.PI) + (r - 0.5) * 0.6; pose = fireK > 0.05 ? 'gun' : slow % 4 === 0 ? 'stand2' : 'stand'; break; }
+          default: pose = slow % 3 === 0 ? 'stand2' : (slow + i) % 7 === 0 ? 'look' : 'stand'; bob = Math.abs(Math.sin(t * 3 + i * 1.7)) * 0.006;
         }
-        if (jb.job !== 'gun' && fireK > 0.6) lean += (fireK - 0.6) * 0.4; // the others flinch at the guns
-        if (braceK > 0) { crouch = Math.max(crouch, braceK); lean += braceK * 0.35; aL = lerp2(aL, [-0.7, 0.55], braceK); aR = lerp2(aR, [-0.7, -0.55], braceK); }
-        // a boarding rush: most hands run to the rail that faces the enemy, weapons up
+        if (jb.job !== 'gun' && fireK > 0.6) lean += (fireK - 0.6) * 0.35; // the others flinch at the guns
+        if (braceK > 0.25) { pose = 'brace'; lean = 0; }
+        // a boarding rush: most hands run to the rail that faces the enemy, then lay about them there
         if (rush > 0 && r < 0.8) {
           const side = S.side, u = rush;
           const tz = side * jb.rail, tx = p[0] + (r - 0.5) * 0.4;
           x = p[0] + (tx - p[0]) * u; z = p[2] + (tz - p[2]) * u;
           const run = u > 0.02 && u < 0.98;
-          face = side > 0 ? 0 : Math.PI; face += (r - 0.4) * 0.5;
-          lean = run ? 0.3 : 0.12; crouch = Math.max(crouch * 0.5, run ? 0.15 : 0);
-          aR = [-2.6 + Math.sin(t * 9 + i) * 0.4, -0.2]; aL = [-1.2, 0.3];
-          bob = run ? Math.abs(Math.sin(t * 14 + i)) * 0.04 : Math.abs(Math.sin(t * 6 + i)) * 0.015;
+          face = (side > 0 ? 0 : Math.PI) + (r - 0.4) * 0.5;
+          if (run) { pose = Math.sin(t * 14 + i) > 0 ? 'walk1' : 'walk2'; lean = 0.12; bob = Math.abs(Math.sin(t * 14 + i)) * 0.03; }
+          else { pose = Math.sin(t * 5 + r * 9) > 0 ? 'atk1' : 'atk2'; lean = 0; bob = 0; }
         }
         if (cheerAge > 0 && cheerAge < CHEER && r > 0.3) {
-          const w = Math.sin(t * 11 + i * 2);
-          aL = [-2.8, 0.35 + w * 0.25]; aR = [-2.8, -0.35 - w * 0.25]; lean = -0.1; crouch = 0;
+          pose = Math.sin(t * 6 + i * 2) > 0 ? 'cheer1' : 'cheer2'; lean = 0;
           bob = Math.max(0, Math.sin(t * 9 + i * 1.3)) * 0.06;
         }
-        // compose: deck place -> facing -> lean about the feet -> crouch (squash)
-        const s = sc * (1 + (((i * 53) % 7) / 7 - 0.5) * 0.08);
+        // compose: deck place -> facing -> lean about the feet -> size
+        const s = this.scale * (it.size || 1) * F.U.scale * (1 + (((i * 53) % 7) / 7 - 0.5) * 0.06);
         _e.set(lean, face, 0, 'YXZ'); _q.setFromEuler(_e);
-        _b.compose(_v.set(x, p[1] + bob - crouch * 0.02, z), _q, _s.set(s, s * (1 - crouch * 0.28), s));
-        this.tmp.multiplyMatrices(m.matrixWorld, _b);
-        const n = kit.n++;
-        for (const { role, mesh } of kit.body) { mesh.setMatrixAt(n, this.tmp); mesh.setColorAt(n, this.roleColor(role, look, it.color, i)); }
-        const sh = kit.shoulder;
-        for (const [arm, ang, sx] of [[kit.armL, aL, 1], [kit.armR, aR, -1]]) {
-          _q.setFromEuler(_e.set(ang[0], 0, ang[1], 'XYZ'));
-          _a.compose(_v.set(sx * sh[0], sh[1], sh[2]), _q, _s.set(1, 1, 1));
-          _h.multiplyMatrices(this.tmp, _a);
-          for (const { role, mesh } of arm) { mesh.setMatrixAt(n, _h); mesh.setColorAt(n, this.roleColor(role, look, it.color, i)); }
-        }
-        if (hat) {
-          const hn = hat.n++, hp = kit.head;
-          _a.compose(_v.set(hp[0], hp[1], hp[2]), _q.identity(), _s.setScalar(kit.headR));
-          _h.multiplyMatrices(this.tmp, _a);
-          for (const { role, mesh } of hat.meshes) { mesh.setMatrixAt(hn, _h); mesh.setColorAt(hn, this.roleColor(role, look, it.color, i)); }
-        }
-        total++;
+        _b.compose(_v.set(x, p[1] + bob, z), _q, _s.set(s, s, s));
+        _m.multiplyMatrices(m.matrixWorld, _b);
+        if (this._put(F, pose, level, _m, color, budget)) total++;
       }
     }
-    for (const k of this.kits.values()) for (const p of ['body', 'armL', 'armR']) for (const { mesh } of k[p]) this._flush(mesh, k.n);
-    for (const h of this.hats.values()) for (const { mesh } of h.meshes) this._flush(mesh, h.n);
-  }
-  _flush(mesh, n) {
-    mesh.count = n; mesh.visible = n > 0;
-    if (!n) return;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    let nb = 0;
+    for (const b of this.buckets.values()) {
+      const mesh = b.mesh;
+      mesh.count = b.n; mesh.visible = b.n > 0;
+      if (!b.n) continue;
+      nb++;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+    this.stats.figures = total; this.stats.buckets = nb;
   }
 }
-const lerp2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];

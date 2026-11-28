@@ -3,7 +3,7 @@
 // parts that act (drill, jaws, blade, ramps, bow gun) are small meshes of their own and register action hooks
 // (c.action(name, (k) => ...), k 0 -> 1, at rest at k = 1) and anchors (c.anchor(name, [x, y, z])).
 import * as THREE from 'three';
-import { Kit, G, C, shade, blend, clamp, lerp, hash, loftL, taper } from './kit.js';
+import { Kit, G, C, shade, blend, clamp, lerp, hash, loftL, taper, sculptL, SB, SKH, S, H, noise3 } from './kit.js';
 import { emblemOn } from './realmStyle.js';
 
 const PI = Math.PI;
@@ -16,292 +16,395 @@ const stem = (c) => ({ x: c.bowX, y: Math.max(0.4, c.deckAt(c.bowX - c.L * 0.05)
 // ---------------------------------------------------------------------------------
 //  sculpting helpers (all in the kit's current frame)
 // ---------------------------------------------------------------------------------
-/** a lofted tube along pts with radius per point (rw = rh unless ry given): necks, bodies, tails */
-function body(K, key, pts, rads, col, o = {}) {
-  const st = pts.map((p, i) => [p[0], p[1], p[2] ?? 0, rads[i] * (o.sx ?? 1), rads[i] * (o.sy ?? 1), o.st?.[i]]);
-  K.add(loftL(key, st, { radial: o.radial ?? 12, sub: o.sub ?? 3, col: o.col ?? col, belly: o.belly, ridge: o.ridge, paint: o.paint, cap: o.cap }), o.tint ?? 0xffffff, 0, 0, 0, { r: o.r ?? 0.6, m: o.m ?? 0 });
-}
-/** a head: stations from the back of the skull (x = 0) to the tip of the muzzle (x = len); [x, y, rw, rh] each */
-function head(K, key, rings, col, o = {}) {
-  K.add(loftL(key, rings.map(([x, y, rw, rh, so]) => [x, y, 0, rw, rh, so]), { radial: o.radial ?? 14, sub: 3, col, belly: o.belly, ridge: o.ridge, paint: o.paint }), 0xffffff, 0, 0, 0, { r: o.r ?? 0.55, m: o.m ?? 0 });
-}
-function eyes(K, x, y, z, r, col, glow = 2.2) {
-  for (const s of [-1, 1]) {
-    K.add(G.sph(r * 1.25, 8, 6), C.black, x - r * 0.2, y, s * z, { sx: 0.8 });
-    K.add(G.sph(r, 10, 8), col, x, y, s * (z + r * 0.15), { g: glow });
-    K.detail(1, () => K.add(G.sph(r * 0.45, 6, 4), C.black, x + r * 0.55, y, s * (z + r * 0.4), { sx: 0.4 }));
-  }
-}
-function teethRow(K, x0, x1, y, z, h, n, up, col = C.bone) {
-  K.detail(2, () => {
-    for (const s of [-1, 1]) for (let i = 0; i < n; i++) {
-      const t = n === 1 ? 0.5 : i / (n - 1), hh = h * (i === n - 1 || i === Math.floor(n * 0.3) ? 1.6 : 1);
-      K.add(G.cone(hh * 0.3, hh, 5), col, lerp(x0, x1, t), y + (up ? -hh / 2 : hh / 2), s * z * (1 - t * 0.35), { rz: up ? PI : 0, r: 0.4 });
-    }
-  });
-}
 function horn(K, key, base, dir, len, r, col = C.bone, curl = 0.4) {
   const [x, y, z] = base, [dx, dy, dz] = dir;
   const pts = [[x, y, z], [x + dx * len * 0.4, y + dy * len * 0.4, z + dz * len * 0.4], [x + dx * len * 0.8 - curl * len * 0.2, y + dy * len * 0.8 + curl * len * 0.1, z + dz * len * 0.8], [x + dx * len - curl * len * 0.45, y + dy * len + curl * len * 0.35, z + dz * len * 0.9]];
   K.add(taper(key, pts, [r, r * 0.75, r * 0.4, r * 0.05], 12, 6), col, 0, 0, 0, { r: 0.45 });
 }
-/** a row of flat feathers / fins fanned along a line */
-function fan(K, n, p0, p1, len, w, col, tilt, side = 0) {
-  for (let i = 0; i < n; i++) {
-    const t = i / Math.max(1, n - 1), x = lerp(p0[0], p1[0], t), y = lerp(p0[1], p1[1], t), z = lerp(p0[2], p1[2], t);
-    K.add(G.sph(0.5, 8, 4), shade(col, 0.9 + (i % 2) * 0.14), x, y, z, { sx: len, sy: w, sz: 0.03 + Math.abs(side) * 0.0, rz: tilt + t * 0.3, ry: side, r: 0.7 });
+// ---------------------------------------------------------------------------------
+//  figureheads: SCULPTED (sculpt.js prims blended like clay, hard pieces for teeth, eyes, horns, feathers),
+//  base at the origin, facing +x, about 1.6 tall; one sculpt per kind and realm colouring, shared by every ship
+// ---------------------------------------------------------------------------------
+const rgbOf = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
+const near = (a, b, e = 0.03) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < e * 3;
+const mulRgb = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+
+/** a carved bracket under every figure, tying it into the stem, with gilt scrolls and leaves */
+function bracket(B, st) {
+  const gilt = st.metal, cv = st.carve, gm = cv === gilt ? 0.85 : 0;
+  SKH.limb(B, [[-0.4, -0.3, 0], [-0.14, -0.07, 0], [0.05, 0.08, 0], [0.12, 0.24, 0]], [0.17, 0.155, 0.125, 0.08], cv, { k: 0.05, r: 0.5, m: gm, bump: [0.004, 18, 'ridges'] });
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 3; i++) B.p(S.ellipsoid(0.12 - i * 0.02, 0.045, 0.03).rot(0, s * 10, 30 + i * 22).at(-0.26 + i * 0.12, -0.15 + i * 0.1, s * (0.14 - i * 0.012)).color(shade(cv, 0.92)).pbr(0.5, gm).blend(0.025));
+    B.h(H.torus(0.075, 0.017, 22, 8, PI * 1.35).color(gilt).pbr(0.32, 0.85).rot(0, 0, -40).at(-0.16, -0.05, s * 0.15));
+    B.h(H.sphere(0.022, 10).color(gilt).pbr(0.3, 0.85).at(-0.05, 0.0, s * 0.13));
   }
+  B.h(H.torus(0.1, 0.022, 28, 8).color(gilt).pbr(0.32, 0.85).rot(90, 0, 0).scale(1, 1, 1).at(0.07, 0.14, 0));
+}
+/** an open mouth cut between the jaws: dark gullet, red tongue */
+function maw(B, x0, x1, y, w, h) {
+  B.p(S.capsule([x0, y, 0], [x1, y - h * 0.3, 0], h, h * 0.6).cut(0.015).color(0x3a0c0c));
+  B.p(S.ellipsoid((x1 - x0) * 0.42, h * 0.35, w * 0.6).at((x0 + x1) / 2, y - h * 0.75, 0).color(0xa83a3a).pbr(0.35, 0).blend(0.01));
 }
 
-// ---------------------------------------------------------------------------------
-//  figureheads: base at the origin, facing +x, about 1.6 tall
-// ---------------------------------------------------------------------------------
-function figure(K, kind, c) {
-  const st = c.st, gilt = st.metal, g = { m: st.metalM, r: 0.4 };
-  // a carved bracket under every figure, tying it into the stem
-  K.add(loftL(`bracket${st.carve}`, [[-0.35, -0.25, 0, 0.12, 0.18], [-0.1, -0.05, 0, 0.14, 0.16], [0.08, 0.08, 0, 0.12, 0.12], [0.12, 0.2, 0, 0.06, 0.06]], { radial: 10, col: st.carve, ridge: gilt }), 0xffffff, 0, 0, 0, { r: 0.55, m: st.carve === gilt ? st.metalM : 0 });
-  K.detail(2, () => { for (const s of [-1, 1]) K.add(G.tor(0.09, 0.022, 4, 10, PI * 1.3), gilt, -0.12, -0.04, s * 0.13, g); });
+const FIGURES = new Set(['dragon', 'wolf', 'tiger', 'boar', 'cobra', 'horse', 'scarab', 'swan', 'eagle', 'skull', 'eye', 'frog', 'comet', 'fish']);
+function figureSculpt(kind, st, hullC, sideC) {
+  const B = new SB(), gilt = st.metal, G_ = { r: 0.32, m: 0.85 };
+  let paint = null;
+  bracket(B, st);
   switch (kind) {
     case 'dragon': {
       const col = blend(gilt, st.id === 'tianlong' ? 0x2a9a5a : 0x3a7a4a, 0.55), belly = blend(gilt, 0xe8d8a0, 0.4);
-      body(K, `drgneck${col}`, [[0, 0], [0.22, 0.4], [0.12, 0.85], [0.32, 1.22], [0.55, 1.36]], [0.13, 0.12, 0.1, 0.095, 0.09], col, { belly, ridge: shade(col, 0.7), m: 0.3 });
-      K.push(0.5, 1.36, 0, 0, 0, -0.15);
-      head(K, `drghead${col}`, [[-0.08, 0.02, 0.1, 0.1], [0.02, 0.04, 0.15, 0.14], [0.2, 0.06, 0.14, 0.12], [0.38, 0.02, 0.1, 0.08], [0.55, 0.0, 0.08, 0.06], [0.62, 0, 0.04, 0.035]], col, { belly, m: 0.3 });
-      K.push(0.06, -0.06, 0, 0, 0, -0.32);
-      head(K, `drgjaw${col}`, [[0, 0, 0.1, 0.04], [0.25, -0.02, 0.09, 0.04], [0.48, 0, 0.06, 0.03], [0.54, 0, 0.02, 0.015]], belly, { m: 0.2 });
-      teethRow(K, 0.15, 0.46, 0.03, 0.06, 0.06, 4, false);
-      K.add(taper('drgtongue', [[0.1, 0.01, 0], [0.4, 0.04, 0], [0.62, -0.02, 0], [0.7, 0.02, 0.03]], [0.025, 0.012], 8, 4), 0xc83a3a);
-      K.pop();
-      teethRow(K, 0.18, 0.52, -0.06, 0.09, 0.06, 5, true);
-      eyes(K, 0.2, 0.12, 0.11, 0.035, 0xffd23a);
+      const P = [[0, 0, 0], [0.22, 0.4, 0], [0.12, 0.85, 0], [0.32, 1.22, 0], [0.55, 1.36, 0]], R = [0.135, 0.125, 0.105, 0.098, 0.09];
+      SKH.limb(B, P, R, col, { k: 0.05, r: 0.45, m: 0.25, bump: [0.0045, 34, 'scales'] });
+      // belly plates down the front of the neck
+      for (let i = 0; i < P.length - 1; i++) B.p(S.capsule([P[i][0] + R[i] * 0.55, P[i][1], 0], [P[i + 1][0] + R[i + 1] * 0.55, P[i + 1][1], 0], R[i] * 0.62, R[i + 1] * 0.62).paint(0.008, 0.004).color(belly).bump(0.006, 9, 'ridges'));
+      B.push([0.52, 1.38, 0], [0, 0, -9]);
+      B.p(S.ellipsoid(0.15, 0.115, 0.13).at(0.04, 0.04, 0).color(col).pbr(0.45, 0.25).blend(0.05).bump(0.004, 34, 'scales'));
+      B.p(S.capsule([0.08, 0.04, 0], [0.5, 0.01, 0], 0.095, 0.058).color(col).pbr(0.45, 0.25).blend(0.05));
       for (const s of [-1, 1]) {
-        horn(K, `drghorn${s}`, [0.0, 0.12, s * 0.08], [-0.9, 0.45, s * 0.3], 0.55, 0.05, C.bone, 0.35);
-        K.detail(2, () => { horn(K, `drgwhisk${s}`, [0.55, -0.02, s * 0.06], [0.3, -0.5, s * 0.8], 0.5, 0.014, gilt, -0.6); K.add(G.sph(0.016, 5, 3), C.black, 0.6, 0.03, s * 0.04); });
-        K.add(G.sph(0.08, 8, 4), shade(col, 0.85), -0.06, 0.02, s * 0.14, { sx: 1.6, sy: 0.6, sz: 0.25, ry: s * 0.4, rz: 0.4 }); // ear-frill
+        B.p(S.capsule([0.0, 0.12, s * 0.07], [0.24, 0.09, s * 0.05], 0.045, 0.022).color(shade(col, 0.85)).blend(0.03));
+        B.p(S.sphere(0.022).at(0.53, 0.04, s * 0.03).cut(0.008).color(0x1a0a0a));
+        B.p(S.ellipsoid(0.07, 0.03, 0.02).at(0.4, 0.07, s * 0.06).color(shade(col, 0.8)).blend(0.02)); // snout ridges
       }
-      K.pop();
-      // dorsal spines down the neck, and a back fin
-      K.detail(2, () => { const sp = [[0.02, 0.22], [0.08, 0.5], [0.06, 0.8], [0.18, 1.1], [0.34, 1.42]]; sp.forEach(([x, y], i) => K.add(G.cone(0.045, 0.2 - i * 0.015, 5), gilt, x - 0.1, y + 0.08, 0, { rz: 0.7, ...g })); });
+      // the lower jaw, open
+      B.push([0.08, -0.05, 0], [0, 0, -24]);
+      B.p(S.capsule([0, 0, 0], [0.44, -0.01, 0], 0.07, 0.035).color(belly).pbr(0.5, 0.1).blend(0.03));
+      B.p(S.ellipsoid(0.2, 0.025, 0.05).at(0.22, 0.045, 0).color(0xb04848).pbr(0.3, 0).blend(0.01));
+      SKH.teeth(B, 0.12, 0.42, 0.05, 0.05, 0.05, 4, true);
+      B.h(H.tube([[0.08, 0.05, 0], [0.32, 0.08, 0], [0.55, 0.04, 0], [0.66, 0.08, 0.03]], [0.025, 0.02, 0.012, 0.004], 18, 8).color(0xc83a3a).pbr(0.3, 0));
+      B.pop();
+      maw(B, 0.12, 0.48, -0.04, 0.07, 0.03);
+      SKH.teeth(B, 0.16, 0.5, -0.05, 0.07, 0.055, 5, false);
+      SKH.eyes(B, [0.2, 0.1, 0.095], 0.032, 0xffd23a, shade(col, 0.8), { glow: 1.6 });
+      for (const s of [-1, 1]) {
+        SKH.horn(B, [[0.0, 0.12, s * 0.08], [-0.22, 0.25, s * 0.14], [-0.42, 0.33, s * 0.16], [-0.6, 0.31, s * 0.13]], 0.05, C.bone, { rings: 9 });
+        B.h(H.tube([[0.5, -0.01, s * 0.05], [0.62, -0.1, s * 0.2], [0.58, -0.28, s * 0.32], [0.66, -0.4, s * 0.36]], [0.014, 0.011, 0.007, 0.002], 20, 6).color(gilt).pbr(0.32, 0.85));
+        SKH.fin(B, [[0, 0], [-0.18, 0.12], [-0.32, 0.06], [-0.24, -0.02], [-0.34, -0.12], [-0.12, -0.08]], 0.012, shade(col, 0.9), [-0.05, 0.02, s * 0.13], [0, s * 30, 15], { ribs: 5, edge: gilt, edgeAt: 0.26 });
+      }
+      B.pop();
+      // dorsal spines down the neck, gilt
+      [[0.02, 0.22], [0.1, 0.5], [0.04, 0.8], [0.16, 1.1], [0.34, 1.42]].forEach(([x, y], i) => B.h(H.cone(0.04, 0.2 - i * 0.014, 10).color(gilt).pbr(0.32, 0.85).rot(0, 0, 50).at(x - 0.11, y + 0.07, 0)));
       break;
     }
     case 'wolf': case 'tiger': case 'boar': {
       const col = kind === 'tiger' ? 0xd8842a : kind === 'boar' ? 0x5a3a2a : blend(gilt, 0x8a8a8a, 0.55);
-      const belly = kind === 'tiger' ? 0xf0e8d8 : shade(col, 1.25);
-      const stripes = kind === 'tiger' ? (t, a, ca) => (Math.sin(t * 22 + Math.abs(ca) * 2) > 0.55 && Math.sin(a) > -0.3 ? 0x1a1410 : null) : null;
-      body(K, `${kind}neck${col}`, [[0, 0], [0.15, 0.4], [0.28, 0.75], [0.42, 1.0]], [0.17, 0.155, 0.145, 0.14], col, { belly, paint: stripes, sy: 1.1 });
-      K.push(0.42, 1.05, 0, 0, 0, kind === 'boar' ? -0.3 : -0.1, 1.15);
-      const sn = kind === 'boar' ? 0.48 : kind === 'wolf' ? 0.52 : 0.32;
-      head(K, `${kind}head${col}`, [[-0.18, 0.05, 0.16, 0.17], [-0.05, 0.08, 0.25, 0.24], [0.12, 0.06, 0.22, 0.2], [0.18 + sn * 0.4, -0.02, 0.13, 0.12], [0.18 + sn, -0.04, kind === 'boar' ? 0.11 : 0.07, kind === 'boar' ? 0.1 : 0.065], [0.2 + sn, -0.04, 0.02, 0.02]], col, { belly, paint: stripes });
-      // the open lower jaw
-      K.push(0.1, -0.12, 0, 0, 0, -0.35);
-      head(K, `${kind}jaw${col}`, [[0, 0, 0.14, 0.05], [sn * 0.6, -0.01, 0.09, 0.04], [sn * 0.95, 0, 0.05, 0.03]], belly);
-      K.add(G.sph(0.06, 6, 4), 0x8a2a2a, sn * 0.4, 0.04, 0, { sx: 2.6, sy: 0.4, sz: 1.2 });
-      teethRow(K, sn * 0.3, sn * 0.9, 0.03, 0.06, 0.05, 3, false);
-      K.pop();
-      teethRow(K, 0.15 + sn * 0.3, 0.15 + sn * 0.9, -0.1, 0.08, 0.06, 3, true);
-      K.add(G.sph(0.05, 8, 6), C.black, 0.2 + sn, -0.01, 0, { sx: 0.6, sy: 0.9, sz: 1.3 }); // nose
-      eyes(K, 0.12, 0.14, 0.13, 0.04, kind === 'wolf' ? 0xffd23a : 0xff7a1a);
-      for (const s of [-1, 1]) {
-        if (kind === 'wolf') K.add(G.cone(0.09, 0.3, 5), col, -0.08, 0.32, s * 0.13, { rx: -s * 0.25, rz: 0.25, sx: 0.5 });
-        if (kind === 'tiger') { K.add(G.sph(0.08, 8, 6), col, -0.06, 0.26, s * 0.17, { sx: 0.35 }); K.detail(1, () => { for (let w = 0; w < 3; w++) K.bar([0.2 + sn * 0.7, -0.04, s * 0.08], [0.32 + sn, -0.02 + (w - 1) * 0.04, s * 0.32], 0.004, 0xf0f0f0); }); }
-        if (kind === 'boar') { horn(K, `boartusk${s}`, [0.2 + sn * 0.75, -0.08, s * 0.1], [0.3, 0.9, s * 0.45], 0.34, 0.035, C.bone, 0.5); K.add(G.cone(0.08, 0.2, 5), col, -0.08, 0.3, s * 0.16, { rz: 0.6, sx: 0.5 }); }
+      const belly = kind === 'tiger' ? 0xf0e8d8 : shade(col, 1.25), fur = kind === 'boar' ? 'fur' : 'fur';
+      const furB = [0.007, 14, fur];
+      SKH.limb(B, [[0, 0, 0], [0.15, 0.4, 0], [0.28, 0.75, 0], [0.42, 1.0, 0]], [0.18, 0.165, 0.15, 0.145], col, { k: 0.06, r: 0.75, bump: furB });
+      if (kind === 'wolf') B.p(S.ellipsoid(0.26, 0.2, 0.3).at(0.26, 0.72, 0).rot(0, 0, -30).color(shade(col, 0.9)).blend(0.07).bump(0.016, 11, 'fur'));
+      if (kind === 'boar') for (let i = 0; i < 8; i++) B.h(H.cone(0.035, 0.22 - i * 0.008, 6).color(0x1a1410).pbr(0.9, 0).rot(0, 0, 35).at(-0.13 + i * 0.075, 0.3 + i * 0.1, 0));
+      if (kind === 'tiger') B.h(H.torus(0.18, 0.03, 30, 10).color(gilt).pbr(0.3, 0.85).rot(90, 0, 25).at(0.28, 0.74, 0));
+      const sn = kind === 'boar' ? 0.46 : kind === 'wolf' ? 0.5 : 0.3;
+      B.push([0.44, 1.06, 0], [0, 0, kind === 'boar' ? -16 : -6], 1.12);
+      B.p(S.ellipsoid(0.2, 0.19, 0.19).at(-0.02, 0.06, 0).color(col).pbr(0.75, 0).blend(0.06).bump(furB[0], furB[1], 'fur'));
+      for (const s of [-1, 1]) B.p(S.ellipsoid(0.12, 0.11, 0.1).at(0.08, -0.02, s * 0.12).color(kind === 'tiger' ? belly : col).blend(0.06).bump(0.005, 14, 'fur'));
+      B.p(S.capsule([0.08, 0.02, 0], [0.16 + sn, -0.03, 0], 0.12, kind === 'boar' ? 0.1 : 0.062).color(col).pbr(0.7, 0).blend(0.07));
+      for (const s of [-1, 1]) B.p(S.capsule([-0.02, 0.17, s * 0.075], [0.14, 0.12, s * 0.055], 0.05, 0.03).color(shade(col, 0.9)).blend(0.04)); // brows
+      if (kind === 'boar') {
+        B.p(S.cyl(0.1, 0.05, 0.01).rot(0, 0, 90).at(0.2 + sn, -0.04, 0).color(0x9a6060).blend(0.02));
+        for (const s of [-1, 1]) B.p(S.sphere(0.026).at(0.235 + sn, -0.035, s * 0.035).cut(0.006).color(0x2a1010));
+      } else {
+        B.p(S.ellipsoid(0.05, 0.04, 0.06).at(0.17 + sn, 0.0, 0).color(0x121010).pbr(0.25, 0).blend(0.02));
+        for (const s of [-1, 1]) B.p(S.sphere(0.015).at(0.205 + sn, -0.01, s * 0.025).cut(0.004));
       }
-      if (kind === 'boar') K.add(G.cyl(0.11, 0.11, 0.03, 12), 0x8a5a5a, 0.21 + sn, -0.04, 0, { rz: PI / 2 });
-      K.pop();
-      // a fur ruff (wolf), a bristle crest (boar)
-      K.detail(2, () => {
-        if (kind === 'wolf') for (let i = 0; i < 14; i++) { const a = (i / 14) * PI * 2; K.add(G.cone(0.07, 0.22, 4), shade(col, 0.85 + (i % 3) * 0.1), 0.28 + Math.cos(a) * 0.04, 0.72 + Math.sin(a) * 0.05, Math.sin(a) * 0.27, { rz: -0.9 + Math.cos(a) * 0.4, rx: Math.sin(a) * 0.8 }); }
-        if (kind === 'boar') for (let i = 0; i < 9; i++) K.add(G.cone(0.04, 0.24, 4), 0x1a1410, -0.12 + i * 0.07, 0.3 + i * 0.09, 0, { rz: 0.6 });
-        if (kind === 'tiger') K.add(G.tor(0.27, 0.035, 5, 16), gilt, 0.27, 0.72, 0, { rx: PI / 2, ry: 0.5, ...g });
-      });
+      B.push([0.08, -0.09, 0], [0, 0, -26]);
+      B.p(S.capsule([0, 0, 0], [sn * 0.92, -0.02, 0], 0.075, 0.04).color(belly).pbr(0.75, 0).blend(0.03).bump(0.004, 14, 'fur'));
+      B.p(S.ellipsoid(sn * 0.4, 0.02, 0.05).at(sn * 0.45, 0.04, 0).color(0xb04a52).pbr(0.3, 0).blend(0.01));
+      SKH.teeth(B, sn * 0.3, sn * 0.88, 0.04, 0.055, 0.05, 3, true);
+      B.pop();
+      maw(B, 0.12, 0.12 + sn * 0.85, -0.06, 0.08, 0.035);
+      SKH.teeth(B, 0.16 + sn * 0.3, 0.12 + sn * 0.88, -0.07, 0.07, 0.06, 3, false);
+      SKH.eyes(B, [0.11, 0.12, 0.12], 0.034, kind === 'wolf' ? 0xffd23a : 0xff8a1a, shade(col, 0.85), { glow: 1.4 });
+      for (const s of [-1, 1]) {
+        if (kind === 'wolf') SKH.fin(B, [[0, 0], [0.09, 0.0], [0.02, 0.24]], 0.03, col, [-0.12, 0.2, s * 0.11], [s * -15, 0, 10], { ribs: 0, edge: shade(col, 0.6), edgeAt: 0.15 });
+        if (kind === 'tiger') B.p(S.ellipsoid(0.05, 0.07, 0.03).at(-0.07, 0.22, s * 0.14).color(col).blend(0.03));
+        if (kind === 'tiger') for (let w = 0; w < 3; w++) B.h(H.tube([[0.16 + sn * 0.7, -0.02, s * 0.07], [0.26 + sn, -0.01 + (w - 1) * 0.035, s * 0.22], [0.34 + sn, -0.03 + (w - 1) * 0.06, s * 0.32]], [0.004, 0.0015], 8, 4).color(0xf4f0e4).lod(1));
+        if (kind === 'boar') {
+          SKH.horn(B, [[0.16 + sn * 0.75, -0.08, s * 0.08], [0.24 + sn * 0.8, 0.02, s * 0.14], [0.26 + sn * 0.72, 0.16, s * 0.17], [0.18 + sn * 0.62, 0.24, s * 0.15]], 0.032, 0xf0e8d0, { rings: 0, tip: 0.85 });
+          SKH.fin(B, [[0, 0], [0.08, 0.0], [0.03, 0.18]], 0.025, col, [-0.1, 0.2, s * 0.13], [s * -30, 0, 30], { ribs: 0 });
+        }
+      }
+      B.pop();
+      if (kind === 'tiger') {
+        const cR = rgbOf(col), dk = rgbOf(0x1a1410);
+        paint = (x, y, z, nx, ny, nz, c) => (near(c, cR, 0.12) && Math.sin(x * 26 + y * 9 + Math.abs(z) * 14 + Math.sin(y * 7) * 2) > 0.62 ? dk : null);
+      }
       break;
     }
     case 'cobra': {
       const col = blend(gilt, 0x2a6a3a, 0.35), hood = blend(col, 0x1a3a7a, 0.3), belly = 0xe8d8a0;
-      body(K, `cobrabody${col}`, [[-0.2, 0.05], [0.25, 0.15], [0.3, 0.5], [0.12, 0.85], [0.22, 1.15]], [0.15, 0.15, 0.14, 0.13, 0.12], col, { belly, ridge: shade(col, 0.7), paint: (t, a, ca) => (Math.sin(t * 40) > 0.7 && Math.sin(a) > 0 ? shade(col, 0.65) : null) });
-      // the hood: a broad flattened loft standing behind the head
-      K.add(loftL(`cobrahood${hood}`, [[0.18, 0.95, 0, 0.12, 0.03], [0.22, 1.12, 0, 0.36, 0.05], [0.26, 1.32, 0, 0.32, 0.05], [0.3, 1.46, 0, 0.12, 0.04]], { radial: 14, sub: 3, col: hood, belly: belly, lat: [0, 0, 1], paint: (t, a, ca) => (t > 0.35 && t < 0.6 && Math.abs(Math.abs(ca) - 0.55) < 0.12 && Math.cos(a) !== 0 ? 0xe8d8a0 : null) }), 0xffffff, 0, 0, 0, { r: 0.45, m: 0.2 });
-      K.detail(2, () => { for (const s of [-1, 1]) { K.add(G.tor(0.05, 0.012, 4, 10), 0xe8d8a0, 0.24, 1.25, s * 0.16, { ry: PI / 2 }); K.add(G.sph(0.03, 6, 4), C.black, 0.24, 1.25, s * 0.16); } });
-      K.push(0.32, 1.48, 0, 0, 0, -0.2);
-      head(K, `cobrahead${col}`, [[-0.06, 0, 0.08, 0.06], [0.04, 0.01, 0.11, 0.07], [0.18, 0, 0.09, 0.05], [0.26, -0.01, 0.04, 0.03]], col, { belly });
-      K.push(0.05, -0.04, 0, 0, 0, -0.5); head(K, `cobrajaw${col}`, [[0, 0, 0.08, 0.025], [0.18, 0, 0.06, 0.02], [0.22, 0, 0.02, 0.01]], 0xc85a5a); K.pop();
-      for (const s of [-1, 1]) K.add(G.cone(0.014, 0.1, 4), C.bone, 0.2, -0.07, s * 0.035, { rz: PI + 0.2 });
-      K.add(taper('cobratongue', [[0.22, -0.03, 0], [0.34, -0.06, 0], [0.4, -0.04, 0.02]], [0.008, 0.003], 6, 3), 0xc82a2a);
-      eyes(K, 0.1, 0.05, 0.08, 0.022, 0xff3a1a, 2.5);
-      K.pop();
-      // a gilt crown band
-      K.detail(2, () => K.add(G.tor(0.14, 0.03, 4, 14), gilt, 0.27, 0.42, 0, { rx: PI / 2, ...g }));
+      const P = [[-0.24, 0.05, 0.1], [0.2, 0.1, 0.14], [0.34, 0.42, 0], [0.14, 0.82, 0], [0.22, 1.14, 0]], R = [0.15, 0.15, 0.14, 0.13, 0.12];
+      SKH.limb(B, P, R, col, { k: 0.05, r: 0.4, m: 0.2, bump: [0.004, 32, 'scales'] });
+      for (let i = 0; i < P.length - 1; i++) B.p(S.capsule([P[i][0] + R[i] * 0.6, P[i][1], P[i][2]], [P[i + 1][0] + R[i + 1] * 0.6, P[i + 1][1], P[i + 1][2]], R[i] * 0.6, R[i + 1] * 0.6).paint(0.008, 0.004).color(belly).bump(0.006, 10, 'ridges'));
+      // the hood: a broad thin shield flaring behind the head
+      B.p(S.ellipsoid(0.07, 0.3, 0.34).at(0.22, 1.24, 0).rot(0, 0, -12).color(hood).pbr(0.4, 0.2).blend(0.06).bump(0.003, 30, 'scales'));
+      for (const s of [-1, 1]) {
+        B.p(S.ellipsoid(0.03, 0.06, 0.06).at(0.27, 1.27, s * 0.15).paint(0.01, 0.002).color(0xf0e4b0));
+        B.p(S.sphere(0.028).at(0.28, 1.27, s * 0.15).paint(0.006, 0.002).color(0x101010));
+      }
+      B.push([0.32, 1.48, 0], [0, 0, -12]);
+      B.p(S.ellipsoid(0.12, 0.07, 0.1).at(0.04, 0.0, 0).color(col).pbr(0.4, 0.2).blend(0.05).bump(0.003, 30, 'scales'));
+      B.p(S.capsule([0.06, 0.0, 0], [0.22, -0.01, 0], 0.07, 0.04).color(col).blend(0.05));
+      B.push([0.04, -0.04, 0], [0, 0, -30]);
+      B.p(S.capsule([0, 0, 0], [0.2, 0, 0], 0.055, 0.03).color(0xd0c090).blend(0.03));
+      B.p(S.ellipsoid(0.08, 0.015, 0.035).at(0.1, 0.035, 0).color(0xc85a6a).blend(0.01));
+      B.pop();
+      maw(B, 0.06, 0.2, -0.03, 0.05, 0.02);
+      for (const s of [-1, 1]) B.h(H.cone(0.012, 0.09, 8).color(0xf4f0e0).pbr(0.3).rot(0, 0, 190).at(0.18, -0.07, s * 0.03));
+      B.h(H.tube([[0.18, -0.04, 0], [0.32, -0.08, 0], [0.4, -0.05, 0.02], [0.42, -0.04, 0.04]], [0.008, 0.006, 0.004, 0.001], 12, 5).color(0xc82a2a));
+      SKH.eyes(B, [0.1, 0.045, 0.072], 0.02, 0xff3a1a, shade(col, 0.85), { glow: 2 });
+      B.pop();
+      B.h(H.torus(0.15, 0.028, 30, 10).color(gilt).pbr(0.3, 0.85).rot(90, 0, 10).at(0.3, 0.44, 0));
+      B.h(H.torus(0.13, 0.02, 30, 8).color(gilt).pbr(0.3, 0.85).rot(90, 0, 25).at(0.24, 0.72, 0));
       break;
     }
     case 'horse': {
-      const col = blend(gilt, 0xf0ead8, 0.4), mane = c.side ?? st.cloth;
-      body(K, `horseneck${col}`, [[0, 0], [0.05, 0.45], [0.2, 0.85], [0.42, 1.15]], [0.15, 0.14, 0.12, 0.1], col, { sy: 1.25, ...g });
-      K.push(0.44, 1.18, 0, 0, 0, -0.95);
-      head(K, `horsehead${col}`, [[-0.12, 0.02, 0.1, 0.13], [0.0, 0.04, 0.13, 0.15], [0.25, 0.0, 0.09, 0.1], [0.5, -0.03, 0.085, 0.1], [0.62, -0.05, 0.08, 0.09], [0.67, -0.06, 0.04, 0.05]], col, { m: st.metalM * 0.6 });
+      const col = blend(gilt, 0xf0ead8, 0.4), mane = sideC ?? st.cloth, gm = st.metalM * 0.6;
+      SKH.limb(B, [[0, 0, 0], [0.04, 0.42, 0], [0.18, 0.82, 0], [0.4, 1.14, 0]], [0.16, 0.15, 0.13, 0.11], col, { k: 0.06, r: 0.45, m: gm });
+      B.p(S.ellipsoid(0.22, 0.2, 0.17).at(0.1, 0.18, 0).color(col).pbr(0.45, gm).blend(0.08)); // chest
+      B.push([0.44, 1.18, 0], [0, 0, -52]);
+      B.p(S.ellipsoid(0.14, 0.12, 0.11).at(-0.02, 0.04, 0).color(col).pbr(0.45, gm).blend(0.06));
+      B.p(S.capsule([0.04, 0.02, 0], [0.56, -0.04, 0], 0.11, 0.075).color(col).pbr(0.45, gm).blend(0.07));
+      B.p(S.ellipsoid(0.07, 0.06, 0.07).at(0.58, -0.07, 0).color(col).blend(0.04));
       for (const s of [-1, 1]) {
-        K.add(G.cone(0.045, 0.18, 5), col, -0.06, 0.2, s * 0.07, { rz: 0.3, sx: 0.6 });
-        K.add(G.sph(0.04, 6, 4), C.black, 0.12, 0.08, s * 0.12);
-        K.add(G.sph(0.025, 5, 3), C.black, 0.64, -0.03, s * 0.05);
-        K.detail(1, () => { K.add(G.tor(0.11, 0.012, 3, 12), 0x6a2a1a, 0.42, -0.03, 0, { ry: PI / 2, sy: 0.9 }); K.add(G.sph(0.025, 5, 3), gilt, 0.42, -0.04, s * 0.11, g); });
+        B.p(S.ellipsoid(0.1, 0.07, 0.04).at(0.08, -0.02, s * 0.08).color(col).blend(0.05)); // cheek
+        B.p(S.sphere(0.018).at(0.64, -0.03, s * 0.035).cut(0.006).color(0x201010));
+        SKH.fin(B, [[0, 0], [0.05, 0.0], [0.015, 0.16]], 0.025, col, [-0.08, 0.13, s * 0.06], [s * -10, 0, -30], { ribs: 0 });
+        B.h(H.sphere(0.02, 10).color(gilt).pbr(0.3, 0.85).at(0.4, -0.03, s * 0.1));
       }
-      K.detail(2, () => K.add(G.cone(0.05, 0.28, 6), mane, -0.08, 0.28, 0, { rz: 0.5 })); // a plume
-      K.pop();
-      // the mane: flowing locks along the crest of the neck
-      K.detail(2, () => { for (let i = 0; i < 9; i++) { const t = i / 8; K.add(G.sph(0.12, 6, 4), shade(mane, 0.85 + (i % 2) * 0.2), lerp(-0.12, 0.3, t), lerp(0.2, 1.3, t), 0, { sx: 0.35, sy: 1.4, sz: 0.25, rz: 0.9 }); } });
-      // forelegs pawing the air
-      K.detail(2, () => { for (const s of [-1, 1]) K.add(taper(`horseleg${s}`, [[0.12, 0.3, s * 0.12], [0.38, 0.38, s * 0.14], [0.5, 0.2, s * 0.14]], [0.06, 0.04], 6, 5), col, 0, 0, 0, g); });
+      B.p(S.capsule([0.62, -0.1, -0.03], [0.62, -0.1, 0.03], 0.012, 0.012).cut(0.006));
+      SKH.eyes(B, [0.1, 0.06, 0.1], 0.026, 0x2a1a10, col, { glow: 0.2, round: true });
+      // the bridle: a noseband, cheek straps and a gilt plume holder
+      B.h(H.torus(0.1, 0.013, 28, 6).color(0x5a2418).pbr(0.6).rot(0, 90, 0).scale(1, 0.85, 1).at(0.4, -0.03, 0));
+      for (const s of [-1, 1]) B.h(H.tube([[0.4, -0.03, s * 0.1], [0.2, 0.0, s * 0.11], [0.0, 0.05, s * 0.115]], 0.011, 10, 5).color(0x5a2418).pbr(0.6));
+      B.h(H.cone(0.045, 0.3, 10).color(mane).pbr(0.85).rot(0, 0, 25).at(-0.1, 0.26, 0));
+      B.pop();
+      // the mane in locks along the crest
+      for (let i = 0; i < 10; i++) { const t = i / 9; B.p(S.ellipsoid(0.04, 0.13, 0.05).rot(0, 0, 50 - t * 20).at(lerp(-0.1, 0.33, t), lerp(0.22, 1.28, t), (i % 2 ? 1 : -1) * 0.02).color(shade(mane, 0.85 + (i % 3) * 0.1)).pbr(0.85).blend(0.03).bump(0.006, 18, 'fur')); }
+      // forelegs pawing the air, with gilt hooves
+      for (const s of [-1, 1]) {
+        SKH.limb(B, [[0.14, 0.24, s * 0.1], [0.34, 0.32, s * 0.12], [0.48, 0.16, s * 0.13]], [0.06, 0.045, 0.038], col, { k: 0.03, m: gm });
+        B.h(H.cyl(0.04, 0.048, 0.07, 14).color(gilt).pbr(0.3, 0.85).rot(0, 0, 40).at(0.5, 0.12, s * 0.13));
+      }
       break;
     }
     case 'scarab': {
       const shell = 0x1a4a5a;
-      K.add(loftL('scarabshell', [[-0.45, 0.3, 0, 0.05, 0.05], [-0.35, 0.36, 0, 0.36, 0.26], [0.1, 0.4, 0, 0.48, 0.32], [0.45, 0.36, 0, 0.34, 0.24], [0.55, 0.32, 0, 0.05, 0.05]], { radial: 18, sub: 3, col: shell, ridge: gilt, paint: (t, a, ca) => (Math.abs(ca) < 0.06 && Math.sin(a) > 0 ? gilt : null) }), 0xffffff, 0, 0, 0, { m: 0.55, r: 0.25 });
-      K.add(loftL('scarabhead', [[0.5, 0.3, 0, 0.18, 0.12], [0.7, 0.32, 0, 0.16, 0.1], [0.82, 0.3, 0, 0.05, 0.04]], { radial: 12, col: shell }), 0xffffff, 0, 0, 0, { m: 0.55, r: 0.25 });
+      B.p(S.ellipsoid(0.48, 0.24, 0.42).at(0.05, 0.36, 0).color(shell).pbr(0.2, 0.7).blend(0.03));
+      B.p(S.box(0.95, 0.06, 0.012, 0.004).at(0.05, 0.6, 0).cut(0.006).color(gilt));
+      B.p(S.ellipsoid(0.16, 0.12, 0.22).at(0.52, 0.34, 0).color(shell).pbr(0.25, 0.7).blend(0.03)); // thorax
+      B.p(S.ellipsoid(0.1, 0.08, 0.14).at(0.7, 0.32, 0).color(shell).pbr(0.25, 0.7).blend(0.03));
+      for (let i = 0; i < 5; i++) B.h(H.cone(0.03, 0.08, 6).color(gilt).pbr(0.3, 0.85).rot(0, 0, -70).at(0.78, 0.33, (i - 2) * 0.045)); // the toothed clypeus
       for (const s of [-1, 1]) {
-        for (let i = 0; i < 3; i++) K.add(taper(`scarleg${i}${s}`, [[0.3 - i * 0.3, 0.25, s * 0.3], [0.4 - i * 0.35, 0.22, s * 0.6], [0.5 - i * 0.38, 0.0, s * 0.7]], [0.035, 0.015], 6, 4), gilt, 0, 0, 0, g);
-        K.add(G.sph(0.04, 6, 4), 0x3affd8, 0.75, 0.36, s * 0.1, { g: 2 });
+        for (let i = 0; i < 3; i++) B.h(H.tube([[0.35 - i * 0.28, 0.26, s * 0.3], [0.42 - i * 0.33, 0.24, s * 0.55], [0.5 - i * 0.36, 0.02, s * 0.66]], [0.032, 0.022, 0.012], 14, 7).color(gilt).pbr(0.3, 0.85));
+        B.h(H.sphere(0.035, 12).color(0x3affd8).glow(1.8).at(0.73, 0.36, s * 0.09));
+        B.h(H.tube([[0.74, 0.3, s * 0.1], [0.9, 0.6, s * 0.15], [0.92, 0.94, s * 0.1]], [0.034, 0.025, 0.018], 14, 7).color(gilt).pbr(0.3, 0.85));
+        for (let k = 0; k < 4; k++) B.h(H.torus(0.42 - k * 0.09, 0.007, 30, 5, PI * 0.6).color(gilt).pbr(0.3, 0.85).rot(90, 0, 0).rot(0, s > 0 ? -20 : 200, 0).at(0.05, 0.43 + k * 0.035, 0).lod(1));
       }
-      // the sun-disc it rolls before it, on two raised forelegs
-      for (const s of [-1, 1]) K.add(taper(`scarfore${s}`, [[0.75, 0.3, s * 0.1], [0.9, 0.6, s * 0.15], [0.92, 0.95, s * 0.1]], [0.035, 0.02], 6, 4), gilt, 0, 0, 0, g);
-      K.add(G.sph(0.32, 16, 12), 0xffb02a, 0.95, 1.2, 0, { g: 1.4, m: 0.5 });
-      K.add(G.tor(0.36, 0.03, 5, 24), gilt, 0.95, 1.2, 0, { ry: PI / 2, ...g });
-      K.detail(2, () => { for (let i = 0; i < 12; i++) { const a = (i / 12) * PI * 2; K.add(G.cone(0.03, 0.14, 4), gilt, 0.95, 1.2 + Math.sin(a) * 0.46, Math.cos(a) * 0.46, { rx: -a + PI / 2, ...g }); } });
+      // the sun-disc it rolls before it
+      B.p(S.sphere(0.3).at(0.96, 1.2, 0).color(0xffb02a).pbr(0.3, 0.5).glow(1.2).bump(0.008, 12, 'noise'));
+      B.h(H.torus(0.34, 0.03, 40, 10).color(gilt).pbr(0.3, 0.85).rot(0, 90, 0).at(0.96, 1.2, 0));
+      for (let i = 0; i < 12; i++) { const a = (i / 12) * PI * 2; B.h(H.cone(0.035, 0.16, 8).color(gilt).pbr(0.3, 0.85).rot(-(a * 180) / PI + 90, 0, 0).at(0.96, 1.2 + Math.sin(a) * 0.44, Math.cos(a) * 0.44)); }
+      const sR = rgbOf(shell), hi = rgbOf(blend(shell, 0x3aa8c8, 0.5));
+      paint = (x, y, z, nx, ny, nz, c) => (near(c, sR, 0.08) && ny > 0.3 && Math.sin(Math.hypot(x - 0.05, z) * 30) > 0.7 ? hi : null);
       break;
     }
     case 'swan': {
       const w = 0xf4f0e8;
-      body(K, 'swanneck', [[0, 0.1], [0.32, 0.4], [0.3, 0.75], [0.1, 1.05], [0.2, 1.35], [0.38, 1.48]], [0.22, 0.12, 0.09, 0.08, 0.075, 0.07], w, { r: 0.5 });
-      K.push(0.38, 1.5, 0, 0, 0, -0.25);
-      head(K, 'swanhead', [[-0.08, 0, 0.06, 0.07], [0.04, 0.01, 0.08, 0.08], [0.12, 0, 0.06, 0.06]], w, { r: 0.5 });
-      K.add(loftL('swanbeak', [[0.1, 0, 0, 0.05, 0.045], [0.22, -0.02, 0, 0.035, 0.03], [0.32, -0.04, 0, 0.015, 0.012]], { radial: 10, col: 0xe87a1a }), 0xffffff, 0, 0, 0, { r: 0.4 });
-      K.add(G.sph(0.035, 6, 4), C.black, 0.12, 0.03, 0, { sz: 1.3 });
-      for (const s of [-1, 1]) K.add(G.sph(0.014, 5, 3), C.black, 0.06, 0.03, s * 0.06);
-      K.add(G.cyl(0.07, 0.07, 0.04, 10), gilt, -0.02, 0.04, 0, { rx: PI / 2, ...g }); // a crown band
-      K.pop();
-      // the breast and two raised wings of layered feathers
-      K.add(G.sph(0.32, 12, 8), w, -0.05, 0.25, 0, { sx: 1.3, sy: 0.8, sz: 1.0, r: 0.5 });
+      SKH.limb(B, [[0, 0.1, 0], [0.3, 0.38, 0], [0.32, 0.74, 0], [0.12, 1.04, 0], [0.2, 1.34, 0], [0.38, 1.48, 0]], [0.2, 0.12, 0.09, 0.08, 0.075, 0.068], w, { k: 0.06, r: 0.55, bump: [0.003, 30, 'fur'] });
+      B.p(S.ellipsoid(0.42, 0.26, 0.32).at(-0.08, 0.24, 0).color(w).pbr(0.6).blend(0.1).bump(0.006, 16, 'scales'));
+      B.push([0.38, 1.5, 0], [0, 0, -14]);
+      B.p(S.ellipsoid(0.1, 0.075, 0.075).at(0, 0, 0).color(w).blend(0.04));
+      B.p(S.capsule([0.08, -0.01, 0], [0.3, -0.05, 0], 0.045, 0.014).color(0xe87a1a).pbr(0.35).blend(0.02));
+      B.p(S.ellipsoid(0.04, 0.035, 0.03).at(0.1, 0.02, 0).color(0x121010).blend(0.015));
+      SKH.eyes(B, [0.04, 0.02, 0.055], 0.013, 0x121010, null, { glow: 0, round: true });
+      B.h(H.cyl(0.072, 0.072, 0.04, 20).color(gilt).pbr(0.3, 0.85).rot(90, 0, 0).at(-0.03, 0.05, 0));
+      for (let i = 0; i < 5; i++) B.h(H.cone(0.012, 0.05, 6).color(gilt).pbr(0.3, 0.85).at(-0.03 + Math.cos((i / 5) * PI * 2) * 0.06, 0.09, Math.sin((i / 5) * PI * 2) * 0.06));
+      B.pop();
+      // two raised wings of layered feathers
       for (const s of [-1, 1]) {
-        for (let row = 0; row < 3; row++) fan(K, 6 - row, [-0.1 - row * 0.05, 0.4 + row * 0.08, s * 0.3], [-0.75 + row * 0.1, 0.95 - row * 0.15, s * (0.45 + row * 0.05)], 0.42 - row * 0.08, 0.12, row ? w : blend(w, gilt, 0.2), -0.6 - row * 0.2, s * 0.35);
+        B.p(S.ellipsoid(0.3, 0.08, 0.1).rot(0, s * -20, 35).at(-0.15, 0.48, s * 0.3).color(w).blend(0.06).bump(0.006, 18, 'scales'));
+        for (let row = 0; row < 3; row++) {
+          const n = 8 - row * 2;
+          for (let i = 0; i < n; i++) {
+            const t = i / (n - 1), ang = 60 + t * 60 - row * 12;
+            SKH.feather(B, 0.5 - row * 0.12 + Math.sin(t * PI) * 0.1, 0.12 - row * 0.015, row === 0 ? blend(w, gilt, 0.15) : w, [-0.08 - row * 0.07 - t * 0.3, 0.45 + row * 0.08 + t * 0.15, s * (0.32 + row * 0.04)], [s * 70, s * (-28 + row * 8), ang], { tip: row === 0 ? gilt : undefined });
+          }
+        }
       }
       break;
     }
     case 'eagle': {
       const wcol = blend(gilt, 0x6a4a2a, 0.35), white = 0xf4f0e8;
-      body(K, 'eaglebody', [[-0.1, 0.0], [0.05, 0.35], [0.22, 0.7], [0.34, 0.95]], [0.15, 0.2, 0.16, 0.12], wcol, { ...g });
-      K.push(0.36, 1.02, 0, 0, 0, -0.2);
-      head(K, 'eaglehead', [[-0.12, 0, 0.12, 0.13], [0.02, 0.02, 0.15, 0.14], [0.14, 0.0, 0.1, 0.1]], white, { r: 0.5 });
-      K.add(taper('eaglebeak', [[0.12, 0.02, 0], [0.26, 0.0, 0], [0.33, -0.06, 0], [0.31, -0.13, 0]], [0.065, 0.05, 0.03, 0.005], 10, 8), 0xe8b02a, 0, 0, 0, { r: 0.35 });
-      eyes(K, 0.07, 0.06, 0.1, 0.026, 0xffc21a, 2);
-      for (const s of [-1, 1]) K.add(G.sph(0.05, 6, 4), shade(white, 0.85), 0.0, 0.08, s * 0.1, { sx: 1.8, sy: 0.4, sz: 0.4, rz: 0.2 }); // brow
-      K.pop();
-      for (const s of [-1, 1]) for (let row = 0; row < 3; row++) fan(K, 7 - row, [0.05, 0.6 + row * 0.04, s * (0.2 + row * 0.02)], [-1.0 + row * 0.22, 1.2 - row * 0.12, s * (0.75 - row * 0.1)], 0.5 - row * 0.1, 0.12, row === 2 ? gilt : shade(wcol, 1 + row * 0.1), -0.4 - row * 0.25, s * 0.25);
-      K.detail(2, () => { for (const s of [-1, 1]) for (let k = 0; k < 3; k++) K.add(taper(`talon${k}${s}`, [[0.25, 0.08, s * 0.1 + (k - 1) * 0.04], [0.38, 0.0, s * 0.12 + (k - 1) * 0.06], [0.4, -0.08, s * 0.12 + (k - 1) * 0.06]], [0.025, 0.004], 6, 4), C.black); });
+      SKH.limb(B, [[-0.1, 0.0, 0], [0.05, 0.35, 0], [0.22, 0.7, 0], [0.34, 0.95, 0]], [0.16, 0.21, 0.17, 0.12], wcol, { k: 0.07, r: 0.7, bump: [0.007, 16, 'scales'] });
+      B.p(S.ellipsoid(0.15, 0.12, 0.13).at(0.33, 0.95, 0).paint(0.04).color(white));
+      B.push([0.36, 1.02, 0], [0, 0, -10]);
+      B.p(S.ellipsoid(0.15, 0.13, 0.13).at(0, 0.02, 0).color(white).pbr(0.7).blend(0.05).bump(0.004, 24, 'fur'));
+      B.h(H.tube([[0.1, 0.03, 0], [0.24, 0.02, 0], [0.31, -0.04, 0], [0.3, -0.13, 0]], [0.06, 0.045, 0.025, 0.004], 20, 12).color(0xe8b02a).pbr(0.3, 0.2));
+      B.p(S.capsule([0.1, -0.04, 0], [0.22, -0.06, 0], 0.04, 0.02).color(0xd8a02a).blend(0.02));
+      for (const s of [-1, 1]) B.p(S.ellipsoid(0.07, 0.025, 0.035).rot(0, 0, -10).at(0.07, 0.09, s * 0.075).color(shade(white, 0.9)).blend(0.02));
+      SKH.eyes(B, [0.08, 0.05, 0.085], 0.024, 0xffc21a, null, { glow: 1.2, round: true });
+      B.pop();
+      for (const s of [-1, 1]) {
+        B.p(S.ellipsoid(0.36, 0.09, 0.12).rot(0, s * 20, 40).at(-0.1, 0.72, s * 0.24).color(wcol).blend(0.07).bump(0.006, 16, 'scales'));
+        for (let row = 0; row < 3; row++) {
+          const n = 9 - row * 2;
+          for (let i = 0; i < n; i++) {
+            const t = i / (n - 1);
+            SKH.feather(B, 0.62 - row * 0.16 + Math.sin(t * PI) * 0.12, 0.13 - row * 0.02, row === 2 ? gilt : shade(wcol, 1 + row * 0.12), [0.0 - row * 0.1 - t * 0.42, 0.66 + row * 0.08 + t * 0.32, s * (0.28 + row * 0.02)], [s * 80, s * (-22 + row * 6), 95 + t * 50 - row * 10], { tip: row === 0 ? 0x2a1a10 : undefined });
+          }
+        }
+        for (let k = 0; k < 3; k++) B.h(H.tube([[0.2, 0.06, s * 0.1 + (k - 1) * 0.04], [0.34, 0.0, s * 0.12 + (k - 1) * 0.06], [0.38, -0.08, s * 0.12 + (k - 1) * 0.06]], [0.025, 0.015, 0.003], 12, 6).color(0x1a1410).pbr(0.3));
+      }
       break;
     }
     case 'skull': {
       const bone = C.bone;
-      K.add(loftL('skullcran', [[-0.2, 0.9, 0, 0.1, 0.1], [-0.08, 0.95, 0, 0.36, 0.38], [0.2, 0.98, 0, 0.4, 0.42], [0.42, 0.9, 0, 0.32, 0.34], [0.55, 0.78, 0, 0.18, 0.2]], { radial: 16, sub: 3, col: bone }), 0xffffff, 0, 0, 0, { r: 0.7 });
-      K.add(loftL('skullface', [[0.3, 0.58, 0, 0.3, 0.2], [0.55, 0.55, 0, 0.26, 0.18], [0.66, 0.5, 0, 0.18, 0.1]], { radial: 12, col: bone }), 0xffffff, 0, 0, 0, { r: 0.7 });
+      B.p(S.ellipsoid(0.36, 0.34, 0.36).at(0.12, 0.96, 0).color(bone).pbr(0.75).bump(0.006, 10, 'rock'));
+      B.p(S.ellipsoid(0.26, 0.2, 0.28).at(0.42, 0.62, 0).color(bone).blend(0.12).bump(0.005, 12, 'rock'));
       for (const s of [-1, 1]) {
-        K.add(G.sph(0.13, 10, 8), 0x0a0a0a, 0.56, 0.74, s * 0.17, { sx: 0.6 });
-        K.add(G.sph(0.045, 8, 6), st.glow, 0.6, 0.74, s * 0.17, { g: 3 });
-        K.add(G.sph(0.08, 6, 4), bone, 0.45, 0.6, s * 0.3, { sx: 1.5, sy: 0.6 }); // cheekbone
-        horn(K, `skullhorn${s}`, [0.15, 1.15, s * 0.26], [0.2, 0.6, s * 0.8], 0.6, 0.08, shade(bone, 0.8), 0.8);
+        B.p(S.ellipsoid(0.1, 0.11, 0.1).at(0.58, 0.76, s * 0.16).cut(0.04).color(0x0a0806));
+        B.p(S.ellipsoid(0.1, 0.06, 0.06).at(0.46, 0.6, s * 0.28).color(bone).blend(0.05)); // cheekbones
+        B.h(H.sphere(0.04, 12).color(st.glow).glow(2.6).at(0.56, 0.76, s * 0.16));
+        SKH.horn(B, [[0.12, 1.15, s * 0.26], [0.18, 1.42, s * 0.48], [0.06, 1.66, s * 0.62], [-0.14, 1.72, s * 0.56], [-0.26, 1.6, s * 0.48]], 0.085, shade(bone, 0.82), { rings: 14 });
       }
-      K.add(G.cone(0.06, 0.12, 3), 0x0a0a0a, 0.68, 0.6, 0, { rz: PI / 2 + PI, sz: 0.7 });
-      K.push(0.35, 0.36, 0, 0, 0, -0.15);
-      K.add(loftL('skulljaw', [[0, 0, 0, 0.26, 0.06], [0.25, -0.02, 0, 0.22, 0.06], [0.33, 0, 0, 0.14, 0.05]], { radial: 10, col: bone }), 0xffffff, 0, 0, 0, { r: 0.7 });
-      K.pop();
-      K.detail(2, () => { for (let i = 0; i < 8; i++) { const z = -0.16 + i * 0.045; K.add(G.rbox(0.05, 0.09, 0.04, 0.01), 0xf0ead8, 0.66, 0.46, z); K.add(G.rbox(0.05, 0.08, 0.04, 0.01), 0xf0ead8, 0.64, 0.35, z); } });
-      // crossed bones beneath
-      for (const s of [-1, 1]) { K.add(taper(`xbone${s}`, [[0.0, 0.05, s * 0.4], [0.3, 0.25, 0], [0.6, 0.45, -s * 0.4]], [0.045, 0.045], 6, 5), bone); for (const e of [[0.0, 0.05, s * 0.4], [0.6, 0.45, -s * 0.4]]) K.add(G.sph(0.07, 6, 4), bone, ...e); }
+      B.p(S.cone(0.06, 0.0, 0.14).rot(0, 0, -100).at(0.66, 0.6, 0).cut(0.02).color(0x0a0806));
+      B.push([0.36, 0.38, 0], [0, 0, -10]);
+      B.p(S.capsule([0, 0, -0.2], [0.3, -0.02, 0], 0.055, 0.05).color(bone).blend(0.04));
+      B.p(S.capsule([0, 0, 0.2], [0.3, -0.02, 0], 0.055, 0.05).color(bone).blend(0.04));
+      B.pop();
+      for (let i = 0; i < 8; i++) { const z = -0.16 + i * 0.045; B.h(H.box(0.045, 0.085, 0.04, 0.01).color(0xf0ead8).pbr(0.6).at(0.65, 0.47, z)); B.h(H.box(0.045, 0.075, 0.04, 0.01).color(0xf0ead8).pbr(0.6).at(0.63, 0.37, z)); }
+      for (const s of [-1, 1]) { SKH.limb(B, [[0.0, 0.05, s * 0.42], [0.3, 0.24, 0], [0.62, 0.45, -s * 0.42]], [0.045, 0.04, 0.045], bone, { k: 0.01 }); for (const e of [[0.0, 0.05, s * 0.42], [0.62, 0.45, -s * 0.42]]) for (const d of [-1, 1]) B.p(S.sphere(0.05).at(e[0], e[1] + d * 0.035, e[2]).color(bone).blend(0.02)); }
+      const bR = rgbOf(bone), cr = rgbOf(shade(bone, 0.55));
+      paint = (x, y, z, nx, ny, nz, c) => (near(c, bR, 0.1) && Math.abs(Math.sin(z * 40 + Math.sin(y * 12) * 1.5)) < 0.05 && y > 0.9 ? cr : null);
       break;
     }
     case 'eye': {
-      const flesh = blend(c.hullC, C.flesh, 0.6), iris = st.glow;
-      body(K, `eyestalk${flesh}`, [[0, 0], [0.18, 0.35], [0.28, 0.7]], [0.24, 0.2, 0.3], flesh, { r: 0.45 });
-      K.add(G.sph(0.6, 18, 14), flesh, 0.45, 1.05, 0, { r: 0.45 });
-      K.add(G.sph(0.53, 18, 14), 0xf4eedc, 0.6, 1.05, 0, { r: 0.2 });
-      K.add(G.sph(0.24, 16, 10), iris, 1.0, 1.05, 0, { sx: 0.35, g: 2.5 });
-      K.add(G.sph(0.11, 10, 8), C.black, 1.07, 1.05, 0, { sx: 0.3, sy: 1.6 });
-      // lids and veins
-      for (const s of [-1, 1]) K.add(G.tor(0.56, 0.09, 6, 18, PI), flesh, 0.66, 1.05, 0, { ry: PI / 2, rx: s > 0 ? 0.35 : PI - 0.35, r: 0.45 });
-      K.detail(1, () => { for (let i = 0; i < 8; i++) { const a = (i / 8) * PI * 2; K.add(taper(`vein${i}`, [[0.75, 1.05 + Math.sin(a) * 0.45, Math.cos(a) * 0.45], [0.9, 1.05 + Math.sin(a) * 0.3, Math.cos(a) * 0.3], [0.95, 1.05 + Math.sin(a + 0.3) * 0.25, Math.cos(a + 0.3) * 0.25]], [0.012, 0.004], 6, 3), 0xb81a1a); } });
-      // feelers round it
-      K.detail(2, () => { for (let i = 0; i < 5; i++) { const a = -0.6 + i * 0.3; K.add(taper(`feeler${i}`, [[0.3, 0.5, 0], [0.5 + Math.cos(a) * 0.2, 0.3, Math.sin(a) * 0.6], [0.8 + Math.cos(a) * 0.2, 0.15, Math.sin(a) * 0.85]], [0.06, 0.01], 8, 5), shade(flesh, 0.85)); } });
-      for (let i = 0; i < 3; i++) K.add(G.sph(0.05, 6, 4), C.slime, 0.95, 0.6 - i * 0.18, (i - 1) * 0.12, { g: 1.2 });
+      const flesh = blend(hullC, C.flesh, 0.6), iris = st.glow;
+      SKH.limb(B, [[0, 0, 0], [0.18, 0.35, 0], [0.3, 0.7, 0]], [0.24, 0.2, 0.32], flesh, { k: 0.08, r: 0.45, bump: [0.012, 9, 'noise'] });
+      B.p(S.sphere(0.58).at(0.45, 1.05, 0).color(flesh).pbr(0.45).blend(0.1).bump(0.01, 8, 'noise'));
+      B.p(S.sphere(0.5).at(0.64, 1.05, 0).cut(0.02).color(0x5a1a1a));
+      B.p(S.sphere(0.47).at(0.6, 1.05, 0).color(0xf4eedc).pbr(0.15).blend(0.02));
+      B.p(S.sphere(0.25).at(0.92, 1.05, 0).paint(0.02, 0.01).color(iris).glow(1.8));
+      B.p(S.ellipsoid(0.1, 0.16, 0.06).at(1.06, 1.05, 0).paint(0.012, 0.004).color(0x050505).glow(0));
+      B.p(S.torus(0.45, 0.085).rot(0, 0, 90).at(0.74, 1.05, 0).color(flesh).blend(0.05).bump(0.01, 10, 'noise'));
+      B.p(S.ellipsoid(0.16, 0.12, 0.42).at(0.74, 1.4, 0).color(flesh).blend(0.06).bump(0.008, 10, 'noise')); // the heavy upper lid
+      for (let i = 0; i < 6; i++) { const a = -0.8 + i * 0.32; SKH.limb(B, [[0.3, 0.5, 0], [0.5 + Math.cos(a) * 0.2, 0.3, Math.sin(a) * 0.6], [0.8 + Math.cos(a) * 0.2, 0.12, Math.sin(a) * 0.85], [0.95, 0.06, Math.sin(a) * 0.95]], [0.07, 0.05, 0.03, 0.012], shade(flesh, 0.85), { k: 0.04, bump: [0.006, 14, 'ridges'] }); }
+      for (let i = 0; i < 3; i++) B.h(H.sphere(0.05, 10).scale(1, 1.4, 1).color(C.slime).glow(1).pbr(0.1).at(0.95, 0.6 - i * 0.18, (i - 1) * 0.12));
+      const wR = rgbOf(0xf4eedc), vein = rgbOf(0xb81a1a);
+      paint = (x, y, z, nx, ny, nz, c) => (near(c, wR, 0.06) && Math.abs(Math.sin(Math.atan2(y - 1.05, z) * 9 + noise3(x * 6, y * 6, z * 6) * 3)) < 0.08 ? vein : null);
       break;
     }
     case 'frog': {
       const col = 0x5a8a3a, belly = 0xd8d08a;
-      K.add(loftL('frogbody', [[-0.45, 0.4, 0, 0.1, 0.08], [-0.3, 0.5, 0, 0.5, 0.32], [0.15, 0.58, 0, 0.6, 0.34], [0.5, 0.55, 0, 0.46, 0.22], [0.66, 0.5, 0, 0.1, 0.05]], { radial: 18, sub: 3, col, belly, paint: (t, a) => (Math.sin(t * 17 + a * 5) > 0.9 && Math.sin(a) > 0 ? 0x2a4a1a : null) }), 0xffffff, 0, 0, 0, { r: 0.4 });
+      B.p(S.ellipsoid(0.55, 0.3, 0.55).at(0.1, 0.55, 0).color(col).pbr(0.3).bump(0.012, 10, 'scales'));
+      B.p(S.ellipsoid(0.45, 0.2, 0.45).at(0.18, 0.4, 0).paint(0.06).color(belly));
+      B.p(S.capsule([0.62, 0.5, -0.45], [0.62, 0.5, 0.45], 0.025, 0.025).rot(0, 0, 0).cut(0.01).color(0x2a1a1a));
       for (const s of [-1, 1]) {
-        K.add(G.sph(0.18, 12, 8), col, 0.3, 0.88, s * 0.32);
-        K.add(G.sph(0.14, 12, 8), 0xffd23a, 0.37, 0.92, s * 0.34, { g: 1.0 });
-        K.add(G.box(0.03, 0.14, 0.06), C.black, 0.5, 0.93, s * 0.36);
-        K.add(taper(`frogleg${s}`, [[0.3, 0.45, s * 0.4], [0.52, 0.25, s * 0.55], [0.6, 0.0, s * 0.5]], [0.08, 0.04], 6, 5), col);
-        for (let k = 0; k < 3; k++) K.add(G.sph(0.045, 5, 4), col, 0.64 + k * 0.04, 0.0, s * (0.42 + k * 0.08));
+        B.p(S.sphere(0.17).at(0.32, 0.86, s * 0.3).color(col).blend(0.06));
+        B.h(H.sphere(0.13, 18).color(0xffd23a).glow(0.9).pbr(0.15).at(0.38, 0.9, s * 0.32));
+        B.h(H.box(0.03, 0.13, 0.05, 0.01).color(0x0a0a0a).at(0.5, 0.91, s * 0.35));
+        SKH.limb(B, [[0.3, 0.45, s * 0.4], [0.52, 0.25, s * 0.55], [0.6, 0.02, s * 0.5]], [0.08, 0.06, 0.04], col, { k: 0.03 });
+        for (let k = 0; k < 3; k++) B.p(S.sphere(0.04).at(0.64 + k * 0.04, 0.02, s * (0.42 + k * 0.08)).color(col).blend(0.02));
+        SKH.limb(B, [[-0.3, 0.45, s * 0.45], [-0.15, 0.2, s * 0.7], [0.15, 0.08, s * 0.72]], [0.12, 0.08, 0.05], col, { k: 0.05, bump: [0.008, 10, 'scales'] });
       }
-      K.add(taper('frogmouth', [[0.62, 0.5, -0.45], [0.69, 0.47, 0], [0.62, 0.5, 0.45]], [0.02, 0.02], 10, 4), 0x2a1a1a);
-      K.add(taper('frogtongue', [[0.68, 0.46, 0], [0.9, 0.4, 0], [1.1, 0.5, 0.05]], [0.04, 0.03], 8, 5), 0xd85a6a);
-      K.add(G.sph(0.06, 6, 4), 0xd85a6a, 1.12, 0.5, 0.05);
-      K.detail(2, () => { for (let i = 0; i < 7; i++) K.add(G.sph(0.06, 6, 4), C.slime, 0.0 + (i % 3) * 0.14, 0.82, -0.3 + i * 0.1, { g: 0.5 }); });
+      B.h(H.tube([[0.66, 0.46, 0], [0.9, 0.4, 0], [1.1, 0.5, 0.05]], [0.04, 0.032, 0.028], 16, 10).color(0xd85a6a).pbr(0.25));
+      B.h(H.sphere(0.065, 14).color(0xd85a6a).pbr(0.25).at(1.12, 0.5, 0.05));
+      for (let i = 0; i < 7; i++) B.h(H.sphere(0.05, 10).color(C.slime).glow(0.5).pbr(0.15).at(0.0 + (i % 3) * 0.14, 0.82, -0.3 + i * 0.1));
+      const gR = rgbOf(col), dk = rgbOf(0x2a4a1a);
+      paint = (x, y, z, nx, ny, nz, c) => (near(c, gR, 0.12) && ny > 0 && noise3(x * 9, y * 9, z * 9) > 0.68 ? dk : null);
       break;
     }
     case 'comet': {
-      K.add(G.ico(0.34, 2), 0xffc040, 0.42, 1.2, 0, { g: 1.2 });
-      K.add(G.ico(0.42, 1), 0xffe8a0, 0.42, 1.2, 0, { g: 0.5, r: 0.2 });
+      SKH.limb(B, [[0, 0, 0], [0.2, 0.5, 0], [0.38, 0.95, 0]], [0.1, 0.075, 0.06], gilt, { k: 0.03, r: 0.3, m: 0.85, bump: [0.004, 12, 'ridges'] });
+      B.p(S.sphere(0.34).at(0.42, 1.2, 0).color(0xffc040).glow(1.3).pbr(0.3).bump(0.025, 7, 'rock'));
       for (let i = 0; i < 6; i++) {
         const a = (i - 2.5) * 0.24, len = 1.4 + (i % 2) * 0.4;
-        K.add(taper(`comtail${i}`, [[0.3, 1.2 + a * 0.2, a * 0.2], [-0.3, 1.25 + a * 0.6, a * 0.7], [-0.6 - len * 0.3, 1.3 + a, a * 1.1]], [0.16, 0.08, 0.005], 10, 6), i % 2 ? 0xe8902a : 0xf0c050, 0, 0, 0, { g: 0.8 });
+        SKH.limb(B, [[0.3, 1.2 + a * 0.2, a * 0.2], [-0.3, 1.25 + a * 0.6, a * 0.7], [-0.6 - len * 0.3, 1.3 + a, a * 1.1]], [0.15, 0.08, 0.01], i % 2 ? 0xe8902a : 0xf0c050, { k: 0.08, glow: 0.8, r: 0.4 });
       }
-      K.add(taper('cometpost', [[0, 0, 0], [0.2, 0.5, 0], [0.38, 0.95, 0]], [0.1, 0.07], 8, 6), gilt, 0, 0, 0, g);
-      for (let i = 0; i < 6; i++) K.add(G.oct(0.05), 0xfff0c0, -0.3 - hash(i) * 1.0, 1.1 + (hash(i + 5) - 0.5) * 0.8, (hash(i + 9) - 0.5) * 0.8, { g: 2 });
+      for (let i = 0; i < 7; i++) B.h(H.sphere(0.05, 8).scale(1, 1.8, 1).color(0xfff0c0).glow(2).at(-0.3 - hash(i) * 1.0, 1.1 + (hash(i + 5) - 0.5) * 0.8, (hash(i + 9) - 0.5) * 0.8));
       break;
     }
     case 'fish': {
       const col = blend(gilt, 0x3a8aaa, 0.45), belly = 0xe8e8d8;
-      K.push(0.15, 0.75, 0, 0, 0, 0.6);
-      K.add(loftL(`fishbody${col}`, [[-0.7, 0, 0, 0.02, 0.06], [-0.5, 0, 0, 0.08, 0.18], [-0.1, 0, 0, 0.2, 0.36], [0.3, 0, 0, 0.2, 0.32], [0.55, -0.02, 0, 0.12, 0.18], [0.66, -0.03, 0, 0.04, 0.05]], { radial: 16, sub: 3, col, belly, paint: (t, a, ca) => (Math.sin(t * 50 + Math.sin(a) * 8) > 0.6 ? shade(col, 0.8) : null) }), 0xffffff, 0, 0, 0, { m: 0.45, r: 0.3 });
-      K.add(G.shape('fishtail2', [[0, 0], [-0.5, 0.45], [-0.36, 0.05], [-0.36, -0.05], [-0.5, -0.45]], 0.03), gilt, -0.68, 0, 0, g);
-      K.add(G.shape('fishfin2', [[0.3, 0], [-0.1, 0.32], [-0.38, 0.28], [-0.3, 0]], 0.025), gilt, 0.05, 0.32, 0, g);
-      for (const s of [-1, 1]) { K.add(G.shape('pect', [[0, 0], [-0.3, 0.12], [-0.25, -0.1]], 0.02), gilt, 0.3, -0.1, s * 0.18, { ry: s * 0.5, ...g }); eyes(K, 0.46, 0.06, 0.1, 0.035, 0xf0f0f0, 0.3); }
-      K.add(G.tor(0.05, 0.015, 4, 10), 0x8a3a3a, 0.65, -0.04, 0, { ry: PI / 2 });
-      K.pop();
-      // the wave it leaps from
-      K.add(taper('fishwave', [[-0.3, 0.05, 0], [0.0, 0.32, 0], [0.25, 0.3, 0], [0.32, 0.15, 0]], [0.16, 0.12, 0.08, 0.03], 10, 7), blend(gilt, 0x6ac8e8, 0.6), 0, 0, 0, { r: 0.3 });
+      B.push([0.15, 0.75, 0], [0, 0, 34]);
+      B.p(S.ellipsoid(0.5, 0.33, 0.19).at(-0.05, 0, 0).color(col).pbr(0.3, 0.55).bump(0.004, 26, 'scales'));
+      B.p(S.capsule([-0.4, 0, 0], [-0.72, 0, 0], 0.13, 0.035).color(col).pbr(0.3, 0.55).blend(0.08).bump(0.003, 26, 'scales'));
+      B.p(S.ellipsoid(0.42, 0.18, 0.16).at(0.0, -0.16, 0).paint(0.05).color(belly));
+      B.p(S.ellipsoid(0.08, 0.06, 0.06).at(0.45, -0.04, 0).cut(0.02).color(0x5a1a1a));
+      SKH.eyes(B, [0.32, 0.06, 0.12], 0.04, 0xf0f0f0, null, { glow: 0.2, round: true });
+      SKH.fin(B, [[0, 0], [-0.5, 0.45], [-0.38, 0.05], [-0.38, -0.05], [-0.5, -0.45]], 0.025, gilt, [-0.7, 0, 0], [0, 0, 0], { m: 0.85, r: 0.3, ribs: 9 });
+      SKH.fin(B, [[0.3, 0], [-0.1, 0.32], [-0.38, 0.28], [-0.3, 0]], 0.02, gilt, [0.05, 0.28, 0], [0, 0, 0], { m: 0.85, r: 0.3, ribs: 8 });
+      for (const s of [-1, 1]) SKH.fin(B, [[0, 0], [-0.3, 0.12], [-0.25, -0.1]], 0.015, gilt, [0.25, -0.12, s * 0.16], [0, s * 30, 0], { m: 0.85, r: 0.3, ribs: 5 });
+      B.h(H.torus(0.05, 0.014, 18, 6).color(0x8a3a3a).rot(0, 90, 0).at(0.5, -0.04, 0));
+      B.pop();
+      SKH.limb(B, [[-0.34, 0.02, 0], [0.0, 0.32, 0], [0.25, 0.3, 0], [0.32, 0.14, 0]], [0.17, 0.13, 0.08, 0.03], blend(gilt, 0x6ac8e8, 0.6), { k: 0.06, r: 0.25, bump: [0.012, 9, 'noise'] });
+      for (let i = 0; i < 4; i++) B.p(S.sphere(0.06 - i * 0.01).at(0.3 + i * 0.04, 0.12 - i * 0.04, (i - 1.5) * 0.06).color(0xf4fbff).blend(0.03));
+      const fR = rgbOf(col), stripe = rgbOf(shade(col, 0.72));
+      paint = (x, y, z, nx, ny, nz, c) => (near(c, fR, 0.1) && Math.sin(x * 30 + y * 18) > 0.75 ? stripe : null);
       break;
     }
-    default: return false;
+    default: return null;
   }
-  return true;
+  return { part: B.part(), paint };
+}
+
+/** the figure as a sculpted piece for a kit (null for an unknown kind) */
+function figureGeo(kind, c) {
+  const st = c.st, key = `fig|${kind}|${st.id}|${st.metal}|${st.carve}|${st.glow}|${kind === 'eye' ? c.hullC : ''}|${kind === 'horse' ? c.side : ''}`;
+  if (!FIGURES.has(kind)) return null;
+  let paint = null;
+  return sculptL(key, () => { const r = figureSculpt(kind, st, c.hullC, c.side); paint = r.paint; return r.part; }, { res: 72, min: 14, paint: (...a) => (paint ? paint(...a) : null) });
 }
 
 // ---------------------------------------------------------------------------------
 //  jaws: a beast's skull built around the bow; the lower jaw moves
 // ---------------------------------------------------------------------------------
+/** a beast's skull built around her stem (sculpted): brow ridges, horns, a fringe of teeth, glowing eyes; +x forward */
 function jawUpper(K, len, w, col, tooth, glow) {
-  K.add(loftL(`jawup${f2(len)}${f2(w)}${col}`, [[0, 0.12, 0, w * 0.5, len * 0.24, { fl: 0.8 }], [len * 0.35, 0.1, 0, w * 0.46, len * 0.2, { fl: 0.85 }], [len * 0.75, 0.06, 0, w * 0.34, len * 0.12, { fl: 0.9 }], [len, 0.02, 0, w * 0.16, len * 0.05, { fl: 0.9 }]], { radial: 16, sub: 3, col, ridge: shade(col, 0.7) }), 0xffffff, 0, 0, 0, { r: 0.55 });
-  K.add(G.box(len * 0.9, 0.02, w * 0.8), 0x6a1010, len * 0.45, 0.04, 0, { g: 0.3 });
-  teethRow(K, len * 0.1, len * 0.95, 0.06, w * 0.42, len * 0.12, Math.max(4, Math.round(len / 0.22)), true, tooth);
-  for (const s of [-1, 1]) {
-    K.add(G.sph(len * 0.08, 10, 8), shade(col, 0.6), len * 0.35, len * 0.2, s * w * 0.4, { sx: 1.3 });
-    K.add(G.sph(len * 0.06, 10, 8), glow, len * 0.38, len * 0.21, s * w * 0.42, { g: 2.4 });
-    horn(K, `jawhorn${f2(len)}${s}`, [len * 0.15, len * 0.22, s * w * 0.34], [-0.6, 0.6, s * 0.4], len * 0.55, len * 0.06, tooth, 0.4);
-    K.detail(2, () => { for (let i = 0; i < 4; i++) K.add(G.cone(len * 0.03, len * 0.1, 4), shade(col, 0.7), len * (0.2 + i * 0.15), len * (0.22 - i * 0.03), s * w * 0.15, { rz: -0.5 }); });
-  }
+  const q = (v) => v.toFixed(1);
+  K.add(sculptL(`jawup|${q(len)}|${q(w)}|${col}|${glow}`, () => {
+    const B = new SB(), hide = (p, k = 0.08) => p.color(col).pbr(0.5).blend(k).bump(0.012, 7, 'scales');
+    B.p(hide(S.ellipsoid(len * 0.42, len * 0.26, w * 0.5).at(len * 0.25, len * 0.12, 0), 0.12));
+    B.p(hide(S.capsule([len * 0.3, len * 0.1, 0], [len * 0.95, len * 0.03, 0], len * 0.2, len * 0.08), 0.15));
+    for (const s of [-1, 1]) {
+      B.p(hide(S.capsule([len * 0.05, len * 0.3, s * w * 0.3], [len * 0.55, len * 0.2, s * w * 0.22], len * 0.09, len * 0.05), 0.06));
+      B.p(S.sphere(len * 0.035).at(len * 0.97, len * 0.07, s * w * 0.06).cut(0.01).color(0x1a0a0a));
+      for (let i = 0; i < 4; i++) B.p(S.cone(len * 0.035, 0, len * 0.12).rot(0, 0, -30).at(len * (0.2 + i * 0.16), len * (0.33 - i * 0.04), s * w * 0.12).color(shade(col, 0.72)).blend(0.02));
+      SKH.horn(B, [[len * 0.12, len * 0.3, s * w * 0.32], [-len * 0.12, len * 0.55, s * w * 0.45], [-len * 0.35, len * 0.62, s * w * 0.42], [-len * 0.5, len * 0.5, s * w * 0.3]], len * 0.07, tooth, { rings: 10 });
+    }
+    B.p(S.ellipsoid(len * 0.42, len * 0.05, w * 0.36).at(len * 0.5, 0.0, 0).cut(0.03).color(0x4a0a0a));
+    SKH.teeth(B, len * 0.12, len * 0.95, 0.0, w * 0.4, len * 0.13, Math.max(5, Math.round(len / 0.2)), false, tooth, w * 0.12);
+    SKH.eyes(B, [len * 0.36, len * 0.24, w * 0.4], len * 0.06, glow, shade(col, 0.75), { glow: 2.2 });
+    return B.part();
+  }, { res: clamp(48 / len, 14, 40), min: 6 }), 0xffffff, 0, 0, 0);
 }
 function jawLower(K, len, w, col, tooth) {
-  K.add(loftL(`jawlo${f2(len)}${f2(w)}${col}`, [[0, -0.05, 0, w * 0.46, len * 0.14, { up: -0.6 }], [len * 0.4, -0.04, 0, w * 0.42, len * 0.11, { up: -0.6 }], [len * 0.8, -0.02, 0, w * 0.3, len * 0.07, { up: -0.6 }], [len * 0.96, 0, 0, w * 0.14, len * 0.03]], { radial: 14, sub: 3, col }), 0xffffff, 0, 0, 0, { r: 0.55 });
-  K.add(G.box(len * 0.85, 0.02, w * 0.75), 0x6a1010, len * 0.42, -0.02, 0, { g: 0.3 });
-  teethRow(K, len * 0.1, len * 0.9, -0.02, w * 0.4, len * 0.1, Math.max(4, Math.round(len / 0.22)), false, tooth);
+  const q = (v) => v.toFixed(1);
+  K.add(sculptL(`jawlo|${q(len)}|${q(w)}|${col}`, () => {
+    const B = new SB();
+    B.p(S.capsule([0, -0.05, 0], [len * 0.92, -0.01, 0], len * 0.16, len * 0.06).color(col).pbr(0.5).blend(0.1).bump(0.01, 7, 'scales'));
+    for (const s of [-1, 1]) B.p(S.capsule([0, -0.06, s * w * 0.32], [len * 0.7, -0.03, s * w * 0.2], len * 0.08, len * 0.05).color(col).blend(0.12));
+    B.p(S.ellipsoid(len * 0.4, len * 0.05, w * 0.3).at(len * 0.45, len * 0.1, 0).cut(0.03).color(0x5a0e0e));
+    B.p(S.ellipsoid(len * 0.3, len * 0.03, w * 0.18).at(len * 0.45, len * 0.06, 0).color(0xa83a3a).pbr(0.3).blend(0.02));
+    SKH.teeth(B, len * 0.12, len * 0.88, len * 0.08, w * 0.38, len * 0.11, Math.max(5, Math.round(len / 0.22)), true, tooth, w * 0.12);
+    return B.part();
+  }, { res: clamp(48 / len, 14, 40), min: 6 }), 0xffffff, 0, 0, 0);
 }
 
 export const BOW_PARTS = {
   figure(c, kind, scale = 1) {
     const s = stem(c), sc = clamp(c.B * 0.28, 0.7, 1.4) * scale;
-    c.kit.push(s.x - 0.2 * sc, s.y + 0.1, 0, 0, 0, -0.25, sc);
-    figure(c.kit, kind, c);
-    c.kit.pop();
+    const geo = figureGeo(kind, c);
+    if (!geo) return;
+    // her figurehead is a mesh of its own: it can be shot away and thrown clear when she breaks up
+    const K = new Kit();
+    K.add(geo, 0xffffff, 0, 0, 0);
+    const mesh = K.mesh(undefined, `figmesh|${kind}|${c.st.id}|${c.hullC}|${c.side}`);
+    mesh.position.set(s.x - 0.2 * sc, s.y + 0.1, 0); mesh.rotation.z = -0.25; mesh.scale.setScalar(sc);
+    mesh.name = 'figurehead';
+    c.addMoving(mesh);
+    (c.breakable ||= []).push({ mesh, kind: 'figure' });
     c.topAt = Math.max(c.topAt || 0, s.y + 2 * sc);
     c.anchor('bow', [s.x + 0.6 * sc, s.y + 1.2 * sc, 0], 'figure');
   },
@@ -476,8 +579,16 @@ function ramp(c, jawed) {
     // the beast's upper beak over the ramp, and its eyes
     const KK = c.kit, bw = w * 1.1;
     KK.push(s.x - 0.6, hy + 0.6, 0, 0, 0, 0.35);
-    KK.add(loftL(`beak${f2(len)}${f2(bw)}`, [[0, 0.3, 0, bw * 0.5, 0.35, { fl: 0.7 }], [len * 0.45, 0.2, 0, bw * 0.42, 0.25, { fl: 0.8 }], [len * 0.85, 0.02, 0, bw * 0.2, 0.1], [len * 0.95, -0.1, 0, bw * 0.05, 0.05]], { radial: 14, sub: 3, col: blend(c.hullC, 0x5a7a4a, 0.4), ridge: shade(blend(c.hullC, 0x5a7a4a, 0.4), 0.7) }), 0xffffff, 0, 0, 0, { r: 0.5 });
-    eyes(KK, len * 0.3, 0.5, bw * 0.38, 0.1, c.st.glow);
+    const bc = blend(c.hullC, 0x5a7a4a, 0.4);
+    KK.add(sculptL(`beak|${f2(len)}|${f2(bw)}|${bc}|${c.st.glow}`, () => {
+      const B = new SB();
+      B.p(S.ellipsoid(len * 0.5, 0.42, bw * 0.5).at(len * 0.2, 0.3, 0).color(bc).pbr(0.5).bump(0.012, 6, 'scales'));
+      B.p(S.capsule([len * 0.3, 0.22, 0], [len * 0.9, -0.02, 0], 0.3, 0.06).color(shade(bc, 0.9)).pbr(0.35).blend(0.15).bump(0.006, 10, 'ridges'));
+      B.h(H.tube([[len * 0.82, 0.05, 0], [len * 0.97, -0.08, 0], [len * 0.95, -0.22, 0]], [0.1, 0.06, 0.01], 12, 10).color(0xd8c89a).pbr(0.35));
+      for (const s of [-1, 1]) B.p(S.capsule([0, 0.62, s * bw * 0.3], [len * 0.45, 0.45, s * bw * 0.28], 0.14, 0.08).color(shade(bc, 0.8)).blend(0.06));
+      SKH.eyes(B, [len * 0.3, 0.5, bw * 0.38], 0.1, c.st.glow, shade(bc, 0.75), { glow: 2.2 });
+      return B.part();
+    }, { res: 20, min: 6 }), 0xffffff, 0, 0, 0);
     KK.pop();
     c.anchor('mouth', [s.x + len * 0.5, hy, 0], 'jawRamp');
   }
